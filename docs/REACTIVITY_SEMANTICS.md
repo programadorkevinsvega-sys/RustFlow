@@ -1,6 +1,6 @@
 # Reactivity Semantics Contract (Phase 1.1)
 
-**Status:** Review candidate; implementation has not started.  
+**Status:** Accepted contract (Phase 1.1); implementation has not started.  
 **Purpose:** Define observable behavior for the first RustFlow reactivity prototype before choosing internal data structures.
 
 This contract applies to the initial single-threaded reactive runtime. It does not promise API stability and does not define browser DOM integration, components, SSR, or hydration. Normative terms **MUST**, **MUST NOT**, and **SHOULD** express requirements for the prototype.
@@ -87,9 +87,9 @@ Tests must cover at least:
 - Runtime isolation and compile-time assertions for intended Send/Sync behavior.
 - Deterministic tests and compiling documentation examples.
 
-## 9. Decisions to confirm before acceptance
+## 9. Accepted design decisions
 
-This review candidate makes concrete recommendations so the contract can be evaluated as a whole:
+The maintainer has accepted the following recommendations for the prototype:
 
 - Equality: PartialEq when available; always-changed semantics otherwise.
 - Effects: eager initial execution; dynamic dependencies replace the prior set after each run.
@@ -100,8 +100,8 @@ This review candidate makes concrete recommendations so the contract can be eval
 - Panics: restore invariants, attempt remaining cleanup, then propagate under unwind builds.
 - Threading: non-Send/non-Sync single-thread runtime; server use requires runtime isolation.
 
-These are proposed design decisions, not implementation evidence. If a reviewer rejects a recommendation, update this document and its tests before implementation relies on it.
+These decisions define the Phase 1.1 contract. Implementation details may evolve only if they preserve these observable guarantees or a documented contract revision is reviewed before relying on changed behavior.
 
 ## Acceptance gate
 
-Phase 1.1 is complete only after this contract is reviewed, each recommendation above is accepted or changed with rationale, and all five Phase 1.1 roadmap items are checked based on the accepted contract. The implementation must not be marked complete by this document alone.
+Phase 1.1 semantics are accepted. The five Phase 1.1 roadmap items may be marked complete because the contract is now explicit and accepted. This does not complete Phase 1.2 implementation or later correctness/performance gates. The implementation must not be marked complete by this document alone.
