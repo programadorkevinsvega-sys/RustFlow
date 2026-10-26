@@ -9,7 +9,7 @@ use rustflow_view::{
     AttributeValue, ComponentNode, DynamicChild, Element, EventBinding, EventHandler, EventPayload,
     KeyedList, PropertyValue, Renderer, View, ViewError,
 };
-use wasm_bindgen::{closure::Closure, JsCast, JsValue};
+use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use web_sys::{
     Comment, Document, Element as DomElement, Event, EventTarget, HtmlInputElement,
     HtmlSelectElement, HtmlTextAreaElement, Node,
