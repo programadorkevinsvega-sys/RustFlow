@@ -5,7 +5,6 @@
 //! lifecycle contract before emitting markup or mutating a DOM.
 
 use std::{
-    cell::RefCell,
     collections::HashSet,
     fmt,
     rc::Rc,
