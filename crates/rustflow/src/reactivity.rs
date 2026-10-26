@@ -59,7 +59,9 @@ impl fmt::Display for RuntimeError {
             Self::InvalidEffect => write!(f, "effect is invalid or disposed"),
             Self::InvalidScope => write!(f, "owner scope is invalid"),
             Self::DisposedScope => write!(f, "owner scope is disposed"),
-            Self::NoActiveOwner => write!(f, "this operation requires an active component owner scope"),
+            Self::NoActiveOwner => {
+                write!(f, "this operation requires an active component owner scope")
+            }
             Self::CycleDetected { limit } => write!(
                 f,
                 "reactive cycle detected: scheduler exceeded {limit} effect executions in one flush; pending work was cleared"
@@ -104,7 +106,10 @@ impl OwnerContextGuard {
             active.set(runtime_id(runtime));
             previous
         });
-        Self { previous_scope, previous_runtime_id }
+        Self {
+            previous_scope,
+            previous_runtime_id,
+        }
     }
 }
 impl Drop for OwnerContextGuard {
@@ -129,14 +134,20 @@ fn current_owner_for_runtime(runtime: &RuntimeRef) -> Option<ScopeId> {
 /// Execute a closure with a temporary, explicitly owned component context.
 /// The context is restored even if the callback panics; it is not a global runtime singleton.
 pub fn with_owner_scope<R>(scope: &Scope, callback: impl FnOnce() -> R) -> Result<R, RuntimeError> {
-    let runtime = scope.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+    let runtime = scope
+        .runtime
+        .upgrade()
+        .ok_or(RuntimeError::RuntimeDisposed)?;
     check_runtime_context(&runtime)?;
     {
         let inner = runtime.borrow();
         if inner.disposed {
             return Err(RuntimeError::RuntimeDisposed);
         }
-        let owner = inner.scopes.get(&scope.id).ok_or(RuntimeError::InvalidScope)?;
+        let owner = inner
+            .scopes
+            .get(&scope.id)
+            .ok_or(RuntimeError::InvalidScope)?;
         if owner.disposed {
             return Err(RuntimeError::DisposedScope);
         }
@@ -156,7 +167,8 @@ pub fn try_signal<T: Clone + PartialEq + 'static>(value: T) -> Result<Signal<T>,
 /// Create an owner-bound signal during component setup.
 /// Calling this outside an active component owner panics with a diagnostic.
 pub fn signal<T: Clone + PartialEq + 'static>(value: T) -> Signal<T> {
-    try_signal(value).unwrap_or_else(|error| panic!("signal requires an active component owner scope: {error}"))
+    try_signal(value)
+        .unwrap_or_else(|error| panic!("signal requires an active component owner scope: {error}"))
 }
 
 /// Familiar component-state helper, backed by signals rather than positional hook cells.
@@ -169,7 +181,9 @@ pub fn use_effect(callback: impl FnMut() + 'static) -> Effect {
     let scope = ACTIVE_OWNER_SCOPE
         .with(|active| active.borrow().clone())
         .unwrap_or_else(|| panic!("use_effect requires an active component owner scope"));
-    scope.effect(callback).unwrap_or_else(|error| panic!("{error}"))
+    scope
+        .effect(callback)
+        .unwrap_or_else(|error| panic!("{error}"))
 }
 
 /// Register cleanup against the current effect run, or against its owner scope during setup.
@@ -177,14 +191,24 @@ pub fn on_cleanup(callback: impl FnOnce() + 'static) -> Result<(), RuntimeError>
     let scope = ACTIVE_OWNER_SCOPE
         .with(|active| active.borrow().clone())
         .ok_or(RuntimeError::NoActiveOwner)?;
-    let runtime = scope.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+    let runtime = scope
+        .runtime
+        .upgrade()
+        .ok_or(RuntimeError::RuntimeDisposed)?;
     let active_effect = { runtime.borrow().active_effect };
     match active_effect {
-        Some(effect_id) if runtime.borrow().effects.get(&effect_id).is_some_and(|effect| effect.owner == scope.id) => scope.on_effect_cleanup(callback),
+        Some(effect_id)
+            if runtime
+                .borrow()
+                .effects
+                .get(&effect_id)
+                .is_some_and(|effect| effect.owner == scope.id) =>
+        {
+            scope.on_effect_cleanup(callback)
+        }
         _ => scope.on_cleanup(callback),
     }
 }
-
 
 struct SignalNode {
     owner: ScopeId,
@@ -450,8 +474,14 @@ impl<T: Clone + 'static> Signal<T> {
             if inner.disposed {
                 return Err(RuntimeError::RuntimeDisposed);
             }
-            let signal = inner.signals.get(&self.id).ok_or(RuntimeError::InvalidSignal)?;
-            let owner = inner.scopes.get(&signal.owner).ok_or(RuntimeError::InvalidSignal)?;
+            let signal = inner
+                .signals
+                .get(&self.id)
+                .ok_or(RuntimeError::InvalidSignal)?;
+            let owner = inner
+                .scopes
+                .get(&signal.owner)
+                .ok_or(RuntimeError::InvalidSignal)?;
             if owner.disposed {
                 return Err(RuntimeError::DisposedScope);
             }
@@ -469,7 +499,8 @@ impl<T: Clone + 'static> Signal<T> {
     /// Mutate a cloned value and publish it as one write. If the callback panics,
     /// the signal retains its original value.
     pub fn update(&self, callback: impl FnOnce(&mut T)) {
-        self.try_update(callback).unwrap_or_else(|error| panic!("{error}"));
+        self.try_update(callback)
+            .unwrap_or_else(|error| panic!("{error}"));
     }
 
     /// Fallible counterpart of update. Returns true when dependent effects were notified.
@@ -571,15 +602,32 @@ impl Scope {
     }
 
     /// Create a signal owned by this scope. The handle becomes invalid on disposal.
-    pub fn signal<T: Clone + PartialEq + 'static>(&self, value: T) -> Result<Signal<T>, RuntimeError> {
-        let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+    pub fn signal<T: Clone + PartialEq + 'static>(
+        &self,
+        value: T,
+    ) -> Result<Signal<T>, RuntimeError> {
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
         check_runtime_context(&runtime)?;
-        create_signal_for_scope(&runtime, self.id, value, Some(Rc::new(|old, new| old == new)))
+        create_signal_for_scope(
+            &runtime,
+            self.id,
+            value,
+            Some(Rc::new(|old, new| old == new)),
+        )
     }
 
     /// Create an owner-bound signal that always notifies on writes.
-    pub fn signal_always_changed<T: Clone + 'static>(&self, value: T) -> Result<Signal<T>, RuntimeError> {
-        let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+    pub fn signal_always_changed<T: Clone + 'static>(
+        &self,
+        value: T,
+    ) -> Result<Signal<T>, RuntimeError> {
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
         check_runtime_context(&runtime)?;
         create_signal_for_scope(&runtime, self.id, value, None)
     }
@@ -618,14 +666,20 @@ impl Scope {
     /// Register cleanup for the current effect run. It executes before that effect reruns
     /// and at disposal if the effect has not rerun.
     pub fn on_effect_cleanup(&self, callback: impl FnOnce() + 'static) -> Result<(), RuntimeError> {
-        let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
         check_runtime_context(&runtime)?;
         let mut inner = runtime.borrow_mut();
         if inner.disposed {
             return Err(RuntimeError::RuntimeDisposed);
         }
         let effect_id = inner.active_effect.ok_or(RuntimeError::InvalidEffect)?;
-        let effect = inner.effects.get_mut(&effect_id).ok_or(RuntimeError::InvalidEffect)?;
+        let effect = inner
+            .effects
+            .get_mut(&effect_id)
+            .ok_or(RuntimeError::InvalidEffect)?;
         if effect.owner != self.id {
             return Err(RuntimeError::InvalidEffect);
         }
@@ -668,7 +722,12 @@ fn create_signal_for_scope<T: Clone + 'static>(
                 subscribers: BTreeSet::new(),
             },
         );
-        inner.scopes.get_mut(&owner).expect("owner checked").signals.push(id);
+        inner
+            .scopes
+            .get_mut(&owner)
+            .expect("owner checked")
+            .signals
+            .push(id);
         id
     };
     Ok(Signal {
@@ -1523,13 +1582,19 @@ mod tests {
         let owner = runtime.root_scope().child().unwrap();
         let scoped_signal = with_owner_scope(&owner, || signal(21_i32)).unwrap();
         assert_eq!(scoped_signal.get(), 21);
-        assert!(matches!(try_signal(1_i32), Err(RuntimeError::NoActiveOwner)));
+        assert!(matches!(
+            try_signal(1_i32),
+            Err(RuntimeError::NoActiveOwner)
+        ));
 
         let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _ = with_owner_scope(&owner, || panic!("intentional context restoration test"));
         }));
         assert!(panic_result.is_err());
-        assert!(matches!(try_signal(2_i32), Err(RuntimeError::NoActiveOwner)));
+        assert!(matches!(
+            try_signal(2_i32),
+            Err(RuntimeError::NoActiveOwner)
+        ));
         owner.dispose().unwrap();
     }
 
@@ -1557,5 +1622,4 @@ mod tests {
         owner.dispose().unwrap();
         assert_eq!(*cleanup_values.borrow(), vec![0, 1, 2]);
     }
-
 }
