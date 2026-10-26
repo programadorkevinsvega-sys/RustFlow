@@ -49,9 +49,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         html_view(&page)
     })?;
 
-    app.route_named("health", HttpMethod::Get, "/api/health", |_request: Request| async {
-        Response::json(&HealthResponse { status: "ok" })
-    })?;
+    app.route_named(
+        "health",
+        HttpMethod::Get,
+        "/api/health",
+        |_request: Request| async { Response::json(&HealthResponse { status: "ok" }) },
+    )?;
 
     app.get("/users/{id}", |request: Request| async move {
         let query = request.query::<UserQuery>()?;
