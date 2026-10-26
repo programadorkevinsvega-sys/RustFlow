@@ -506,7 +506,7 @@ impl Parser {
         if matches!(kind, AttributeKind::Event | AttributeKind::Key) && value.is_none() {
             return Err(self.error("this attribute requires a value expression in braces", span));
         }
-        Ok(Attribute { name, kind, value } )
+        Ok(Attribute { name, kind, value })
     }
 
     fn take_value(&mut self) -> Result<String, ParseError> {
