@@ -30,7 +30,7 @@ Esta comprobación no sanitiza URL ni vuelve seguro el árbol como HTML. No inse
 
 ## Componentes y ciclo de vida
 
-Una ComponentDefinition ejecuta setup una vez por instancia y devuelve una función pura de renderizado. La macro rustflow::view! construye árboles a partir de una sintaxis HTML-like restringida. ComponentInstance conserva un scope reactivo, permite recalcular la vista mediante update y libera los efectos y callbacks de limpieza con unmount. Los errores de actualización conservan la vista anterior. Las callbacks de renderizado deben limitarse a producir una nueva vista; los efectos y recursos se registran durante setup mediante ComponentContext.
+Una ComponentDefinition ejecuta setup una vez por instancia y devuelve una función pura de renderizado. ComponentRegistry resuelve los descriptores de componente a definiciones registradas y rechaza nombres duplicados o desconocidos. La macro rustflow::view! construye árboles a partir de una sintaxis HTML-like restringida. ComponentInstance conserva un scope reactivo, permite recalcular la vista mediante update y libera los efectos y callbacks de limpieza con unmount. Los errores de actualización conservan la vista anterior. Las callbacks de renderizado deben limitarse a producir una nueva vista; los efectos y recursos se registran durante setup mediante ComponentContext.
 
 La API genera una vista de reemplazo; no manipula el DOM por sí misma. La fase de navegador debe conectar su Renderer y probar el montaje, la actualización y el desmontaje reales.
 
@@ -44,4 +44,4 @@ El macro acepta etiquetas anidadas, cadenas/números o expresiones entre llaves,
 
 ## Lo que sigue pendiente
 
-La macro declarativa view!, el renderer del navegador, los tests E2E, SSR, la hidratación y la CLI pertenecen a entregables separados del roadmap. La API de vistas y componentes es todavía pre-1.0 y no está lista para producción.
+El renderer del navegador y los tests E2E corresponden a la fase 3; el servidor/routing, SSR, la hidratación y la CLI siguen en fases posteriores. El registro permite resolver un descriptor de componente individual, pero el recorrido recursivo del árbol y la reconciliación de componentes anidados se implementarán en el renderer. La API de vistas y componentes es todavía pre-1.0 y no está lista para producción.
