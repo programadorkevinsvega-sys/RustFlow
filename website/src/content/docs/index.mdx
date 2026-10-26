@@ -21,17 +21,15 @@ RustFlow busca combinar componentes de interfaz reactivos con una experiencia fu
 
 - **Reactividad en Rust:** señales, efectos, dependencias, batching y scopes de limpieza.
 - **Vistas y componentes:** construir árboles tipados y explorar el ciclo de vida del modelo de componentes.
-- **Servidor HTTP experimental:** ejecutar un ejemplo con rutas, parámetros de ruta y query, respuestas JSON, middleware global, límites y timeouts.
+- **Servidor HTTP experimental:** ejecutar un ejemplo con rutas, grupos, JSON, middleware global/de grupo/por ruta, TLS local, proxies de confianza, límites y timeouts.
 - **HTML seguro desde vistas:** serializar fragmentos HTML o generar documentos completos con `html_document`; configurar páginas HTML escapadas para estados de error 4xx/5xx.
 - **Verificación reproducible:** consultar los tests, incluidos los que envían solicitudes por TCP local, y los checks del repositorio.
 
 ## ¿Qué sigue pendiente?
 
-- Un bundle de navegador listo para cargar, actualizaciones DOM dirigidas, renderizado condicional y reconciliación keyed.
-- Ejemplos completos de navegador (como contador y todo), pruebas E2E y navegación cliente.
 - Hidratación, composición avanzada de layouts y un flujo SSR full-stack completo.
 - CLI de RustFlow, scaffolding de proyectos, sesiones, autenticación y persistencia integrada.
-- Pruebas de despliegue y transporte para TLS/reverse proxy, concurrencia bajo carga y abortos de cliente.
+- Recetas de despliegue con reverse proxy, rate limiting y el threat model de la Fase 9.
 
 El routing HTTP y la generación de documentos HTML existen como APIs de prototipo; eso **no** significa que exista ya un framework completo, una plataforma de autenticación/persistencia o una instalación de producción.
 

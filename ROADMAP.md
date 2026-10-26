@@ -171,6 +171,8 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 
 ## Phase 4 — HTTP server and routing
 
+**Estado: criterios de fase implementados y documentados.** El cierre cubre el adaptador HTTP de prototipo (grupos, middleware por ruta, TLS local, proxies de confianza, abortos, entrada malformada y concurrencia acotada). No declara listo el despliegue de producción ni las fases 5–11.
+
 ### 4.1 HTTP foundation
 - [x] Integrate Axum, Tokio, and Tower behind the RustFlow-owned `rustflow-server` adapter.
 - [x] Define RustFlow-owned request, response, HTTP error, method, server configuration, and application types. State is captured explicitly by route closures; a separate state container remains optional future work.
@@ -185,24 +187,24 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Map handler errors safely and provide 404/405 routing behavior.
 - [x] Add in-memory dispatch tests, unique named routes, and deterministic route introspection.
 - [x] Add representative real-TCP integration tests for HTML/JSON routes, path/query decoding, 400/404/405/413/504 responses, request-ID correlation, custom error pages, body limits/timeouts, and graceful shutdown (`crates/rustflow-server/tests/http_integration.rs`).
-- [ ] Add full route-group support; route groups are not part of the current server API.
-- [ ] Expand network/deployment coverage for TLS/reverse-proxy trust, client aborts, malformed transport input, and concurrent/load behavior. The current local TCP suite does not cover these cases.
+- [x] Add full route-group support (`Application::group`, nested prefixes, group name prefixes, and inherited group middleware).
+- [x] Expand network/deployment coverage for TLS/reverse-proxy trust, client aborts, malformed transport input, and concurrent/load behavior (`crates/rustflow-server/tests/http_integration.rs`).
 
 ### 4.3 Middleware and lifecycle
-- [x] Implement global ordered async middleware composition with a continuation that can wrap or short-circuit handlers. Route-scoped middleware remains future work.
+- [x] Implement global ordered async middleware composition with a continuation that can wrap or short-circuit handlers. Route-scoped middleware is registered with `route_middleware` and group middleware is inherited by `Application::group`.
 - [x] Validate or generate a request ID, expose it to handlers, echo it in `x-request-id` on success and error responses, and emit structured `tracing` spans/events with method, route template, request ID, and status. Subscriber/export configuration stays application-owned.
 - [x] Provide graceful-shutdown APIs driven by an injected future at the composition root. Wiring OS signals into that future remains the caller's responsibility.
 - [x] Validate route templates, reject equivalent parameter-only patterns, and clamp body/timeout/concurrency configuration to safe minimums.
-- [x] Document explicit closure-captured application state; production configuration and dependency-wiring validation remain pending.
+- [x] Document explicit closure-captured application state. `ServerConfig::production`, trusted-proxy policy, `require_https`, and `validate`/`validate_tls` reject plaintext production binds that have no TLS listener and no trusted proxy.
 
 ### 4.4 Safe server rendering
 - [x] Add rustflow-ssr to serialize supported view nodes into HTML fragments independently of an HTTP framework.
 - [x] Escape text and attribute values by default; apply a scheme allowlist to URL attributes and reject multi-URL attributes until parsed.
 - [x] Add safe full-document responses from structural views (`html_document`) and configurable escaped HTML error pages for selected 4xx/5xx statuses. Layout composition remains an application-level concern.
 - [x] Test escaping, rejected/void elements, URL policy, component cleanup, keyed order, nesting limits, full-document charset/title/body escaping, configurable 404/405 pages, route dispatch, body limits, handler timeouts, middleware, named-route introspection, and representative TCP requests covering status/content-type/request-ID headers, error cases, body limits, timeouts, and graceful shutdown.
-The broader transport/deployment tests listed under Phase 4.2 remain pending and are not implied by this rendering/test coverage.
+Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconstruction, client abort, malformed input, and bounded concurrency. It does not replace a production threat model, reverse-proxy deployment recipe, or Phase 9 security review.
 
-**Exit gate:** an executable example server handles multiple routes, renders safe HTML, and returns JSON. Automated coverage includes in-memory dispatch and representative local-TCP integration tests. Wider transport/deployment coverage remains open as listed above; this prototype is not production-ready.
+**Exit gate:** an executable example server handles multiple routes, renders safe HTML, and returns JSON. Automated coverage includes in-memory dispatch, route groups, route-scoped middleware, local TLS, trusted-proxy policy, client abort, malformed input, and bounded concurrency. This prototype is not production-ready: sessions, auth, CSRF, rate limiting, and full-stack SSR/hydration remain later phases.
 
 ## Phase 5 — SSR, hydration, and full-stack data flow
 

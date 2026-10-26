@@ -49,12 +49,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
         html_document("RustFlow server", "es", &page)
     })?;
 
-    app.route_named(
-        "health",
-        HttpMethod::Get,
-        "/api/health",
-        |_request: Request| async { Response::json(&HealthResponse { status: "ok" }) },
-    )?;
+    app.group("/api", |api| {
+        api.name_prefix("api")?;
+        api.route_named(
+            "health",
+            HttpMethod::Get,
+            "/health",
+            |_request: Request| async { Response::json(&HealthResponse { status: "ok" }) },
+        )?;
+        api.post("/echo", |request: Request| async move {
+            let payload = request.json::<EchoPayload>()?;
+            Response::json(&payload)
+        })?;
+        Ok(())
+    })?;
 
     app.get("/users/{id}", |request: Request| async move {
         let query = request.query::<UserQuery>()?;
@@ -63,11 +71,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             detailed: query.detailed.unwrap_or(false),
         };
         Response::json(&response)
-    })?;
-
-    app.post("/api/echo", |request: Request| async move {
-        let payload = request.json::<EchoPayload>()?;
-        Response::json(&payload)
     })?;
 
     for route in app.routes() {
