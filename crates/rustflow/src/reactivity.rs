@@ -25,6 +25,7 @@ type Cleanup = Box<dyn FnOnce()>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeError {
     RuntimeDisposed,
+    CrossRuntimeAccess,
     InvalidSignal,
     InvalidEffect,
     InvalidScope,
@@ -36,6 +37,7 @@ impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::RuntimeDisposed => write!(f, "reactive runtime is disposed"),
+            Self::CrossRuntimeAccess => write!(f, "signal or scope belongs to a different active runtime"),
             Self::InvalidSignal => write!(f, "signal does not belong to a live runtime"),
             Self::InvalidEffect => write!(f, "effect is invalid or disposed"),
             Self::InvalidScope => write!(f, "owner scope is invalid"),
@@ -49,6 +51,22 @@ impl fmt::Display for RuntimeError {
 }
 
 impl std::error::Error for RuntimeError {}
+
+thread_local! {
+    static ACTIVE_RUNTIME_ID: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn runtime_id(runtime: &RuntimeRef) -> usize {
+    Rc::as_ptr(runtime) as usize
+}
+
+fn check_runtime_context(runtime: &RuntimeRef) -> Result<(), RuntimeError> {
+    let current = ACTIVE_RUNTIME_ID.with(std::cell::Cell::get);
+    if current != 0 && current != runtime_id(runtime) {
+        return Err(RuntimeError::CrossRuntimeAccess);
+    }
+    Ok(())
+}
 
 struct SignalNode {
     subscribers: BTreeSet<EffectId>,
@@ -303,6 +321,7 @@ impl<T: Clone + 'static> Signal<T> {
     /// Read the value and track this signal in the currently executing effect.
     pub fn try_get(&self) -> Result<T, RuntimeError> {
         let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        check_runtime_context(&runtime)?;
         {
             let inner = runtime.borrow();
             if inner.disposed {
@@ -326,6 +345,7 @@ impl<T: Clone + 'static> Signal<T> {
     /// equality-suppressed writes. Effects are flushed after the write completes.
     pub fn try_set(&self, value: T) -> Result<bool, RuntimeError> {
         let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        check_runtime_context(&runtime)?;
         {
             let inner = runtime.borrow();
             if inner.disposed {
@@ -531,7 +551,13 @@ fn run_effect(runtime: &RuntimeRef, effect_id: EffectId) {
         (callback, owner, previous_effect, previous_scope)
     };
     let _ = owner;
+    let previous_runtime_id = ACTIVE_RUNTIME_ID.with(|active| {
+        let previous = active.get();
+        active.set(runtime_id(runtime));
+        previous
+    });
     let result = catch_unwind(AssertUnwindSafe(|| (callback.borrow_mut())()));
+    ACTIVE_RUNTIME_ID.with(|active| active.set(previous_runtime_id));
     {
         let mut inner = runtime.borrow_mut();
         inner.active_effect = previous_effect;
@@ -772,6 +798,17 @@ mod tests {
         let independent = runtime.signal_eq(0).unwrap();
         independent.set(1);
         assert_eq!(independent.get(), 1);
+    }
+
+
+    #[test]
+    fn cross_runtime_signal_access_is_diagnosed() {
+        let first = Runtime::new();
+        let second = Runtime::new();
+        let foreign = first.signal_eq(1).unwrap();
+        let captured = foreign.clone();
+        let effect = second.effect(move || { let _ = captured.try_get(); });
+        assert_eq!(effect.err().unwrap(), RuntimeError::CrossRuntimeAccess);
     }
 
     #[test]
