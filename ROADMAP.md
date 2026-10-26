@@ -128,7 +128,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 
 ## Phase 3 — Browser runtime and interactive MVP
 
-**Estado: criterios técnicos implementados en la PR apilada #26 sobre #25. La CI del HEAD exacto debe estar verde y ambas PR deben revisarse/integrarse antes de declarar cerrada la Fase 3 o iniciar la siguiente.**
+**Estado: CERRADA en `main` el 2026-10-26.** Los criterios de aceptación de la Fase 3 están implementados y verificados. La PR #26 se integró primero en la rama de la PR #25; después, la PR #25 se fusionó en `main`. La CI posterior al merge pasó los siete checks en el commit `43f5fb9c12996ea600b47930553a9f91dc6055e9`, incluidos Rust estable/1.85, compilación WASM, E2E de navegador, presupuesto del bundle, documentación y gobernanza. Este cierre cubre la Fase 3; no declara completas las fases posteriores ni las APIs que siguen marcadas como pendientes.
 
 ### 3.1 API pública de autoría
 
@@ -167,7 +167,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Medir WASM raw y gzip y aplicar un presupuesto raw de 1.5 MiB.
 - [x] Documentar configuración local, compilación release/debug, source maps de los assets JS y troubleshooting básico.
 
-**Estado de integración:** los dos criterios técnicos anteriores están implementados y tienen regresiones de props/estado/identidad, sustitución/cleanup y cambios estructurales en la PR apilada #26. La aceptación de esta rama requiere CI verde en su HEAD exacto. La Fase 3 no se considera cerrada en `main` hasta integrar #26 en #25 y revisar/cerrar #25; no empezar la Fase 4 antes.
+**Cierre verificado:** la Fase 3 está cerrada en `main` desde el 2026-10-26. La PR #26 (`feat/phase-3: preserve component identity`) se fusionó en la rama `feat/phase-3-browser-runtime`, y luego la PR #25 se fusionó en `main`. Los siete checks post-merge pasaron en `43f5fb9c12996ea600b47930553a9f91dc6055e9`. La cobertura incluye actualización de props sin reiniciar el estado local, preservación de identidad DOM, listas keyed, sustitución y limpieza de instancias, cambios estructurales, Counter/todo, E2E Chromium y presupuesto WASM. `use_memo`, `use_ref` y `use_context` siguen pendientes; SSR/hidratación y otros requisitos de fases posteriores permanecen fuera del alcance de este cierre.
 
 ## Phase 4 — HTTP server and routing
 
