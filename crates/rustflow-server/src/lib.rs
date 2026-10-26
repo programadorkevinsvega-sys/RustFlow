@@ -65,19 +65,6 @@ impl HttpMethod {
         }
     }
 
-    fn as_http_method(self) -> Method {
-        match self {
-            Self::Get => Method::GET,
-            Self::Post => Method::POST,
-            Self::Put => Method::PUT,
-            Self::Patch => Method::PATCH,
-            Self::Delete => Method::DELETE,
-            Self::Head => Method::HEAD,
-            Self::Options => Method::OPTIONS,
-            Self::Trace => Method::TRACE,
-            Self::Connect => Method::CONNECT,
-        }
-    }
 }
 
 /// An incoming request after transport-level parsing and body-size enforcement.
@@ -657,7 +644,7 @@ impl Application {
         let methods = self
             .routes
             .remove(&path)
-            .unwrap_or_else(MethodRouter::new)
+            .unwrap_or_default()
             .on(method.filter(), adapter);
         self.routes.insert(path.clone(), methods);
         self.registered.insert((path.clone(), method));
@@ -797,9 +784,7 @@ fn is_safe_redirect_location(location: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Application, HttpError, HttpMethod, Request, Response, ServerConfig, ServerError, html_view,
-    };
+    use super::{Application, Response, ServerConfig, ServerError, View, html_view};
     use axum::{
         body::{Body, to_bytes},
         http::{Request as AxumHttpRequest, StatusCode},
@@ -975,7 +960,5 @@ mod tests {
         let unsafe_view =
             View::element("script", [View::text("alert(1)")]).expect("structural node");
         assert!(html_view(&unsafe_view).is_err());
-        let _ = HttpError::not_found("missing");
-        let _ = HttpMethod::Get;
     }
 }
