@@ -7,7 +7,7 @@ description: API actual de componentes RustFlow, vistas tipadas y runtime de nav
 
 ## API disponible hoy
 
-La reactividad sigue basada en señales ligadas a scopes, no en celdas indexadas por el orden de llamada de hooks. signal, use_state y use_effect requieren un scope propietario activo durante el setup de un componente. Signal<T> proporciona get(), set(value) y update(|value| ...); al disponer el scope, la señal deja de ser válida. Los efectos se limpian antes de cada rerun y al disponer su propietario.
+La reactividad sigue basada en señales ligadas a scopes, no en celdas indexadas por el orden de llamada de hooks. signal, use_state y use_effect requieren un scope propietario activo durante el setup de un componente. Signal proporciona get(), set(value) y update(|value| ...); al disponer el scope, la señal deja de ser válida. Los efectos se limpian antes de cada rerun y al disponer su propietario.
 
 Un subconjunto funcional de la API es:
 
@@ -38,20 +38,20 @@ La macro genera la definición del componente y una función de registro. Para r
 
 El ejemplo de referencia completo —incluido el montaje DOM, el bundle WASM y la lista de tareas— está en [examples/browser](https://github.com/programadorkevinsvega-sys/RustFlow/tree/main/examples/browser).
 
-La interpolación de un identificador que contiene un Signal<T>, como {count}, crea una región dinámica reactiva automáticamente. Las expresiones arbitrarias que lean señales no se convierten automáticamente en efectos; usa @dynamic { ... } para esas expresiones mientras el compilador no pueda inferirlas con seguridad.
+La interpolación de un identificador que contiene una señal crea una región dinámica reactiva automáticamente. Las expresiones arbitrarias que lean señales no se convierten automáticamente en efectos; usa la sintaxis explícita de región dinámica con @dynamic para esas expresiones mientras el compilador no pueda inferirlas con seguridad.
 
 ### Límites actuales de #[component]
 
 La macro admite parámetros con nombres simples y tipos explícitos. El conjunto implementado es String, bool, i32, i64, u32, usize, f64 y EventHandler (incluido el tipo cualificado rustflow_view::EventHandler). Rechaza props faltantes, desconocidos o de tipo incorrecto con errores durante la construcción/montaje. Genera register_nombre(&mut registry) para registro explícito; no es una macro de derivación genérica de structs.
 
-Los callbacks de componentes se expresan como props de evento, por ejemplo <CallbackReceiver on:increment={...} />; se almacenan como un callback tipado y no como un atributo HTML on*.
+Los callbacks de componentes se expresan como props tipados usando la convención on:increment; se almacenan como un callback tipado y no como un atributo HTML on*.
 
 ## Vocabulario actual y planeado
 
 | Concepto | API RustFlow | Estado |
 | --- | --- | --- |
 | Señal reactiva | signal(value), Signal::get/set/update | Disponible dentro de un scope propietario |
-| Estado local familiar | use_state(initial) | Disponible; devuelve Signal<T> |
+| Estado local familiar | use_state(initial) | Disponible; devuelve Signal |
 | Efecto | use_effect(...) | Disponible; dependencias detectadas leyendo señales |
 | Cálculo memoizado | use_memo | Planeado |
 | Referencia estable | use_ref | Planeado |
