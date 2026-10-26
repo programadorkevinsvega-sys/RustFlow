@@ -76,6 +76,25 @@ thread_local! {
     static ACTIVE_RUNTIME_ID: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static ACTIVE_OWNER_SCOPE: RefCell<Option<Scope>> = const { RefCell::new(None) };
 }
+thread_local! {
+    static TRACKING_PAUSED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+struct UntrackGuard(bool);
+impl Drop for UntrackGuard {
+    fn drop(&mut self) {
+        TRACKING_PAUSED.with(|paused| paused.set(self.0));
+    }
+}
+
+/// Run a closure without collecting signal dependencies into the currently active effect.
+/// The previous tracking state is restored even if the closure panics.
+pub fn untrack<R>(callback: impl FnOnce() -> R) -> R {
+    let previous = TRACKING_PAUSED.with(|paused| paused.replace(true));
+    let _guard = UntrackGuard(previous);
+    callback()
+}
+
 
 fn runtime_id(runtime: &RuntimeRef) -> usize {
     Rc::as_ptr(runtime) as usize
@@ -828,6 +847,9 @@ fn create_effect(
 }
 
 fn track_read(runtime: &RuntimeRef, signal_id: SignalId) -> Result<(), RuntimeError> {
+    if TRACKING_PAUSED.with(std::cell::Cell::get) {
+        return Ok(());
+    }
     let mut inner = runtime.borrow_mut();
     if inner.disposed {
         return Err(RuntimeError::RuntimeDisposed);
