@@ -4,7 +4,7 @@ The `rustflow-server` crate is the HTTP adapter and composition boundary. It wra
 
 ## Ejecutar el ejemplo
 
-Ejecuta `cargo run -p rustflow-server --example basic`. El servidor de ejemplo escucha en `127.0.0.1:3000` y expone `/`, `/api/health`, `/users/{id}?detailed=true` y `POST /api/echo`. Añade una cabecera mediante middleware global, registra la ruta de salud con el nombre `health`, imprime la tabla de rutas y usa `Ctrl+C` como future de apagado graceful.
+Ejecuta `cargo run -p rustflow-server --example basic`. El servidor de ejemplo escucha en `127.0.0.1:3000` y expone `/`, `/api/health`, `/users/{id}?detailed=true` y `POST /api/echo`. Añade una cabecera mediante middleware global, agrupa las rutas `/api/*` con el prefijo de nombre `api`, imprime la tabla de rutas y usa `Ctrl+C` como future de apagado graceful.
 
 ## Route example
 
@@ -21,6 +21,23 @@ app.get("/users/{id}", |request: Request| async move {
 # }
 ```
 
+Route groups share a prefix and optional middleware:
+
+```rust
+use rustflow_server::{Application, Middleware, Request, Response};
+
+# fn example(app: &mut Application) -> Result<(), rustflow_server::ServerError> {
+app.group("/api", |api| {
+    api.middleware(Middleware::new(|request, next| async move {
+        next.run(request).await
+    }));
+    api.get("/health", |_request: Request| async { Ok(Response::text("ok")) })?;
+    Ok(())
+})?;
+# Ok(())
+# }
+```
+
 Handlers are async closures that return `Result<Response, HttpError>`. Route handlers can capture shared state explicitly; this prototype intentionally has no hidden global service locator. Path parameters are decoded from the route template. Query strings can be decoded with `Request::query::<T>()`, and JSON bodies with `Request::json::<T>()`; invalid inputs produce generic 400 responses.
 
 ## Responses
@@ -31,11 +48,21 @@ Use `Response::text`, `Response::html`, `Response::json`, `Response::redirect`, 
 
 Defaults cap buffered request bodies at 1 MiB, allow up to 256 concurrent requests, and time out body reads/handlers after 30 seconds. These are initial defaults, not a substitute for reverse-proxy, TLS, deployment, rate-limit, or application-specific protections. Use `Application::with_config(ServerConfig::new()...)` to change them.
 
-## Middleware, route metadata, and graceful shutdown
+## Middleware, route groups, and graceful shutdown
 
-Register middleware with `app.middleware(Middleware::new(|request, next| async move { /* before */ let response = next.run(request).await?; /* after */ Ok(response) }))`. The stack is global and ordered; middleware may short-circuit without calling `next.run`. Register a route with `route_named("users.show", HttpMethod::Get, "/users/{id}", handler)` and inspect it with `app.routes()`.
+Register global middleware with `app.middleware(Middleware::new(|request, next| async move { /* before */ let response = next.run(request).await?; /* after */ Ok(response) }))`. The stack is ordered; middleware may short-circuit without calling `next.run`.
+
+Scope routes with `app.group("/api", |api| { api.middleware(...); api.get("/health", handler)?; Ok(()) })`. Nested groups inherit the parent prefix and middleware. `name_prefix("api")` joins named routes as `api.health`. Attach extra middleware to one registered method/path with `route_middleware(HttpMethod::Get, "/open", middleware)`. Execution order is global, then group, then route-scoped.
+
+Register a route with `route_named("users.show", HttpMethod::Get, "/users/{id}", handler)` and inspect it with `app.routes()`.
 
 For shutdown, call `serve_with_shutdown(address, shutdown_future)` or `serve_listener_with_shutdown(listener, shutdown_future)`. The application composition root owns the trigger (for example, an OS signal future); the adapter does not silently install a process-wide signal handler.
+
+## TLS, trusted proxies, and production wiring
+
+`ServerConfig::production()` requires HTTPS after client-address resolution. Plaintext `serve` is accepted in production only when `with_trusted_proxies` lists the reverse-proxy networks that may set `Forwarded` / `X-Forwarded-For` / `X-Forwarded-Proto`. Direct client addresses with HTTPS use `serve_tls` / `serve_tls_with_shutdown` and PEM material via `tls_server_config_from_pem`. Call `validate()` before a plaintext bind and `validate_tls()` before a TLS bind.
+
+Forwarded headers are ignored unless the TCP peer is in the trusted-proxy set. `Request::client_ip()` and `Request::is_https()` expose the reconstructed identity. Spoofed headers from untrusted peers do not change the client IP or scheme. Missing HTTPS when required returns 400 with a generic public message.
 
 ## Request IDs and tracing
 
@@ -64,4 +91,6 @@ Only 4xx/5xx statuses can be configured. Unconfigured statuses keep their normal
 
 ## Boundaries and limitations
 
-Routing supports conventional methods and Axum path templates such as `/users/{id}`. Duplicate method/path registration and equivalent parameter-only route shapes are rejected before router construction. Unknown paths return 404, unsupported methods return 405, oversized bodies return 413, and handler/body timeouts return 504. The adapter now provides ordered global async middleware through `Middleware::new` and `Next::run`, uniquely named routes with `route_named`, deterministic metadata from `Application::routes()`, `serve_with_shutdown`/`serve_listener_with_shutdown`, safe full HTML documents, and configurable escaped 4xx/5xx error pages. It still lacks route-scoped middleware, route groups, typed extraction traits, built-in subscriber/export configuration, automatic OS-signal wiring, TLS/reverse-proxy trust handling, client-abort and malformed-transport tests, concurrency/load testing, and database/session integrations. Representative real-TCP tests cover ordinary HTML/JSON routes, query/path parameters, custom 404/405 pages, 413 body limits, 504 timeouts, request-ID headers, and graceful shutdown; they do not constitute a full transport or deployment-security suite.
+Routing supports conventional methods and Axum path templates such as `/users/{id}`. Duplicate method/path registration and equivalent parameter-only route shapes are rejected before router construction. Unknown paths return 404, unsupported methods return 405, oversized bodies return 413, handler/body timeouts return 504, and required-HTTPS failures return 400. The adapter provides ordered global, group, and route-scoped async middleware, uniquely named routes, route groups, deterministic metadata from `Application::routes()`, graceful shutdown APIs, local rustls serving, trusted-proxy reconstruction, safe full HTML documents, and configurable escaped 4xx/5xx error pages.
+
+It still lacks typed extraction traits, built-in subscriber/export configuration, automatic OS-signal wiring, rate limiting, auth/CSRF, and database/session integrations. Integration tests cover HTML/JSON routes, groups, route middleware, query/path parameters, custom 404/405 pages, 413/504, request-ID headers, graceful shutdown, trusted and spoofed forwarded headers, local TLS, client aborts, malformed input, and a concurrency cap. They are not a substitute for a reverse-proxy deployment recipe or a Phase 9 threat model.

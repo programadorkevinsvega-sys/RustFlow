@@ -17,12 +17,13 @@ El ejemplo escucha en `127.0.0.1:3000` y expone rutas para una página HTML, est
 
 ## Capacidades del prototipo
 
-- Registro de rutas y handlers asíncronos, parámetros de ruta y decodificación tipada de query/JSON.
+- Registro de rutas y handlers asíncronos, grupos de rutas, parámetros de ruta y decodificación tipada de query/JSON.
 - Respuestas de texto, HTML, JSON, redirección, descarga y códigos de estado.
-- Middleware global ordenado, rutas nombradas e introspección de rutas.
+- Middleware global, de grupo y por ruta; rutas nombradas e introspección de rutas.
 - Límites configurables de body, timeout de lectura/handler y límite de concurrencia.
 - Correlación mediante `Request::request_id()` y `x-request-id`; el servidor emite spans/eventos `tracing`, pero el binario de la aplicación debe configurar su propio subscriber/exporter.
 - API de apagado graceful que recibe una future desde el punto de composición de la aplicación.
+- TLS local (`serve_tls`) y política de proxies de confianza; `ServerConfig::production()` exige HTTPS vía TLS o proto reenviado por un proxy listado.
 
 Consulta la [guía técnica HTTP](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/HTTP_SERVER.md) para ejemplos de registro, configuración y límites.
 
@@ -68,16 +69,15 @@ La suite de integración puede ejecutarse con:
 cargo test -p rustflow-server --test http_integration
 ~~~
 
-Las pruebas usan un listener TCP local con puerto efímero y cubren rutas HTML/JSON, path/query, cabeceras de correlación, páginas personalizadas 404/405, query inválida 400, límite de body 413, timeout 504 y apagado graceful. Las operaciones de conexión/escritura/lectura del helper tienen timeouts para evitar que una regresión deje una prueba esperando indefinidamente.
+Las pruebas usan un listener TCP local con puerto efímero y cubren rutas HTML/JSON, grupos, middleware por ruta, path/query, cabeceras de correlación, páginas personalizadas 404/405, query inválida 400, límite de body 413, timeout 504, apagado graceful, cabeceras de proxy de confianza y falsificadas, TLS local, abortos de cliente, entrada malformada y un tope de concurrencia. Las operaciones de conexión/escritura/lectura del helper tienen timeouts para evitar que una regresión deje una prueba esperando indefinidamente.
 
-Esta cobertura es representativa, no exhaustiva. No demuestra compatibilidad TLS o reverse proxy, confianza en cabeceras de proxy, autenticación/CSRF, resistencia a carga, manejo de abortos de cliente ni robustez frente a todas las entradas HTTP malformadas.
+Esta cobertura cierra los criterios de transporte de la Fase 4. No sustituye autenticación/CSRF, un threat model de producción ni una receta de despliegue con reverse proxy.
 
 ## Límites actuales
 
 - No hay CLI ni scaffolding de proyectos.
 - No hay sesiones, autenticación, autorización ni persistencia integradas.
-- No hay bundle de navegador, hidratación ni navegación cliente.
-- Layouts avanzados, grupos de rutas y middleware por ruta siguen pendientes.
+- No hay hidratación ni navegación cliente.
 - Las APIs son inestables y RustFlow no se considera listo para producción.
 
 Consulta el [estado del proyecto](/project-status/) y el [roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) antes de depender de una capacidad.

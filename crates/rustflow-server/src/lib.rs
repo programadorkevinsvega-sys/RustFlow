@@ -3,12 +3,16 @@
 //! Axum, Tokio, and Tower are isolated to this adapter crate. Core reactivity and
 //! the structural view model do not depend on HTTP infrastructure.
 
+mod group;
+mod proxy;
+mod tls;
+
 use std::{
     collections::{HashMap, HashSet},
     error::Error,
     fmt,
     future::Future,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     pin::Pin,
     sync::{
         Arc, RwLock,
@@ -17,18 +21,24 @@ use std::{
     time::Duration,
 };
 
+use axum::extract::ConnectInfo;
 use axum::middleware::{self, Next as AxumNext};
+use axum::serve::ListenerExt;
 use axum::{
-    Router,
+    Extension, Router,
     body::{Body, to_bytes},
     extract::{Path, Request as AxumRequest, State},
     response::Response as AxumResponse,
     routing::{MethodFilter, MethodRouter},
 };
+
 use bytes::Bytes;
+pub use group::RouteGroup;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
+pub use proxy::{ClientAddressPolicy, IpNetwork};
 use serde::{Serialize, de::DeserializeOwned};
+pub use tls::tls_server_config_from_pem;
 use tokio::net::TcpListener;
 use tower::limit::GlobalConcurrencyLimitLayer;
 use tracing::Instrument;
@@ -148,6 +158,9 @@ pub struct Request {
     headers: HeaderMap,
     body: Bytes,
     request_id: String,
+    peer_addr: Option<SocketAddr>,
+    client_ip: Option<IpAddr>,
+    https: bool,
 }
 
 impl Request {
@@ -158,6 +171,8 @@ impl Request {
         headers: HeaderMap,
         body: Bytes,
         request_id: String,
+        identity: proxy::ClientIdentity,
+        peer_addr: Option<SocketAddr>,
     ) -> Self {
         Self {
             method,
@@ -167,6 +182,9 @@ impl Request {
             headers,
             body,
             request_id,
+            peer_addr,
+            client_ip: identity.client_ip,
+            https: identity.https,
         }
     }
 
@@ -175,6 +193,21 @@ impl Request {
     /// It is intended for log/trace correlation only, never for authorization.
     pub fn request_id(&self) -> &str {
         &self.request_id
+    }
+
+    /// Return the TCP peer address when the connection supplied one.
+    pub fn peer_addr(&self) -> Option<SocketAddr> {
+        self.peer_addr
+    }
+
+    /// Return the client IP after applying the configured proxy-trust policy.
+    pub fn client_ip(&self) -> Option<IpAddr> {
+        self.client_ip
+    }
+
+    /// Return whether the request is treated as HTTPS (TLS connection or trusted proto).
+    pub fn is_https(&self) -> bool {
+        self.https
     }
 
     /// Return the HTTP method.
@@ -424,6 +457,10 @@ impl HttpError {
         Self::new(StatusCode::GATEWAY_TIMEOUT, "Request timed out")
     }
 
+    fn https_required() -> Self {
+        Self::new(StatusCode::BAD_REQUEST, "HTTPS is required")
+    }
+
     fn into_response(self) -> Response {
         Response::text_with_status(self.status, self.public_message)
     }
@@ -569,6 +606,15 @@ impl fmt::Display for ErrorPageConfigError {
 
 impl Error for ErrorPageConfigError {}
 
+/// Deployment profile used to validate composition-root wiring before bind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeploymentProfile {
+    /// Local and test defaults. HTTPS and proxy policy are optional.
+    Development,
+    /// Requires an explicit client-address policy and HTTPS wiring before serve.
+    Production,
+}
+
 /// Configuration for request buffering, handler timeouts, and concurrency.
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
@@ -576,6 +622,9 @@ pub struct ServerConfig {
     request_timeout: Duration,
     max_concurrent_requests: usize,
     error_pages: ErrorPages,
+    deployment: DeploymentProfile,
+    client_address: ClientAddressPolicy,
+    require_https: bool,
 }
 
 impl ServerConfig {
@@ -609,6 +658,47 @@ impl ServerConfig {
         self
     }
 
+    /// Production defaults: HTTPS required and an explicit client-address policy
+    /// must be wired before `serve` or `serve_tls`.
+    pub fn production() -> Self {
+        Self {
+            deployment: DeploymentProfile::Production,
+            require_https: true,
+            ..Self::default()
+        }
+    }
+
+    /// Select development or production composition-root checks.
+    pub fn with_deployment_profile(mut self, profile: DeploymentProfile) -> Self {
+        self.deployment = profile;
+        self
+    }
+
+    /// Require a TLS connection or a trusted `https` forwarded proto.
+    pub fn with_require_https(mut self, require_https: bool) -> Self {
+        self.require_https = require_https;
+        self
+    }
+
+    /// Ignore forwarded headers and use the TCP peer as the client address.
+    pub fn with_direct_client_addresses(mut self) -> Self {
+        self.client_address = ClientAddressPolicy::Direct;
+        self
+    }
+
+    /// Honor forwarded headers only from these reverse-proxy networks.
+    pub fn with_trusted_proxies(
+        mut self,
+        proxies: impl IntoIterator<Item = IpNetwork>,
+    ) -> Result<Self, ServerError> {
+        let proxies = proxies.into_iter().collect::<Vec<_>>();
+        if proxies.is_empty() {
+            return Err(ServerError::EmptyTrustedProxyList);
+        }
+        self.client_address = ClientAddressPolicy::TrustedProxies(proxies);
+        Ok(self)
+    }
+
     /// Return the configured body limit.
     pub fn max_body_bytes(&self) -> usize {
         self.max_body_bytes
@@ -623,7 +713,56 @@ impl ServerConfig {
     pub fn max_concurrent_requests(&self) -> usize {
         self.max_concurrent_requests
     }
+
+    /// Return the selected deployment profile.
+    pub fn deployment(&self) -> DeploymentProfile {
+        self.deployment
+    }
+
+    /// Return whether HTTPS is required after proxy/TLS resolution.
+    pub fn require_https(&self) -> bool {
+        self.require_https
+    }
+
+    /// Return the client-address reconstruction policy.
+    pub fn client_address_policy(&self) -> &ClientAddressPolicy {
+        &self.client_address
+    }
+
+    /// Validate production wiring for plaintext `serve` / `serve_listener`.
+    pub fn validate(&self) -> Result<(), ServerError> {
+        self.validate_for_bind(BindKind::Plain)
+    }
+
+    /// Validate production wiring for `serve_tls` / `serve_tls_with_shutdown`.
+    pub fn validate_tls(&self) -> Result<(), ServerError> {
+        self.validate_for_bind(BindKind::Tls)
+    }
+
+    fn validate_for_bind(&self, bind: BindKind) -> Result<(), ServerError> {
+        if let ClientAddressPolicy::TrustedProxies(proxies) = &self.client_address {
+            if proxies.is_empty() {
+                return Err(ServerError::EmptyTrustedProxyList);
+            }
+        }
+        if self.deployment == DeploymentProfile::Production && self.require_https {
+            let has_proxy = matches!(self.client_address, ClientAddressPolicy::TrustedProxies(_));
+            if bind == BindKind::Plain && !has_proxy {
+                return Err(ServerError::ProductionHttpsRequiresTlsOrTrustedProxy);
+            }
+        }
+        Ok(())
+    }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BindKind {
+    Plain,
+    Tls,
+}
+
+#[derive(Clone, Copy)]
+struct ConnectionSecure(bool);
 
 impl Default for ServerConfig {
     fn default() -> Self {
@@ -632,6 +771,9 @@ impl Default for ServerConfig {
             request_timeout: Duration::from_secs(30),
             max_concurrent_requests: 256,
             error_pages: ErrorPages::default(),
+            deployment: DeploymentProfile::Development,
+            client_address: ClientAddressPolicy::Direct,
+            require_https: false,
         }
     }
 }
@@ -644,6 +786,11 @@ pub enum ServerError {
     DuplicateRoute { method: HttpMethod, path: String },
     DuplicateRouteName(String),
     ConflictingRoutePattern { existing: String, requested: String },
+    UnknownRoute { method: HttpMethod, path: String },
+    EmptyTrustedProxyList,
+    InvalidIpNetwork(String),
+    ProductionHttpsRequiresTlsOrTrustedProxy,
+    InvalidTlsMaterial(String),
     MiddlewareRegistryPoisoned,
     Io(std::io::Error),
 }
@@ -664,6 +811,18 @@ impl fmt::Display for ServerError {
                 f,
                 "route pattern {requested} conflicts with existing pattern {existing}"
             ),
+            Self::UnknownRoute { method, path } => {
+                write!(f, "no route registered for {method:?} {path}")
+            }
+            Self::EmptyTrustedProxyList => {
+                write!(f, "trusted proxy policy requires at least one network")
+            }
+            Self::InvalidIpNetwork(value) => write!(f, "invalid IP network: {value}"),
+            Self::ProductionHttpsRequiresTlsOrTrustedProxy => write!(
+                f,
+                "production HTTPS requires serve_tls or a trusted reverse-proxy policy"
+            ),
+            Self::InvalidTlsMaterial(message) => write!(f, "invalid TLS material: {message}"),
             Self::MiddlewareRegistryPoisoned => write!(f, "middleware registry is unavailable"),
             Self::Io(error) => write!(f, "server I/O failed: {error}"),
         }
@@ -689,6 +848,7 @@ pub struct Application {
     route_names: HashMap<(String, HttpMethod), String>,
     registered_names: HashSet<String>,
     middleware: Arc<RwLock<Vec<Middleware>>>,
+    route_middleware: HashMap<(String, HttpMethod), Arc<RwLock<Vec<Middleware>>>>,
     config: ServerConfig,
 }
 
@@ -707,6 +867,7 @@ impl Application {
             route_names: HashMap::new(),
             registered_names: HashSet::new(),
             middleware: Arc::new(RwLock::new(Vec::new())),
+            route_middleware: HashMap::new(),
             config,
         }
     }
@@ -724,6 +885,53 @@ impl Application {
             .map_err(|_| ServerError::MiddlewareRegistryPoisoned)?
             .push(middleware);
         Ok(self)
+    }
+
+    /// Append middleware to one already-registered method/path.
+    ///
+    /// Route middleware runs after global middleware and after any group
+    /// middleware captured when the route was registered.
+    pub fn route_middleware(
+        &mut self,
+        method: HttpMethod,
+        path: impl Into<String>,
+        middleware: Middleware,
+    ) -> Result<&mut Self, ServerError> {
+        let path = path.into();
+        let stack = self
+            .route_middleware
+            .get(&(path.clone(), method))
+            .ok_or_else(|| ServerError::UnknownRoute {
+                method,
+                path: path.clone(),
+            })?;
+        stack
+            .write()
+            .map_err(|_| ServerError::MiddlewareRegistryPoisoned)?
+            .push(middleware);
+        Ok(self)
+    }
+
+    /// Register a nested collection of routes that share a prefix and middleware.
+    pub fn group<F>(
+        &mut self,
+        prefix: impl Into<String>,
+        configure: F,
+    ) -> Result<&mut Self, ServerError>
+    where
+        F: FnOnce(&mut RouteGroup<'_>) -> Result<(), ServerError>,
+    {
+        let prefix = group::normalize_group_prefix(&prefix.into())?;
+        {
+            let mut grouped = RouteGroup::new(self, prefix, String::new(), Vec::new());
+            configure(&mut grouped)?;
+        }
+        Ok(self)
+    }
+
+    /// Validate production/proxy/TLS wiring without opening a listener.
+    pub fn validate(&self) -> Result<(), ServerError> {
+        self.config.validate()
     }
 
     /// Return route metadata in deterministic method/path order.
@@ -843,7 +1051,7 @@ impl Application {
         F: Fn(Request) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<Response, HttpError>> + Send + 'static,
     {
-        self.register_route(method, path.into(), None, handler)
+        self.register_route(method, path.into(), None, Vec::new(), handler)
     }
 
     /// Register a uniquely named route for reverse lookup and diagnostics.
@@ -860,14 +1068,15 @@ impl Application {
     {
         let name = name.into();
         validate_route_name(&name)?;
-        self.register_route(method, path.into(), Some(name), handler)
+        self.register_route(method, path.into(), Some(name), Vec::new(), handler)
     }
 
-    fn register_route<F, Fut>(
+    pub(crate) fn register_route<F, Fut>(
         &mut self,
         method: HttpMethod,
         path: String,
         name: Option<String>,
+        extra_middleware: Vec<Middleware>,
         handler: F,
     ) -> Result<&mut Self, ServerError>
     where
@@ -899,12 +1108,16 @@ impl Application {
         let handler: SharedHandler = Arc::new(move |request| Box::pin(handler(request)));
         let config = self.config.clone();
         let middleware_stack = self.middleware.clone();
+        let route_middleware = Arc::new(RwLock::new(extra_middleware));
+        self.route_middleware
+            .insert((path.clone(), method), route_middleware.clone());
         let route_template = path.clone();
         let adapter = move |Path(path_params): Path<HashMap<String, String>>,
                             mut request: AxumRequest| {
             let handler = handler.clone();
             let config = config.clone();
             let middleware_stack = middleware_stack.clone();
+            let route_middleware = route_middleware.clone();
             let route_template = route_template.clone();
             let request_id = request_id_from_headers(request.headers());
             if let Ok(value) = HeaderValue::from_str(&request_id) {
@@ -921,6 +1134,7 @@ impl Application {
                         request,
                         config.clone(),
                         middleware_stack,
+                        route_middleware,
                         route_template,
                     ),
                 )
@@ -958,8 +1172,13 @@ impl Application {
 
     /// Serve the application on a caller-created listener (useful for deployment adapters).
     pub async fn serve_listener(self, listener: TcpListener) -> Result<(), ServerError> {
-        let router = self.into_router();
-        axum::serve(listener, router).await.map_err(ServerError::Io)
+        let router = self.into_router(BindKind::Plain)?;
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .map_err(ServerError::Io)
     }
 
     /// Bind an address and serve until the caller-provided shutdown future resolves.
@@ -984,27 +1203,63 @@ impl Application {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        let router = self.into_router();
-        axum::serve(listener, router)
-            .with_graceful_shutdown(shutdown)
-            .await
-            .map_err(ServerError::Io)
+        let router = self.into_router(BindKind::Plain)?;
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown)
+        .await
+        .map_err(ServerError::Io)
     }
 
-    fn into_router(self) -> Router {
+    /// Serve HTTPS on a caller-created listener using rustls.
+    pub async fn serve_tls(
+        self,
+        listener: TcpListener,
+        tls: Arc<rustls::ServerConfig>,
+    ) -> Result<(), ServerError> {
+        self.serve_tls_with_shutdown(listener, tls, std::future::pending())
+            .await
+    }
+
+    /// Serve HTTPS until the caller-provided shutdown future resolves.
+    pub async fn serve_tls_with_shutdown<F>(
+        self,
+        listener: TcpListener,
+        tls: Arc<rustls::ServerConfig>,
+        shutdown: F,
+    ) -> Result<(), ServerError>
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let router = self.into_router(BindKind::Tls)?;
+        // `tap_io` is required so ConnectInfo<SocketAddr> is implemented for custom listeners.
+        axum::serve(
+            tls::TlsListener::new(listener, tls).tap_io(|_| {}),
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown)
+        .await
+        .map_err(ServerError::Io)
+    }
+
+    fn into_router(self, bind: BindKind) -> Result<Router, ServerError> {
+        self.config.validate_for_bind(bind)?;
         let Self { routes, config, .. } = self;
         let mut router = Router::new();
         for (path, methods) in routes {
             router = router.route(&path, methods);
         }
-        router
+        Ok(router
+            .layer(Extension(ConnectionSecure(matches!(bind, BindKind::Tls))))
             .layer(GlobalConcurrencyLimitLayer::new(
                 config.max_concurrent_requests,
             ))
             .layer(middleware::from_fn_with_state(
                 config.error_pages,
                 request_metadata_and_error_pages,
-            ))
+            )))
     }
 }
 
@@ -1020,12 +1275,28 @@ async fn dispatch_request(
     request: AxumRequest,
     config: ServerConfig,
     middleware_registry: Arc<RwLock<Vec<Middleware>>>,
+    route_middleware: Arc<RwLock<Vec<Middleware>>>,
     route_template: String,
 ) -> AxumResponse {
+    let peer = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|info| info.0);
+    let connection_secure = request
+        .extensions()
+        .get::<ConnectionSecure>()
+        .map(|flag| flag.0)
+        .unwrap_or(false);
     let (parts, body) = request.into_parts();
     let request_id = request_id_from_headers(&parts.headers);
     let request_id_for_response = request_id.clone();
     let method = parts.method.clone();
+    let identity = proxy::resolve_client_identity(
+        peer,
+        &parts.headers,
+        &config.client_address,
+        connection_secure,
+    );
     let span = tracing::info_span!(
         "http.request",
         request_id = %request_id,
@@ -1034,6 +1305,12 @@ async fn dispatch_request(
     );
 
     async move {
+        if config.require_https && !identity.https {
+            tracing::warn!(status = %StatusCode::BAD_REQUEST, "HTTPS is required");
+            let response = HttpError::https_required().into_response();
+            return attach_request_id(response, &request_id_for_response).into_axum_response();
+        }
+
         let body = match to_bytes(body, config.max_body_bytes).await {
             Ok(body) => body,
             Err(error) => {
@@ -1056,10 +1333,17 @@ async fn dispatch_request(
             parts.headers,
             body,
             request_id_for_response.clone(),
+            peer,
+            identity.client_ip,
+            identity.https,
         );
-        let middleware = match middleware_registry.read() {
-            Ok(middleware) => Arc::new(middleware.clone()),
-            Err(_) => {
+        let middleware = match (middleware_registry.read(), route_middleware.read()) {
+            (Ok(global), Ok(scoped)) => {
+                let mut stack = global.clone();
+                stack.extend(scoped.iter().cloned());
+                Arc::new(stack)
+            }
+            _ => {
                 tracing::error!("middleware registry is unavailable");
                 let response = HttpError::internal_server_error().into_response();
                 return attach_request_id(response, &request_id_for_response).into_axum_response();
@@ -1191,7 +1475,7 @@ fn error_is_length_limit(error: &(dyn Error + 'static)) -> bool {
     false
 }
 
-fn validate_route_path(path: &str) -> Result<(), ServerError> {
+pub(crate) fn validate_route_path(path: &str) -> Result<(), ServerError> {
     if !path.starts_with('/')
         || path.contains(['?', '#'])
         || path.contains("//")
@@ -1223,7 +1507,7 @@ fn validate_route_path(path: &str) -> Result<(), ServerError> {
     Ok(())
 }
 
-fn validate_route_name(name: &str) -> Result<(), ServerError> {
+pub(crate) fn validate_route_name(name: &str) -> Result<(), ServerError> {
     if name.is_empty()
         || !name.chars().all(|character| {
             character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.')
@@ -1268,8 +1552,9 @@ fn is_safe_redirect_location(location: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        Application, ErrorPageConfigError, ErrorPages, HttpMethod, Middleware, Response, RouteInfo,
-        ServerConfig, ServerError, View, html_document, html_view,
+        Application, BindKind, ClientAddressPolicy, DeploymentProfile, ErrorPageConfigError,
+        ErrorPages, HttpMethod, IpNetwork, Middleware, Response, RouteInfo, ServerConfig,
+        ServerError, View, html_document, html_view,
     };
     use axum::{
         body::{Body, to_bytes},
@@ -1291,7 +1576,8 @@ mod tests {
     use tower::ServiceExt;
 
     async fn send(app: Application, request: AxumHttpRequest<Body>) -> http::Response<Body> {
-        app.into_router()
+        app.into_router(BindKind::Plain)
+            .expect("development config is valid")
             .oneshot(request)
             .await
             .expect("router responses do not fail at the Tower service boundary")
@@ -1691,5 +1977,169 @@ mod tests {
         let unsafe_view =
             View::element("script", [View::text("alert(1)")]).expect("structural node");
         assert!(html_view(&unsafe_view).is_err());
+    }
+
+    #[tokio::test]
+    async fn route_groups_prefix_paths_and_names_and_scope_middleware() {
+        let mut app = Application::new();
+        app.get("/open", |_request| async { Ok(Response::text("open")) })
+            .expect("open route");
+        app.group("/api", |api| {
+            api.name_prefix("api")?;
+            api.middleware(Middleware::new(|request, next| async move {
+                let response = next.run(request).await?;
+                Ok(response.with_header(
+                    http::HeaderName::from_static("x-group"),
+                    http::HeaderValue::from_static("api"),
+                ))
+            }));
+            api.route_named("health", HttpMethod::Get, "/health", |_request| async {
+                Ok(Response::text("ok"))
+            })?;
+            api.group("/v1", |v1| {
+                v1.get("/users/{id}", |request| async move {
+                    Ok(Response::text(
+                        request.path_param("id").unwrap_or("missing").to_owned(),
+                    ))
+                })?;
+                Ok(())
+            })?;
+            Ok(())
+        })
+        .expect("api group");
+
+        let routes = app.routes();
+        assert!(routes.contains(&RouteInfo {
+            method: HttpMethod::Get,
+            path: "/api/health".to_owned(),
+            name: Some("api.health".to_owned()),
+        }));
+        assert!(routes.contains(&RouteInfo {
+            method: HttpMethod::Get,
+            path: "/api/v1/users/{id}".to_owned(),
+            name: None,
+        }));
+
+        let mut app = Application::new();
+        app.group("/api", |api| {
+            api.middleware(Middleware::new(|request, next| async move {
+                let response = next.run(request).await?;
+                Ok(response.with_header(
+                    http::HeaderName::from_static("x-group"),
+                    http::HeaderValue::from_static("api"),
+                ))
+            }));
+            api.get("/health", |_request| async { Ok(Response::text("ok")) })?;
+            Ok(())
+        })
+        .expect("group");
+        app.get("/open", |_request| async { Ok(Response::text("open")) })
+            .expect("open");
+        let grouped = send(
+            app,
+            AxumHttpRequest::builder()
+                .uri("/api/health")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(grouped.status(), StatusCode::OK);
+        assert_eq!(grouped.headers()["x-group"], "api");
+        assert_eq!(body_text(grouped).await, "ok");
+
+        let mut app = Application::new();
+        app.group("/api", |api| {
+            api.middleware(Middleware::new(|request, next| async move {
+                let response = next.run(request).await?;
+                Ok(response.with_header(
+                    http::HeaderName::from_static("x-group"),
+                    http::HeaderValue::from_static("api"),
+                ))
+            }));
+            api.get("/health", |_request| async { Ok(Response::text("ok")) })?;
+            Ok(())
+        })
+        .expect("group");
+        app.get("/open", |_request| async { Ok(Response::text("open")) })
+            .expect("open");
+        let open = send(
+            app,
+            AxumHttpRequest::builder()
+                .uri("/open")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(open.status(), StatusCode::OK);
+        assert!(open.headers().get("x-group").is_none());
+        assert_eq!(body_text(open).await, "open");
+    }
+
+    #[tokio::test]
+    async fn route_scoped_middleware_runs_after_global_middleware() {
+        let mut app = Application::new();
+        app.get("/scoped", |_request| async { Ok(Response::text("ok")) })
+            .expect("route");
+        app.middleware(Middleware::new(|request, next| async move {
+            let response = next.run(request).await?;
+            Ok(response.with_header(
+                http::HeaderName::from_static("x-global"),
+                http::HeaderValue::from_static("yes"),
+            ))
+        }))
+        .expect("global");
+        app.route_middleware(
+            HttpMethod::Get,
+            "/scoped",
+            Middleware::new(|request, next| async move {
+                let response = next.run(request).await?;
+                Ok(response.with_header(
+                    http::HeaderName::from_static("x-route"),
+                    http::HeaderValue::from_static("yes"),
+                ))
+            }),
+        )
+        .expect("route middleware");
+
+        let response = send(
+            app,
+            AxumHttpRequest::builder()
+                .uri("/scoped")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(response.headers()["x-global"], "yes");
+        assert_eq!(response.headers()["x-route"], "yes");
+        assert_eq!(body_text(response).await, "ok");
+    }
+
+    #[test]
+    fn production_config_requires_tls_or_trusted_proxies() {
+        assert!(matches!(
+            ServerConfig::production().validate(),
+            Err(ServerError::ProductionHttpsRequiresTlsOrTrustedProxy)
+        ));
+        let proxied = ServerConfig::production()
+            .with_trusted_proxies([IpNetwork::parse("10.0.0.0/8").expect("cidr")])
+            .expect("proxies");
+        proxied
+            .validate()
+            .expect("plain serve behind proxy is valid");
+        ServerConfig::production()
+            .with_direct_client_addresses()
+            .validate_tls()
+            .expect("direct production TLS bind is valid");
+        assert_eq!(proxied.deployment(), DeploymentProfile::Production);
+        assert!(proxied.require_https());
+        assert!(matches!(
+            proxied.client_address_policy(),
+            ClientAddressPolicy::TrustedProxies(_)
+        ));
+        assert!(matches!(
+            ServerConfig::new().with_trusted_proxies([] as [IpNetwork; 0]),
+            Err(ServerError::EmptyTrustedProxyList)
+        ));
+        assert!(IpNetwork::parse("not-an-ip").is_err());
     }
 }

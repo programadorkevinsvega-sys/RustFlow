@@ -23,17 +23,16 @@ La suite de Chromium incluye cuatro escenarios: identidad DOM del Counter, actua
 
 **Estado: cerrada en `main` el 2026-10-26.** La PR #26 se fusionó primero en la rama de la PR #25; después la PR #25 se fusionó en `main`. Los siete checks post-merge terminaron correctamente en el commit [`43f5fb9`](https://github.com/programadorkevinsvega-sys/RustFlow/commit/43f5fb9c12996ea600b47930553a9f91dc6055e9), incluidos Rust estable/1.85, compilación WASM, E2E Chromium, presupuesto del bundle, documentación, gobernanza y despliegue de Pages. El cierre se limita al runtime de navegador y los criterios de la Fase 3; SSR/hidratación y otros hitos posteriores permanecen separados.
 
-### Fase 4 — Servidor HTTP, en prototipo
+### Fase 4 — Servidor HTTP, criterios de fase cerrados
 
-El crate rustflow-server integra Axum/Tokio/Tower detrás de tipos de RustFlow. Incluye rutas y handlers asíncronos, parámetros de ruta y query, extracción básica de JSON, respuestas de texto/HTML/JSON, middleware global ordenado, rutas nombradas, request IDs, eventos/spans de tracing, límites de body, timeouts, límite de concurrencia y apagado graceful mediante una future proporcionada por la aplicación.
+El crate rustflow-server integra Axum/Tokio/Tower detrás de tipos de RustFlow. Incluye rutas y handlers asíncronos, grupos de rutas, parámetros de ruta y query, extracción básica de JSON, respuestas de texto/HTML/JSON, middleware global, de grupo y por ruta, rutas nombradas, request IDs, eventos/spans de tracing, límites de body, timeouts, límite de concurrencia, apagado graceful, servicio TLS local con rustls, política de proxies de confianza y validación de cableado de producción para HTTPS.
 
-El serializador rustflow-ssr genera fragmentos HTML escapados. Desde el servidor se pueden generar documentos HTML completos mediante html_document y páginas de error HTML configurables para estados 4xx/5xx. Las pruebas cubren dispatch in-memory y casos representativos por TCP local. Esto no implica que SSR, hidratación o despliegue estén completos.
+El serializador rustflow-ssr genera fragmentos HTML escapados. Desde el servidor se pueden generar documentos HTML completos mediante html_document y páginas de error HTML configurables para estados 4xx/5xx. Las pruebas cubren dispatch in-memory, TCP local, TLS local, cabeceras reenviadas de confianza y falsificadas, abortos de cliente, entrada malformada y concurrencia acotada. Esto no implica que SSR full-stack, hidratación o un despliegue de producción estén completos.
 
 Guía práctica: [Servidor HTTP experimental](/guides/server/). Detalles y límites: [docs/HTTP_SERVER.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/HTTP_SERVER.md) y [docs/SSR_RENDERING.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/SSR_RENDERING.md).
 
 ## Próximos criterios bloqueantes
 
 - Composición de layouts, serialización de datos para hidratación e hidratación de cliente; un documento HTML completo no equivale a hidratación.
-- Grupos de rutas, middleware por ruta, configuración de producción y más pruebas de red para TLS/reverse proxy, cabeceras de proxy confiables, abortos de cliente y carga/concurrencia.
 - CLI, scaffolding, validación de formularios, sesiones/autenticación y persistencia integrada.
 

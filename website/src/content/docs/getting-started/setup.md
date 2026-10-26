@@ -55,7 +55,7 @@ El runtime reactivo puede explorarse dentro del propio workspace. La API impleme
 
 ## ¿Dónde están los componentes, el servidor y los comandos?
 
-El modelo tipado de vistas/componentes y la macro `view!` ya existen como prototipos; el renderer WASM inicial también existe, pero todavía no hay bundle de navegador ni pruebas E2E. Consulta la guía de [componentes](/guides/components/) para conocer su API y sus límites.
+El modelo tipado de vistas/componentes, la macro `view!` y el ejemplo de navegador con pruebas E2E ya existen como prototipos. Consulta la guía de [componentes](/guides/components/) para conocer su API y sus límites.
 
 El workspace incluye un servidor HTTP experimental. Desde la raíz del repositorio puedes ejecutar el ejemplo:
 

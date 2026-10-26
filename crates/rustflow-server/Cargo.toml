@@ -18,9 +18,18 @@ serde_urlencoded.workspace = true
 tokio.workspace = true
 tower.workspace = true
 tracing.workspace = true
+rustls.workspace = true
+tokio-rustls.workspace = true
+rustls-pki-types.workspace = true
 rustflow = { path = "../rustflow" }
 rustflow-view = { path = "../rustflow-view" }
 rustflow-ssr = { path = "../rustflow-ssr" }
+
+[dev-dependencies]
+rcgen = "0.14"
+rustls.workspace = true
+tokio-rustls.workspace = true
+rustls-pki-types.workspace = true
 
 [lints]
 workspace = true
