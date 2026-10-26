@@ -1,20 +1,32 @@
-# Structural View Model (Phase 2.1 prototype)
+# Structural View and Component Contracts (Phase 2 prototype)
 
-This document records the contract that exists in `rustflow-view` today. It is deliberately narrower than the full view/component representation planned by the roadmap.
+The view model is target-independent. It represents UI intent; it is not rendered HTML and is not a sanitization boundary.
 
-## Implemented contract
+## Structural nodes
 
-- `View::Text(String)` stores text content exactly as provided.
-- `View::Element(Element)` stores an element-name string and an ordered vector of child views.
-- `View::Fragment(Fragment)` stores an ordered vector of child views and preserves the fragment boundary.
-- Constructors collect child iterators eagerly into owned vectors. Empty elements and fragments are allowed.
-- Structural nodes implement `Clone`, `Debug`, `PartialEq`, and `Eq`, supporting deterministic unit tests.
-- The `rustflow` facade exposes these types through `rustflow::view`.
+- Text stores its content verbatim.
+- Element stores a syntax-validated element name, attributes, DOM properties, event callbacks, children, and an optional stable key.
+- Fragment groups ordered children without adding an element.
+- Component stores a validated component type name, typed properties, children, and an optional key. A component host resolves the descriptor into a reusable definition.
+- Dynamic stores a deferred evaluator. Reactive adapters must evaluate it inside an effect owned by the component's reactive scope.
+- KeyedList preserves child order and rejects duplicate keys.
 
-## Explicit non-goals and limitations
+## Validation and error behavior
 
-This model does not yet support component nodes, attributes, DOM properties, boolean attributes, events, dynamic children, keyed identity, lifecycle/cleanup, an HTML renderer, a DOM renderer, SSR, or hydration. It is not connected to the reactive runtime.
+Element names allow an ASCII letter followed by ASCII letters, digits, or hyphens. Attribute and property names are separately validated. Inline event attributes and direct raw-HTML sinks (for example, srcdoc, innerHTML, and outerHTML) are rejected. Duplicate attributes, properties, event names, and keyed-list identities return typed ViewError values.
 
-Element names are stored without validation. The tree is not serialized or emitted as HTML by this crate. Do not treat it as safe rendered markup or use this prototype as an HTML sanitization boundary. Future renderers must define supported tags and escape text and attributes by default under the security rules in `ARCHITECTURE_RULES.md`.
+This is syntactic validation, not an HTML allowlist or URL sanitization policy. Attribute values may still include unsafe URLs, and the tree must never be treated as safe HTML. Any HTML or DOM renderer must escape text and attribute values, apply an explicit URL policy, and avoid raw HTML insertion by default.
 
-The public API is pre-1.0. These types establish a minimal data-model boundary; they do not mean that Phase 2 is complete.
+## Attributes, properties, and events
+
+Attributes use AttributeValue::Text or AttributeValue::Boolean; a renderer should omit boolean attributes whose value is false and emit an empty boolean attribute for true. DOM properties use a separate PropertyValue enum. Events use named EventHandler values rather than on* string attributes. An event callback receives a normalized EventPayload; the concrete browser adapter is responsible for converting native events into that payload and unregistering listeners.
+
+## Component lifecycle
+
+The rustflow facade exposes ComponentDefinition and ComponentInstance. Setup runs once per mount and receives a ComponentContext with a dedicated reactive Scope. Setup may create signals/effects in that scope and register cleanup callbacks. It returns a render callback that must be pure: it receives current properties and children, and returns a replacement View. Calling update computes the next view before changing stored inputs; if rendering fails, the previous view is retained. Unmount is idempotent and disposes the scope, effects, descendants, and registered cleanup callbacks. Updates after unmount return a typed error.
+
+ComponentInstance produces a replacement view tree; it does not itself mutate a DOM. A platform renderer must use the Renderer contract to mount, update, and unmount that tree. Context/provider semantics remain deferred until a concrete component use case requires them.
+
+## Declarative macro
+
+The follow-up macro crate is not part of this commit yet. Until its grammar and compile-fail tests are merged, construct views with the typed builders and check all fallible constructors.

@@ -1,51 +1,43 @@
 ---
 title: Crear componentes
-description: Estado del modelo de vistas y del sistema de componentes de RustFlow.
+description: Modelo tipado de vistas, atributos, eventos y ciclo de vida de componentes.
 ---
 
-> **Estado: parcial.** RustFlow ya incorpora un modelo estructural tipado para texto, elementos y fragmentos. El sistema de componentes, el ciclo de vida y el renderizado continúan pendientes.
+> **Estado: prototipo en desarrollo.** RustFlow incorpora un modelo estructural tipado y una API de ciclo de vida nativa. Todavía no existe un renderer del DOM ni un componente interactivo en navegador.
 
-## Modelo de vistas disponible
+## Construir un árbol de vistas
 
-El modelo está disponible desde `rustflow::view`. Permite construir un árbol en memoria sin depender de un navegador:
+El modelo está disponible desde rustflow::view. Los constructores de elementos validan la sintaxis del nombre y devuelven un resultado:
 
 ```rust
 use rustflow::view::View;
 
-fn main() {
-    let _page = View::element(
-        "main",
-        [
-            View::element("h1", [View::text("Hola, RustFlow")]),
-            View::fragment([
-                View::text("Este árbol es "),
-                View::text("estructural."),
-            ]),
-        ],
-    );
+fn page() -> Result<View, rustflow::view::ViewError> {
+    let input = rustflow::view::Element::new("input")?
+        .with_attribute("aria-label", "Buscar")?
+        .with_boolean_attribute("disabled", false)?
+        .with_property("value", "consulta")?
+        .build();
+    View::element("main", [View::text("Hola, RustFlow"), input])
 }
 ```
 
-Los nodos admitidos por esta primera porción son:
+## Atributos, propiedades y eventos
 
-- **Texto:** conserva el contenido como una cadena; aún no se transforma en HTML.
-- **Elemento:** conserva el nombre de etiqueta y sus hijos en orden.
-- **Fragmento:** agrupa hijos sin introducir una regla de aplanamiento.
+Los atributos HTML, las propiedades del DOM y los eventos son tipos diferentes. Los manejadores de eventos se almacenan como callbacks tipados, no como atributos HTML on*. Los nombres de etiquetas, atributos, propiedades y eventos pasan validación sintáctica; duplicados y nombres no permitidos producen errores tipados.
 
-El árbol es una representación de datos, no un renderer. No crea nodos del DOM, no aplica actualizaciones reactivas y no representa todavía componentes ejecutables. Los nombres de etiqueta tampoco se validan en esta versión inicial.
+Esta comprobación no sanitiza URL ni vuelve seguro el árbol como HTML. No insertes valores mediante HTML sin procesar. Cualquier renderer debe escapar texto y atributos, validar URL y retirar sus listeners al desmontar.
+
+## Componentes y ciclo de vida
+
+Una ComponentDefinition ejecuta setup una vez por instancia y devuelve una función pura de renderizado. ComponentInstance conserva un scope reactivo, permite recalcular la vista mediante update y libera los efectos y callbacks de limpieza con unmount. Los errores de actualización conservan la vista anterior. Las callbacks de renderizado deben limitarse a producir una nueva vista; los efectos y recursos se registran durante setup mediante ComponentContext.
+
+La API genera una vista de reemplazo; no manipula el DOM por sí misma. La fase de navegador debe conectar su Renderer y probar el montaje, la actualización y el desmontaje reales.
+
+## Claves e hijos dinámicos
+
+View::keyed_list conserva el orden e impide claves duplicadas. View::dynamic difiere la evaluación del hijo hasta que un adaptador lo solicita; un adaptador reactivo debe ejecutar esa evaluación dentro de un efecto que pertenezca al scope de la instancia.
 
 ## Lo que sigue pendiente
 
-Antes de ofrecer una API de componentes utilizable, el roadmap exige definir y probar:
-
-- Nodos de componente y contratos de composición.
-- Atributos, propiedades, atributos booleanos, eventos e hijos dinámicos.
-- Claves e identidad para listas dinámicas.
-- Errores de construcción y contratos de renderizado.
-- Ciclo de vida de creación, montaje, actualización y desmontaje.
-- Limpieza de efectos y listeners al desmontar.
-- Una futura sintaxis declarativa con diagnósticos comprobables.
-
-Todavía no existe una macro `view!`, un renderer de navegador ni un flujo completo para crear y ejecutar una aplicación web. La implementación de este árbol nativo es el primer paso de la fase 2, no una fase completada.
-
-Consulta el [roadmap de RustFlow](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) para conocer los criterios de aceptación.
+La macro declarativa view!, el renderer del navegador, los tests E2E, SSR, la hidratación y la CLI pertenecen a entregables separados del roadmap. La API de vistas y componentes es todavía pre-1.0 y no está lista para producción.
