@@ -469,6 +469,9 @@ impl DomRenderer {
                 PropertyValue::Boolean(value) => JsValue::from_bool(*value),
                 PropertyValue::Integer(value) => JsValue::from_f64(*value as f64),
                 PropertyValue::Float(value) => JsValue::from_f64(*value),
+                PropertyValue::Callback(_) => {
+                    return Err(DomError::PropertyRejected(property.name().to_owned()));
+                }
             };
             let target: &JsValue = element.as_ref();
             let accepted = Reflect::set(target, &JsValue::from_str(property.name()), &value)
@@ -748,6 +751,9 @@ impl DomRenderer {
                 PropertyValue::Boolean(value) => JsValue::from_bool(*value),
                 PropertyValue::Integer(value) => JsValue::from_f64(*value as f64),
                 PropertyValue::Float(value) => JsValue::from_f64(*value),
+                PropertyValue::Callback(_) => {
+                    return Err(DomError::PropertyRejected(property.name().to_owned()));
+                }
             };
             let target: &JsValue = element.as_ref();
             let accepted = Reflect::set(target, &JsValue::from_str(property.name()), &value)
