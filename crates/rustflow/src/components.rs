@@ -503,6 +503,90 @@ mod tests {
         runtime.dispose().expect("runtime dispose");
     }
 
+
+    #[crate::component]
+    fn MacroCounter(initial: i32) -> impl rustflow_view::IntoView {
+        let count = crate::reactivity::signal(initial);
+        let increment = count.clone();
+        crate::view! {
+            <button on:click={move |_event| increment.update(|value| *value += 1)}>
+                "Count "
+                <span>{count}</span>
+            </button>
+        }
+    }
+
+    #[crate::component]
+    fn CallbackReceiver(on_increment: rustflow_view::EventHandler) -> impl rustflow_view::IntoView {
+        crate::view! {
+            <button on:click={move |payload| on_increment.invoke(payload)}>
+                "Forward"
+            </button>
+        }
+    }
+
+    #[test]
+    fn component_attribute_generates_typed_registry_adapter_and_reactive_state() {
+        use super::ComponentRegistry;
+        use rustflow_view::{EventPayload, PropertyValue};
+
+        let mut registry = ComponentRegistry::new();
+        registry
+            .register(__rustflow_component_definition_macrocounter().expect("component adapter"))
+            .expect("register component");
+        let runtime = Runtime::new();
+        let root = runtime.root_scope();
+        let descriptor = match crate::view! { <MacroCounter initial={3} /> }.expect("descriptor") {
+            View::Component(node) => node,
+            _ => panic!("component descriptor expected"),
+        };
+        let instance = registry
+            .mount(&descriptor, runtime.clone(), &root)
+            .expect("typed component mounts");
+        let View::Element(button) = instance.view() else {
+            panic!("component returns a button");
+        };
+        assert_eq!(button.events().len(), 1);
+        let View::Element(span) = &button.children()[1] else {
+            panic!("dynamic count lives in a span");
+        };
+        assert!(matches!(span.children(), [View::Dynamic(_)]));
+        instance.unmount().expect("unmount component");
+        runtime.dispose().expect("dispose runtime");
+
+        let invoked = Rc::new(Cell::new(false));
+        let called = invoked.clone();
+        let parent = match crate::view! {
+            <CallbackReceiver on:increment={move |payload| {
+                called.set(payload.checked == Some(true));
+            }} />
+        }
+        .expect("callback component descriptor")
+        {
+            View::Component(node) => node,
+            _ => panic!("component descriptor expected"),
+        };
+        assert!(matches!(parent.properties()[0].value(), PropertyValue::Callback(_)));
+        let callback_runtime = Runtime::new();
+        let mut callback_registry = ComponentRegistry::new();
+        callback_registry
+            .register(__rustflow_component_definition_callbackreceiver().expect("callback adapter"))
+            .expect("register callback component");
+        let mut callback_instance = callback_registry
+            .mount(&parent, callback_runtime.clone(), &callback_runtime.root_scope())
+            .expect("callback component mounts");
+        let View::Element(button) = callback_instance.view() else {
+            panic!("callback component renders a button");
+        };
+        button.events()[0].handler().invoke(EventPayload {
+            value: None,
+            checked: Some(true),
+        });
+        assert!(invoked.get());
+        callback_instance.unmount().expect("unmount callback component");
+        callback_runtime.dispose().expect("dispose runtime");
+    }
+
     #[test]
     fn failed_update_keeps_the_previous_view() {
         let runtime = Runtime::new();
