@@ -1,21 +1,21 @@
 use std::{error::Error, fmt};
 
-use js_sys::{Reflect, JsValue};
+use js_sys::{JsValue, Reflect};
 use rustflow::{
     components::{ComponentError, ComponentInstance, ComponentRegistry},
     reactivity::{Runtime, Scope},
 };
 use rustflow_view::{
-    AttributeValue, ComponentNode, DynamicChild, Element, EventBinding, EventHandler,
-    EventPayload, KeyedList, PropertyValue, Renderer, View, ViewError,
+    AttributeValue, ComponentNode, DynamicChild, Element, EventBinding, EventHandler, EventPayload,
+    KeyedList, PropertyValue, Renderer, View, ViewError,
 };
-use wasm_bindgen::{closure::Closure, JsCast};
+use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{
     Comment, Document, Element as DomElement, Event, EventTarget, HtmlInputElement,
     HtmlSelectElement, HtmlTextAreaElement, Node,
 };
 
-use crate::policy::{validate_attribute, validate_element, validate_property, DomPolicyError};
+use crate::policy::{DomPolicyError, validate_attribute, validate_element, validate_property};
 
 /// Errors returned by the WebAssembly DOM adapter.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,21 +128,14 @@ impl DomRenderer {
     }
 
     /// Create a renderer from the current browser window.
-    pub fn from_window(
-        runtime: Runtime,
-        registry: ComponentRegistry,
-    ) -> Result<Self, DomError> {
+    pub fn from_window(runtime: Runtime, registry: ComponentRegistry) -> Result<Self, DomError> {
         let window = web_sys::window().ok_or(DomError::WindowUnavailable)?;
         let document = window.document().ok_or(DomError::DocumentUnavailable)?;
         Ok(Self::new(document, runtime, registry))
     }
 
     /// Mount a view directly inside an element and return its owned range.
-    pub fn mount_into(
-        &mut self,
-        target: &DomElement,
-        view: &View,
-    ) -> Result<MountedDom, DomError> {
+    pub fn mount_into(&mut self, target: &DomElement, view: &View) -> Result<MountedDom, DomError> {
         let mounted = self.mount(view)?;
         let parent: Node = target.clone().unchecked_into();
         if let Err(error) = attach_range(&parent, &mounted) {
@@ -195,7 +188,9 @@ impl DomRenderer {
                 AttributeValue::Boolean(true) => "",
                 AttributeValue::Boolean(false) => {
                     validate_attribute(attribute.name(), "")?;
-                    element.remove_attribute(attribute.name()).map_err(js_error)?;
+                    element
+                        .remove_attribute(attribute.name())
+                        .map_err(js_error)?;
                     continue;
                 }
                 AttributeValue::Text(value) => value.as_str(),
@@ -203,11 +198,15 @@ impl DomRenderer {
             validate_attribute(attribute.name(), value)?;
             match attribute.value() {
                 AttributeValue::Boolean(true) => {
-                    element.set_attribute(attribute.name(), "").map_err(js_error)?;
+                    element
+                        .set_attribute(attribute.name(), "")
+                        .map_err(js_error)?;
                 }
                 AttributeValue::Boolean(false) => unreachable!("false was handled above"),
                 AttributeValue::Text(value) => {
-                    element.set_attribute(attribute.name(), value).map_err(js_error)?;
+                    element
+                        .set_attribute(attribute.name(), value)
+                        .map_err(js_error)?;
                 }
             }
         }
@@ -275,9 +274,9 @@ impl DomRenderer {
         parent_scope: &Scope,
         resources: &mut RenderedNodes,
     ) -> Result<Vec<Node>, DomError> {
-        let mut instance =
-            self.registry
-                .mount(component, self.runtime.clone(), parent_scope)?;
+        let mut instance = self
+            .registry
+            .mount(component, self.runtime.clone(), parent_scope)?;
         let view = instance.view().clone();
         let nodes = match self.build_nodes(&view, instance.scope(), resources) {
             Ok(nodes) => nodes,
@@ -498,8 +497,10 @@ fn event_payload(event: &Event) -> EventPayload {
                     .map(|select| select.value())
             })
     });
-    let checked = target
-        .as_ref()
-        .and_then(|target| target.dyn_ref::<HtmlInputElement>().map(|input| input.checked()));
+    let checked = target.as_ref().and_then(|target| {
+        target
+            .dyn_ref::<HtmlInputElement>()
+            .map(|input| input.checked())
+    });
     EventPayload { value, checked }
 }

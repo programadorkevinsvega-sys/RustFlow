@@ -14,16 +14,25 @@ impl fmt::Display for DomPolicyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnsupportedElement(name) => {
-                write!(f, "element is not supported by the initial DOM renderer: {name}")
+                write!(
+                    f,
+                    "element is not supported by the initial DOM renderer: {name}"
+                )
             }
             Self::VoidElementHasChildren(name) => {
                 write!(f, "void element cannot have children: {name}")
             }
             Self::UnsafeAttribute(name) => {
-                write!(f, "attribute is not supported by the safe DOM renderer: {name}")
+                write!(
+                    f,
+                    "attribute is not supported by the safe DOM renderer: {name}"
+                )
             }
             Self::UnsafeProperty(name) => {
-                write!(f, "property is not supported by the safe DOM renderer: {name}")
+                write!(
+                    f,
+                    "property is not supported by the safe DOM renderer: {name}"
+                )
             }
             Self::UnsafeUrl(_) => {
                 write!(f, "URL scheme is not allowed by the safe DOM renderer")
@@ -35,20 +44,93 @@ impl fmt::Display for DomPolicyError {
 impl std::error::Error for DomPolicyError {}
 
 const SUPPORTED_ELEMENTS: &[&str] = &[
-    "a", "abbr", "address", "article", "aside", "b", "blockquote", "br", "button",
-    "caption", "code", "col", "colgroup", "dd", "del", "details", "div", "dl", "dt",
-    "em", "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4",
-    "h5", "h6", "header", "hr", "i", "img", "input", "ins", "kbd", "label", "legend",
-    "li", "main", "mark", "nav", "ol", "optgroup", "option", "output", "p", "picture",
-    "pre", "progress", "q", "s", "samp", "section", "select", "small", "source", "span",
-    "strong", "sub", "summary", "sup", "table", "tbody", "td", "textarea", "tfoot",
-    "th", "thead", "time", "tr", "u", "ul", "var",
+    "a",
+    "abbr",
+    "address",
+    "article",
+    "aside",
+    "b",
+    "blockquote",
+    "br",
+    "button",
+    "caption",
+    "code",
+    "col",
+    "colgroup",
+    "dd",
+    "del",
+    "details",
+    "div",
+    "dl",
+    "dt",
+    "em",
+    "fieldset",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "hr",
+    "i",
+    "img",
+    "input",
+    "ins",
+    "kbd",
+    "label",
+    "legend",
+    "li",
+    "main",
+    "mark",
+    "nav",
+    "ol",
+    "optgroup",
+    "option",
+    "output",
+    "p",
+    "picture",
+    "pre",
+    "progress",
+    "q",
+    "s",
+    "samp",
+    "section",
+    "select",
+    "small",
+    "source",
+    "span",
+    "strong",
+    "sub",
+    "summary",
+    "sup",
+    "table",
+    "tbody",
+    "td",
+    "textarea",
+    "tfoot",
+    "th",
+    "thead",
+    "time",
+    "tr",
+    "u",
+    "ul",
+    "var",
 ];
 
 const VOID_ELEMENTS: &[&str] = &["br", "col", "hr", "img", "input", "source"];
 
 const URL_ATTRIBUTES: &[&str] = &[
-    "action", "formaction", "href", "poster", "src", "xlink:href",
+    "action",
+    "formaction",
+    "href",
+    "poster",
+    "src",
+    "xlink:href",
 ];
 
 /// Validate a tag against the initial renderer allowlist and void-element rules.
@@ -68,7 +150,10 @@ pub(crate) fn validate_element(name: &str, child_count: usize) -> Result<(), Dom
 /// Event-handler properties and direct style mutation are intentionally not
 /// part of this initial renderer. URL-valued properties share the attribute
 /// scheme policy; non-text values are rejected for URL-bearing properties.
-pub(crate) fn validate_property(name: &str, value: &rustflow_view::PropertyValue) -> Result<(), DomPolicyError> {
+pub(crate) fn validate_property(
+    name: &str,
+    value: &rustflow_view::PropertyValue,
+) -> Result<(), DomPolicyError> {
     let normalized = name.to_ascii_lowercase();
     if normalized == "style" || (normalized.starts_with("on") && normalized.len() > 2) {
         return Err(DomPolicyError::UnsafeProperty(name.to_owned()));
@@ -107,7 +192,7 @@ pub(crate) fn validate_attribute(name: &str, value: &str) -> Result<(), DomPolic
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_attribute, validate_element, validate_property, DomPolicyError};
+    use super::{DomPolicyError, validate_attribute, validate_element, validate_property};
     use rustflow_view::PropertyValue;
 
     #[test]
