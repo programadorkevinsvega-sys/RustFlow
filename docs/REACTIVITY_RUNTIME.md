@@ -9,7 +9,7 @@ use rustflow::reactivity::{Runtime, RuntimeError};
 
 fn main() -> Result<(), RuntimeError> {
     let runtime = Runtime::new();
-    let count = runtime.signal_eq(0_i32)?;
+    let count = runtime.signal(0_i32)?;
     let read_count = count.clone();
     let doubled = count.clone();
     let effect = runtime.effect(move || {
@@ -29,8 +29,9 @@ fn main() -> Result<(), RuntimeError> {
 
 ## API and behavior
 
-- `Runtime::signal(value)` creates a typed signal with always-changed write semantics. Use it for values without `PartialEq`.
-- `Runtime::signal_eq(value)` creates a typed signal that suppresses writes when `old == new`. It uses Rust's `PartialEq` semantics, including the usual floating-point `NaN != NaN` behavior.
+- `Runtime::signal(value)` creates a typed signal that suppresses writes when `old == new`, using Rust's `PartialEq` semantics, including floating-point `NaN != NaN`.
+- `Runtime::signal_eq(value)` is an explicit alias for `signal`.
+- `Runtime::signal_always_changed(value)` is the fallback for values without `PartialEq`; every write notifies subscribers.
 - `Signal::try_get` and `Signal::try_set` return `RuntimeError`; `get` and `set` panic with that diagnostic for ergonomic prototype usage.
 - Effects run eagerly on creation. Reads performed by an effect replace its prior dependency set on each successful run. Only subscribed effects are invalidated.
 - The scheduler uses FIFO invalidation order, deduplicates queued effects, drains iteratively, and does not recursively flush while an effect or batch is active.
