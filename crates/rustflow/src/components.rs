@@ -596,6 +596,44 @@ mod tests {
     }
 
     #[test]
+    fn component_macro_rejects_missing_unknown_and_mismatched_props() {
+        use super::ComponentRegistry;
+
+        let mut registry = ComponentRegistry::new();
+        registry
+            .register(__rustflow_component_definition_macrocounter().expect("component adapter"))
+            .expect("register component");
+        let runtime = Runtime::new();
+        let root = runtime.root_scope();
+
+        let missing = match crate::view! { <MacroCounter /> }.expect("missing prop descriptor") {
+            View::Component(node) => node,
+            _ => panic!("component descriptor expected"),
+        };
+        let unknown = match crate::view! {
+            <MacroCounter initial={3} unexpected={"not accepted".to_owned()} />
+        }
+        .expect("unknown prop descriptor")
+        {
+            View::Component(node) => node,
+            _ => panic!("component descriptor expected"),
+        };
+        let mismatched = match crate::view! {
+            <MacroCounter initial={"not an integer".to_owned()} />
+        }
+        .expect("mismatched prop descriptor")
+        {
+            View::Component(node) => node,
+            _ => panic!("component descriptor expected"),
+        };
+
+        assert!(registry.mount(&missing, runtime.clone(), &root).is_err());
+        assert!(registry.mount(&unknown, runtime.clone(), &root).is_err());
+        assert!(registry.mount(&mismatched, runtime.clone(), &root).is_err());
+        runtime.dispose().expect("dispose runtime");
+    }
+
+    #[test]
     fn failed_update_keeps_the_previous_view() {
         let runtime = Runtime::new();
         let root = runtime.root_scope();

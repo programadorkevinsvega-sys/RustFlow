@@ -128,46 +128,46 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 
 ## Phase 3 — Browser runtime and interactive MVP
 
-### 3.1 React-like public authoring API
-- [x] Record the public authoring contract and unresolved ownership/syntax decisions in an ADR before implementing the ergonomics layer (`docs/adr/0004-react-like-component-authoring.md`); the runtime/API implementation remains pending.
-- [ ] Provide an ergonomic `signal(value)` API with documented read, write, and update operations inside components; runtime/owner-scope isolation must remain explicit and tested.
-- [ ] Provide `use_state(initial)` as a familiar component-facing convenience backed by owner-bound signals; define its return type and document that it does not use React-style positional hook cells.
-- [ ] Provide `use_effect(...)` as an owner-scoped wrapper over dependency-tracked effects; specify cleanup before reruns and on component disposal.
-- [ ] Document the target `snake_case` vocabulary for `use_state`, `use_effect`, `use_memo`, `use_ref`, and `use_context`; clearly separate planned helpers from APIs already available.
-- [ ] Implement a `#[component]`-style function component API with typed props, useful missing/unknown/type-mismatch diagnostics, and automatic descriptor/registration integration for normal usage.
-- [ ] Support typed callback props so parent components can pass callbacks to child components.
-- [ ] Make ordinary signal interpolation in `view!` reactive by default; `@dynamic` must not be required for common signal-backed text/children.
-- [ ] Add compile tests and a public example for the intended Counter API. Label the example as a design target until the code actually compiles and runs.
+**Estado: ABIERTA. No comenzar la fase siguiente hasta cerrar todos los criterios bloqueantes de esta fase.**
 
-### 3.2 Build pipeline
-- [x] Configure the wasm32-unknown-unknown target and add a dedicated CI compile check for rustflow-dom.
-- [x] Integrate wasm-bindgen and web-sys in target-specific dependencies.
-- [x] Separate browser dependencies from the target-independent view and reactive crates.
-- [ ] Produce a browser-loadable bundle and static assets.
+### 3.1 API pública de autoría
 
-### 3.3 DOM runtime
-- [x] Create and mount text, element, and fragment nodes through comment-anchored DOM ranges.
-- [x] Apply typed attributes and properties through DOM APIs; the initial renderer uses an element allowlist and URL-scheme checks.
-- [x] Attach event callbacks and remove their listeners during cleanup.
-- [ ] Add targeted/dirty-subtree DOM updates. `DomRenderer::mount_reactive` runs a render closure in an owned reactive effect. The current branch adds in-place text/compatible-element patching and same-key compatible DOM-node reuse for keyed lists when a tree contains no dynamic evaluators or component descriptors. Trees containing those opaque nodes still use full-range replacement; component identity, dynamic-region ownership, and full subtree reconciliation remain open.
-- [x] Dispose registered component scopes and listeners on unmount.
-- [ ] Implement conditional rendering and keyed dynamic-list reconciliation (keyed snapshots render in order, but updates currently replace the full range).
-- [ ] Separate dynamic view evaluation/diff planning from DOM commit; diff compatible nodes by type and properties and reconcile keyed children by stable key, with safe replacement when node types are incompatible.
-- [ ] Implement root-level event delegation for supported bubbling events, with direct-listener fallbacks when native event semantics require them; test propagation, normalized payloads, and disposal.
+- [x] Definir e implementar la API signal(value) con get, set y update, ligada a un scope de propietario activo; comprobar el uso fuera de scope y la disposición.
+- [x] Exponer use_state(initial) como comodidad sobre señales ligadas al propietario; devuelve Signal<T> y no almacena estado en celdas indexadas por el orden de hooks.
+- [x] Exponer use_effect(...) como efecto ligado al scope; comprobar cleanup antes de cada rerun y al disponer el componente.
+- [x] Documentar qué nombres RustFlow existen hoy y cuáles siguen planeados: use_state y use_effect están disponibles; use_memo, use_ref y use_context siguen pendientes.
+- [x] Añadir #[component] con adaptador/registro generado, props tipados, rechazo de props faltantes/desconocidos/tipos incompatibles y callbacks de componente tipados. El subconjunto actual requiere parámetros con nombres simples y tipos explícitos; los tipos admitidos se documentan en la guía.
+- [x] Admitir callback props a través de EventHandler, sin convertir callbacks en atributos HTML.
+- [x] Hacer que interpolar un identificador de señal como {count} produzca un hijo dinámico reactivo sin requerir @dynamic; expresiones arbitrarias que lean señales todavía requieren una región dinámica explícita.
+- [x] Compilar y probar un componente Counter real en el ejemplo de navegador.
 
-### 3.4 MVP examples
-- [ ] Build a reactive counter.
-- [ ] Build a todo list with add, toggle, and remove.
-- [ ] Support basic form and input semantics.
-- [ ] Use semantic HTML and accessible labels.
-- [ ] Add browser end-to-end tests and measure bundle size.
+### 3.2 Pipeline de compilación
 
-### 3.5 Developer feedback
-- [ ] Provide useful development-mode runtime errors.
-- [ ] Add source maps or equivalent debugging support where feasible.
-- [ ] Document clean Ubuntu setup and troubleshooting.
+- [x] Configurar el target wasm32-unknown-unknown y el check de compilación dedicado en CI.
+- [x] Integrar wasm-bindgen y web-sys en el adaptador específico de navegador.
+- [x] Separar las dependencias del navegador del modelo de vistas y del runtime reactivo multiplataforma.
+- [x] Construir un bundle de navegador de producción con WASM y assets estáticos mediante wasm-pack y Vite.
 
-**Exit gate:** the Phase 3.1 authoring contract is implemented and compile-tested; the counter and todo examples use the intended ergonomic API and run in supported browsers; only affected DOM regions update where possible; keyed children preserve identity; listeners/effects clean up; CI builds browser-loadable assets and runs browser E2E tests.
+### 3.3 Runtime DOM
+
+- [x] Montar texto, elementos y fragmentos mediante rangos delimitados por comentarios.
+- [x] Aplicar atributos y propiedades mediante APIs DOM tipadas con validación de elementos, atributos y esquemas URL; no tratar el árbol como HTML seguro.
+- [x] Registrar y retirar listeners; delegar los eventos que burbujean en el límite de montaje y usar listeners directos para los eventos que necesitan ese tratamiento.
+- [ ] Completar las actualizaciones DOM dirigidas para todo el modelo. Ya existen scopes/efectos por región dinámica, parcheo de texto y elementos compatibles, y reutilización de nodos compatibles con la misma clave. Los descriptores de componente y otros árboles opacos todavía pueden activar reemplazo de rango completo.
+- [x] Reconciliar listas dinámicas con claves únicas y conservar la identidad DOM de filas compatibles al reordenarlas.
+- [ ] Separar explícitamente el plan de diff/evaluación del commit DOM y completar la reconciliación segura de todos los tipos de subárbol, incluidos cambios de props y preservación de identidad de componentes.
+- [x] Añadir errores recuperables a ReactiveMountedDom::take_error y diagnóstico de renderizados fallidos en la consola del navegador.
+
+### 3.4 MVP interactivo y verificación
+
+- [x] Añadir un Counter con estado reactivo y actualización de un nodo existente.
+- [x] Añadir una lista de tareas con alta, marcado, eliminación y reordenación keyed.
+- [x] Cubrir inputs, formularios básicos, HTML semántico y etiquetas accesibles.
+- [x] Ejecutar E2E en Chromium sobre el bundle de producción: Counter, propagación desde un nodo hijo, CRUD/reordenación de tareas y montaje/desmontaje condicional.
+- [x] Medir WASM raw y gzip y aplicar un presupuesto raw de 1.5 MiB.
+- [x] Documentar configuración local, compilación release/debug, source maps de los assets JS y troubleshooting básico.
+
+**Criterios bloqueantes todavía abiertos:** el diff/commit aún no está separado en fases explícitas; los árboles que contienen componentes no siempre preservan la identidad de instancia durante actualizaciones; la reconciliación debe cubrir estos casos antes de declarar la fase al 100 %. La CI verde es necesaria, pero no sustituye estos criterios funcionales.
 
 ## Phase 4 — HTTP server and routing
 
