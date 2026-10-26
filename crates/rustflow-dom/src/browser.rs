@@ -1,6 +1,6 @@
 use std::{error::Error, fmt};
 
-use js_sys::{JsValue, Reflect};
+use js_sys::Reflect;
 use rustflow::{
     components::{ComponentError, ComponentInstance, ComponentRegistry},
     reactivity::{Runtime, Scope},
@@ -9,7 +9,7 @@ use rustflow_view::{
     AttributeValue, ComponentNode, DynamicChild, Element, EventBinding, EventHandler, EventPayload,
     KeyedList, PropertyValue, Renderer, View, ViewError,
 };
-use wasm_bindgen::{JsCast, closure::Closure};
+use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 use web_sys::{
     Comment, Document, Element as DomElement, Event, EventTarget, HtmlInputElement,
     HtmlSelectElement, HtmlTextAreaElement, Node,
