@@ -313,7 +313,7 @@ impl DomRenderer {
                     Err(error) => {
                         web_sys::console::error_1(&JsValue::from_str(&error.to_string()));
                         *error_effect.borrow_mut() = Some(error);
-                    },
+                    }
                 }
             } else {
                 match renderer.mount_into(&target, &next_view) {
@@ -362,7 +362,9 @@ impl DomRenderer {
             let bindings = mounted.delegated_bindings.borrow();
             let mut names = Vec::<String>::new();
             for binding in bindings.iter() {
-                if event_uses_delegation(&binding.name) && !names.iter().any(|name| name == &binding.name) {
+                if event_uses_delegation(&binding.name)
+                    && !names.iter().any(|name| name == &binding.name)
+                {
                     names.push(binding.name.clone());
                 }
             }
@@ -373,7 +375,11 @@ impl DomRenderer {
             // Keep one listener per event type and mount boundary. Its shared
             // binding table is replaced during reconciliation, without dropping
             // the currently-dispatching closure or adding duplicate listeners.
-            if mounted.delegated_listeners.iter().any(|listener| listener.name == name) {
+            if mounted
+                .delegated_listeners
+                .iter()
+                .any(|listener| listener.name == name)
+            {
                 continue;
             }
 
