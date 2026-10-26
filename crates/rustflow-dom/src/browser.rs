@@ -1066,6 +1066,84 @@ impl Drop for MountedDom {
     }
 }
 
+fn nodes_between(start: &Node, end: &Node) -> Vec<Node> {
+    let mut nodes = Vec::new();
+    if !start
+        .parent_node()
+        .is_some_and(|parent| end.parent_node().is_some_and(|end_parent| parent.is_same_node(Some(&end_parent))))
+    {
+        return nodes;
+    }
+    let mut current = start.next_sibling();
+    while let Some(node) = current {
+        if node.is_same_node(Some(end)) {
+            break;
+        }
+        current = node.next_sibling();
+        nodes.push(node);
+    }
+    nodes
+}
+
+fn first_error(current: &mut Option<DomError>, next: Result<(), DomError>) {
+    if let Err(error) = next {
+        if current.is_none() {
+            *current = Some(error);
+        }
+    }
+}
+
+fn cleanup_rendered_nodes(resources: &mut RenderedNodes) -> Result<(), DomError> {
+    let mut error = None;
+    first_error(
+        &mut error,
+        cleanup_resources(&mut resources.listeners, &mut resources.components),
+    );
+    first_error(&mut error, cleanup_dynamic_regions(&mut resources.dynamics));
+    match error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+fn cleanup_dynamic_regions(regions: &mut Vec<DynamicRegion>) -> Result<(), DomError> {
+    let mut error = None;
+    for mut region in regions.drain(..).rev() {
+        first_error(&mut error, region.scope.dispose().map_err(Into::into));
+        if let Some(mut state) = region.state.borrow_mut().take() {
+            first_error(&mut error, detach_range(&mut state.mounted));
+            first_error(
+                &mut error,
+                cleanup_resources(
+                    &mut state.mounted.listeners,
+                    &mut state.mounted.components,
+                ),
+            );
+            first_error(
+                &mut error,
+                cleanup_dynamic_regions(&mut state.mounted.dynamics),
+            );
+        }
+    }
+    match error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+fn cleanup_mounted_resources(mounted: &mut MountedDom) -> Result<(), DomError> {
+    let mut error = None;
+    first_error(
+        &mut error,
+        cleanup_resources(&mut mounted.listeners, &mut mounted.components),
+    );
+    first_error(&mut error, cleanup_dynamic_regions(&mut mounted.dynamics));
+    match error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
 fn attach_range(parent: &Node, mounted: &MountedDom) -> Result<(), DomError> {
     let start: Node = mounted.start.clone().unchecked_into();
     let end: Node = mounted.end.clone().unchecked_into();
