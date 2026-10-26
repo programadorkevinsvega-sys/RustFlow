@@ -155,7 +155,7 @@ impl PropertyName {
             .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_' || ch == '$');
         let valid_rest = name
             .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$'));
         if !valid_first || !valid_rest {
             return Err(ViewError::InvalidPropertyName(name));
         }
