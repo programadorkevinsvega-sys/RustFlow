@@ -501,12 +501,12 @@ impl DomRenderer {
                 Ok(vec![existing[0].clone()])
             }
             (View::Element(old_element), View::Element(new_element))
-                if old_element.tag().eq_ignore_ascii_case(new_element.tag()) && existing.len() == 1 =>
+                if old_element.tag().eq_ignore_ascii_case(new_element.tag())
+                    && existing.len() == 1 =>
             {
-                let dom_element: DomElement = existing[0]
-                    .clone()
-                    .dyn_into()
-                    .map_err(|_| DomError::JavaScript("expected an element node while reconciling".into()))?;
+                let dom_element: DomElement = existing[0].clone().dyn_into().map_err(|_| {
+                    DomError::JavaScript("expected an element node while reconciling".into())
+                })?;
                 self.patch_element(old_element, new_element, &dom_element, resources)?;
                 let parent_node: Node = dom_element.clone().unchecked_into();
                 let current_children = direct_children(&parent_node);
@@ -521,15 +521,16 @@ impl DomRenderer {
                 )?;
                 Ok(vec![existing[0].clone()])
             }
-            (View::Fragment(old_fragment), View::Fragment(new_fragment)) => self.reconcile_sequence(
-                old_fragment.children(),
-                new_fragment.children(),
-                existing,
-                parent,
-                before,
-                owner_scope,
-                resources,
-            ),
+            (View::Fragment(old_fragment), View::Fragment(new_fragment)) => self
+                .reconcile_sequence(
+                    old_fragment.children(),
+                    new_fragment.children(),
+                    existing,
+                    parent,
+                    before,
+                    owner_scope,
+                    resources,
+                ),
             (View::KeyedList(old_list), View::KeyedList(new_list)) => self.reconcile_keyed(
                 old_list,
                 new_list,
@@ -551,8 +552,14 @@ impl DomRenderer {
         resources: &mut RenderedNodes,
     ) -> Result<(), DomError> {
         for old_attribute in previous.attributes() {
-            if !next.attributes().iter().any(|attribute| attribute.name() == old_attribute.name()) {
-                element.remove_attribute(old_attribute.name()).map_err(js_error)?;
+            if !next
+                .attributes()
+                .iter()
+                .any(|attribute| attribute.name() == old_attribute.name())
+            {
+                element
+                    .remove_attribute(old_attribute.name())
+                    .map_err(js_error)?;
             }
         }
 
@@ -560,24 +567,35 @@ impl DomRenderer {
             match attribute.value() {
                 AttributeValue::Boolean(true) => {
                     validate_attribute(attribute.name(), "")?;
-                    element.set_attribute(attribute.name(), "").map_err(js_error)?;
+                    element
+                        .set_attribute(attribute.name(), "")
+                        .map_err(js_error)?;
                 }
                 AttributeValue::Boolean(false) => {
                     validate_attribute(attribute.name(), "")?;
-                    element.remove_attribute(attribute.name()).map_err(js_error)?;
+                    element
+                        .remove_attribute(attribute.name())
+                        .map_err(js_error)?;
                 }
                 AttributeValue::Text(value) => {
                     validate_attribute(attribute.name(), value)?;
-                    element.set_attribute(attribute.name(), value).map_err(js_error)?;
+                    element
+                        .set_attribute(attribute.name(), value)
+                        .map_err(js_error)?;
                 }
             }
         }
 
         for old_property in previous.properties() {
-            if !next.properties().iter().any(|property| property.name() == old_property.name()) {
+            if !next
+                .properties()
+                .iter()
+                .any(|property| property.name() == old_property.name())
+            {
                 let default = default_property_value(old_property.name());
                 let target: &JsValue = element.as_ref();
-                Reflect::set(target, &JsValue::from_str(old_property.name()), &default).map_err(js_error)?;
+                Reflect::set(target, &JsValue::from_str(old_property.name()), &default)
+                    .map_err(js_error)?;
             }
         }
         for property in next.properties() {
@@ -589,7 +607,8 @@ impl DomRenderer {
                 PropertyValue::Float(value) => JsValue::from_f64(*value),
             };
             let target: &JsValue = element.as_ref();
-            let accepted = Reflect::set(target, &JsValue::from_str(property.name()), &value).map_err(js_error)?;
+            let accepted = Reflect::set(target, &JsValue::from_str(property.name()), &value)
+                .map_err(js_error)?;
             if !accepted {
                 return Err(DomError::PropertyRejected(property.name().to_owned()));
             }
@@ -597,7 +616,9 @@ impl DomRenderer {
 
         let target: EventTarget = element.clone().unchecked_into();
         for binding in next.events() {
-            resources.listeners.push(create_event_listener(&target, binding)?);
+            resources
+                .listeners
+                .push(create_event_listener(&target, binding)?);
         }
         Ok(())
     }
@@ -616,17 +637,24 @@ impl DomRenderer {
         let mut cursor = 0usize;
         for view in previous {
             let count = tree_node_count(view).ok_or_else(|| {
-                DomError::JavaScript("cannot reconcile a dynamic/component subtree without an owned DOM range".into())
+                DomError::JavaScript(
+                    "cannot reconcile a dynamic/component subtree without an owned DOM range"
+                        .into(),
+                )
             })?;
             let end = cursor.saturating_add(count);
             if end > existing_nodes.len() {
-                return Err(DomError::JavaScript("mounted DOM range does not match the previous view".into()));
+                return Err(DomError::JavaScript(
+                    "mounted DOM range does not match the previous view".into(),
+                ));
             }
             ranges.push((cursor, end));
             cursor = end;
         }
         if cursor != existing_nodes.len() {
-            return Err(DomError::JavaScript("mounted DOM range has unexpected nodes".into()));
+            return Err(DomError::JavaScript(
+                "mounted DOM range has unexpected nodes".into(),
+            ));
         }
 
         let mut used = vec![false; previous.len()];
@@ -688,25 +716,34 @@ impl DomRenderer {
         let mut cursor = 0usize;
         for child in old_children {
             let count = tree_node_count(child.view()).ok_or_else(|| {
-                DomError::JavaScript("keyed reconciliation cannot reuse a dynamic/component subtree yet".into())
+                DomError::JavaScript(
+                    "keyed reconciliation cannot reuse a dynamic/component subtree yet".into(),
+                )
             })?;
             let end = cursor.saturating_add(count);
             if end > existing_nodes.len() {
-                return Err(DomError::JavaScript("keyed list DOM range does not match its prior snapshot".into()));
+                return Err(DomError::JavaScript(
+                    "keyed list DOM range does not match its prior snapshot".into(),
+                ));
             }
             ranges.push((cursor, end));
             cursor = end;
         }
         if cursor != existing_nodes.len() {
-            return Err(DomError::JavaScript("keyed list has unexpected DOM nodes".into()));
+            return Err(DomError::JavaScript(
+                "keyed list has unexpected DOM nodes".into(),
+            ));
         }
 
         let mut used = vec![false; old_children.len()];
         let mut result = Vec::new();
         for child in new_children {
-            let matched = old_children.iter().enumerate().find_map(|(index, candidate)| {
-                (!used[index] && candidate.key() == child.key()).then_some(index)
-            });
+            let matched = old_children
+                .iter()
+                .enumerate()
+                .find_map(|(index, candidate)| {
+                    (!used[index] && candidate.key() == child.key()).then_some(index)
+                });
             if let Some(previous_index) = matched {
                 used[previous_index] = true;
                 let (start, end) = ranges[previous_index];
@@ -737,7 +774,10 @@ fn can_reconcile(view: &View) -> bool {
         View::Text(_) => true,
         View::Element(element) => element.children().iter().all(can_reconcile),
         View::Fragment(fragment) => fragment.children().iter().all(can_reconcile),
-        View::KeyedList(list) => list.children().iter().all(|child| can_reconcile(child.view())),
+        View::KeyedList(list) => list
+            .children()
+            .iter()
+            .all(|child| can_reconcile(child.view())),
         View::Dynamic(_) | View::Component(_) => false,
     }
 }
@@ -775,7 +815,9 @@ fn direct_children(parent: &Node) -> Vec<Node> {
 
 fn remove_obsolete_nodes(parent: &Node, previous: &[Node], next: &[Node]) -> Result<(), DomError> {
     for old_node in previous {
-        let retained = next.iter().any(|new_node| new_node.is_same_node(Some(old_node)));
+        let retained = next
+            .iter()
+            .any(|new_node| new_node.is_same_node(Some(old_node)));
         if !retained
             && old_node
                 .parent_node()
@@ -862,7 +904,8 @@ impl Renderer for DomRenderer {
                 }
             };
 
-            let cleanup_error = cleanup_resources(&mut mounted.listeners, &mut mounted.components).err();
+            let cleanup_error =
+                cleanup_resources(&mut mounted.listeners, &mut mounted.components).err();
             mounted.roots = roots;
             mounted.listeners = resources.listeners;
             mounted.components = resources.components;
