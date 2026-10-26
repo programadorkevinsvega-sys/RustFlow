@@ -22,9 +22,7 @@ use axum::{
     routing::{MethodFilter, MethodRouter},
 };
 use bytes::Bytes;
-use http::{
-    HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri,
-};
+use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::net::TcpListener;
@@ -34,7 +32,8 @@ use rustflow::components::ComponentRegistry;
 use rustflow_view::View;
 
 /// Future returned by a RustFlow route handler.
-pub type HandlerFuture = Pin<Box<dyn Future<Output = Result<Response, HttpError>> + Send + 'static>>;
+pub type HandlerFuture =
+    Pin<Box<dyn Future<Output = Result<Response, HttpError>> + Send + 'static>>;
 type SharedHandler = Arc<dyn Fn(Request) -> HandlerFuture + Send + Sync + 'static>;
 
 /// A validated subset of conventional HTTP methods supported by the route builder.
@@ -208,8 +207,7 @@ impl Response {
 
     /// Serialize a value as JSON and set the JSON content type.
     pub fn json<T: Serialize>(value: &T) -> Result<Self, HttpError> {
-        let body = serde_json::to_vec(value)
-            .map_err(|_| HttpError::internal_server_error())?;
+        let body = serde_json::to_vec(value).map_err(|_| HttpError::internal_server_error())?;
         let mut response = Self::new(StatusCode::OK, Bytes::from(body));
         response.headers.insert(
             http::header::CONTENT_TYPE,
@@ -261,12 +259,20 @@ impl Response {
                 character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
             })
             .collect::<String>();
-        let safe_name = if safe_name.is_empty() { "download" } else { &safe_name };
+        let safe_name = if safe_name.is_empty() {
+            "download"
+        } else {
+            &safe_name
+        };
         let disposition = HeaderValue::from_str(&format!("attachment; filename=\"{safe_name}\""))
             .unwrap_or_else(|_| HeaderValue::from_static("attachment; filename=\"download\""));
         let mut response = Self::new(StatusCode::OK, contents);
-        response.headers.insert(http::header::CONTENT_TYPE, content_type);
-        response.headers.insert(http::header::CONTENT_DISPOSITION, disposition);
+        response
+            .headers
+            .insert(http::header::CONTENT_TYPE, content_type);
+        response
+            .headers
+            .insert(http::header::CONTENT_DISPOSITION, disposition);
         response
     }
 
@@ -368,8 +374,8 @@ impl Error for HttpError {}
 
 /// Render a structural view as a safe HTML response using rustflow-ssr.
 pub fn html_view(view: &View) -> Result<Response, HttpError> {
-    let html = rustflow_ssr::render_to_string(view)
-        .map_err(|_| HttpError::internal_server_error())?;
+    let html =
+        rustflow_ssr::render_to_string(view).map_err(|_| HttpError::internal_server_error())?;
     Ok(Response::html(html))
 }
 
@@ -458,7 +464,10 @@ impl fmt::Display for ServerError {
             Self::DuplicateRoute { method, path } => {
                 write!(f, "route already registered for {method:?} {path}")
             }
-            Self::ConflictingRoutePattern { existing, requested } => write!(
+            Self::ConflictingRoutePattern {
+                existing,
+                requested,
+            } => write!(
                 f,
                 "route pattern {requested} conflicts with existing pattern {existing}"
             ),
@@ -638,7 +647,9 @@ impl Application {
                 .await
                 {
                     Ok(response) => response,
-                    Err(_) => HttpError::gateway_timeout().into_response().into_axum_response(),
+                    Err(_) => HttpError::gateway_timeout()
+                        .into_response()
+                        .into_axum_response(),
                 }
             }
         };
@@ -667,11 +678,7 @@ impl Application {
     }
 
     fn into_router(self) -> Router {
-        let Self {
-            routes,
-            config,
-            ..
-        } = self;
+        let Self { routes, config, .. } = self;
         let mut router = Router::new();
         for (path, methods) in routes {
             router = router.route(&path, methods);
@@ -741,7 +748,9 @@ fn validate_route_path(path: &str) -> Result<(), ServerError> {
                 return Err(ServerError::InvalidRoute(path.to_owned()));
             }
             let name = &segment[1..segment.len() - 1];
-            let (name, wildcard) = name.strip_prefix('*').map_or((name, false), |name| (name, true));
+            let (name, wildcard) = name
+                .strip_prefix('*')
+                .map_or((name, false), |name| (name, true));
             if name.is_empty()
                 || !name
                     .chars()
@@ -771,10 +780,7 @@ fn route_shape(path: &str) -> String {
 }
 
 fn is_safe_redirect_location(location: &str) -> bool {
-    if location.is_empty()
-        || location.chars().any(char::is_control)
-        || location.starts_with("//")
-    {
+    if location.is_empty() || location.chars().any(char::is_control) || location.starts_with("//") {
         return false;
     }
     let normalized = location.trim().to_ascii_lowercase();
@@ -792,21 +798,17 @@ fn is_safe_redirect_location(location: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        Application, HttpError, HttpMethod, Request, Response, ServerConfig, ServerError,
-        html_view,
+        Application, HttpError, HttpMethod, Request, Response, ServerConfig, ServerError, html_view,
     };
     use axum::{
         body::{Body, to_bytes},
         http::{Request as AxumHttpRequest, StatusCode},
     };
     use serde::Deserialize;
-    use std::{time::Duration};
+    use std::time::Duration;
     use tower::ServiceExt;
 
-    async fn send(
-        app: Application,
-        request: AxumHttpRequest<Body>,
-    ) -> http::Response<Body> {
+    async fn send(app: Application, request: AxumHttpRequest<Body>) -> http::Response<Body> {
         app.into_router()
             .oneshot(request)
             .await
@@ -834,15 +836,21 @@ mod tests {
         app.get("/users/{id}", |_request| async { Ok(Response::text("ok")) })
             .expect("valid route");
         assert!(matches!(
-            app.get("/users/{id}", |_request| async { Ok(Response::text("again")) }),
+            app.get("/users/{id}", |_request| async {
+                Ok(Response::text("again"))
+            }),
             Err(ServerError::DuplicateRoute { .. })
         ));
         assert!(matches!(
-            app.get("/users/{name}", |_request| async { Ok(Response::text("conflict")) }),
+            app.get("/users/{name}", |_request| async {
+                Ok(Response::text("conflict"))
+            }),
             Err(ServerError::ConflictingRoutePattern { .. })
         ));
         assert!(matches!(
-            app.get("/bad?query=1", |_request| async { Ok(Response::text("bad")) }),
+            app.get("/bad?query=1", |_request| async {
+                Ok(Response::text("bad"))
+            }),
             Err(ServerError::InvalidRoute(_))
         ));
     }
@@ -887,7 +895,10 @@ mod tests {
             .expect("request");
         let response = send(app, request).await;
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response.headers()[http::header::CONTENT_TYPE], "application/json; charset=utf-8");
+        assert_eq!(
+            response.headers()[http::header::CONTENT_TYPE],
+            "application/json; charset=utf-8"
+        );
         assert_eq!(body_text(response).await, r#"{"message":"hello"}"#);
     }
 
@@ -957,8 +968,12 @@ mod tests {
         let response = html_view(&view).expect("safe rendering");
         assert_eq!(response.status_code(), StatusCode::OK);
         assert_eq!(response.body(), b"<main>&lt;safe&gt; &amp; escaped</main>");
-        assert_eq!(response.headers()[http::header::CONTENT_TYPE], "text/html; charset=utf-8");
-        let unsafe_view = View::element("script", [View::text("alert(1)")]).expect("structural node");
+        assert_eq!(
+            response.headers()[http::header::CONTENT_TYPE],
+            "text/html; charset=utf-8"
+        );
+        let unsafe_view =
+            View::element("script", [View::text("alert(1)")]).expect("structural node");
         assert!(html_view(&unsafe_view).is_err());
         let _ = HttpError::not_found("missing");
         let _ = HttpMethod::Get;
