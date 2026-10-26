@@ -581,7 +581,9 @@ mod tests {
 
         let mut registry = ComponentRegistry::new();
         registry
-            .register(__rustflow_component_definition_macropropcounter().expect("component adapter"))
+            .register(
+                __rustflow_component_definition_macropropcounter().expect("component adapter"),
+            )
             .expect("register component");
         let runtime = Runtime::new();
         let root = runtime.root_scope();
@@ -628,13 +630,23 @@ mod tests {
             panic!("component includes the local counter");
         };
         assert_eq!(counter.attributes()[0].name(), "data-testid");
-        assert_eq!(counter.attributes()[0].value(), &rustflow_view::AttributeValue::Text("local-count".into()));
+        assert_eq!(
+            counter.attributes()[0].value(),
+            &rustflow_view::AttributeValue::Text("local-count".into())
+        );
         let View::Dynamic(dynamic) = &counter.children()[0] else {
             panic!("signal interpolation remains a dynamic region");
         };
-        assert_eq!(dynamic.evaluate().expect("current signal view"), View::text("5"));
         assert_eq!(
-            instance.properties().iter().find(|property| property.name() == "initial").map(|property| property.value()),
+            dynamic.evaluate().expect("current signal view"),
+            View::text("5")
+        );
+        assert_eq!(
+            instance
+                .properties()
+                .iter()
+                .find(|property| property.name() == "initial")
+                .map(|property| property.value()),
             Some(&PropertyValue::Integer(99))
         );
 
