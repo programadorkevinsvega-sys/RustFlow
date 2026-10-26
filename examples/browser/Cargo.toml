@@ -1,0 +1,28 @@
+[package]
+name = "rustflow-browser"
+version = "0.1.0"
+description = "Runnable WebAssembly browser MVP for RustFlow Phase 3"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rustflow = { path = "../../crates/rustflow" }
+rustflow-view = { path = "../../crates/rustflow-view" }
+rustflow-dom = { path = "../../crates/rustflow-dom" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Element",
+    "HtmlInputElement",
+    "Window",
+] }
+
+[lints]
+workspace = true

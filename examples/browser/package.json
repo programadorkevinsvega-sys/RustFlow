@@ -1,0 +1,16 @@
+{
+  "name": "rustflow-browser-demo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build:wasm": "wasm-pack build --target web --release --out-dir pkg --out-name rustflow_browser",
+    "dev": "vite",
+    "check:bundle": "node scripts/check-bundle-size.mjs",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "vite": "8.3.5"
+  }
+}
