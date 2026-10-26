@@ -546,7 +546,7 @@ impl RenderContext {
             PropertyValue::Integer(_) | PropertyValue::Float(_) => {
                 property_value_as_text(property.value())
             }
-            PropertyValue::Boolean(_) => {
+            PropertyValue::Boolean(_) | PropertyValue::Callback(_) => {
                 return Err(SsrError::InvalidPropertyValue(property.name().to_owned()));
             }
         };
@@ -683,6 +683,8 @@ fn property_value_as_text(value: &PropertyValue) -> String {
         PropertyValue::Boolean(value) => value.to_string(),
         PropertyValue::Integer(value) => value.to_string(),
         PropertyValue::Float(value) => value.to_string(),
+        // Callback properties are consumed by components and must never serialize to HTML.
+        PropertyValue::Callback(_) => String::new(),
     }
 }
 
