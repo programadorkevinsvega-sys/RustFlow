@@ -19,12 +19,13 @@ struct Todo {
 }
 
 #[rustflow::component]
-fn Counter(initial: i32) -> impl IntoView {
+fn Counter(initial: i32, label: String) -> impl IntoView {
     let count = signal(initial);
     let count_for_button = count.clone();
 
     rustflow::view! {
         <section data-testid="counter">
+            <p data-testid="counter-label">{label}</p>
             <p>
                 "Count: "
                 <span data-testid="counter-value">{count}</span>
@@ -95,6 +96,7 @@ pub fn start() -> Result<(), JsValue> {
     let draft = runtime.signal(String::new()).map_err(display_error)?;
     let next_id = runtime.signal(1_i64).map_err(display_error)?;
     let show_help = runtime.signal(true).map_err(display_error)?;
+    let counter_label = runtime.signal(String::from("Initial label")).map_err(display_error)?;
 
     let mut registry = ComponentRegistry::new();
     register_counter(&mut registry).map_err(display_error)?;
@@ -113,6 +115,8 @@ pub fn start() -> Result<(), JsValue> {
             let show_for_region = show_help.clone();
             let show_for_button = show_help.clone();
             let document_for_add = document.clone();
+            let counter_label_for_component = counter_label.clone();
+            let counter_label_for_button = counter_label.clone();
 
             let todo_region = View::dynamic(move || {
                 let snapshot = todos_for_region.get();
@@ -142,7 +146,12 @@ pub fn start() -> Result<(), JsValue> {
             rustflow::view! {
                 <main>
                     <h1>"RustFlow Phase 3 browser demo"</h1>
-                    <Counter initial={0} />
+                    <Counter initial={0} label={counter_label_for_component.get()} />
+                    <button data-testid="change-counter-label" on:click={move |_payload| {
+                        counter_label_for_button.set(String::from("Updated label"));
+                    }}>
+                        "Change counter label"
+                    </button>
                     <section aria-label="Todo editor">
                         <label for="todo-input">"New task"</label>
                         <input
