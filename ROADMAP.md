@@ -143,7 +143,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 
 ### 4.3 Middleware and lifecycle
 - [x] Implement global ordered async middleware composition with a continuation that can wrap or short-circuit handlers. Route-scoped middleware remains future work.
-- [ ] Add request IDs, structured logs, and tracing configuration.
+- [x] Validate or generate a request ID, expose it to handlers, echo it in `x-request-id` on success and error responses, and emit structured `tracing` spans/events with method, route template, request ID, and status. Subscriber/export configuration stays application-owned.
 - [x] Provide graceful-shutdown APIs driven by an injected future at the composition root. Wiring OS signals into that future remains the caller's responsibility.
 - [x] Validate route templates, reject equivalent parameter-only patterns, and clamp body/timeout/concurrency configuration to safe minimums.
 - [x] Document explicit closure-captured application state; production configuration and dependency-wiring validation remain pending.
