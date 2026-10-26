@@ -1214,5 +1214,4 @@ mod tests {
 
         assert_eq!(*order.borrow(), vec!['a', 'b']);
     }
-
 }
