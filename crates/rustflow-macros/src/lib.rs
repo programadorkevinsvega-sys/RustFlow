@@ -216,8 +216,11 @@ fn is_setup_statement(statement: &TokenStream) -> bool {
     if tokens.is_empty() {
         return false;
     }
-    let start = if matches!(tokens.first(), Some(TokenTree::Ident(ident)) if ident.to_string() == "let") {
-        tokens.iter().position(|token| matches!(token, TokenTree::Punct(punct) if punct.as_char() == '='))
+    let start = if matches!(tokens.first(), Some(TokenTree::Ident(ident)) if ident.to_string() == "let")
+    {
+        tokens
+            .iter()
+            .position(|token| matches!(token, TokenTree::Punct(punct) if punct.as_char() == '='))
             .map(|index| index + 1)
             .unwrap_or(tokens.len())
     } else {
@@ -227,7 +230,10 @@ fn is_setup_statement(statement: &TokenStream) -> bool {
         let TokenTree::Ident(ident) = token else {
             return false;
         };
-        if !matches!(ident.to_string().as_str(), "signal" | "use_state" | "use_effect" | "on_cleanup") {
+        if !matches!(
+            ident.to_string().as_str(),
+            "signal" | "use_state" | "use_effect" | "on_cleanup"
+        ) {
             return false;
         }
         matches!(tokens.get(index + 1), Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis)
@@ -238,8 +244,10 @@ fn find_stateful_call(stream: &TokenStream) -> Option<Span> {
     let tokens = stream.clone().into_iter().collect::<Vec<_>>();
     for (index, token) in tokens.iter().enumerate() {
         if let TokenTree::Ident(ident) = token {
-            if matches!(ident.to_string().as_str(), "signal" | "use_state" | "use_effect" | "on_cleanup")
-                && matches!(tokens.get(index + 1), Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis)
+            if matches!(
+                ident.to_string().as_str(),
+                "signal" | "use_state" | "use_effect" | "on_cleanup"
+            ) && matches!(tokens.get(index + 1), Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis)
             {
                 return Some(ident.span());
             }
