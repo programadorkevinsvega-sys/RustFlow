@@ -80,7 +80,8 @@ fn todo_row(todo: Todo, todos: Signal<Vec<Todo>>) -> Result<View, rustflow::view
 
 #[wasm_bindgen(start)]
 pub fn start() -> Result<(), JsValue> {
-    let window = web_sys::window().ok_or_else(|| JsValue::from_str("browser window unavailable"))?;
+    let window =
+        web_sys::window().ok_or_else(|| JsValue::from_str("browser window unavailable"))?;
     let document = window
         .document()
         .ok_or_else(|| JsValue::from_str("browser document unavailable"))?;
@@ -120,10 +121,7 @@ pub fn start() -> Result<(), JsValue> {
                 let mut children = Vec::with_capacity(snapshot.len());
                 for todo in snapshot {
                     let id = todo.id;
-                    children.push(KeyedChild::new(
-                        id,
-                        todo_row(todo, todos_for_rows.clone())?,
-                    ));
+                    children.push(KeyedChild::new(id, todo_row(todo, todos_for_rows.clone())?));
                 }
                 View::keyed_list(children)
             });
