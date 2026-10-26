@@ -8,7 +8,7 @@
 
 RustFlow is an early-stage Rust web framework project intended to make it practical to build interactive web interfaces and full-stack web applications with Rust. Its differentiator is a RustFlow-owned reactive UI model combined with a convention-oriented server workflow inspired by Laravel. The project is not production-ready and does not promise stable APIs.
 
-The first milestone is a small, testable vertical slice—not a complete full-stack framework.
+The first milestone is a small, testable vertical slice—not a complete full-stack framework. RustFlow's target is a React-like component-authoring experience built with Rust types and RustFlow-owned reactivity; it is not a promise of source/API compatibility with React. Parts of this experience are not implemented yet and must remain labeled as planned until verified.
 
 ## 2. Target users
 
@@ -24,7 +24,7 @@ The first milestone is a small, testable vertical slice—not a complete full-st
 ### Not an initial target
 - Teams that require a mature, stable, production-supported framework today.
 - Applications requiring complete browser API coverage, a feature-complete ORM, or turnkey enterprise authentication in the first release.
-- Developers seeking a drop-in replacement for React, Laravel, or an existing Rust framework.
+- Developers seeking a drop-in replacement for React, Laravel, or an existing Rust framework. This is distinct from RustFlow's explicit goal of React-like declarative authoring and reactive UI behavior.
 
 ## 3. Product principles
 
@@ -36,6 +36,7 @@ The first milestone is a small, testable vertical slice—not a complete full-st
 6. **Accessible HTML.** Prefer semantic HTML, keyboard-accessible interactions, and correctly associated form labels.
 7. **Honest maturity.** Do not claim features, compatibility, performance, or production readiness without evidence.
 8. **Incremental decisions.** Architectural choices remain revisitable through documented ADRs and implementation evidence.
+9. **React-like authoring is a product requirement.** Prefer a working, typed component API with local state, reactive interpolation, callbacks, and efficient DOM updates over isolated syntax that looks JSX-like but does not deliver reactive behavior.
 
 ## 4. Supported platforms and compatibility policy
 
@@ -56,10 +57,10 @@ The first milestone is a small, testable vertical slice—not a complete full-st
 
 The MVP is complete only when all of the following are implemented, documented, and verified:
 
-1. A Rust component owns reactive signal state.
-2. An effect updates only the relevant DOM node after a signal changes.
-3. Event handlers are registered and removed with component lifecycle cleanup.
-4. A todo example supports add, toggle, remove, conditional rendering, and keyed list updates.
+1. A typed Rust function component accepts typed props and owns reactive signal state through the intended ergonomic API.
+2. Ordinary signal interpolation updates the affected DOM region automatically when state changes.
+3. DOM event handlers and component callback props work and are cleaned up with component lifecycle disposal.
+4. A todo example uses the same public API and supports add, toggle, remove, conditional rendering, and keyed list updates that preserve child identity.
 5. A Rust server handles multiple routes and returns safely rendered HTML and JSON.
 6. CI runs core unit tests, browser tests, and server integration tests on pull requests.
 7. A clean-checkout guide lets a contributor install prerequisites, run checks, and launch examples.
@@ -72,7 +73,8 @@ This MVP does **not** include SSR/hydration, a complete authentication system, a
 **As a** Rust developer, **I want** typed signal state and effects, **so that** UI updates follow state changes predictably.
 
 Acceptance criteria:
-- A signal can be read and written using a documented API.
+- A signal can be read and written using a documented API; the intended component-facing API provides ergonomic `signal(value)`, read, write, and update operations without requiring each component author to manually construct a Runtime.
+- Signal ownership and runtime isolation are explicit, scope-bound, and tested; convenience must not rely on an undocumented process-global mutable runtime.
 - An effect reruns when, and only when, a dependency it observed changes.
 - Dynamic dependency changes stop tracking dependencies no longer read.
 - Disposal prevents future scheduled work for the disposed scope.
@@ -83,6 +85,8 @@ Acceptance criteria:
 
 Acceptance criteria:
 - Text, elements, fragments, and nested components have documented representation.
+- A normal signal child such as `{count}` inside `view!` updates automatically; users do not need an explicit deferred-child wrapper for routine signal interpolation.
+- Components support typed props and typed callback props with compile-time diagnostics.
 - Text and attribute values are escaped by default in server-rendered output.
 - Event handlers are removed when their owning component is unmounted.
 - Invalid or unsupported operations produce documented diagnostics rather than silent corruption.
@@ -96,7 +100,7 @@ Acceptance criteria:
 - Empty and populated states render correctly.
 - List items preserve identity under insertion, removal, and toggling.
 - Form controls have labels and work with keyboard interaction.
-- The example is runnable from a clean checkout and is exercised in CI.
+- The example is runnable from a clean checkout using the intended ergonomic component API and is exercised by compile checks and browser E2E tests in CI.
 
 ### US-4: Serve application routes
 **As a** full-stack Rust developer, **I want** typed route handlers and predictable responses, **so that** I can serve pages and API data.
@@ -133,6 +137,7 @@ Acceptance criteria:
 | --- | --- | --- | --- |
 | Reactive graph leaks or stale dependencies | High / High | Specify semantics before implementation; test dynamic dependencies, disposal, cycles, and re-entrancy | Deterministic regression tests and memory/lifecycle checks |
 | Procedural macro complexity and poor diagnostics | High / Medium | Start with a constrained grammar; use compile-fail tests and source spans | Invalid syntax produces actionable errors |
+| Ergonomic component API hides runtime ownership or loses reactive tracking | High / High | Record the component/owner contract in an ADR; test scope isolation, reactive interpolation, callbacks, cleanup, and browser updates | The intended Counter and todo compile and pass browser E2E tests without manual runtime/registry plumbing |
 | Native/WASM dependency leakage | Medium / High | Separate target-specific crates and features; compile each supported target in CI | Native and WASM checks run independently |
 | SSR/hydration mismatch | Medium / High | Defer hydration beyond MVP; define deterministic rendering and serialization contracts first | Explicit mismatch tests before enabling hydration |
 | XSS or unsafe HTML rendering | Medium / Critical | Escape by default; make trusted HTML explicit and narrowly scoped; test adversarial inputs | Security tests for text, attributes, and serialization |
@@ -150,6 +155,7 @@ The initial decisions and alternatives are recorded in:
 - [ADR 0001 — Crate boundaries](adr/0001-crate-boundaries.md)
 - [ADR 0002 — Client runtime](adr/0002-client-runtime.md)
 - [ADR 0003 — Server integration](adr/0003-server-integration.md)
+- [ADR 0004 — React-like component authoring](adr/0004-react-like-component-authoring.md)
 
 These records are proposed design constraints for review, not proof of implemented functionality. Revisit them when prototypes provide evidence that changes the trade-offs.
 
@@ -158,7 +164,7 @@ These records are proposed design constraints for review, not proof of implement
 - [ ] Maintainers approve target users, product principles, supported platforms, and non-goals.
 - [ ] MVP user stories and acceptance criteria are reviewed.
 - [ ] Risks have named mitigations and observable validation evidence.
-- [ ] The three architecture decision records are reviewed and accepted or amended.
+- [ ] The architecture decision records relevant to Phase 0.2 are reviewed and accepted or amended.
 - [ ] README and roadmap agree with this scope.
 - [ ] No planned capability is represented as implemented.
 
