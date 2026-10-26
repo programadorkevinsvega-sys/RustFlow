@@ -100,6 +100,7 @@ struct RenderedNodes {
     listeners: Vec<EventListener>,
     delegated: Vec<DelegatedBinding>,
     components: Vec<ComponentInstance>,
+    component_regions: Vec<ComponentRegion>,
     dynamics: Vec<DynamicRegion>,
 }
 
@@ -115,6 +116,14 @@ struct DynamicMountState {
     view: View,
 }
 
+struct ComponentRegion {
+    descriptor: ComponentNode,
+    instance: ComponentInstance,
+    mounted: MountedDom,
+    view: View,
+    reused: bool,
+}
+
 /// A mounted DOM range. Comment anchors make fragment roots updateable without
 /// introducing a visible wrapper element.
 pub struct MountedDom {
@@ -125,6 +134,7 @@ pub struct MountedDom {
     delegated_listeners: Vec<EventListener>,
     delegated_bindings: Rc<RefCell<Vec<DelegatedBinding>>>,
     components: Vec<ComponentInstance>,
+    component_regions: Vec<ComponentRegion>,
     dynamics: Vec<DynamicRegion>,
 }
 
@@ -246,6 +256,11 @@ impl DomRenderer {
             return Err(error);
         }
         if let Err(error) = self.activate_delegated_listeners(&mut mounted, &parent) {
+            let _ = detach_range(&mut mounted);
+            let _ = cleanup_mounted_resources(&mut mounted);
+            return Err(error);
+        }
+        if let Err(error) = self.activate_component_regions(&mut mounted.component_regions) {
             let _ = detach_range(&mut mounted);
             let _ = cleanup_mounted_resources(&mut mounted);
             return Err(error);
@@ -437,6 +452,20 @@ impl DomRenderer {
         Ok(())
     }
 
+    fn activate_component_regions(
+        &self,
+        regions: &mut [ComponentRegion],
+    ) -> Result<(), DomError> {
+        for region in regions {
+            if let Some(parent) = region.mounted.start.parent_node() {
+                self.activate_delegated_listeners(&mut region.mounted, &parent)?;
+            }
+            self.activate_component_regions(&mut region.mounted.component_regions)?;
+            self.activate_dynamic_regions(&mut region.mounted.dynamics)?;
+        }
+        Ok(())
+    }
+
     fn activate_dynamic_regions(&self, regions: &mut [DynamicRegion]) -> Result<(), DomError> {
         for region in regions {
             {
@@ -445,6 +474,7 @@ impl DomRenderer {
                     if let Some(parent) = state.mounted.start.parent_node() {
                         self.activate_delegated_listeners(&mut state.mounted, &parent)?;
                     }
+                    self.activate_component_regions(&mut state.mounted.component_regions)?;
                     self.activate_dynamic_regions(&mut state.mounted.dynamics)?;
                 }
             }
@@ -664,6 +694,7 @@ impl DomRenderer {
             delegated_listeners: Vec::new(),
             delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
             components: inner.components,
+            component_regions: inner.component_regions,
             dynamics: inner.dynamics,
         };
         let state = Rc::new(RefCell::new(Some(DynamicMountState { mounted, view })));
@@ -692,14 +723,41 @@ impl DomRenderer {
             .registry
             .mount(component, self.runtime.clone(), parent_scope)?;
         let view = instance.view().clone();
-        let nodes = match self.build_nodes(&view, instance.scope(), resources) {
+        let start = self.document.create_comment("rustflow:component:start");
+        let end = self.document.create_comment("rustflow:component:end");
+        let mut inner = RenderedNodes::default();
+        let roots = match self.build_nodes(&view, instance.scope(), &mut inner) {
             Ok(nodes) => nodes,
             Err(error) => {
+                let _ = cleanup_rendered_nodes(&mut inner);
                 let _ = instance.unmount();
                 return Err(error);
             }
         };
-        resources.components.push(instance);
+        let mounted = MountedDom {
+            start: start.clone(),
+            end: end.clone(),
+            roots: roots.clone(),
+            listeners: inner.listeners,
+            delegated_listeners: Vec::new(),
+            delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
+            components: inner.components,
+            component_regions: inner.component_regions,
+            dynamics: inner.dynamics,
+        };
+        resources.component_regions.push(ComponentRegion {
+            descriptor: component.clone(),
+            instance,
+            mounted,
+            view,
+            reused: false,
+        });
+        let mut nodes = Vec::with_capacity(roots.len() + 2);
+        let start_node: Node = start.unchecked_into();
+        let end_node: Node = end.unchecked_into();
+        nodes.push(start_node);
+        nodes.extend(roots);
+        nodes.push(end_node);
         Ok(nodes)
     }
     fn replace_range(&mut self, mounted: &mut MountedDom, next: &View) -> Result<(), DomError> {
@@ -743,11 +801,13 @@ impl DomRenderer {
         mounted.roots = next_roots;
         mounted.listeners = resources.listeners;
         mounted.components = resources.components;
+        mounted.component_regions = resources.component_regions;
         mounted.dynamics = resources.dynamics;
         *mounted.delegated_bindings.borrow_mut() = resources.delegated;
         if let Some(parent) = mounted.start.parent_node() {
             self.activate_delegated_listeners(mounted, &parent)?;
         }
+        self.activate_component_regions(&mut mounted.component_regions)?;
         self.activate_dynamic_regions(&mut mounted.dynamics)?;
         Ok(())
     }
@@ -1141,6 +1201,7 @@ impl Renderer for DomRenderer {
             delegated_listeners: Vec::new(),
             delegated_bindings: Rc::new(RefCell::new(resources.delegated)),
             components: resources.components,
+            component_regions: resources.component_regions,
             dynamics: resources.dynamics,
         })
     }
@@ -1254,6 +1315,10 @@ fn cleanup_rendered_nodes(resources: &mut RenderedNodes) -> Result<(), DomError>
         cleanup_resources(&mut resources.listeners, &mut resources.components),
     );
     first_error(&mut error, cleanup_dynamic_regions(&mut resources.dynamics));
+    first_error(
+        &mut error,
+        cleanup_component_regions(&mut resources.component_regions),
+    );
     resources.delegated.clear();
     match error {
         Some(error) => Err(error),
@@ -1276,7 +1341,7 @@ fn cleanup_dynamic_regions(regions: &mut Vec<DynamicRegion>) -> Result<(), DomEr
     }
 }
 
-fn cleanup_mounted_content(mounted: &mut MountedDom) -> Result<(), DomError> {
+fn cleanup_mounted_non_component_content(mounted: &mut MountedDom) -> Result<(), DomError> {
     let mut error = None;
     first_error(
         &mut error,
@@ -1284,6 +1349,40 @@ fn cleanup_mounted_content(mounted: &mut MountedDom) -> Result<(), DomError> {
     );
     first_error(&mut error, cleanup_dynamic_regions(&mut mounted.dynamics));
     mounted.delegated_bindings.borrow_mut().clear();
+    match error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+fn cleanup_mounted_content(mounted: &mut MountedDom) -> Result<(), DomError> {
+    let mut error = cleanup_mounted_non_component_content(mounted).err();
+    first_error(
+        &mut error,
+        cleanup_component_regions(&mut mounted.component_regions),
+    );
+    match error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+fn cleanup_component_regions(regions: &mut Vec<ComponentRegion>) -> Result<(), DomError> {
+    let mut error = None;
+    for mut region in regions.drain(..).rev() {
+        first_error(&mut error, cleanup_component_region(&mut region));
+    }
+    match error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+fn cleanup_component_region(region: &mut ComponentRegion) -> Result<(), DomError> {
+    let mut error = None;
+    first_error(&mut error, region.instance.unmount().map_err(Into::into));
+    first_error(&mut error, detach_range(&mut region.mounted));
+    first_error(&mut error, cleanup_mounted_resources(&mut region.mounted));
     match error {
         Some(error) => Err(error),
         None => Ok(()),
