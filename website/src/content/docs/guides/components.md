@@ -5,6 +5,31 @@ description: Modelo tipado de vistas, atributos, eventos y ciclo de vida de comp
 
 > **Estado: prototipo en desarrollo.** RustFlow tiene un modelo estructural tipado, ciclo de vida nativo, un renderer inicial WASM y un serializador de fragmentos HTML. No se considera una app full-stack lista para producción.
 
+## Objetivo de ergonomía React-like (planeado, no disponible todavía)
+
+RustFlow apunta a una experiencia de autoría declarativa y reactiva parecida en conceptos a React, pero no a una API compatible con React. El objetivo de diseño es escribir componentes tipados con estado local, interpolación reactiva automática, callbacks tipados y actualizaciones DOM eficientes.
+
+El siguiente código es una **ilustración del objetivo futuro; no compila con la API actual**:
+
+```rust
+#[component]
+fn Counter(initial: i32) -> impl IntoView {
+    let count = signal(initial);
+
+    view! {
+        <div class="counter">
+            <p>"Contador: " {count}</p>
+            <button on:click={move |_| count.update(|n| *n += 1)}>
+                "Sumar"
+            </button>
+        </div>
+    }
+}
+```
+
+Para llegar a esa experiencia aún faltan, entre otras piezas, la API ergonómica de `signal(value)` con `update`, la macro `#[component]`, props y callbacks tipados, la interpolación reactiva automática y el parcheo DOM fino. El contrato y los criterios de aceptación están en [ADR 0004 — Autoría de componentes React-like](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0004-react-like-component-authoring.md) y en el [roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md).
+
+
 ## Construir un árbol de vistas
 
 El modelo está disponible desde rustflow::view. Los constructores de elementos validan la sintaxis del nombre y devuelven un resultado:
