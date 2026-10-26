@@ -140,9 +140,11 @@ pub fn start() -> Result<(), JsValue> {
     let next_id = runtime.signal(1_i64).map_err(display_error)?;
     let show_help = runtime.signal(true).map_err(display_error)?;
     let counter_label = runtime.signal(String::from("Initial label")).map_err(display_error)?;
+    let cleanup_count = runtime.signal(0_i32).map_err(display_error)?;
 
     let mut registry = ComponentRegistry::new();
     register_counter(&mut registry).map_err(display_error)?;
+    register_todorow(&mut registry).map_err(display_error)?;
 
     let mut renderer = DomRenderer::new(document.clone(), runtime, registry);
     let mounted = renderer
@@ -160,13 +162,22 @@ pub fn start() -> Result<(), JsValue> {
             let document_for_add = document.clone();
             let counter_label_for_component = counter_label.clone();
             let counter_label_for_button = counter_label.clone();
+            let cleanup_count_for_rows = cleanup_count.clone();
+            let cleanup_count_for_display = cleanup_count.clone();
 
             let todo_region = View::dynamic(move || {
                 let snapshot = todos_for_region.get();
                 let mut children = Vec::with_capacity(snapshot.len());
                 for todo in snapshot {
                     let id = todo.id;
-                    children.push(KeyedChild::new(id, todo_row(todo, todos_for_rows.clone())?));
+                    children.push(KeyedChild::new(
+                        id,
+                        todo_component(
+                            todo,
+                            todos_for_rows.clone(),
+                            cleanup_count_for_rows.clone(),
+                        )?,
+                    ));
                 }
                 View::keyed_list(children)
             });
@@ -229,6 +240,7 @@ pub fn start() -> Result<(), JsValue> {
                         </button>
                     </section>
                     <ul data-testid="todo-list">{todo_region}</ul>
+                    <p data-testid="todo-unmount-count">"Unmounted rows: " {cleanup_count_for_display}</p>
                     <button on:click={move |_payload| {
                         todos_for_reverse.update(|items| items.reverse());
                     }}>
