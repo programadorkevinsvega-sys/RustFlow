@@ -36,8 +36,7 @@ pub type HandlerFuture =
     Pin<Box<dyn Future<Output = Result<Response, HttpError>> + Send + 'static>>;
 type SharedHandler = Arc<dyn Fn(Request) -> HandlerFuture + Send + Sync + 'static>;
 
-type SharedMiddleware =
-    Arc<dyn Fn(Request, Next) -> HandlerFuture + Send + Sync + 'static>;
+type SharedMiddleware = Arc<dyn Fn(Request, Next) -> HandlerFuture + Send + Sync + 'static>;
 
 /// Middleware that wraps a request/response pair and may continue or short-circuit.
 ///
@@ -97,7 +96,6 @@ pub struct RouteInfo {
     pub path: String,
     pub name: Option<String>,
 }
-
 
 /// A validated subset of conventional HTTP methods supported by the route builder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -883,7 +881,11 @@ async fn dispatch_request(
     let request = Request::new(parts.method, parts.uri, path_params, parts.headers, body);
     let middleware = match middleware_registry.read() {
         Ok(middleware) => Arc::new(middleware.clone()),
-        Err(_) => return HttpError::internal_server_error().into_response().into_axum_response(),
+        Err(_) => {
+            return HttpError::internal_server_error()
+                .into_response()
+                .into_axum_response();
+        }
     };
     let next = Next {
         index: 0,
@@ -992,8 +994,18 @@ mod tests {
         http::{Request as AxumHttpRequest, StatusCode},
     };
     use serde::Deserialize;
-    use std::{sync::{Arc, atomic::{AtomicUsize, Ordering}}, time::Duration};
-    use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, sync::oneshot};
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::Duration,
+    };
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpStream,
+        sync::oneshot,
+    };
     use tower::ServiceExt;
 
     async fn send(app: Application, request: AxumHttpRequest<Body>) -> http::Response<Body> {
@@ -1134,8 +1146,10 @@ mod tests {
     #[tokio::test]
     async fn middleware_wraps_handlers_and_can_be_registered_after_routes() {
         let mut app = Application::new();
-        app.get("/middleware", |_request| async { Ok(Response::text("wrapped")) })
-            .expect("route registration");
+        app.get("/middleware", |_request| async {
+            Ok(Response::text("wrapped"))
+        })
+        .expect("route registration");
 
         let visits = Arc::new(AtomicUsize::new(0));
         let middleware_visits = visits.clone();
@@ -1166,9 +1180,12 @@ mod tests {
     #[test]
     fn named_routes_are_introspectable_and_route_names_are_unique() {
         let mut app = Application::new();
-        app.route_named("users.show", HttpMethod::Get, "/users/{id}", |_request| async {
-            Ok(Response::text("user"))
-        })
+        app.route_named(
+            "users.show",
+            HttpMethod::Get,
+            "/users/{id}",
+            |_request| async { Ok(Response::text("user")) },
+        )
         .expect("named route");
         app.get("/health", |_request| async { Ok(Response::text("ok")) })
             .expect("unnamed route");
@@ -1192,9 +1209,12 @@ mod tests {
             Err(ServerError::DuplicateRouteName(_))
         ));
         assert!(matches!(
-            app.route_named("invalid name", HttpMethod::Get, "/bad-name", |_request| async {
-                Ok(Response::text("bad"))
-            }),
+            app.route_named(
+                "invalid name",
+                HttpMethod::Get,
+                "/bad-name",
+                |_request| async { Ok(Response::text("bad")) }
+            ),
             Err(ServerError::InvalidRouteName(_))
         ));
     }
@@ -1225,7 +1245,10 @@ mod tests {
         assert!(response.ends_with("ok"));
 
         shutdown_tx.send(()).expect("shutdown signal");
-        server.await.expect("server task").expect("graceful server stop");
+        server
+            .await
+            .expect("server task")
+            .expect("graceful server stop");
     }
 
     #[tokio::test]
