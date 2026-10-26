@@ -128,7 +128,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 
 ## Phase 3 — Browser runtime and interactive MVP
 
-**Estado: implementación técnica en PR apilada #26 sobre #25; pendiente de validación del HEAD exacto e integración. No comenzar la fase siguiente hasta revisar/integrar #26 en #25 y cerrar #25.**
+**Estado: criterios técnicos implementados en la PR apilada #26 sobre #25. La CI del HEAD exacto debe estar verde y ambas PR deben revisarse/integrarse antes de declarar cerrada la Fase 3 o iniciar la siguiente.**
 
 ### 3.1 API pública de autoría
 
