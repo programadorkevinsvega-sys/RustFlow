@@ -1333,9 +1333,8 @@ async fn dispatch_request(
             parts.headers,
             body,
             request_id_for_response.clone(),
+            identity,
             peer,
-            identity.client_ip,
-            identity.https,
         );
         let middleware = match (middleware_registry.read(), route_middleware.read()) {
             (Ok(global), Ok(scoped)) => {
