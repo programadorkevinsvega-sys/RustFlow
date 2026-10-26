@@ -6,25 +6,25 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'RustFlow',
-      description: 'Documentación para desarrolladores de RustFlow.',
+      description: 'Guías para desarrolladores que quieren evaluar y utilizar RustFlow.',
       defaultLocale: 'root',
       locales: { root: { label: 'Español', lang: 'es' } },
       sidebar: [
-        { label: 'Introducción', items: [
+        { label: 'Empezar', items: [
           { label: 'Bienvenido a RustFlow', slug: 'index' },
-          { label: 'Estado del proyecto', slug: 'project-status' },
+          { label: 'Probar RustFlow hoy', slug: 'getting-started/setup' },
+          { label: 'Reactividad disponible', slug: 'concepts/reactivity' },
         ]},
-        { label: 'Primeros pasos', items: [
-          { label: 'Preparar el entorno', slug: 'getting-started/setup' },
+        { label: 'Construir con RustFlow', items: [
+          { label: 'Crear componentes', slug: 'guides/components' },
+          { label: 'CLI y comandos', slug: 'guides/cli' },
         ]},
-        { label: 'Conceptos', items: [
-          { label: 'Reactividad', slug: 'concepts/reactivity' },
+        { label: 'Proyecto', items: [
+          { label: 'Estado y fases', slug: 'project-status' },
         ]},
-        { label: 'Calidad y verificación', items: [
-          { label: 'Verificación del runtime', slug: 'verification/reactivity' },
-        ]},
-        { label: 'Contribuir', items: [
+        { label: 'Colaborar', items: [
           { label: 'Escribir documentación', slug: 'contributing/documentation' },
+          { label: 'Verificación del runtime', slug: 'verification/reactivity' },
         ]},
       ],
     }),
