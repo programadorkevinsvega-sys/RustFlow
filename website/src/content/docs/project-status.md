@@ -19,8 +19,8 @@ Consulta la implementación en [crates/rustflow/src/reactivity.rs](https://githu
 
 ## Todavía en progreso
 
-- La fase de corrección requiere ampliar y verificar las pruebas de comportamiento.
-- Los benchmarks reproducibles aún están pendientes.
+- La fase de corrección sigue abierta hasta que la nueva cobertura de casos límite pase CI y se revisen los resultados.
+- Existe un harness de benchmarks y una ejecución de humo en CI; la línea base de rendimiento solo se cerrará cuando se registren y revisen mediciones reproducibles en un entorno documentado.
 - El modelo de vistas, el runtime de navegador/WASM, SSR, routing y las herramientas full-stack pertenecen a fases posteriores del roadmap.
 
 No interpretes una sección futura como una API disponible. Revisa el código y el roadmap antes de depender de una función.
