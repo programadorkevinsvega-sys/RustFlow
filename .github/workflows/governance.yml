@@ -1,0 +1,29 @@
+name: Governance checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  governance:
+    name: Governance files and whitespace
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify required governance files
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in README.md ROADMAP.md ARCHITECTURE_RULES.md SECURITY.md AGENTS.md CONTRIBUTING.md CODE_OF_CONDUCT.md MAINTAINERS.md LICENSE-MIT LICENSE-APACHE rust-toolchain.toml; do
+            test -s "$file" || { echo "Missing or empty required file: $file"; exit 1; }
+          done
+
+      - name: Check whitespace errors
+        run: git diff --check
