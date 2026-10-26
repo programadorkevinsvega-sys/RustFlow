@@ -224,11 +224,15 @@ impl DomRenderer {
 
     /// Mount a view directly inside an element and return its owned range.
     pub fn mount_into(&mut self, target: &DomElement, view: &View) -> Result<MountedDom, DomError> {
-        let mounted = self.mount(view)?;
+        let mut mounted = self.mount(view)?;
         let parent: Node = target.clone().unchecked_into();
         if let Err(error) = attach_range(&parent, &mounted) {
-            let mut mounted = mounted;
-            let _ = cleanup_resources(&mut mounted.listeners, &mut mounted.components);
+            let _ = cleanup_mounted_resources(&mut mounted);
+            return Err(error);
+        }
+        if let Err(error) = self.activate_dynamic_regions(&mut mounted.dynamics) {
+            let _ = detach_range(&mut mounted);
+            let _ = cleanup_mounted_resources(&mut mounted);
             return Err(error);
         }
         Ok(mounted)
@@ -275,6 +279,7 @@ impl DomRenderer {
             let mut renderer =
                 DomRenderer::new(document.clone(), runtime.clone(), registry.clone());
             renderer.root_scope = effect_scope.clone();
+            renderer.error_sink = Some(error_effect.clone());
 
             let mut current = state_effect.borrow_mut();
             if let Some(current) = current.as_mut() {
@@ -574,39 +579,44 @@ impl DomRenderer {
         let next_roots = match self.build_nodes(next, &self.root_scope, &mut resources) {
             Ok(nodes) => nodes,
             Err(error) => {
-                let _ = cleanup_resources(&mut resources.listeners, &mut resources.components);
+                let _ = cleanup_rendered_nodes(&mut resources);
                 return Err(error);
             }
         };
 
+        let start: Node = mounted.start.clone().unchecked_into();
+        let end: Node = mounted.end.clone().unchecked_into();
+        let old_nodes = nodes_between(&start, &end);
         if let Some(parent) = mounted.start.parent_node() {
-            let end: Node = mounted.end.clone().unchecked_into();
+            let end_node: Node = mounted.end.clone().unchecked_into();
             let mut inserted = Vec::new();
             for node in &next_roots {
-                if let Err(error) = parent.insert_before(node, Some(&end)) {
+                if let Err(error) = parent.insert_before(node, Some(&end_node)) {
                     for inserted_node in inserted {
                         let _ = parent.remove_child(&inserted_node);
                     }
-                    let _ = cleanup_resources(&mut resources.listeners, &mut resources.components);
+                    let _ = cleanup_rendered_nodes(&mut resources);
                     return Err(js_error(error));
                 }
                 inserted.push(node.clone());
             }
-            for old_node in &mounted.roots {
+            for old_node in &old_nodes {
                 if let Err(error) = parent.remove_child(old_node) {
                     for inserted_node in inserted {
                         let _ = parent.remove_child(&inserted_node);
                     }
-                    let _ = cleanup_resources(&mut resources.listeners, &mut resources.components);
+                    let _ = cleanup_rendered_nodes(&mut resources);
                     return Err(js_error(error));
                 }
             }
         }
 
-        cleanup_resources(&mut mounted.listeners, &mut mounted.components)?;
+        cleanup_mounted_resources(mounted)?;
         mounted.roots = next_roots;
         mounted.listeners = resources.listeners;
         mounted.components = resources.components;
+        mounted.dynamics = resources.dynamics;
+        self.activate_dynamic_regions(&mut mounted.dynamics)?;
         Ok(())
     }
 
@@ -976,7 +986,7 @@ impl Renderer for DomRenderer {
         let roots = match self.build_nodes(view, &self.root_scope, &mut resources) {
             Ok(nodes) => nodes,
             Err(error) => {
-                let _ = cleanup_resources(&mut resources.listeners, &mut resources.components);
+                let _ = cleanup_rendered_nodes(&mut resources);
                 return Err(error);
             }
         };
@@ -986,6 +996,7 @@ impl Renderer for DomRenderer {
             roots,
             listeners: resources.listeners,
             components: resources.components,
+            dynamics: resources.dynamics,
         })
     }
 
@@ -1047,7 +1058,7 @@ impl Renderer for DomRenderer {
 
     fn unmount(&mut self, mut mounted: Self::Mounted) -> Result<(), Self::Error> {
         let mut first_error = detach_range(&mut mounted).err();
-        if let Err(error) = cleanup_resources(&mut mounted.listeners, &mut mounted.components) {
+        if let Err(error) = cleanup_mounted_resources(&mut mounted) {
             if first_error.is_none() {
                 first_error = Some(error);
             }
@@ -1062,7 +1073,7 @@ impl Renderer for DomRenderer {
 impl Drop for MountedDom {
     fn drop(&mut self) {
         let _ = detach_range(self);
-        let _ = cleanup_resources(&mut self.listeners, &mut self.components);
+        let _ = cleanup_mounted_resources(self);
     }
 }
 
