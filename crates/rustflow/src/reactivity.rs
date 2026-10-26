@@ -807,8 +807,12 @@ mod tests {
         let second = Runtime::new();
         let foreign = first.signal_eq(1).unwrap();
         let captured = foreign.clone();
-        let effect = second.effect(move || { let _ = captured.try_get(); });
-        assert_eq!(effect.err().unwrap(), RuntimeError::CrossRuntimeAccess);
+        let observed = Rc::new(RefCell::new(None));
+        let observed_in_effect = observed.clone();
+        second.effect(move || {
+            *observed_in_effect.borrow_mut() = captured.try_get().map(|_| ()).err();
+        }).unwrap();
+        assert_eq!(*observed.borrow(), Some(RuntimeError::CrossRuntimeAccess));
     }
 
     #[test]
