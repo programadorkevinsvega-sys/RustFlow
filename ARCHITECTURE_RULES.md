@@ -130,6 +130,9 @@ Rules:
 - Fine-grained rendering must preserve node/component identity where reconciliation says a child is the same. Tests must verify observable DOM changes and keyed identity, not just equality of generated view trees.
 - Before Phase 3 closes, compile and run the intended Counter and todo examples with browser E2E tests, including callback props, conditional/keyed updates, and listener/effect cleanup.
 - If the illustrative public syntax changes, update the ADR, roadmap, examples, and public documentation before implementation is accepted.
+- Prefer familiar React-inspired names in idiomatic Rust `snake_case` (`use_state`, `use_effect`, `use_memo`, `use_ref`, `use_context`) where they fit; all future names must have documented RustFlow semantics and explicit availability status.
+- Keep state signal-first: do not introduce React-style positional hook cells or mandatory hook-order rules by default. `use_effect` should follow automatic signal dependency tracking rather than copying React dependency arrays without an explicit architecture decision.
+- Reconcile dynamic structure by compatible node type and stable key, plan patches separately from DOM commit, and test the observable DOM/identity outcomes. Use event delegation where event semantics support it and retain direct-listener fallbacks where required.
 
 ## 9. Server/client boundary
 
