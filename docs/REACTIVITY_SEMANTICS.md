@@ -1,6 +1,6 @@
 # Reactivity Semantics Contract (Phase 1.1)
 
-**Status:** Accepted contract (Phase 1.1); implementation has not started.  
+**Status:** Accepted contract (Phase 1.1). Runtime implementation exists in `crates/rustflow/src/reactivity.rs`; correctness and performance gates are tracked separately in `ROADMAP.md` and `docs/REACTIVITY_VERIFICATION.md`.  
 **Purpose:** Define observable behavior for the first RustFlow reactivity prototype before choosing internal data structures.
 
 This contract applies to the initial single-threaded reactive runtime. It does not promise API stability and does not define browser DOM integration, components, SSR, or hydration. Normative terms **MUST**, **MUST NOT**, and **SHOULD** express requirements for the prototype.
