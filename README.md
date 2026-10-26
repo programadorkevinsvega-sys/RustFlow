@@ -26,7 +26,7 @@ RustFlow is an early-stage framework project exploring a cohesive way to build w
 
 ## Planned architecture
 
-The workspace currently contains the `rustflow` crate (reactivity and public facade) and `rustflow-view` (a target-independent structural view model). The reactive runtime is a single-threaded prototype; the view model currently represents text, elements, and fragments only. Component nodes, lifecycle, rendering, DOM integration, server runtime, and CLI remain pending. These APIs are pre-1.0 and may evolve as implementation evidence clarifies crate boundaries.
+The workspace contains the `rustflow` crate (reactivity, component lifecycle, and public facade) and `rustflow-view` (target-independent view nodes, validated names, typed attributes/properties/events, dynamic children, and keyed lists). A renderer contract is defined but no browser DOM renderer exists yet. SSR, hydration, HTTP server/routing, and CLI remain future roadmap work. These APIs are pre-1.0 prototypes and are not production-ready.
 
 | Area | Planned responsibility |
 | --- | --- |

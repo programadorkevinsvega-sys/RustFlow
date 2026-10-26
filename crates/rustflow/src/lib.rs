@@ -9,6 +9,7 @@
 //! RustFlow is not production-ready. See the repository README and roadmap
 //! before relying on the project.
 
+pub mod components;
 pub mod reactivity;
 
 /// Public, target-independent view-model types.
@@ -19,10 +20,14 @@ pub mod reactivity;
 /// ```
 /// use rustflow::view::View;
 ///
-/// let _page = View::element(
-///     "main",
-///     [View::element("h1", [View::text("Hello, RustFlow")])],
-/// );
+/// fn page() -> Result<View, rustflow::view::ViewError> {
+///     View::element(
+///         "main",
+///         [View::element("h1", [View::text("Hello, RustFlow")])?],
+///     )
+/// }
+///
+/// let _page = page().expect("valid static view tree");
 /// ```
 pub use rustflow_view as view;
 
