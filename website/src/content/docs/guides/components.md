@@ -3,7 +3,7 @@ title: Crear componentes
 description: API actual de componentes RustFlow, vistas tipadas y runtime de navegador.
 ---
 
-> **Estado: prototipo en desarrollo; integración de Fase 3 pendiente.** La rama apilada #26 sobre la PR #25 ya implementa reconciliación explícita diff/commit, actualización de props sin reinicializar el setup, preservación de estado/identidad cuando componente y clave son compatibles, y cleanup de rangos sustituidos. La Fase 3 permanece abierta en `main` hasta que ambas PR se revisen e integren.
+> **Estado: prototipo pre-1.0; Fase 3 cerrada y verificada en main el 2026-10-26.** Las PR #26 y #25 se integraron y la cobertura de Chromium verifica actualizaciones, identidad DOM compatible, listas keyed y limpieza. Este hito no completa SSR/hidratación ni convierte RustFlow en un framework listo para producción.
 
 ## API disponible hoy
 
@@ -65,7 +65,7 @@ Los nombres son inspiración de vocabulario, no promesa de compatibilidad semán
 
 El adaptador aplica atributos y propiedades mediante APIs DOM, valida nombres y restringe esquemas URL; no inserta el árbol como HTML crudo. Los eventos que burbujean usan delegación en el límite del montaje y otros eventos conservan listeners directos. La limpieza está ligada a los rangos, scopes y ciclo de vida.
 
-El renderer calcula un `ReconciliationPlan` antes del commit DOM; valida las vistas candidatas y prepara fuera del DOM las ramas nuevas o incompatibles. Durante el commit conserva nodos compatibles, actualiza props a través del render del componente sin recrear su scope, sigue la clave del `KeyedChild` para componentes de lista y limpia las instancias/scope/efectos/listeners salientes. Las pruebas del navegador cubren cambios de props, identidad DOM, reordenación keyed, sustitución por cambio de clave y cleanup. El gate funcional de la rama requiere CI verde en el HEAD exacto; la Fase 3 sigue abierta en `main` hasta que se integren las PR apiladas #26 y #25.
+La implementación actual actualiza las regiones DOM afectadas y conserva nodos/componentes compatibles cuando sus tipos y claves identifican el mismo elemento lógico. Los cambios de props no reinician el estado local del componente compatible; las ramas reemplazadas o retiradas liberan sus efectos y listeners. Las pruebas de Chromium cubren cambios de props, identidad DOM, reordenación keyed, sustitución por cambio de clave y cleanup. La integración de la Fase 3 se registró en la PR #25, con la PR #26 integrada primero en su rama.
 
 ## Compilar y ejecutar el ejemplo de navegador
 

@@ -24,4 +24,4 @@ npm run preview
 
 ## Publishing
 
-The site is configured for a GitHub Pages project site at https://programadorkevinsvega-sys.github.io/RustFlow/. The CI workflow validates builds. Before enabling automatic publishing, configure the repository's Pages source to **GitHub Actions** and add the deployment workflow/permissions appropriate to the repository settings.
+The canonical site is https://rustflow.pages.dev (Cloudflare Pages), as configured in astro.config.mjs. GitHub Actions validates the static-site build on pull requests and main; the Cloudflare Pages status check records deployment for the relevant commit. Do not configure GitHub Pages unless the hosting strategy is deliberately changed.
