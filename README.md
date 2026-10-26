@@ -76,19 +76,27 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-Browser/WASM checks and end-to-end tests will be documented once the build pipeline is implemented. Do not assume these commands pass until CI is configured and running.
+The repository currently has a stable Rust toolchain policy and a governance workflow. The Cargo MSRV policy is Rust 1.85 or later; the initial workspace must declare `rust-version = "1.85"` in its package manifests and CI must test both MSRV and current stable. Browser/WASM checks and end-to-end tests will be documented once the build pipeline is implemented. Do not assume code checks pass until they are actually running.
 
-## Contributing
+## Contributing and governance
 
-Early contributions should focus on small, testable increments and design discussions. Please read:
+Contributions are welcome under the project's dual MIT/Apache-2.0 license. Before contributing, read:
 
+- [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and quality expectations.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community standards.
+- [MAINTAINERS.md](MAINTAINERS.md) for maintainership and decision-making.
 - [AGENTS.md](AGENTS.md) for repository-wide instructions for contributors and coding agents.
 - [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md) for DDD, Clean Architecture, Hexagonal Architecture and SOLID rules.
 - [ROADMAP.md](ROADMAP.md) for project scope and acceptance criteria.
 - [SECURITY.md](SECURITY.md) for responsible vulnerability reporting.
 
-When proposing a major dependency, crate boundary, public API or architectural change, include the problem, alternatives considered, trade-offs, and migration impact in the pull request.
+When proposing a major dependency, crate boundary, public API or architectural change, include the problem, alternatives considered, trade-offs, and migration impact in the pull request. Repository branch protection and required status checks are configured separately in GitHub settings.
 
 ## License
 
-No license has been selected yet. Until a license file is added, all rights are reserved by default and reuse should not be assumed. A permissive license such as MIT or Apache-2.0 may be considered before the first public release.
+RustFlow is dual-licensed under either of:
+
+- [MIT License](LICENSE-MIT)
+- [Apache License, Version 2.0](LICENSE-APACHE)
+
+You may choose either license when using, modifying, or distributing the project, subject to its terms.
