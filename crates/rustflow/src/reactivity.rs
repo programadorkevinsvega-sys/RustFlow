@@ -427,7 +427,10 @@ impl Effect {
 impl Scope {
     /// Return whether this scope has been disposed.
     pub fn is_disposed(&self) -> Result<bool, RuntimeError> {
-        let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
         check_runtime_context(&runtime)?;
         let inner = runtime.borrow();
         if inner.disposed {
@@ -460,7 +463,10 @@ impl Scope {
 
     /// Register cleanup to run once on disposal, in reverse registration order.
     pub fn on_cleanup(&self, callback: impl FnOnce() + 'static) -> Result<(), RuntimeError> {
-        let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
         check_runtime_context(&runtime)?;
         let mut inner = runtime.borrow_mut();
         if inner.disposed {
