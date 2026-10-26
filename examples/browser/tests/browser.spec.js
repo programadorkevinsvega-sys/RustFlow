@@ -55,17 +55,23 @@ test("todo CRUD and keyed reorder preserve existing row identity", async ({ page
   const firstRow = page.getByTestId("todo-1");
   const originalNode = await firstRow.elementHandle();
   await expect(firstRow).toContainText("First task");
+  const touches = page.getByTestId("todo-touch-1");
+  await touches.click();
+  await expect(touches).toHaveText("Touch count: 1");
+
   await page.getByRole("button", { name: "Reverse order" }).click();
 
   await expect(page.locator('[data-testid="todo-list"] li').first()).toHaveAttribute("data-todo-id", "2");
   expect(
     await originalNode.evaluate((node) => node === document.querySelector('[data-testid="todo-1"]')),
   ).toBe(true);
+  await expect(page.getByTestId("todo-touch-1")).toHaveText("Touch count: 1");
 
   await page.getByRole("checkbox", { name: "Mark First task complete" }).check();
   await expect(firstRow).toContainText("✓ First task");
   await page.getByRole("button", { name: "Remove First task" }).click();
   await expect(page.getByTestId("todo-1")).toHaveCount(0);
+  await expect(page.getByTestId("todo-unmount-count")).toHaveText("Unmounted rows: 1");
   await expect(page.getByTestId("todo-2")).toContainText("Second task");
   await page.getByRole("checkbox", { name: "Mark Second task complete" }).check();
   await expect(page.getByTestId("todo-2")).toContainText("✓ Second task");
