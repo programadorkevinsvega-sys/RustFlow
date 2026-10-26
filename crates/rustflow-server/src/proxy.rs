@@ -171,18 +171,31 @@ fn parse_rfc7239_forwarded(value: &str) -> ForwardedChain {
     let mut for_ips = Vec::new();
     let mut proto = None;
     for element in value.split(',') {
+        // Each proxy adds the next element. Only the rightmost element represents
+        // the immediately preceding hop to the trusted proxy at our boundary.
+        // Do not fall back to a proto in an earlier element: it may be client-supplied.
+        let mut element_proto = None;
+        let mut duplicate_proto = false;
         for pair in element.split(';') {
-            let pair = pair.trim();
-            if let Some(for_value) = pair.strip_prefix("for=") {
-                if let Some(ip) = parse_forwarded_for_token(for_value) {
+            let Some((name, raw_value)) = pair.trim().split_once('=') else {
+                continue;
+            };
+            let name = name.trim();
+            if name.eq_ignore_ascii_case("for") {
+                if let Some(ip) = parse_forwarded_for_token(raw_value) {
                     for_ips.push(ip);
                 }
-            } else if let Some(proto_value) = pair.strip_prefix("proto=") {
-                if proto.is_none() {
-                    proto = parse_forwarded_proto(proto_value);
+            } else if name.eq_ignore_ascii_case("proto") {
+                if element_proto.is_some() {
+                    duplicate_proto = true;
+                } else {
+                    element_proto = parse_forwarded_proto(raw_value);
                 }
             }
         }
+        // RFC 7239 parameter names are case-insensitive. An absent, invalid,
+        // or duplicated proto on the rightmost element must fail closed.
+        proto = if duplicate_proto { None } else { element_proto };
     }
     ForwardedChain { for_ips, proto }
 }
@@ -338,6 +351,54 @@ mod tests {
             false,
         );
         assert_eq!(identity.client_ip, "203.0.113.10".parse::<IpAddr>().ok());
+        assert!(identity.https);
+    }
+
+    #[test]
+    fn rfc7239_uses_proto_from_rightmost_element_not_client_supplied_prefix() {
+        let policy = ClientAddressPolicy::TrustedProxies(vec![
+            IpNetwork::parse("127.0.0.1/32").expect("loopback"),
+        ]);
+        let identity = resolve_client_identity(
+            Some("127.0.0.1:80".parse().expect("peer")),
+            &headers(&[(
+                "forwarded",
+                "for=203.0.113.10;proto=https, for=198.51.100.4;proto=http",
+            )]),
+            &policy,
+            false,
+        );
+        assert!(!identity.https);
+    }
+
+    #[test]
+    fn rfc7239_does_not_fall_back_to_proto_from_an_earlier_element() {
+        let policy = ClientAddressPolicy::TrustedProxies(vec![
+            IpNetwork::parse("127.0.0.1/32").expect("loopback"),
+        ]);
+        let identity = resolve_client_identity(
+            Some("127.0.0.1:80".parse().expect("peer")),
+            &headers(&[(
+                "forwarded",
+                "for=203.0.113.10;proto=https, for=198.51.100.4",
+            )]),
+            &policy,
+            false,
+        );
+        assert!(!identity.https);
+    }
+
+    #[test]
+    fn rfc7239_parameter_names_are_case_insensitive() {
+        let policy = ClientAddressPolicy::TrustedProxies(vec![
+            IpNetwork::parse("127.0.0.1/32").expect("loopback"),
+        ]);
+        let identity = resolve_client_identity(
+            Some("127.0.0.1:80".parse().expect("peer")),
+            &headers(&[("forwarded", "For=203.0.113.10;Proto=https")]),
+            &policy,
+            false,
+        );
         assert!(identity.https);
     }
 
