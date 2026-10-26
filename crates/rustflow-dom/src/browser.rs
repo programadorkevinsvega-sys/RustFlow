@@ -467,71 +467,81 @@ impl DomRenderer {
 
     fn activate_dynamic_regions(&self, regions: &mut [DynamicRegion]) -> Result<(), DomError> {
         for region in regions {
-            {
-                let mut state = region.state.borrow_mut();
-                if let Some(state) = state.as_mut() {
-                    if let Some(parent) = state.mounted.start.parent_node() {
-                        self.activate_delegated_listeners(&mut state.mounted, &parent)?;
-                    }
-                    self.activate_component_regions(&mut state.mounted.component_regions)?;
-                    self.activate_dynamic_regions(&mut state.mounted.dynamics)?;
+            self.activate_dynamic_region(region)?;
+        }
+        Ok(())
+    }
+
+    fn activate_dynamic_region(&self, region: &mut DynamicRegion) -> Result<(), DomError> {
+        if region.effect.is_some() {
+            return Ok(());
+        }
+
+        {
+            let mut state = region.state.borrow_mut();
+            if let Some(state) = state.as_mut() {
+                if let Some(parent) = state.mounted.start.parent_node() {
+                    self.activate_delegated_listeners(&mut state.mounted, &parent)?;
                 }
+                self.activate_component_regions(&mut state.mounted.component_regions)?;
+                self.activate_dynamic_regions(&mut state.mounted.dynamics)?;
+            }
+        }
+
+        let dynamic = region.dynamic.clone();
+        let scope = region.scope.clone();
+        let effect_scope = scope.clone();
+        let state = region.state.clone();
+        let document = self.document.clone();
+        let runtime = self.runtime.clone();
+        let registry = self.registry.clone();
+        let error_sink = region.error_sink.clone();
+        let first_run = Rc::new(Cell::new(true));
+
+        let effect = scope.effect(move || {
+            let next_view = match dynamic.evaluate() {
+                Ok(view) => view,
+                Err(error) => {
+                    let error = DomError::from(error);
+                    web_sys::console::error_1(&JsValue::from_str(&error.to_string()));
+                    if let Some(sink) = &error_sink {
+                        *sink.borrow_mut() = Some(error);
+                    }
+                    return;
+                }
+            };
+
+            // The synchronous builder already mounted this initial view.
+            // This first run only collects dependencies for this region.
+            if first_run.replace(false) {
+                return;
             }
 
-            let dynamic = region.dynamic.clone();
-            let scope = region.scope.clone();
-            let effect_scope = scope.clone();
-            let state = region.state.clone();
-            let document = self.document.clone();
-            let runtime = self.runtime.clone();
-            let registry = self.registry.clone();
-            let error_sink = region.error_sink.clone();
-            let first_run = Rc::new(Cell::new(true));
-
-            scope.effect(move || {
-                let next_view = match dynamic.evaluate() {
-                    Ok(view) => view,
-                    Err(error) => {
-                        let error = DomError::from(error);
-                        web_sys::console::error_1(&JsValue::from_str(&error.to_string()));
-                        if let Some(sink) = &error_sink {
-                            *sink.borrow_mut() = Some(error);
-                        }
-                        return;
-                    }
-                };
-
-                // The synchronous builder already mounted this initial view.
-                // This first run only collects dependencies for this region.
-                if first_run.replace(false) {
-                    return;
-                }
-
-                let mut current = state.borrow_mut();
-                let Some(current) = current.as_mut() else {
-                    return;
-                };
-                let previous_view = current.view.clone();
-                let mut renderer =
-                    DomRenderer::new(document.clone(), runtime.clone(), registry.clone());
-                renderer.root_scope = effect_scope.clone();
-                renderer.error_sink = error_sink.clone();
-                match renderer.update(&mut current.mounted, &previous_view, &next_view) {
-                    Ok(()) => {
-                        current.view = next_view;
-                        if let Some(sink) = &error_sink {
-                            *sink.borrow_mut() = None;
-                        }
-                    }
-                    Err(error) => {
-                        web_sys::console::error_1(&JsValue::from_str(&error.to_string()));
-                        if let Some(sink) = &error_sink {
-                            *sink.borrow_mut() = Some(error);
-                        }
+            let mut current = state.borrow_mut();
+            let Some(current) = current.as_mut() else {
+                return;
+            };
+            let previous_view = current.view.clone();
+            let mut renderer =
+                DomRenderer::new(document.clone(), runtime.clone(), registry.clone());
+            renderer.root_scope = effect_scope.clone();
+            renderer.error_sink = error_sink.clone();
+            match renderer.update(&mut current.mounted, &previous_view, &next_view) {
+                Ok(()) => {
+                    current.view = next_view;
+                    if let Some(sink) = &error_sink {
+                        *sink.borrow_mut() = None;
                     }
                 }
-            })?;
-        }
+                Err(error) => {
+                    web_sys::console::error_1(&JsValue::from_str(&error.to_string()));
+                    if let Some(sink) = &error_sink {
+                        *sink.borrow_mut() = Some(error);
+                    }
+                }
+            }
+        })?;
+        region.effect = Some(effect);
         Ok(())
     }
 
