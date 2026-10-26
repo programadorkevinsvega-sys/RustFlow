@@ -11,7 +11,7 @@ use std::{
     cell::RefCell,
     collections::{BTreeSet, HashMap, HashSet, VecDeque},
     fmt,
-    panic::{catch_unwind, resume_unwind, AssertUnwindSafe},
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::{Rc, Weak},
 };
 
@@ -37,7 +37,9 @@ impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::RuntimeDisposed => write!(f, "reactive runtime is disposed"),
-            Self::CrossRuntimeAccess => write!(f, "signal or scope belongs to a different active runtime"),
+            Self::CrossRuntimeAccess => {
+                write!(f, "signal or scope belongs to a different active runtime")
+            }
             Self::InvalidSignal => write!(f, "signal does not belong to a live runtime"),
             Self::InvalidEffect => write!(f, "effect is invalid or disposed"),
             Self::InvalidScope => write!(f, "owner scope is invalid"),
@@ -208,7 +210,10 @@ impl Runtime {
     /// Create a typed signal that suppresses writes when values compare equal.
     ///
     /// Equality follows `PartialEq`, including `NaN != NaN` for floating-point values.
-    pub fn signal<T: Clone + PartialEq + 'static>(&self, value: T) -> Result<Signal<T>, RuntimeError> {
+    pub fn signal<T: Clone + PartialEq + 'static>(
+        &self,
+        value: T,
+    ) -> Result<Signal<T>, RuntimeError> {
         self.create_signal(value, Some(Rc::new(|old, new| old == new)))
     }
 
@@ -221,7 +226,10 @@ impl Runtime {
     }
 
     /// Create a signal for values without `PartialEq`; every write notifies subscribers.
-    pub fn signal_always_changed<T: Clone + 'static>(&self, value: T) -> Result<Signal<T>, RuntimeError> {
+    pub fn signal_always_changed<T: Clone + 'static>(
+        &self,
+        value: T,
+    ) -> Result<Signal<T>, RuntimeError> {
         self.create_signal(value, None)
     }
 
@@ -237,7 +245,12 @@ impl Runtime {
             }
             let id = inner.next_signal;
             inner.next_signal += 1;
-            inner.signals.insert(id, SignalNode { subscribers: BTreeSet::new() });
+            inner.signals.insert(
+                id,
+                SignalNode {
+                    subscribers: BTreeSet::new(),
+                },
+            );
             id
         };
         Ok(Signal {
@@ -326,7 +339,10 @@ impl Default for Runtime {
 impl<T: Clone + 'static> Signal<T> {
     /// Read the value and track this signal in the currently executing effect.
     pub fn try_get(&self) -> Result<T, RuntimeError> {
-        let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
         check_runtime_context(&runtime)?;
         {
             let inner = runtime.borrow();
@@ -350,7 +366,10 @@ impl<T: Clone + 'static> Signal<T> {
     /// Write the value. Returns `true` when the value changed and `false` for
     /// equality-suppressed writes. Effects are flushed after the write completes.
     pub fn try_set(&self, value: T) -> Result<bool, RuntimeError> {
-        let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
         check_runtime_context(&runtime)?;
         {
             let inner = runtime.borrow();
@@ -389,14 +408,18 @@ impl<T: Clone + 'static> Signal<T> {
 
     /// Write the value, panicking with a diagnostic if the runtime is invalid.
     pub fn set(&self, value: T) {
-        self.try_set(value).unwrap_or_else(|error| panic!("{error}"));
+        self.try_set(value)
+            .unwrap_or_else(|error| panic!("{error}"));
     }
 }
 
 impl Effect {
     /// Dispose this effect and detach all of its subscriptions.
     pub fn dispose(&self) -> Result<(), RuntimeError> {
-        let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
         dispose_effect(&runtime, self.id)
     }
 }
@@ -410,18 +433,28 @@ impl Scope {
         if inner.disposed {
             return Err(RuntimeError::RuntimeDisposed);
         }
-        inner.scopes.get(&self.id).map(|scope| scope.disposed).ok_or(RuntimeError::InvalidScope)
+        inner
+            .scopes
+            .get(&self.id)
+            .map(|scope| scope.disposed)
+            .ok_or(RuntimeError::InvalidScope)
     }
 
     /// Create a child owner scope.
     pub fn child(&self) -> Result<Scope, RuntimeError> {
-        let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
         create_scope(&runtime, self.id)
     }
 
     /// Create an eager effect explicitly owned by this scope.
     pub fn effect(&self, callback: impl FnMut() + 'static) -> Result<Effect, RuntimeError> {
-        let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
         create_effect(&runtime, self.id, Box::new(callback))
     }
 
@@ -433,7 +466,10 @@ impl Scope {
         if inner.disposed {
             return Err(RuntimeError::RuntimeDisposed);
         }
-        let scope = inner.scopes.get_mut(&self.id).ok_or(RuntimeError::InvalidScope)?;
+        let scope = inner
+            .scopes
+            .get_mut(&self.id)
+            .ok_or(RuntimeError::InvalidScope)?;
         if scope.disposed {
             return Err(RuntimeError::DisposedScope);
         }
@@ -443,7 +479,10 @@ impl Scope {
 
     /// Dispose this scope and all resources it owns. Repeated disposal is harmless.
     pub fn dispose(&self) -> Result<(), RuntimeError> {
-        let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
         dispose_scope(&runtime, self.id)
     }
 }
@@ -455,22 +494,36 @@ fn create_scope(runtime: &RuntimeRef, parent: ScopeId) -> Result<Scope, RuntimeE
         if inner.disposed {
             return Err(RuntimeError::RuntimeDisposed);
         }
-        let parent_node = inner.scopes.get(&parent).ok_or(RuntimeError::InvalidScope)?;
+        let parent_node = inner
+            .scopes
+            .get(&parent)
+            .ok_or(RuntimeError::InvalidScope)?;
         if parent_node.disposed {
             return Err(RuntimeError::DisposedScope);
         }
         let id = inner.next_scope;
         inner.next_scope += 1;
-        inner.scopes.insert(id, ScopeNode {
-            children: Vec::new(),
-            effects: Vec::new(),
-            cleanups: Vec::new(),
-            disposed: false,
-        });
-        inner.scopes.get_mut(&parent).expect("parent checked").children.push(id);
+        inner.scopes.insert(
+            id,
+            ScopeNode {
+                children: Vec::new(),
+                effects: Vec::new(),
+                cleanups: Vec::new(),
+                disposed: false,
+            },
+        );
+        inner
+            .scopes
+            .get_mut(&parent)
+            .expect("parent checked")
+            .children
+            .push(id);
         id
     };
-    Ok(Scope { id, runtime: Rc::downgrade(runtime) })
+    Ok(Scope {
+        id,
+        runtime: Rc::downgrade(runtime),
+    })
 }
 
 fn create_effect(
@@ -490,18 +543,29 @@ fn create_effect(
         }
         let id = inner.next_effect;
         inner.next_effect += 1;
-        inner.effects.insert(id, EffectNode {
-            callback: Rc::new(RefCell::new(callback)),
-            dependencies: BTreeSet::new(),
-            owner,
-        });
-        inner.scopes.get_mut(&owner).expect("owner checked").effects.push(id);
+        inner.effects.insert(
+            id,
+            EffectNode {
+                callback: Rc::new(RefCell::new(callback)),
+                dependencies: BTreeSet::new(),
+                owner,
+            },
+        );
+        inner
+            .scopes
+            .get_mut(&owner)
+            .expect("owner checked")
+            .effects
+            .push(id);
         id
     };
 
     run_effect(runtime, id);
     flush_runtime(runtime)?;
-    Ok(Effect { id, runtime: Rc::downgrade(runtime) })
+    Ok(Effect {
+        id,
+        runtime: Rc::downgrade(runtime),
+    })
 }
 
 fn track_read(runtime: &RuntimeRef, signal_id: SignalId) -> Result<(), RuntimeError> {
@@ -532,9 +596,10 @@ fn enqueue(inner: &mut RuntimeInner, effect_id: EffectId) {
 }
 
 fn detach_dependencies(inner: &mut RuntimeInner, effect_id: EffectId) {
-    let dependencies = inner.effects.get_mut(&effect_id).map(|effect| {
-        std::mem::take(&mut effect.dependencies)
-    });
+    let dependencies = inner
+        .effects
+        .get_mut(&effect_id)
+        .map(|effect| std::mem::take(&mut effect.dependencies));
     if let Some(dependencies) = dependencies {
         for signal_id in dependencies {
             if let Some(signal) = inner.signals.get_mut(&signal_id) {
@@ -610,7 +675,9 @@ fn flush_runtime(runtime: &RuntimeRef) -> Result<(), RuntimeError> {
             }
         };
 
-        let Some((effect_id, limit)) = next else { unreachable!() };
+        let Some((effect_id, limit)) = next else {
+            unreachable!()
+        };
         if executions >= limit {
             let mut inner = runtime.borrow_mut();
             inner.queue.clear();
@@ -651,7 +718,10 @@ fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeE
         if inner.disposed {
             return Err(RuntimeError::RuntimeDisposed);
         }
-        let scope = inner.scopes.get_mut(&scope_id).ok_or(RuntimeError::InvalidScope)?;
+        let scope = inner
+            .scopes
+            .get_mut(&scope_id)
+            .ok_or(RuntimeError::InvalidScope)?;
         if scope.disposed {
             return Ok(());
         }
@@ -668,13 +738,17 @@ fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeE
     for child in children.into_iter().rev() {
         let result = catch_unwind(AssertUnwindSafe(|| dispose_scope(runtime, child)));
         if let Err(payload) = result {
-            if first_panic.is_none() { first_panic = Some(payload); }
+            if first_panic.is_none() {
+                first_panic = Some(payload);
+            }
         }
     }
     for effect in effects.into_iter().rev() {
         let result = catch_unwind(AssertUnwindSafe(|| dispose_effect(runtime, effect)));
         if let Err(payload) = result {
-            if first_panic.is_none() { first_panic = Some(payload); }
+            if first_panic.is_none() {
+                first_panic = Some(payload);
+            }
         }
     }
 
@@ -692,7 +766,9 @@ fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeE
             inner.active_effect = previous_effect;
         }
         if let Err(payload) = result {
-            if first_panic.is_none() { first_panic = Some(payload); }
+            if first_panic.is_none() {
+                first_panic = Some(payload);
+            }
         }
     }
 
@@ -716,8 +792,18 @@ mod tests {
         let b_runs = Rc::new(Cell::new(0));
         let a_count = a_runs.clone();
         let b_count = b_runs.clone();
-        let _a_effect = runtime.effect(move || { let _ = a.get(); a_count.set(a_count.get() + 1); }).unwrap();
-        let _b_effect = runtime.effect(move || { let _ = b.get(); b_count.set(b_count.get() + 1); }).unwrap();
+        let _a_effect = runtime
+            .effect(move || {
+                let _ = a.get();
+                a_count.set(a_count.get() + 1);
+            })
+            .unwrap();
+        let _b_effect = runtime
+            .effect(move || {
+                let _ = b.get();
+                b_count.set(b_count.get() + 1);
+            })
+            .unwrap();
 
         a.set(2);
         assert_eq!(a_runs.get(), 2);
@@ -732,9 +818,19 @@ mod tests {
         let equal_runs = Rc::new(Cell::new(0));
         let always_runs = Rc::new(Cell::new(0));
         let count = equal_runs.clone();
-        let _e = runtime.effect(move || { let _ = equal.get(); count.set(count.get() + 1); }).unwrap();
+        let _e = runtime
+            .effect(move || {
+                let _ = equal.get();
+                count.set(count.get() + 1);
+            })
+            .unwrap();
         let count = always_runs.clone();
-        let _a = runtime.effect(move || { let _ = always.get(); count.set(count.get() + 1); }).unwrap();
+        let _a = runtime
+            .effect(move || {
+                let _ = always.get();
+                count.set(count.get() + 1);
+            })
+            .unwrap();
         equal.set(5);
         always.set(5);
         assert_eq!(equal_runs.get(), 1);
@@ -749,10 +845,16 @@ mod tests {
         let b = runtime.signal_eq(10).unwrap();
         let runs = Rc::new(Cell::new(0));
         let count = runs.clone();
-        let _effect = runtime.effect(move || {
-            if choose_a.get() { let _ = a.get(); } else { let _ = b.get(); }
-            count.set(count.get() + 1);
-        }).unwrap();
+        let _effect = runtime
+            .effect(move || {
+                if choose_a.get() {
+                    let _ = a.get();
+                } else {
+                    let _ = b.get();
+                }
+                count.set(count.get() + 1);
+            })
+            .unwrap();
 
         choose_a.set(false);
         a.set(2);
@@ -767,13 +869,20 @@ mod tests {
         let value = runtime.signal_eq(0).unwrap();
         let runs = Rc::new(Cell::new(0));
         let count = runs.clone();
-        let _effect = runtime.effect(move || { let _ = value.get(); count.set(count.get() + 1); }).unwrap();
+        let _effect = runtime
+            .effect(move || {
+                let _ = value.get();
+                count.set(count.get() + 1);
+            })
+            .unwrap();
 
-        runtime.batch(|| {
-            value.set(1);
-            runtime.batch(|| value.set(2)).unwrap();
-            value.set(3);
-        }).unwrap();
+        runtime
+            .batch(|| {
+                value.set(1);
+                runtime.batch(|| value.set(2)).unwrap();
+                value.set(3);
+            })
+            .unwrap();
         assert_eq!(runs.get(), 2);
     }
 
@@ -784,19 +893,31 @@ mod tests {
         let value = runtime.signal_eq(0).unwrap();
         let runs = Rc::new(Cell::new(0));
         let count = runs.clone();
-        let _effect = scope.effect(move || { let _ = value.get(); count.set(count.get() + 1); }).unwrap();
+        let _effect = scope
+            .effect(move || {
+                let _ = value.get();
+                count.set(count.get() + 1);
+            })
+            .unwrap();
         let order = Rc::new(RefCell::new(Vec::new()));
         let first = order.clone();
-        scope.on_cleanup(move || first.borrow_mut().push(1)).unwrap();
+        scope
+            .on_cleanup(move || first.borrow_mut().push(1))
+            .unwrap();
         let second = order.clone();
-        scope.on_cleanup(move || second.borrow_mut().push(2)).unwrap();
+        scope
+            .on_cleanup(move || second.borrow_mut().push(2))
+            .unwrap();
 
         scope.dispose().unwrap();
         scope.dispose().unwrap();
         value.set(1);
         assert_eq!(runs.get(), 1);
         assert_eq!(*order.borrow(), vec![2, 1]);
-        assert_eq!(scope.effect(|| {}).err().unwrap(), RuntimeError::DisposedScope);
+        assert_eq!(
+            scope.effect(|| {}).err().unwrap(),
+            RuntimeError::DisposedScope
+        );
     }
 
     #[test]
@@ -805,13 +926,15 @@ mod tests {
         let value = runtime.signal(0usize).unwrap();
         let signal = value.clone();
         let effect = runtime.effect(move || signal.set(signal.get() + 1));
-        assert_eq!(effect.err().unwrap(), RuntimeError::CycleDetected { limit: 8 });
+        assert_eq!(
+            effect.err().unwrap(),
+            RuntimeError::CycleDetected { limit: 8 }
+        );
         assert!(matches!(runtime.flush(), Ok(())));
         let independent = runtime.signal_eq(0).unwrap();
         independent.set(1);
         assert_eq!(independent.get(), 1);
     }
-
 
     #[test]
     fn cross_runtime_signal_access_is_diagnosed() {
@@ -821,9 +944,11 @@ mod tests {
         let captured = foreign.clone();
         let observed = Rc::new(RefCell::new(None));
         let observed_in_effect = observed.clone();
-        second.effect(move || {
-            *observed_in_effect.borrow_mut() = captured.try_get().map(|_| ()).err();
-        }).unwrap();
+        second
+            .effect(move || {
+                *observed_in_effect.borrow_mut() = captured.try_get().map(|_| ()).err();
+            })
+            .unwrap();
         assert_eq!(*observed.borrow(), Some(RuntimeError::CrossRuntimeAccess));
     }
 
@@ -833,7 +958,10 @@ mod tests {
         let signal = runtime.signal_eq(1).unwrap();
         runtime.dispose().unwrap();
         assert_eq!(signal.try_get().unwrap_err(), RuntimeError::RuntimeDisposed);
-        assert_eq!(runtime.signal_eq(2).err().unwrap(), RuntimeError::RuntimeDisposed);
+        assert_eq!(
+            runtime.signal_eq(2).err().unwrap(),
+            RuntimeError::RuntimeDisposed
+        );
     }
 
     #[test]
@@ -848,18 +976,22 @@ mod tests {
         let created = Rc::new(Cell::new(false));
         let created_flag = created.clone();
         let scope_for_nested_effect = runtime.root_scope();
-        let _parent = runtime.effect(move || {
-            let _ = parent_value.get();
-            p_count.set(p_count.get() + 1);
-            if !created_flag.replace(true) {
-                let child = child_value.clone();
-                let child_count = c_count.clone();
-                scope_for_nested_effect.effect(move || {
-                    let _ = child.get();
-                    child_count.set(child_count.get() + 1);
-                }).unwrap();
-            }
-        }).unwrap();
+        let _parent = runtime
+            .effect(move || {
+                let _ = parent_value.get();
+                p_count.set(p_count.get() + 1);
+                if !created_flag.replace(true) {
+                    let child = child_value.clone();
+                    let child_count = c_count.clone();
+                    scope_for_nested_effect
+                        .effect(move || {
+                            let _ = child.get();
+                            child_count.set(child_count.get() + 1);
+                        })
+                        .unwrap();
+                }
+            })
+            .unwrap();
 
         parent_value.set(1);
         child_value.set(1);
