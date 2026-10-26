@@ -41,11 +41,11 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 ## Phase 1 — Reactivity engine prototype
 
 ### 1.1 Semantics
-- [ ] Specify signal reads/writes and dependency tracking.
-- [ ] Specify effects, nested effects, dynamic dependency replacement, and cleanup.
-- [ ] Define scheduling order, batching, re-entrancy, and cycle behavior.
-- [ ] Define ownership scopes and deterministic disposal.
-- [ ] Define single-threaded browser behavior and any server-side thread-safety guarantees.
+- [x] Specify signal reads/writes and dependency tracking (accepted contract: `docs/REACTIVITY_SEMANTICS.md`).
+- [x] Specify effects, nested effects, dynamic dependency replacement, and cleanup (accepted contract: `docs/REACTIVITY_SEMANTICS.md`).
+- [x] Define scheduling order, batching, re-entrancy, and cycle behavior (accepted contract: `docs/REACTIVITY_SEMANTICS.md`).
+- [x] Define ownership scopes and deterministic disposal (accepted contract: `docs/REACTIVITY_SEMANTICS.md`).
+- [x] Define single-threaded browser behavior and server-side isolation/thread-safety boundaries (accepted contract: `docs/REACTIVITY_SEMANTICS.md`).
 
 ### 1.2 Implementation
 - [ ] Implement typed signals.
