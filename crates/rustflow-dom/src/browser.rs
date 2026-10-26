@@ -452,10 +452,7 @@ impl DomRenderer {
         Ok(())
     }
 
-    fn activate_component_regions(
-        &self,
-        regions: &mut [ComponentRegion],
-    ) -> Result<(), DomError> {
+    fn activate_component_regions(&self, regions: &mut [ComponentRegion]) -> Result<(), DomError> {
         for region in regions {
             if let Some(parent) = region.mounted.start.parent_node() {
                 self.activate_delegated_listeners(&mut region.mounted, &parent)?;
