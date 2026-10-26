@@ -40,20 +40,22 @@ Puedes configurar títulos y mensajes para estados 4xx/5xx. Se renderizan como t
 use http::StatusCode;
 use rustflow_server::{Application, ErrorPages, ServerConfig};
 
-let error_pages = ErrorPages::new()
-    .with_page(
-        StatusCode::NOT_FOUND,
-        "No encontrado",
-        "La página no existe.",
-    )?
-    .with_page(
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "Error del servidor",
-        "No se pudo completar la solicitud.",
-    )?;
+fn configure_app() -> Result<Application, rustflow_server::ErrorPageConfigError> {
+    let error_pages = ErrorPages::new()
+        .with_page(
+            StatusCode::NOT_FOUND,
+            "No encontrado",
+            "La página no existe.",
+        )?
+        .with_page(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Error del servidor",
+            "No se pudo completar la solicitud.",
+        )?;
 
-let config = ServerConfig::new().with_error_pages(error_pages);
-let app = Application::with_config(config);
+    let config = ServerConfig::new().with_error_pages(error_pages);
+    Ok(Application::with_config(config))
+}
 ~~~
 
 Este es un fragmento de configuración; un binario debe registrar sus rutas y llamar a la API de servidor que corresponda. Solo se aceptan estados de error. Los estados no configurados mantienen su respuesta habitual; las páginas personalizadas conservan el status y el `x-request-id`.
