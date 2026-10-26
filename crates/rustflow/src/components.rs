@@ -545,21 +545,14 @@ mod tests {
                 on_cleanup(move || cleanup_setup.set(cleanup_setup.get() + 1)).unwrap();
             });
 
-            let render: ComponentRender = Rc::new(move |_props, _children| {
-                Ok(View::text(count.get().to_string()))
-            });
+            let render: ComponentRender =
+                Rc::new(move |_props, _children| Ok(View::text(count.get().to_string())));
             Ok(render)
         })
         .expect("valid component definition");
 
-        let mut instance = ComponentInstance::mount(
-            definition,
-            runtime.clone(),
-            &root,
-            [],
-            [],
-        )
-        .expect("component setup can create signals");
+        let mut instance = ComponentInstance::mount(definition, runtime.clone(), &root, [], [])
+            .expect("component setup can create signals");
         let count = retained.borrow().as_ref().unwrap().clone();
         assert_eq!(count.get(), 1);
         count.set(2);
@@ -573,5 +566,4 @@ mod tests {
         );
         runtime.dispose().expect("dispose runtime");
     }
-
 }
