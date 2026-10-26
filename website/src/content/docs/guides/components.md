@@ -1,94 +1,79 @@
 ---
 title: Crear componentes
-description: Modelo tipado de vistas, atributos, eventos y ciclo de vida de componentes.
+description: API actual de componentes RustFlow, vistas tipadas y runtime de navegador.
 ---
 
-> **Estado: prototipo en desarrollo.** RustFlow tiene un modelo estructural tipado, ciclo de vida nativo, un renderer inicial WASM y un serializador de fragmentos HTML. No se considera una app full-stack lista para producción.
+> **Estado: prototipo en desarrollo; integración de Fase 3 pendiente.** La rama apilada #26 sobre la PR #25 ya implementa reconciliación explícita diff/commit, actualización de props sin reinicializar el setup, preservación de estado/identidad cuando componente y clave son compatibles, y cleanup de rangos sustituidos. La Fase 3 permanece abierta en `main` hasta que ambas PR se revisen e integren.
 
-## Objetivo de ergonomía React-like (planeado, no disponible todavía)
+## API disponible hoy
 
-RustFlow apunta a una experiencia de autoría declarativa y reactiva parecida en conceptos a React, pero no a una API compatible con React. El objetivo de diseño es escribir componentes tipados con estado local, interpolación reactiva automática, callbacks tipados y actualizaciones DOM eficientes.
+La reactividad sigue basada en señales ligadas a scopes, no en celdas indexadas por el orden de llamada de hooks. signal, use_state y use_effect requieren un scope propietario activo durante el setup de un componente. Signal proporciona get(), set(value) y update(|value| ...); al disponer el scope, la señal deja de ser válida. Los efectos se limpian antes de cada rerun y al disponer su propietario.
 
-El siguiente código es una **ilustración del objetivo futuro; no compila con la API actual**:
+Un subconjunto funcional de la API es:
 
-```rust
-#[component]
-fn Counter(initial: i32) -> impl IntoView {
-    let count = signal(initial);
+    use rustflow::prelude::*;
 
-    view! {
-        <div class="counter">
-            <p>"Contador: " {count}</p>
-            <button on:click={move |_| count.update(|n| *n += 1)}>
-                "Sumar"
-            </button>
-        </div>
+    #[rustflow::component]
+    fn Counter(initial: i32) -> impl IntoView {
+        let count = signal(initial);
+        let increment = count.clone();
+
+        rustflow::view! {
+            <div class="counter">
+                <p>
+                    "Contador: "
+                    <span data-testid="counter-value">{count}</span>
+                </p>
+                <button on:click={move |_| increment.update(|n| *n += 1)}>
+                    "Sumar"
+                </button>
+            </div>
+        }
     }
-}
-```
 
-Para llegar a esa experiencia aún faltan, entre otras piezas, la API ergonómica de `signal(value)` con `update`, la macro `#[component]`, props y callbacks tipados, la interpolación reactiva automática y el parcheo DOM fino.
+La macro genera la definición del componente y una función de registro. Para registrarlo explícitamente:
 
-### Vocabulario familiar con semántica RustFlow
+    let mut registry = rustflow::components::ComponentRegistry::new();
+    register_counter(&mut registry)?;
 
-La meta es que los nombres resulten reconocibles para quienes conocen React, escritos con la convención de Rust. **Estos nombres son objetivos de diseño; no están exportados por la API actual.**
+El ejemplo de referencia completo —incluido el montaje DOM, el bundle WASM y la lista de tareas— está en [examples/browser](https://github.com/programadorkevinsvega-sys/RustFlow/tree/main/examples/browser).
 
-| Concepto conocido | Nombre RustFlow propuesto | Intención |
+La interpolación de un identificador que contiene una señal crea una región dinámica reactiva automáticamente. Las expresiones arbitrarias que lean señales no se convierten automáticamente en efectos; usa la sintaxis explícita de región dinámica con @dynamic para esas expresiones mientras el compilador no pueda inferirlas con seguridad.
+
+### Límites actuales de #[component]
+
+La macro admite parámetros con nombres simples y tipos explícitos. El conjunto implementado es String, bool, i32, i64, u32, usize, f64 y EventHandler (incluido el tipo cualificado rustflow_view::EventHandler). Rechaza props faltantes, desconocidos o de tipo incorrecto con errores durante la construcción/montaje. Genera register_nombre(&mut registry) para registro explícito; no es una macro de derivación genérica de structs.
+
+Los callbacks de componentes se expresan como props tipados usando la convención on:increment; se almacenan como un callback tipado y no como un atributo HTML on*.
+
+## Vocabulario actual y planeado
+
+| Concepto | API RustFlow | Estado |
 | --- | --- | --- |
-| `useState` | `use_state` | Estado local ligado al scope del componente y respaldado por señales. |
-| `useEffect` | `use_effect` | Efecto ligado al scope, con dependencias detectadas al leer señales. |
-| `useMemo` | `use_memo` | Cálculo derivado con memoización y seguimiento reactivo. |
-| `useRef` | `use_ref` | Almacenamiento estable no reactivo o referencia a un nodo. |
-| `useContext` | `use_context` | Acceso tipado al contexto/provider más cercano. |
-| `onClick` / `className` | `on:click` / `class` | La sintaxis actual de `view!` ya usa convenciones HTML/RustFlow. |
-| `key` | `key` | Ya existe en el modelo de vistas; la reconciliación permanece pendiente. |
+| Señal reactiva | signal(value), Signal::get/set/update | Disponible dentro de un scope propietario |
+| Estado local familiar | use_state(initial) | Disponible; devuelve Signal |
+| Efecto | use_effect(...) | Disponible; dependencias detectadas leyendo señales |
+| Cálculo memoizado | use_memo | Planeado |
+| Referencia estable | use_ref | Planeado |
+| Contexto tipado | use_context | Planeado |
+| Evento de DOM | on:click, on:input, etc. | Disponible con callbacks tipados |
+| Clave de lista | key / View::keyed_list | Disponible; la reconciliación DOM compatible conserva identidad |
 
-RustFlow seguirá el modelo de señales: no requiere identificar estado por el orden de llamada de hooks. Por eso, nombres parecidos no garantizan las mismas firmas, arrays de dependencias ni reglas que React. Véase [ADR 0004](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0004-react-like-component-authoring.md) y [ROADMAP.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md).
+Los nombres son inspiración de vocabulario, no promesa de compatibilidad semántica con React. RustFlow no adopta el modelo de hooks por orden de llamada. Véase [ADR 0004](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0004-react-like-component-authoring.md) y el [roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md).
 
+## DOM y seguridad
 
-## Construir un árbol de vistas
+El adaptador aplica atributos y propiedades mediante APIs DOM, valida nombres y restringe esquemas URL; no inserta el árbol como HTML crudo. Los eventos que burbujean usan delegación en el límite del montaje y otros eventos conservan listeners directos. La limpieza está ligada a los rangos, scopes y ciclo de vida.
 
-El modelo está disponible desde rustflow::view. Los constructores de elementos validan la sintaxis del nombre y devuelven un resultado:
+El renderer calcula un `ReconciliationPlan` antes del commit DOM; valida las vistas candidatas y prepara fuera del DOM las ramas nuevas o incompatibles. Durante el commit conserva nodos compatibles, actualiza props a través del render del componente sin recrear su scope, sigue la clave del `KeyedChild` para componentes de lista y limpia las instancias/scope/efectos/listeners salientes. Las pruebas del navegador cubren cambios de props, identidad DOM, reordenación keyed, sustitución por cambio de clave y cleanup. El gate funcional de la rama requiere CI verde en el HEAD exacto; la Fase 3 sigue abierta en `main` hasta que se integren las PR apiladas #26 y #25.
 
-```rust
-use rustflow::view::View;
+## Compilar y ejecutar el ejemplo de navegador
 
-fn page() -> Result<View, rustflow::view::ViewError> {
-    let input = rustflow::view::Element::new("input")?
-        .with_attribute("aria-label", "Buscar")?
-        .with_boolean_attribute("disabled", false)?
-        .with_property("value", "consulta")?
-        .build();
-    View::element("main", [View::text("Hola, RustFlow"), input])
-}
-```
+En examples/browser:
 
-## Atributos, propiedades y eventos
+    npm install
+    npm run build
+    npm run check:bundle
+    npm run dev
 
-Los atributos HTML, las propiedades del DOM y los eventos son tipos diferentes. Los manejadores de eventos se almacenan como callbacks tipados, no como atributos HTML on*. Los nombres de etiquetas, atributos, propiedades y eventos pasan validación sintáctica; duplicados y nombres no permitidos producen errores tipados.
-
-Esta comprobación no sanitiza URL ni vuelve seguro el árbol como HTML. No insertes valores mediante HTML sin procesar. Cualquier renderer debe escapar texto y atributos, validar URL y retirar sus listeners al desmontar.
-
-## Componentes y ciclo de vida
-
-Una ComponentDefinition ejecuta setup una vez por instancia y devuelve una función pura de renderizado. ComponentRegistry resuelve los descriptores de componente a definiciones registradas y rechaza nombres duplicados o desconocidos. La macro rustflow::view! construye árboles a partir de una sintaxis HTML-like restringida. ComponentInstance conserva un scope reactivo, permite recalcular la vista mediante update y libera los efectos y callbacks de limpieza con unmount. Los errores de actualización conservan la vista anterior. Las callbacks de renderizado deben limitarse a producir una nueva vista; los efectos y recursos se registran durante setup mediante ComponentContext.
-
-La API de componentes genera una vista de reemplazo. El crate rustflow-dom ya monta esa vista en el DOM y ofrece mount_reactive; las actualizaciones reemplazan el rango completo, por lo que keyed reconciliation y actualizaciones dirigidas a subárboles siguen pendientes. Aún falta el bundle de navegador y los tests E2E.
-
-## Claves e hijos dinámicos
-
-View::keyed_list conserva el orden e impide claves duplicadas. View::dynamic difiere la evaluación del hijo hasta que un adaptador lo solicita; un adaptador reactivo debe ejecutar esa evaluación dentro de un efecto que pertenezca al scope de la instancia.
-
-## Sintaxis declarativa disponible
-
-El macro acepta etiquetas anidadas, cadenas/números o expresiones entre llaves, atributos booleanos, valores de atributos, propiedades con prop:nombre={valor}, eventos con on:evento={closure}, hijos diferidos con @dynamic { expresión } y descriptores de componente con nombres en PascalCase. Cierra cada etiqueta con su nombre correspondiente. El macro devuelve Result<View, ViewError>.
-
-## Renderizado HTML en servidor
-
-El crate rustflow-ssr serializa vistas estructurales a fragmentos HTML con escape de texto/atributos y política de URL restrictiva. Puede resolver componentes registrados y ejecutar sus callbacks de limpieza. El crate rustflow-server ofrece `html_document` para envolver una vista en un documento completo y `ErrorPages` para personalizar respuestas 4xx/5xx; los títulos y mensajes se renderizan como texto seguro. También integra rutas HTTP, JSON, query/path parameters, límites de cuerpo, timeout, middleware global ordenado, rutas nombradas, introspección y apagado graceful mediante un future del composition root. Los callbacks de eventos no se incluyen en el HTML; la hidratación sigue pendiente.
-
-En cada petición, `Request::request_id()` expone el identificador de correlación. `x-request-id` solo se acepta si cumple el formato permitido; de lo contrario se genera un identificador nuevo. El servidor crea spans y eventos `tracing`, pero el binario de la aplicación debe configurar su propio subscriber/exporter. Este ID solo correlaciona telemetría y nunca debe usarse como credencial.
-
-## Lo que sigue pendiente
-
-La reconciliación keyed, el bundle del navegador, los tests E2E, middleware por ruta y grupos de rutas, el wiring automático de señales del sistema operativo, la hidratación y la CLI siguen pendientes. Ya existe una suite representativa de integración TCP para rutas HTML/JSON, parámetros, errores, límite de body, timeout, request ID y apagado graceful; aún faltan pruebas de TLS/reverse proxy, abortos de cliente, carga y transporte malformado. La aplicación debe configurar su propio subscriber/exporter de `tracing`. La API sigue siendo pre-1.0 y no está lista para producción.
+Para las pruebas E2E, instala Chromium con npx playwright install --with-deps chromium y ejecuta npm run test:e2e. La CI realiza la compilación WASM, construye los assets de producción, mide WASM y ejecuta las pruebas de Chromium. Consulta el [README del ejemplo](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/examples/browser/README.md) para el setup y troubleshooting.

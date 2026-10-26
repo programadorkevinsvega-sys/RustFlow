@@ -44,6 +44,7 @@ pub enum RuntimeError {
     InvalidEffect,
     InvalidScope,
     DisposedScope,
+    NoActiveOwner,
     CycleDetected { limit: usize },
 }
 
@@ -58,6 +59,9 @@ impl fmt::Display for RuntimeError {
             Self::InvalidEffect => write!(f, "effect is invalid or disposed"),
             Self::InvalidScope => write!(f, "owner scope is invalid"),
             Self::DisposedScope => write!(f, "owner scope is disposed"),
+            Self::NoActiveOwner => {
+                write!(f, "this operation requires an active component owner scope")
+            }
             Self::CycleDetected { limit } => write!(
                 f,
                 "reactive cycle detected: scheduler exceeded {limit} effect executions in one flush; pending work was cleared"
@@ -70,6 +74,25 @@ impl std::error::Error for RuntimeError {}
 
 thread_local! {
     static ACTIVE_RUNTIME_ID: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static ACTIVE_OWNER_SCOPE: RefCell<Option<Scope>> = const { RefCell::new(None) };
+}
+thread_local! {
+    static TRACKING_PAUSED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+struct UntrackGuard(bool);
+impl Drop for UntrackGuard {
+    fn drop(&mut self) {
+        TRACKING_PAUSED.with(|paused| paused.set(self.0));
+    }
+}
+
+/// Run a closure without collecting signal dependencies into the currently active effect.
+/// The previous tracking state is restored even if the closure panics.
+pub fn untrack<R>(callback: impl FnOnce() -> R) -> R {
+    let previous = TRACKING_PAUSED.with(|paused| paused.replace(true));
+    let _guard = UntrackGuard(previous);
+    callback()
 }
 
 fn runtime_id(runtime: &RuntimeRef) -> usize {
@@ -84,19 +107,143 @@ fn check_runtime_context(runtime: &RuntimeRef) -> Result<(), RuntimeError> {
     Ok(())
 }
 
+struct OwnerContextGuard {
+    previous_scope: Option<Scope>,
+    previous_runtime_id: usize,
+}
+impl OwnerContextGuard {
+    fn enter(runtime: &RuntimeRef, owner: ScopeId) -> Self {
+        let previous_scope = ACTIVE_OWNER_SCOPE.with(|active| {
+            active.replace(Some(Scope {
+                id: owner,
+                runtime: Rc::downgrade(runtime),
+            }))
+        });
+        let previous_runtime_id = ACTIVE_RUNTIME_ID.with(|active| {
+            let previous = active.get();
+            active.set(runtime_id(runtime));
+            previous
+        });
+        Self {
+            previous_scope,
+            previous_runtime_id,
+        }
+    }
+}
+impl Drop for OwnerContextGuard {
+    fn drop(&mut self) {
+        ACTIVE_OWNER_SCOPE.with(|active| {
+            active.replace(self.previous_scope.take());
+        });
+        ACTIVE_RUNTIME_ID.with(|active| active.set(self.previous_runtime_id));
+    }
+}
+
+fn current_owner_for_runtime(runtime: &RuntimeRef) -> Option<ScopeId> {
+    ACTIVE_OWNER_SCOPE.with(|active| {
+        active.borrow().as_ref().and_then(|scope| {
+            scope.runtime.upgrade().and_then(|owner_runtime| {
+                (runtime_id(&owner_runtime) == runtime_id(runtime)).then_some(scope.id)
+            })
+        })
+    })
+}
+
+/// Execute a closure with a temporary, explicitly owned component context.
+/// The context is restored even if the callback panics; it is not a global runtime singleton.
+pub fn with_owner_scope<R>(scope: &Scope, callback: impl FnOnce() -> R) -> Result<R, RuntimeError> {
+    let runtime = scope
+        .runtime
+        .upgrade()
+        .ok_or(RuntimeError::RuntimeDisposed)?;
+    check_runtime_context(&runtime)?;
+    {
+        let inner = runtime.borrow();
+        if inner.disposed {
+            return Err(RuntimeError::RuntimeDisposed);
+        }
+        let owner = inner
+            .scopes
+            .get(&scope.id)
+            .ok_or(RuntimeError::InvalidScope)?;
+        if owner.disposed {
+            return Err(RuntimeError::DisposedScope);
+        }
+    }
+    let _guard = OwnerContextGuard::enter(&runtime, scope.id);
+    Ok(callback())
+}
+
+/// Fallibly create a signal owned by the currently active component scope.
+pub fn try_signal<T: Clone + PartialEq + 'static>(value: T) -> Result<Signal<T>, RuntimeError> {
+    let scope = ACTIVE_OWNER_SCOPE
+        .with(|active| active.borrow().clone())
+        .ok_or(RuntimeError::NoActiveOwner)?;
+    scope.signal(value)
+}
+
+/// Create an owner-bound signal during component setup.
+/// Calling this outside an active component owner panics with a diagnostic.
+pub fn signal<T: Clone + PartialEq + 'static>(value: T) -> Signal<T> {
+    try_signal(value)
+        .unwrap_or_else(|error| panic!("signal requires an active component owner scope: {error}"))
+}
+
+/// Familiar component-state helper, backed by signals rather than positional hook cells.
+pub fn use_state<T: Clone + PartialEq + 'static>(initial: T) -> Signal<T> {
+    signal(initial)
+}
+
+/// Run a dependency-tracked effect owned by the active component scope.
+pub fn use_effect(callback: impl FnMut() + 'static) -> Effect {
+    let scope = ACTIVE_OWNER_SCOPE
+        .with(|active| active.borrow().clone())
+        .unwrap_or_else(|| panic!("use_effect requires an active component owner scope"));
+    scope
+        .effect(callback)
+        .unwrap_or_else(|error| panic!("{error}"))
+}
+
+/// Register cleanup against the current effect run, or against its owner scope during setup.
+pub fn on_cleanup(callback: impl FnOnce() + 'static) -> Result<(), RuntimeError> {
+    let scope = ACTIVE_OWNER_SCOPE
+        .with(|active| active.borrow().clone())
+        .ok_or(RuntimeError::NoActiveOwner)?;
+    let runtime = scope
+        .runtime
+        .upgrade()
+        .ok_or(RuntimeError::RuntimeDisposed)?;
+    let active_effect = { runtime.borrow().active_effect };
+    match active_effect {
+        Some(effect_id)
+            if runtime
+                .borrow()
+                .effects
+                .get(&effect_id)
+                .is_some_and(|effect| effect.owner == scope.id) =>
+        {
+            scope.on_effect_cleanup(callback)
+        }
+        _ => scope.on_cleanup(callback),
+    }
+}
+
 struct SignalNode {
+    owner: ScopeId,
     subscribers: BTreeSet<EffectId>,
 }
 
 struct EffectNode {
     callback: Rc<RefCell<Box<dyn FnMut()>>>,
     dependencies: BTreeSet<SignalId>,
+    cleanups: Vec<Cleanup>,
     owner: ScopeId,
 }
 
 struct ScopeNode {
     children: Vec<ScopeId>,
     effects: Vec<EffectId>,
+    signals: Vec<SignalId>,
     cleanups: Vec<Cleanup>,
     disposed: bool,
 }
@@ -176,6 +323,7 @@ impl Runtime {
             ScopeNode {
                 children: Vec::new(),
                 effects: Vec::new(),
+                signals: Vec::new(),
                 cleanups: Vec::new(),
                 disposed: false,
             },
@@ -211,13 +359,11 @@ impl Runtime {
 
     /// Create a child scope under the active owner, or under the root if called externally.
     pub fn scope(&self) -> Result<Scope, RuntimeError> {
-        let parent = {
+        check_runtime_context(&self.inner)?;
+        let parent = current_owner_for_runtime(&self.inner).unwrap_or_else(|| {
             let inner = self.inner.borrow();
-            if inner.disposed {
-                return Err(RuntimeError::RuntimeDisposed);
-            }
             inner.active_scope.unwrap_or(inner.root_scope)
-        };
+        });
         create_scope(&self.inner, parent)
     }
 
@@ -252,38 +398,21 @@ impl Runtime {
         value: T,
         equality: Option<Equality<T>>,
     ) -> Result<Signal<T>, RuntimeError> {
-        let id = {
-            let mut inner = self.inner.borrow_mut();
-            if inner.disposed {
-                return Err(RuntimeError::RuntimeDisposed);
-            }
-            let id = inner.next_signal;
-            inner.next_signal += 1;
-            inner.signals.insert(
-                id,
-                SignalNode {
-                    subscribers: BTreeSet::new(),
-                },
-            );
-            id
-        };
-        Ok(Signal {
-            id,
-            runtime: Rc::downgrade(&self.inner),
-            value: Rc::new(RefCell::new(value)),
-            equality,
-        })
+        check_runtime_context(&self.inner)?;
+        let owner = current_owner_for_runtime(&self.inner).unwrap_or_else(|| {
+            let inner = self.inner.borrow();
+            inner.active_scope.unwrap_or(inner.root_scope)
+        });
+        create_signal_for_scope(&self.inner, owner, value, equality)
     }
 
     /// Create an eager effect owned by the active scope, or by the root scope.
     pub fn effect(&self, callback: impl FnMut() + 'static) -> Result<Effect, RuntimeError> {
-        let owner = {
+        check_runtime_context(&self.inner)?;
+        let owner = current_owner_for_runtime(&self.inner).unwrap_or_else(|| {
             let inner = self.inner.borrow();
-            if inner.disposed {
-                return Err(RuntimeError::RuntimeDisposed);
-            }
             inner.active_scope.unwrap_or(inner.root_scope)
-        };
+        });
         create_effect(&self.inner, owner, Box::new(callback))
     }
 
@@ -363,8 +492,16 @@ impl<T: Clone + 'static> Signal<T> {
             if inner.disposed {
                 return Err(RuntimeError::RuntimeDisposed);
             }
-            if !inner.signals.contains_key(&self.id) {
-                return Err(RuntimeError::InvalidSignal);
+            let signal = inner
+                .signals
+                .get(&self.id)
+                .ok_or(RuntimeError::InvalidSignal)?;
+            let owner = inner
+                .scopes
+                .get(&signal.owner)
+                .ok_or(RuntimeError::InvalidSignal)?;
+            if owner.disposed {
+                return Err(RuntimeError::DisposedScope);
             }
         }
         let value = self.value.borrow().clone();
@@ -375,6 +512,20 @@ impl<T: Clone + 'static> Signal<T> {
     /// Read the value, panicking with a diagnostic if the runtime is invalid.
     pub fn get(&self) -> T {
         self.try_get().unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    /// Mutate a cloned value and publish it as one write. If the callback panics,
+    /// the signal retains its original value.
+    pub fn update(&self, callback: impl FnOnce(&mut T)) {
+        self.try_update(callback)
+            .unwrap_or_else(|error| panic!("{error}"));
+    }
+
+    /// Fallible counterpart of update. Returns true when dependent effects were notified.
+    pub fn try_update(&self, callback: impl FnOnce(&mut T)) -> Result<bool, RuntimeError> {
+        let mut next = self.try_get()?;
+        callback(&mut next);
+        self.try_set(next)
     }
 
     /// Write the value. Returns `true` when the value changed and `false` for
@@ -390,8 +541,16 @@ impl<T: Clone + 'static> Signal<T> {
             if inner.disposed {
                 return Err(RuntimeError::RuntimeDisposed);
             }
-            if !inner.signals.contains_key(&self.id) {
-                return Err(RuntimeError::InvalidSignal);
+            let signal = inner
+                .signals
+                .get(&self.id)
+                .ok_or(RuntimeError::InvalidSignal)?;
+            let owner = inner
+                .scopes
+                .get(&signal.owner)
+                .ok_or(RuntimeError::InvalidSignal)?;
+            if owner.disposed {
+                return Err(RuntimeError::DisposedScope);
             }
         }
 
@@ -466,6 +625,37 @@ impl Scope {
         create_scope(&runtime, self.id)
     }
 
+    /// Create a signal owned by this scope. The handle becomes invalid on disposal.
+    pub fn signal<T: Clone + PartialEq + 'static>(
+        &self,
+        value: T,
+    ) -> Result<Signal<T>, RuntimeError> {
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
+        check_runtime_context(&runtime)?;
+        create_signal_for_scope(
+            &runtime,
+            self.id,
+            value,
+            Some(Rc::new(|old, new| old == new)),
+        )
+    }
+
+    /// Create an owner-bound signal that always notifies on writes.
+    pub fn signal_always_changed<T: Clone + 'static>(
+        &self,
+        value: T,
+    ) -> Result<Signal<T>, RuntimeError> {
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
+        check_runtime_context(&runtime)?;
+        create_signal_for_scope(&runtime, self.id, value, None)
+    }
+
     /// Create an eager effect explicitly owned by this scope.
     pub fn effect(&self, callback: impl FnMut() + 'static) -> Result<Effect, RuntimeError> {
         let runtime = self
@@ -497,6 +687,30 @@ impl Scope {
         Ok(())
     }
 
+    /// Register cleanup for the current effect run. It executes before that effect reruns
+    /// and at disposal if the effect has not rerun.
+    pub fn on_effect_cleanup(&self, callback: impl FnOnce() + 'static) -> Result<(), RuntimeError> {
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
+        check_runtime_context(&runtime)?;
+        let mut inner = runtime.borrow_mut();
+        if inner.disposed {
+            return Err(RuntimeError::RuntimeDisposed);
+        }
+        let effect_id = inner.active_effect.ok_or(RuntimeError::InvalidEffect)?;
+        let effect = inner
+            .effects
+            .get_mut(&effect_id)
+            .ok_or(RuntimeError::InvalidEffect)?;
+        if effect.owner != self.id {
+            return Err(RuntimeError::InvalidEffect);
+        }
+        effect.cleanups.push(Box::new(callback));
+        Ok(())
+    }
+
     /// Dispose this scope and all resources it owns. Repeated disposal is harmless.
     pub fn dispose(&self) -> Result<(), RuntimeError> {
         let runtime = self
@@ -505,6 +719,47 @@ impl Scope {
             .ok_or(RuntimeError::RuntimeDisposed)?;
         dispose_scope(&runtime, self.id)
     }
+}
+
+fn create_signal_for_scope<T: Clone + 'static>(
+    runtime: &RuntimeRef,
+    owner: ScopeId,
+    value: T,
+    equality: Option<Equality<T>>,
+) -> Result<Signal<T>, RuntimeError> {
+    check_runtime_context(runtime)?;
+    let id = {
+        let mut inner = runtime.borrow_mut();
+        if inner.disposed {
+            return Err(RuntimeError::RuntimeDisposed);
+        }
+        let owner_node = inner.scopes.get(&owner).ok_or(RuntimeError::InvalidScope)?;
+        if owner_node.disposed {
+            return Err(RuntimeError::DisposedScope);
+        }
+        let id = inner.next_signal;
+        inner.next_signal += 1;
+        inner.signals.insert(
+            id,
+            SignalNode {
+                owner,
+                subscribers: BTreeSet::new(),
+            },
+        );
+        inner
+            .scopes
+            .get_mut(&owner)
+            .expect("owner checked")
+            .signals
+            .push(id);
+        id
+    };
+    Ok(Signal {
+        id,
+        runtime: Rc::downgrade(runtime),
+        value: Rc::new(RefCell::new(value)),
+        equality,
+    })
 }
 
 fn create_scope(runtime: &RuntimeRef, parent: ScopeId) -> Result<Scope, RuntimeError> {
@@ -528,6 +783,7 @@ fn create_scope(runtime: &RuntimeRef, parent: ScopeId) -> Result<Scope, RuntimeE
             ScopeNode {
                 children: Vec::new(),
                 effects: Vec::new(),
+                signals: Vec::new(),
                 cleanups: Vec::new(),
                 disposed: false,
             },
@@ -568,6 +824,7 @@ fn create_effect(
             EffectNode {
                 callback: Rc::new(RefCell::new(callback)),
                 dependencies: BTreeSet::new(),
+                cleanups: Vec::new(),
                 owner,
             },
         );
@@ -589,6 +846,9 @@ fn create_effect(
 }
 
 fn track_read(runtime: &RuntimeRef, signal_id: SignalId) -> Result<(), RuntimeError> {
+    if TRACKING_PAUSED.with(std::cell::Cell::get) {
+        return Ok(());
+    }
     let mut inner = runtime.borrow_mut();
     if inner.disposed {
         return Err(RuntimeError::RuntimeDisposed);
@@ -630,28 +890,54 @@ fn detach_dependencies(inner: &mut RuntimeInner, effect_id: EffectId) {
 }
 
 fn run_effect(runtime: &RuntimeRef, effect_id: EffectId) {
-    let (callback, previous_effect, previous_scope) = {
+    let (callback, owner, previous_effect, previous_scope, cleanups) = {
         let mut inner = runtime.borrow_mut();
         if inner.disposed || !inner.effects.contains_key(&effect_id) {
             return;
         }
         detach_dependencies(&mut inner, effect_id);
-        let effect = inner.effects.get(&effect_id).expect("effect checked");
+        let effect = inner.effects.get_mut(&effect_id).expect("effect checked");
         let callback = effect.callback.clone();
         let owner = effect.owner;
+        let cleanups = std::mem::take(&mut effect.cleanups);
         let previous_effect = inner.active_effect;
         let previous_scope = inner.active_scope;
+        // Cleanup executes outside dependency collection, before the next run.
+        inner.active_effect = None;
+        inner.active_scope = Some(owner);
+        (callback, owner, previous_effect, previous_scope, cleanups)
+    };
+    let owner_guard = OwnerContextGuard::enter(runtime, owner);
+    let mut cleanup_panic = None;
+    for cleanup in cleanups.into_iter().rev() {
+        if let Err(payload) = catch_unwind(AssertUnwindSafe(cleanup)) {
+            if cleanup_panic.is_none() {
+                cleanup_panic = Some(payload);
+            }
+        }
+    }
+    if let Some(payload) = cleanup_panic {
+        let mut inner = runtime.borrow_mut();
+        inner.active_effect = previous_effect;
+        inner.active_scope = previous_scope;
+        drop(inner);
+        drop(owner_guard);
+        resume_unwind(payload);
+    }
+
+    {
+        let mut inner = runtime.borrow_mut();
+        if inner.disposed || !inner.effects.contains_key(&effect_id) {
+            inner.active_effect = previous_effect;
+            inner.active_scope = previous_scope;
+            drop(inner);
+            drop(owner_guard);
+            return;
+        }
         inner.active_effect = Some(effect_id);
         inner.active_scope = Some(owner);
-        (callback, previous_effect, previous_scope)
-    };
-    let previous_runtime_id = ACTIVE_RUNTIME_ID.with(|active| {
-        let previous = active.get();
-        active.set(runtime_id(runtime));
-        previous
-    });
+    }
     let result = catch_unwind(AssertUnwindSafe(|| (callback.borrow_mut())()));
-    ACTIVE_RUNTIME_ID.with(|active| active.set(previous_runtime_id));
     {
         let mut inner = runtime.borrow_mut();
         inner.active_effect = previous_effect;
@@ -661,8 +947,22 @@ fn run_effect(runtime: &RuntimeRef, effect_id: EffectId) {
         }
     }
     if let Err(payload) = result {
+        // A failed run must not leak cleanup resources registered before its panic.
+        let failed_cleanups = {
+            let mut inner = runtime.borrow_mut();
+            inner
+                .effects
+                .get_mut(&effect_id)
+                .map(|effect| std::mem::take(&mut effect.cleanups))
+                .unwrap_or_default()
+        };
+        for cleanup in failed_cleanups.into_iter().rev() {
+            let _ = catch_unwind(AssertUnwindSafe(cleanup));
+        }
+        drop(owner_guard);
         resume_unwind(payload);
     }
+    drop(owner_guard);
 }
 
 fn flush_runtime(runtime: &RuntimeRef) -> Result<(), RuntimeError> {
@@ -717,23 +1017,50 @@ fn flush_runtime(runtime: &RuntimeRef) -> Result<(), RuntimeError> {
 
 fn dispose_effect(runtime: &RuntimeRef, effect_id: EffectId) -> Result<(), RuntimeError> {
     check_runtime_context(runtime)?;
-    let mut inner = runtime.borrow_mut();
-    if inner.disposed {
-        return Err(RuntimeError::RuntimeDisposed);
+    let (owner, cleanups) = {
+        let mut inner = runtime.borrow_mut();
+        if inner.disposed {
+            return Err(RuntimeError::RuntimeDisposed);
+        }
+        if !inner.effects.contains_key(&effect_id) {
+            return Ok(());
+        }
+        detach_dependencies(&mut inner, effect_id);
+        let effect = inner.effects.remove(&effect_id).expect("effect checked");
+        inner.pending.remove(&effect_id);
+        inner.queue.retain(|queued| *queued != effect_id);
+        (effect.owner, effect.cleanups)
+    };
+
+    let _owner_guard = OwnerContextGuard::enter(runtime, owner);
+    let mut first_panic = None;
+    for cleanup in cleanups.into_iter().rev() {
+        let previous_effect = {
+            let mut inner = runtime.borrow_mut();
+            let previous = inner.active_effect;
+            inner.active_effect = None;
+            previous
+        };
+        let result = catch_unwind(AssertUnwindSafe(cleanup));
+        {
+            let mut inner = runtime.borrow_mut();
+            inner.active_effect = previous_effect;
+        }
+        if let Err(payload) = result {
+            if first_panic.is_none() {
+                first_panic = Some(payload);
+            }
+        }
     }
-    if !inner.effects.contains_key(&effect_id) {
-        return Ok(());
+    if let Some(payload) = first_panic {
+        resume_unwind(payload);
     }
-    detach_dependencies(&mut inner, effect_id);
-    inner.effects.remove(&effect_id);
-    inner.pending.remove(&effect_id);
-    inner.queue.retain(|queued| *queued != effect_id);
     Ok(())
 }
 
 fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeError> {
     check_runtime_context(runtime)?;
-    let (children, effects, cleanups) = {
+    let (children, effects, signals, cleanups) = {
         let mut inner = runtime.borrow_mut();
         if inner.disposed {
             return Err(RuntimeError::RuntimeDisposed);
@@ -749,6 +1076,7 @@ fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeE
         (
             std::mem::take(&mut scope.children),
             std::mem::take(&mut scope.effects),
+            std::mem::take(&mut scope.signals),
             std::mem::take(&mut scope.cleanups),
         )
     };
@@ -792,10 +1120,35 @@ fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeE
         }
     }
 
+    {
+        let mut inner = runtime.borrow_mut();
+        for signal_id in signals {
+            if let Some(signal) = inner.signals.remove(&signal_id) {
+                for effect_id in signal.subscribers {
+                    if let Some(effect) = inner.effects.get_mut(&effect_id) {
+                        effect.dependencies.remove(&signal_id);
+                    }
+                }
+            }
+        }
+    }
+
     if let Some(payload) = first_panic {
         resume_unwind(payload);
     }
     Ok(())
+}
+
+impl<T> rustflow_view::IntoView for Signal<T>
+where
+    T: Clone + rustflow_view::IntoView + 'static,
+{
+    fn into_view(self) -> Result<rustflow_view::View, rustflow_view::ViewError> {
+        let signal = self;
+        Ok(rustflow_view::View::dynamic(move || {
+            signal.get().into_view()
+        }))
+    }
 }
 
 #[cfg(test)]
@@ -1226,5 +1579,86 @@ mod tests {
             .unwrap();
 
         assert_eq!(*order.borrow(), vec!['a', 'b']);
+    }
+    #[test]
+    fn signal_update_is_one_equality_aware_write() {
+        let runtime = Runtime::new();
+        let signal = runtime.signal(4_i32).unwrap();
+        let runs = Rc::new(Cell::new(0));
+        let observed = signal.clone();
+        let count = runs.clone();
+        let _effect = runtime
+            .effect(move || {
+                let _ = observed.get();
+                count.set(count.get() + 1);
+            })
+            .unwrap();
+
+        assert_eq!(runs.get(), 1);
+        signal.update(|value| *value += 3);
+        assert_eq!(signal.get(), 7);
+        assert_eq!(runs.get(), 2);
+        assert!(!signal.try_update(|value| *value = 7).unwrap());
+        assert_eq!(runs.get(), 2);
+    }
+
+    #[test]
+    fn owner_bound_signal_is_invalid_after_scope_disposal() {
+        let runtime = Runtime::new();
+        let owner = runtime.root_scope().child().unwrap();
+        let signal = owner.signal(12_i32).unwrap();
+        assert_eq!(signal.get(), 12);
+
+        owner.dispose().unwrap();
+
+        assert_eq!(signal.try_get(), Err(RuntimeError::InvalidSignal));
+        assert_eq!(signal.try_set(13), Err(RuntimeError::InvalidSignal));
+    }
+
+    #[test]
+    fn component_owner_context_creates_signals_and_restores_after_panic() {
+        let runtime = Runtime::new();
+        let owner = runtime.root_scope().child().unwrap();
+        let scoped_signal = with_owner_scope(&owner, || signal(21_i32)).unwrap();
+        assert_eq!(scoped_signal.get(), 21);
+        assert!(matches!(
+            try_signal(1_i32),
+            Err(RuntimeError::NoActiveOwner)
+        ));
+
+        let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = with_owner_scope(&owner, || panic!("intentional context restoration test"));
+        }));
+        assert!(panic_result.is_err());
+        assert!(matches!(
+            try_signal(2_i32),
+            Err(RuntimeError::NoActiveOwner)
+        ));
+        owner.dispose().unwrap();
+    }
+
+    #[test]
+    fn effect_cleanup_runs_before_rerun_and_at_final_disposal() {
+        let runtime = Runtime::new();
+        let owner = runtime.root_scope().child().unwrap();
+        let trigger = owner.signal(0_i32).unwrap();
+        let cleanup_values = Rc::new(RefCell::new(Vec::new()));
+        let observed = trigger.clone();
+        let cleanup_log = cleanup_values.clone();
+
+        let _effect = owner
+            .effect(move || {
+                let value = observed.get();
+                let log = cleanup_log.clone();
+                on_cleanup(move || log.borrow_mut().push(value)).unwrap();
+            })
+            .unwrap();
+
+        trigger.set(1);
+        assert_eq!(*cleanup_values.borrow(), vec![0]);
+        trigger.set(2);
+        assert_eq!(*cleanup_values.borrow(), vec![0, 1]);
+        owner.dispose().unwrap();
+        assert_eq!(*cleanup_values.borrow(), vec![0, 1, 2]);
     }
 }

@@ -195,11 +195,17 @@ impl ComponentInstance {
             runtime: runtime.clone(),
             scope: scope.clone(),
         };
-        let render = match (definition.setup)(&context, &properties) {
-            Ok(render) => render,
-            Err(error) => {
+        let render = match crate::reactivity::with_owner_scope(&scope, || {
+            (definition.setup)(&context, &properties)
+        }) {
+            Ok(Ok(render)) => render,
+            Ok(Err(error)) => {
                 scope.dispose()?;
                 return Err(error);
+            }
+            Err(error) => {
+                scope.dispose()?;
+                return Err(error.into());
             }
         };
         let view = match render(&properties, &children) {
@@ -249,6 +255,42 @@ impl ComponentInstance {
     pub fn scope(&self) -> &Scope {
         &self.scope
     }
+    /// Preview a view rendered with updated properties/children without accepting them.
+    ///
+    /// The component setup and its owner scope are not recreated. This method is
+    /// useful for preflighting a reconciliation before committing DOM changes.
+    pub fn preview_update(
+        &self,
+        properties: &[Property],
+        children: &[View],
+    ) -> Result<View, ComponentError> {
+        if self.state == ComponentState::Unmounted {
+            return Err(ComponentError::Unmounted);
+        }
+        validate_properties(properties)?;
+        (self.render)(properties, children)
+    }
+
+    /// Accept a previously previewed view after the host has successfully reconciled it.
+    ///
+    /// This avoids rerunning a pure render callback and preserves the exact dynamic
+    /// child descriptors used by the DOM commit.
+    pub fn commit_preview_update(
+        &mut self,
+        properties: Vec<Property>,
+        children: Vec<View>,
+        view: View,
+    ) -> Result<&View, ComponentError> {
+        if self.state == ComponentState::Unmounted {
+            return Err(ComponentError::Unmounted);
+        }
+        validate_properties(&properties)?;
+        self.properties = properties;
+        self.children = children;
+        self.view = view;
+        Ok(&self.view)
+    }
+
     /// Recompute the view with new properties/children. Setup is not repeated.
     ///
     /// On render failure, the old view and inputs remain unchanged.
@@ -261,9 +303,8 @@ impl ComponentInstance {
             return Err(ComponentError::Unmounted);
         }
         let properties = properties.into_iter().collect::<Vec<_>>();
-        validate_properties(&properties)?;
         let children = children.into_iter().collect::<Vec<_>>();
-        let next_view = (self.render)(&properties, &children)?;
+        let next_view = self.preview_update(&properties, &children)?;
         self.properties = properties;
         self.children = children;
         self.view = next_view;
@@ -497,6 +538,231 @@ mod tests {
         runtime.dispose().expect("runtime dispose");
     }
 
+    #[crate::component]
+    fn MacroCounter(initial: i32) -> impl rustflow_view::IntoView {
+        let count = crate::reactivity::signal(initial);
+        let increment = count.clone();
+        crate::view! {
+            <button on:click={move |_event| increment.update(|value| *value += 1)}>
+                "Count "
+                <span>{count}</span>
+            </button>
+        }
+    }
+
+    #[crate::component]
+    fn MacroPropCounter(initial: i32, label: String) -> impl rustflow_view::IntoView {
+        let count = crate::reactivity::signal(initial);
+        let increment = count.clone();
+        crate::view! {
+            <section>
+                <span data-testid="prop-label">{label}</span>
+                <button on:click={move |_event| increment.update(|value| *value += 1)}>
+                    "Increment"
+                </button>
+                <span data-testid="local-count">{count}</span>
+            </section>
+        }
+    }
+
+    #[crate::component]
+    fn CallbackReceiver(on_increment: rustflow_view::EventHandler) -> impl rustflow_view::IntoView {
+        crate::view! {
+            <button on:click={move |payload| on_increment.invoke(payload)}>
+                "Forward"
+            </button>
+        }
+    }
+
+    #[test]
+    fn macro_component_prop_updates_preserve_owner_state_and_refresh_the_view() {
+        use super::ComponentRegistry;
+        use rustflow_view::{EventPayload, PropertyValue};
+
+        let mut registry = ComponentRegistry::new();
+        registry
+            .register(
+                __rustflow_component_definition_macropropcounter().expect("component adapter"),
+            )
+            .expect("register component");
+        let runtime = Runtime::new();
+        let root = runtime.root_scope();
+        let descriptor = match crate::view! {
+            <MacroPropCounter initial={4} label="before" />
+        }
+        .expect("component descriptor")
+        {
+            View::Component(node) => node,
+            _ => panic!("component descriptor expected"),
+        };
+        let mut instance = registry
+            .mount(&descriptor, runtime.clone(), &root)
+            .expect("mount component");
+
+        let View::Element(section) = instance.view() else {
+            panic!("component returns a section");
+        };
+        let View::Element(button) = &section.children()[1] else {
+            panic!("component includes an increment button");
+        };
+        button.events()[0].handler().invoke(EventPayload::default());
+
+        let updated = instance
+            .update(
+                [
+                    Property::new("initial", 99).expect("initial prop"),
+                    Property::new("label", "after").expect("label prop"),
+                ],
+                [],
+            )
+            .expect("update component props")
+            .clone();
+        let View::Element(section) = &updated else {
+            panic!("updated component returns a section");
+        };
+        let View::Element(label) = &section.children()[0] else {
+            panic!("updated component includes a label span");
+        };
+        assert_eq!(label.tag(), "span");
+        assert_eq!(label.children(), &[View::text("after")]);
+
+        let View::Element(counter) = &section.children()[2] else {
+            panic!("component includes the local counter");
+        };
+        assert_eq!(counter.attributes()[0].name(), "data-testid");
+        assert_eq!(
+            counter.attributes()[0].value(),
+            &rustflow_view::AttributeValue::Text("local-count".into())
+        );
+        let View::Dynamic(dynamic) = &counter.children()[0] else {
+            panic!("signal interpolation remains a dynamic region");
+        };
+        assert_eq!(
+            dynamic.evaluate().expect("current signal view"),
+            View::text("5")
+        );
+        assert_eq!(
+            instance
+                .properties()
+                .iter()
+                .find(|property| property.name() == "initial")
+                .map(|property| property.value()),
+            Some(&PropertyValue::Integer(99))
+        );
+
+        instance.unmount().expect("unmount component");
+        runtime.dispose().expect("dispose runtime");
+    }
+
+    #[test]
+    fn component_attribute_generates_typed_registry_adapter_and_reactive_state() {
+        use super::ComponentRegistry;
+        use rustflow_view::{EventPayload, PropertyValue};
+
+        let mut registry = ComponentRegistry::new();
+        registry
+            .register(__rustflow_component_definition_macrocounter().expect("component adapter"))
+            .expect("register component");
+        let runtime = Runtime::new();
+        let root = runtime.root_scope();
+        let descriptor = match crate::view! { <MacroCounter initial={3} /> }.expect("descriptor") {
+            View::Component(node) => node,
+            _ => panic!("component descriptor expected"),
+        };
+        let mut instance = registry
+            .mount(&descriptor, runtime.clone(), &root)
+            .expect("typed component mounts");
+        let View::Element(button) = instance.view() else {
+            panic!("component returns a button");
+        };
+        assert_eq!(button.events().len(), 1);
+        let View::Element(span) = &button.children()[1] else {
+            panic!("dynamic count lives in a span");
+        };
+        assert!(matches!(span.children(), [View::Dynamic(_)]));
+        instance.unmount().expect("unmount component");
+        runtime.dispose().expect("dispose runtime");
+
+        let invoked = Rc::new(Cell::new(false));
+        let called = invoked.clone();
+        let parent = match crate::view! {
+            <CallbackReceiver on:increment={move |payload| {
+                called.set(payload.checked == Some(true));
+            }} />
+        }
+        .expect("callback component descriptor")
+        {
+            View::Component(node) => node,
+            _ => panic!("component descriptor expected"),
+        };
+        assert!(matches!(
+            parent.properties()[0].value(),
+            PropertyValue::Callback(_)
+        ));
+        let callback_runtime = Runtime::new();
+        let mut callback_registry = ComponentRegistry::new();
+        callback_registry
+            .register(__rustflow_component_definition_callbackreceiver().expect("callback adapter"))
+            .expect("register callback component");
+        let mut callback_instance = callback_registry
+            .mount(
+                &parent,
+                callback_runtime.clone(),
+                &callback_runtime.root_scope(),
+            )
+            .expect("callback component mounts");
+        let View::Element(button) = callback_instance.view() else {
+            panic!("callback component renders a button");
+        };
+        button.events()[0].handler().invoke(EventPayload {
+            value: None,
+            checked: Some(true),
+        });
+        assert!(invoked.get());
+        callback_instance
+            .unmount()
+            .expect("unmount callback component");
+        callback_runtime.dispose().expect("dispose runtime");
+    }
+
+    #[test]
+    fn component_macro_rejects_missing_unknown_and_mismatched_props() {
+        use super::ComponentRegistry;
+
+        let mut registry = ComponentRegistry::new();
+        registry
+            .register(__rustflow_component_definition_macrocounter().expect("component adapter"))
+            .expect("register component");
+        let runtime = Runtime::new();
+        let root = runtime.root_scope();
+
+        let missing = match crate::view! { <MacroCounter /> }.expect("missing prop descriptor") {
+            View::Component(node) => node,
+            _ => panic!("component descriptor expected"),
+        };
+        let unknown = match crate::view! {
+            <MacroCounter initial={3} unexpected={"not accepted".to_owned()} />
+        }
+        .expect("unknown prop descriptor")
+        {
+            View::Component(node) => node,
+            _ => panic!("component descriptor expected"),
+        };
+        let mismatched = match crate::view! {
+            <MacroCounter initial={"not an integer".to_owned()} />
+        }
+        .expect("mismatched prop descriptor")
+        {
+            View::Component(node) => node,
+            _ => panic!("component descriptor expected"),
+        };
+
+        assert!(registry.mount(&missing, runtime.clone(), &root).is_err());
+        assert!(registry.mount(&unknown, runtime.clone(), &root).is_err());
+        assert!(registry.mount(&mismatched, runtime.clone(), &root).is_err());
+        runtime.dispose().expect("dispose runtime");
+    }
+
     #[test]
     fn failed_update_keeps_the_previous_view() {
         let runtime = Runtime::new();
@@ -515,5 +781,50 @@ mod tests {
         assert_eq!(instance.view(), &before);
         instance.unmount().expect("unmount");
         runtime.dispose().expect("runtime dispose");
+    }
+    #[test]
+    fn component_setup_can_create_owner_bound_state_and_effects() {
+        use crate::reactivity::{on_cleanup, signal, use_effect};
+
+        let runtime = Runtime::new();
+        let root = runtime.root_scope();
+        let retained = Rc::new(std::cell::RefCell::new(None));
+        let retained_setup = retained.clone();
+        let cleanup_count = Rc::new(Cell::new(0));
+        let cleanup_setup = cleanup_count.clone();
+
+        let definition = ComponentDefinition::new("SignalCounter", move |_context, _props| {
+            let count = signal(1_i32);
+            *retained_setup.borrow_mut() = Some(count.clone());
+
+            let observed = count.clone();
+            let cleanup_setup = cleanup_setup.clone();
+            use_effect(move || {
+                let _ = observed.get();
+                let cleanup_setup = cleanup_setup.clone();
+                on_cleanup(move || cleanup_setup.set(cleanup_setup.get() + 1)).unwrap();
+            });
+
+            let render: ComponentRender =
+                Rc::new(move |_props, _children| Ok(View::text(count.get().to_string())));
+            Ok(render)
+        })
+        .expect("valid component definition");
+
+        let mut instance = ComponentInstance::mount(definition, runtime.clone(), &root, [], [])
+            .expect("component setup can create signals");
+        let count = retained.borrow().as_ref().unwrap().clone();
+        assert_eq!(count.get(), 1);
+        count.set(2);
+        assert_eq!(cleanup_count.get(), 1);
+        assert_eq!(instance.view(), &View::text("1"));
+
+        instance.unmount().expect("unmount component owner");
+        assert_eq!(cleanup_count.get(), 2);
+        assert_eq!(
+            count.try_get(),
+            Err(crate::reactivity::RuntimeError::InvalidSignal)
+        );
+        runtime.dispose().expect("dispose runtime");
     }
 }
