@@ -115,7 +115,7 @@ The supported Phase 3 public names, signatures, error behavior, and lifecycle de
 
 ## Implementation status (merged into `main`; Phase 3 closed)
 
-The current stacked implementation branch (PR #26, based on PR #25) now includes the owner-bound `signal`/`use_state`/`use_effect` API, the constrained `#[component]` macro with typed props and callback props, reactive signal-identifier interpolation, a production WASM/Vite bundle, Counter and todo examples, browser E2E coverage, a raw-WASM size budget, and basic browser error/source-map feedback.
+The Phase 3 implementation now merged in `main` includes the owner-bound `signal`/`use_state`/`use_effect` API, the constrained `#[component]` macro with typed props and callback props, reactive signal-identifier interpolation, a production WASM/Vite bundle, Counter and todo examples, browser E2E coverage, a raw-WASM size budget, and basic browser error/source-map feedback.
 
 ### Component props without resetting setup state
 
