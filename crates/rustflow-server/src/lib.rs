@@ -64,7 +64,6 @@ impl HttpMethod {
             Self::Connect => MethodFilter::CONNECT,
         }
     }
-
 }
 
 /// An incoming request after transport-level parsing and body-size enforcement.
