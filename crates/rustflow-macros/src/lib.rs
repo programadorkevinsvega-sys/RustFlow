@@ -2,6 +2,17 @@
 
 use proc_macro::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
 
+
+/// Mark a Rust function as a RustFlow component authoring function.
+///
+/// The function remains an ordinary typed Rust function; its result can be
+/// converted with IntoView and used by the browser renderer. The attribute does
+/// not adopt React's positional hook model.
+#[proc_macro_attribute]
+pub fn component(_attributes: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
 #[proc_macro]
 pub fn view(input: TokenStream) -> TokenStream {
     match Parser::new(input).parse_roots() {
@@ -73,8 +84,16 @@ enum Node {
 impl Node {
     fn emit(&self) -> String {
         match self {
-            Self::Literal(expression) | Self::Expression(expression) => {
+            Self::Literal(expression) => {
                 format!("::rustflow::view::IntoView::into_view(({expression}))")
+            }
+            Self::Expression(expression) => {
+                let value = if is_simple_identifier(expression) {
+                    format!("({expression}).clone()")
+                } else {
+                    expression.clone()
+                };
+                format!("::rustflow::view::IntoView::into_view(({value}))")
             }
             Self::Dynamic(expression) => format!(
                 "Ok(::rustflow::view::View::dynamic(move || ::rustflow::view::IntoView::into_view(({expression}))))"
@@ -82,6 +101,15 @@ impl Node {
             Self::Element(element) => element.emit(),
         }
     }
+}
+
+fn is_simple_identifier(expression: &str) -> bool {
+    let mut chars = expression.trim().chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|character| character == '_' || character.is_ascii_alphanumeric())
 }
 
 impl ElementNode {
