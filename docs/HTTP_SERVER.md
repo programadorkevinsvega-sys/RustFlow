@@ -64,6 +64,8 @@ For shutdown, call `serve_with_shutdown(address, shutdown_future)` or `serve_lis
 
 Forwarded headers are ignored unless the TCP peer is in the trusted-proxy set. `Request::client_ip()` and `Request::is_https()` expose the reconstructed identity. For RFC 7239 `Forwarded`, the scheme is taken only from the rightmost element; an absent, invalid, or duplicated `proto` there fails closed instead of falling back to an earlier element that could be client-supplied. For comma-separated `X-Forwarded-Proto`, the rightmost token is used. Configure the trusted edge proxy to emit the authoritative scheme value at the rightmost position and protect the proxy-to-origin connection. Spoofed values from untrusted peers do not change the resolved identity. Missing HTTPS when required returns 400 with a generic public message.
 
+The TLS listener accepts TCP connections independently of their TLS handshakes. Handshakes run concurrently with a hard cap of 64 and a 10-second timeout; excess handshakes are dropped rather than allowed to create an unbounded queue. Dropping the server listener cancels the accept loop and pending handshakes. This is an availability guard, not a substitute for a production TLS/proxy deployment review.
+
 ## Request IDs and tracing
 
 Every handled request receives a correlation ID exposed as `Request::request_id()` and echoed in the response header `x-request-id`, including body-read errors. A supplied ID is retained only if it is 1–128 ASCII letters, digits, dots, underscores, or hyphens; otherwise the server generates an ID with the `rf-` prefix. It is for log correlation only and must never be used as an authorization credential.
