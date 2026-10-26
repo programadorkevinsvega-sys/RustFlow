@@ -776,11 +776,17 @@ impl Application {
         let middleware_stack = self.middleware.clone();
         let route_template = path.clone();
         let adapter = move |Path(path_params): Path<HashMap<String, String>>,
-                            request: AxumRequest| {
+                            mut request: AxumRequest| {
             let handler = handler.clone();
             let config = config.clone();
             let middleware_stack = middleware_stack.clone();
             let route_template = route_template.clone();
+            let request_id = request_id_from_headers(request.headers());
+            if let Ok(value) = HeaderValue::from_str(&request_id) {
+                request
+                    .headers_mut()
+                    .insert(HeaderName::from_static("x-request-id"), value);
+            }
             async move {
                 match tokio::time::timeout(
                     config.request_timeout,
@@ -796,9 +802,11 @@ impl Application {
                 .await
                 {
                     Ok(response) => response,
-                    Err(_) => HttpError::gateway_timeout()
-                        .into_response()
-                        .into_axum_response(),
+                    Err(_) => attach_request_id(
+                        HttpError::gateway_timeout().into_response(),
+                        &request_id,
+                    )
+                    .into_axum_response(),
                 }
             }
         };
@@ -1254,10 +1262,12 @@ mod tests {
         .expect("route registration");
         let request = AxumHttpRequest::builder()
             .uri("/slow")
+            .header("x-request-id", "slow_req_17")
             .body(Body::empty())
             .expect("request");
         let response = send(app, request).await;
         assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+        assert_eq!(response.headers()["x-request-id"], "slow_req_17");
     }
 
     #[tokio::test]
