@@ -758,7 +758,7 @@ mod tests {
             .build();
         assert_eq!(
             render_to_string(&view).expect("render"),
-            "<div title=\"&quot;&lt;hello &amp; goodbye&gt;&#39;&quot;\">&lt;script&gt; &amp; &quot;quoted&quot;</div>"
+            "<div title=\"&quot;&lt;hello &amp; goodbye&gt;&#39;\">&lt;script&gt; &amp; &quot;quoted&quot;</div>"
         );
     }
 
