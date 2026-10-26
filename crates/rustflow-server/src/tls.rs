@@ -48,19 +48,17 @@ impl axum::serve::Listener for TlsListener {
     type Io = TlsStream<TcpStream>;
     type Addr = SocketAddr;
 
-    fn accept(&mut self) -> impl std::future::Future<Output = (Self::Io, Self::Addr)> + Send {
-        async move {
-            loop {
-                match self.listener.accept().await {
-                    Ok((stream, addr)) => match self.acceptor.accept(stream).await {
-                        Ok(tls) => return (tls, addr),
-                        Err(error) => {
-                            tracing::warn!(error = %error, "TLS handshake failed");
-                        }
-                    },
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        loop {
+            match self.listener.accept().await {
+                Ok((stream, addr)) => match self.acceptor.accept(stream).await {
+                    Ok(tls) => return (tls, addr),
                     Err(error) => {
-                        tracing::warn!(error = %error, "TLS TCP accept failed");
+                        tracing::warn!(error = %error, "TLS handshake failed");
                     }
+                },
+                Err(error) => {
+                    tracing::warn!(error = %error, "TLS TCP accept failed");
                 }
             }
         }
