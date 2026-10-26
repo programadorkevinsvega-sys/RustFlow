@@ -523,8 +523,14 @@ impl<T: Clone + 'static> Signal<T> {
             if inner.disposed {
                 return Err(RuntimeError::RuntimeDisposed);
             }
-            let signal = inner.signals.get(&self.id).ok_or(RuntimeError::InvalidSignal)?;
-            let owner = inner.scopes.get(&signal.owner).ok_or(RuntimeError::InvalidSignal)?;
+            let signal = inner
+                .signals
+                .get(&self.id)
+                .ok_or(RuntimeError::InvalidSignal)?;
+            let owner = inner
+                .scopes
+                .get(&signal.owner)
+                .ok_or(RuntimeError::InvalidSignal)?;
             if owner.disposed {
                 return Err(RuntimeError::DisposedScope);
             }
