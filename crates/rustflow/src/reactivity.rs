@@ -1137,4 +1137,82 @@ mod tests {
             assert_eq!(signal.get(), model, "model mismatch at step {step}");
         }
     }
+    #[test]
+    fn values_without_partial_eq_notify_on_every_write() {
+        #[derive(Clone)]
+        struct NoEq(usize);
+
+        let runtime = Runtime::new();
+        let signal = runtime.signal_always_changed(NoEq(1)).unwrap();
+        let runs = Rc::new(Cell::new(0));
+        let observed = signal.clone();
+        let count = runs.clone();
+        let _effect = runtime
+            .effect(move || {
+                let _ = observed.get().0;
+                count.set(count.get() + 1);
+            })
+            .unwrap();
+
+        assert_eq!(signal.try_set(NoEq(1)), Ok(true));
+        assert_eq!(runs.get(), 2);
+    }
+
+    #[test]
+    fn repeated_reads_outside_effect_do_not_subscribe_an_effect() {
+        let runtime = Runtime::new();
+        let outside = runtime.signal_eq(0).unwrap();
+        let unrelated = runtime.signal_eq(10).unwrap();
+        assert_eq!(outside.get(), 0);
+        assert_eq!(outside.get(), 0);
+
+        let runs = Rc::new(Cell::new(0));
+        let observed = unrelated.clone();
+        let count = runs.clone();
+        let _effect = runtime
+            .effect(move || {
+                let _ = observed.get();
+                count.set(count.get() + 1);
+            })
+            .unwrap();
+
+        outside.set(1);
+        assert_eq!(runs.get(), 1);
+    }
+
+    #[test]
+    fn batching_preserves_fifo_order_and_deduplicates_pending_effects() {
+        let runtime = Runtime::new();
+        let signal = runtime.signal_eq(0).unwrap();
+        let order = Rc::new(RefCell::new(Vec::new()));
+
+        let first_signal = signal.clone();
+        let first_order = order.clone();
+        let _first = runtime
+            .effect(move || {
+                let _ = first_signal.get();
+                first_order.borrow_mut().push('a');
+            })
+            .unwrap();
+        let second_signal = signal.clone();
+        let second_order = order.clone();
+        let _second = runtime
+            .effect(move || {
+                let _ = second_signal.get();
+                second_order.borrow_mut().push('b');
+            })
+            .unwrap();
+        order.borrow_mut().clear();
+
+        runtime
+            .batch(|| {
+                signal.set(1);
+                signal.set(2);
+                signal.set(3);
+            })
+            .unwrap();
+
+        assert_eq!(*order.borrow(), vec!['a', 'b']);
+    }
+
 }
