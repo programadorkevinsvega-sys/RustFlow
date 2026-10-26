@@ -126,18 +126,48 @@ struct ComponentRegion {
     reused: bool,
 }
 
-/// Immutable output of the view-diff phase. DOM mutation is only performed by
-/// commit_plan after the next tree and compatible component renders have been validated.
-#[derive(Clone)]
+/// Detached replacement nodes are built during diff/evaluation and transferred
+/// into the mounted tree only during commit. Dropping an uncommitted plan disposes
+/// any component scopes, dynamic scopes, and listeners created while preparing it.
+struct PreparedReplacement {
+    nodes: Vec<Node>,
+    resources: Option<RenderedNodes>,
+}
+
+impl PreparedReplacement {
+    fn new(nodes: Vec<Node>, resources: RenderedNodes) -> Self {
+        Self {
+            nodes,
+            resources: Some(resources),
+        }
+    }
+
+    fn take(mut self) -> (Vec<Node>, RenderedNodes) {
+        (
+            std::mem::take(&mut self.nodes),
+            self.resources.take().unwrap_or_default(),
+        )
+    }
+}
+
+impl Drop for PreparedReplacement {
+    fn drop(&mut self) {
+        if let Some(mut resources) = self.resources.take() {
+            let _ = cleanup_rendered_nodes(&mut resources);
+        }
+    }
+}
+
+/// Immutable output of the view-diff/evaluation phase. The commit phase consumes
+/// this plan and applies its prebuilt replacements and compatible-node patches.
 struct ReconciliationPlan {
     previous: View,
     next: View,
     action: ReconciliationAction,
 }
 
-#[derive(Clone)]
 enum ReconciliationAction {
-    Replace,
+    Replace(PreparedReplacement),
     Text,
     Element(Vec<PlannedChild>),
     Fragment(Vec<PlannedChild>),
@@ -154,7 +184,6 @@ enum ReconciliationAction {
     },
 }
 
-#[derive(Clone)]
 struct PlannedChild {
     previous_index: Option<usize>,
     plan: Box<ReconciliationPlan>,
@@ -907,7 +936,7 @@ impl DomRenderer {
         dynamic_regions: &[DynamicRegion],
     ) -> Result<ReconciliationPlan, DomError> {
         let mut context = DiffContext::new(component_regions, dynamic_regions);
-        self.plan_diff_with_context(previous, next, &mut context)
+        self.plan_diff_with_context(previous, next, &mut context, &self.root_scope)
     }
 
     fn plan_diff_with_context(
@@ -915,6 +944,7 @@ impl DomRenderer {
         previous: &View,
         next: &View,
         context: &mut DiffContext<'_>,
+        owner_scope: &Scope,
     ) -> Result<ReconciliationPlan, DomError> {
         self.validate_view(next)?;
         let action = match (previous, next) {
@@ -926,23 +956,25 @@ impl DomRenderer {
                     old.children(),
                     new.children(),
                     context,
+                    owner_scope,
                 )?)
             }
             (View::Fragment(old), View::Fragment(new)) => ReconciliationAction::Fragment(
-                self.plan_sequence(old.children(), new.children(), context)?,
+                self.plan_sequence(old.children(), new.children(), context, owner_scope)?,
             ),
             (View::KeyedList(old), View::KeyedList(new)) => {
-                ReconciliationAction::Keyed(self.plan_keyed_children(old, new, context)?)
+                ReconciliationAction::Keyed(self.plan_keyed_children(
+                    old,
+                    new,
+                    context,
+                    owner_scope,
+                )?)
             }
             (View::Component(old), View::Component(new))
                 if old.name() == new.name() && old.key() == new.key() =>
             {
                 let Some(region_index) = context.take_component(old) else {
-                    return Ok(ReconciliationPlan {
-                        previous: previous.clone(),
-                        next: next.clone(),
-                        action: ReconciliationAction::Replace,
-                    });
+                    return self.replacement_plan(next, owner_scope);
                 };
                 let region = &context.component_regions[region_index];
                 let next_view = region
@@ -950,8 +982,12 @@ impl DomRenderer {
                     .preview_update(&new.properties().to_vec(), &new.children().to_vec())?;
                 let mut nested_context =
                     DiffContext::new(&region.mounted.component_regions, &region.mounted.dynamics);
-                let child_plan =
-                    self.plan_diff_with_context(&region.view, &next_view, &mut nested_context)?;
+                let child_plan = self.plan_diff_with_context(
+                    &region.view,
+                    &next_view,
+                    &mut nested_context,
+                    region.instance.scope(),
+                )?;
                 ReconciliationAction::Component {
                     region_index,
                     next_view,
@@ -960,11 +996,7 @@ impl DomRenderer {
             }
             (View::Dynamic(old), View::Dynamic(next_dynamic)) => {
                 let Some(region_index) = context.take_dynamic(old) else {
-                    return Ok(ReconciliationPlan {
-                        previous: previous.clone(),
-                        next: next.clone(),
-                        action: ReconciliationAction::Replace,
-                    });
+                    return self.replacement_plan(next, owner_scope);
                 };
                 let region = &context.dynamic_regions[region_index];
                 let next_view = untrack(|| next_dynamic.evaluate())?;
@@ -976,15 +1008,19 @@ impl DomRenderer {
                     &current.mounted.component_regions,
                     &current.mounted.dynamics,
                 );
-                let child_plan =
-                    self.plan_diff_with_context(&current.view, &next_view, &mut nested_context)?;
+                let child_plan = self.plan_diff_with_context(
+                    &current.view,
+                    &next_view,
+                    &mut nested_context,
+                    &region.scope,
+                )?;
                 ReconciliationAction::Dynamic {
                     region_index,
                     next_view,
                     child_plan: Box::new(child_plan),
                 }
             }
-            _ => ReconciliationAction::Replace,
+            _ => return self.replacement_plan(next, owner_scope),
         };
         Ok(ReconciliationPlan {
             previous: previous.clone(),
@@ -1050,6 +1086,7 @@ impl DomRenderer {
         previous: &[View],
         next: &[View],
         context: &mut DiffContext<'_>,
+        owner_scope: &Scope,
     ) -> Result<Vec<PlannedChild>, DomError> {
         let mut used = vec![false; previous.len()];
         let mut planned = Vec::with_capacity(next.len());
@@ -1072,9 +1109,14 @@ impl DomRenderer {
 
             let child_plan = if let Some(previous_index) = matched {
                 used[previous_index] = true;
-                self.plan_diff_with_context(&previous[previous_index], next_view, context)?
+                self.plan_diff_with_context(
+                    &previous[previous_index],
+                    next_view,
+                    context,
+                    owner_scope,
+                )?
             } else {
-                self.replacement_plan(next_view)
+                self.replacement_plan(next_view, owner_scope)?
             };
             planned.push(PlannedChild {
                 previous_index: matched,
@@ -1089,6 +1131,7 @@ impl DomRenderer {
         previous: &KeyedList,
         next: &KeyedList,
         context: &mut DiffContext<'_>,
+        owner_scope: &Scope,
     ) -> Result<Vec<PlannedChild>, DomError> {
         let old_children = previous.children();
         let mut used = vec![false; old_children.len()];
@@ -1106,9 +1149,10 @@ impl DomRenderer {
                     old_children[previous_index].view(),
                     child.view(),
                     context,
+                    owner_scope,
                 )?
             } else {
-                self.replacement_plan(child.view())
+                self.replacement_plan(child.view(), owner_scope)?
             };
             planned.push(PlannedChild {
                 previous_index: matched,
@@ -1118,12 +1162,30 @@ impl DomRenderer {
         Ok(planned)
     }
 
-    fn replacement_plan(&self, next: &View) -> ReconciliationPlan {
-        ReconciliationPlan {
+    fn replacement_plan(
+        &self,
+        next: &View,
+        owner_scope: &Scope,
+    ) -> Result<ReconciliationPlan, DomError> {
+        // Build the replacement off-DOM during the evaluation phase. This avoids
+        // running component setup twice and ensures render errors are reported
+        // before commit starts mutating existing nodes.
+        let mut prepared_resources = RenderedNodes::default();
+        let nodes = match self.build_nodes(next, owner_scope, &mut prepared_resources) {
+            Ok(nodes) => nodes,
+            Err(error) => {
+                let _ = cleanup_rendered_nodes(&mut prepared_resources);
+                return Err(error);
+            }
+        };
+        Ok(ReconciliationPlan {
             previous: next.clone(),
             next: next.clone(),
-            action: ReconciliationAction::Replace,
-        }
+            action: ReconciliationAction::Replace(PreparedReplacement::new(
+                nodes,
+                prepared_resources,
+            )),
+        })
     }
 
     fn patch_element(
@@ -1218,7 +1280,7 @@ impl DomRenderer {
 
     fn commit_plan(
         &self,
-        plan: &ReconciliationPlan,
+        plan: ReconciliationPlan,
         existing_nodes: &[Node],
         parent: &Node,
         before: Option<&Node>,
@@ -1227,8 +1289,12 @@ impl DomRenderer {
         previous_dynamics: &mut Vec<DynamicRegion>,
         resources: &mut RenderedNodes,
     ) -> Result<Vec<Node>, DomError> {
-        match &plan.action {
-            ReconciliationAction::Replace => self.build_nodes(&plan.next, owner_scope, resources),
+        match plan.action {
+            ReconciliationAction::Replace(prepared) => {
+                let (nodes, prepared_resources) = prepared.take();
+                append_rendered_nodes(resources, prepared_resources);
+                Ok(nodes)
+            }
             ReconciliationAction::Text => {
                 let View::Text(text) = &plan.next else {
                     return Err(DomError::JavaScript(
@@ -1241,7 +1307,10 @@ impl DomRenderer {
                     }
                     Ok(vec![node.clone()])
                 } else {
-                    self.build_nodes(&plan.next, owner_scope, resources)
+                    let mut prepared_resources = RenderedNodes::default();
+                    let nodes = self.build_nodes(&plan.next, owner_scope, &mut prepared_resources)?;
+                    append_rendered_nodes(resources, prepared_resources);
+                    Ok(nodes)
                 }
             }
             ReconciliationAction::Element(children_plan) => {
@@ -1252,7 +1321,10 @@ impl DomRenderer {
                     ));
                 };
                 if existing_nodes.len() != 1 {
-                    return self.build_nodes(&plan.next, owner_scope, resources);
+                    let mut prepared_resources = RenderedNodes::default();
+                    let nodes = self.build_nodes(&plan.next, owner_scope, &mut prepared_resources)?;
+                    append_rendered_nodes(resources, prepared_resources);
+                    return Ok(nodes);
                 }
                 let element: DomElement = existing_nodes[0].clone().dyn_into().map_err(|_| {
                     DomError::JavaScript("expected an element node while reconciling".into())
@@ -1263,7 +1335,6 @@ impl DomRenderer {
                 self.commit_sequence(
                     children_plan,
                     previous.children(),
-                    next.children(),
                     &current_children,
                     &parent_node,
                     None,
@@ -1275,7 +1346,8 @@ impl DomRenderer {
                 Ok(vec![existing_nodes[0].clone()])
             }
             ReconciliationAction::Fragment(children_plan) => {
-                let (View::Fragment(previous), View::Fragment(next)) = (&plan.previous, &plan.next)
+                let (View::Fragment(previous), View::Fragment(_next)) =
+                    (&plan.previous, &plan.next)
                 else {
                     return Err(DomError::JavaScript(
                         "fragment reconciliation plan contains an incompatible view".into(),
@@ -1284,7 +1356,6 @@ impl DomRenderer {
                 self.commit_sequence(
                     children_plan,
                     previous.children(),
-                    next.children(),
                     existing_nodes,
                     parent,
                     before,
@@ -1295,7 +1366,7 @@ impl DomRenderer {
                 )
             }
             ReconciliationAction::Keyed(children_plan) => {
-                let (View::KeyedList(previous), View::KeyedList(next)) =
+                let (View::KeyedList(previous), View::KeyedList(_next)) =
                     (&plan.previous, &plan.next)
                 else {
                     return Err(DomError::JavaScript(
@@ -1307,15 +1378,9 @@ impl DomRenderer {
                     .iter()
                     .map(|child| child.view().clone())
                     .collect::<Vec<_>>();
-                let next_views = next
-                    .children()
-                    .iter()
-                    .map(|child| child.view().clone())
-                    .collect::<Vec<_>>();
                 self.commit_sequence(
                     children_plan,
                     &previous_views,
-                    &next_views,
                     existing_nodes,
                     parent,
                     before,
@@ -1335,7 +1400,7 @@ impl DomRenderer {
                         "component reconciliation plan contains a non-component view".into(),
                     ));
                 };
-                let region = previous_components.get_mut(*region_index).ok_or_else(|| {
+                let region = previous_components.get_mut(region_index).ok_or_else(|| {
                     DomError::JavaScript(
                         "component diff plan references a missing mounted region".into(),
                     )
@@ -1352,14 +1417,14 @@ impl DomRenderer {
 
                 // The rendered view was precomputed during diff planning. Commit
                 // its child plan before accepting the new props on the instance.
-                renderer.update_with_plan(&mut region.mounted, (**child_plan).clone())?;
+                renderer.update_with_plan(&mut region.mounted, *child_plan)?;
                 region.instance.commit_preview_update(
                     next_properties,
                     next_children,
                     next_view.clone(),
                 )?;
                 region.descriptor = next.clone();
-                region.view = next_view.clone();
+                region.view = next_view;
                 region.reused = true;
                 Ok(mounted_range_nodes(&region.mounted))
             }
@@ -1373,7 +1438,7 @@ impl DomRenderer {
                         "dynamic reconciliation plan contains a non-dynamic view".into(),
                     ));
                 };
-                let region = previous_dynamics.get_mut(*region_index).ok_or_else(|| {
+                let region = previous_dynamics.get_mut(region_index).ok_or_else(|| {
                     DomError::JavaScript(
                         "dynamic diff plan references a missing mounted region".into(),
                     )
@@ -1390,7 +1455,7 @@ impl DomRenderer {
                     let current = state.as_mut().ok_or_else(|| {
                         DomError::JavaScript("dynamic region has already been disposed".into())
                     })?;
-                    renderer.update_with_plan(&mut current.mounted, (**child_plan).clone())?;
+                    renderer.update_with_plan(&mut current.mounted, *child_plan)?;
                     current.view = next_view.clone();
                 }
                 region.dynamic = next.clone();
@@ -1410,9 +1475,8 @@ impl DomRenderer {
 
     fn commit_sequence(
         &self,
-        planned: &[PlannedChild],
+        planned: Vec<PlannedChild>,
         previous: &[View],
-        _next: &[View],
         existing_nodes: &[Node],
         parent: &Node,
         before: Option<&Node>,
@@ -1464,7 +1528,7 @@ impl DomRenderer {
                 &[]
             };
             result.extend(self.commit_plan(
-                &child.plan,
+                *child.plan,
                 existing,
                 parent,
                 before,
@@ -1505,14 +1569,13 @@ impl DomRenderer {
         let root_scope = self.root_scope.clone();
         let previous_view = plan.previous.clone();
         let next_view = plan.next.clone();
-        let planned_root = [PlannedChild {
+        let planned_root = vec![PlannedChild {
             previous_index: Some(0),
             plan: Box::new(plan),
         }];
         let roots = match self.commit_sequence(
-            &planned_root,
+            planned_root,
             std::slice::from_ref(&previous_view),
-            std::slice::from_ref(&next_view),
             &existing_nodes,
             &parent,
             Some(&end),
