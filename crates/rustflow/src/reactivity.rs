@@ -4,8 +4,8 @@
 //! `Send` nor `Sync`. Effects run eagerly, track reads dynamically, and are
 //! drained by a FIFO scheduler. Use `Runtime::batch` to coalesce writes.
 //!
-//! Signals created with `Runtime::signal` always notify on writes. Use
-//! `Runtime::signal_eq` when `PartialEq` equality suppression is desired.
+//! Signals created with `Runtime::signal` suppress equal writes via `PartialEq`.
+//! Use `Runtime::signal_always_changed` for values without `PartialEq`.
 
 use std::{
     cell::RefCell,
@@ -205,19 +205,24 @@ impl Runtime {
         create_scope(&self.inner, parent)
     }
 
-    /// Create a signal whose writes always notify subscribers.
+    /// Create a typed signal that suppresses writes when values compare equal.
     ///
-    /// This is the fallback for types without `PartialEq`.
-    pub fn signal<T: Clone + 'static>(&self, value: T) -> Result<Signal<T>, RuntimeError> {
-        self.create_signal(value, None)
+    /// Equality follows `PartialEq`, including `NaN != NaN` for floating-point values.
+    pub fn signal<T: Clone + PartialEq + 'static>(&self, value: T) -> Result<Signal<T>, RuntimeError> {
+        self.create_signal(value, Some(Rc::new(|old, new| old == new)))
     }
 
-    /// Create a signal that suppresses writes when old and new values compare equal.
+    /// Explicitly named alias for `signal`.
     pub fn signal_eq<T: Clone + PartialEq + 'static>(
         &self,
         value: T,
     ) -> Result<Signal<T>, RuntimeError> {
-        self.create_signal(value, Some(Rc::new(|old, new| old == new)))
+        self.signal(value)
+    }
+
+    /// Create a signal for values without `PartialEq`; every write notifies subscribers.
+    pub fn signal_always_changed<T: Clone + 'static>(&self, value: T) -> Result<Signal<T>, RuntimeError> {
+        self.create_signal(value, None)
     }
 
     fn create_signal<T: Clone + 'static>(
@@ -441,6 +446,7 @@ impl Scope {
 }
 
 fn create_scope(runtime: &RuntimeRef, parent: ScopeId) -> Result<Scope, RuntimeError> {
+    check_runtime_context(runtime)?;
     let id = {
         let mut inner = runtime.borrow_mut();
         if inner.disposed {
@@ -469,6 +475,7 @@ fn create_effect(
     owner: ScopeId,
     callback: Box<dyn FnMut()>,
 ) -> Result<Effect, RuntimeError> {
+    check_runtime_context(runtime)?;
     let id = {
         let mut inner = runtime.borrow_mut();
         if inner.disposed {
@@ -619,6 +626,7 @@ fn flush_runtime(runtime: &RuntimeRef) -> Result<(), RuntimeError> {
 }
 
 fn dispose_effect(runtime: &RuntimeRef, effect_id: EffectId) -> Result<(), RuntimeError> {
+    check_runtime_context(runtime)?;
     let mut inner = runtime.borrow_mut();
     if inner.disposed {
         return Err(RuntimeError::RuntimeDisposed);
@@ -634,6 +642,7 @@ fn dispose_effect(runtime: &RuntimeRef, effect_id: EffectId) -> Result<(), Runti
 }
 
 fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeError> {
+    check_runtime_context(runtime)?;
     let (children, effects, cleanups) = {
         let mut inner = runtime.borrow_mut();
         if inner.disposed {
@@ -716,7 +725,7 @@ mod tests {
     fn equal_writes_are_suppressed_only_for_equality_signals() {
         let runtime = Runtime::new();
         let equal = runtime.signal_eq(5).unwrap();
-        let always = runtime.signal(5).unwrap();
+        let always = runtime.signal_always_changed(5).unwrap();
         let equal_runs = Rc::new(Cell::new(0));
         let always_runs = Rc::new(Cell::new(0));
         let count = equal_runs.clone();
