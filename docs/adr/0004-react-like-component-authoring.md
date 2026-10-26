@@ -1,13 +1,13 @@
 # ADR 0004: React-like component authoring and reactive UI contract
 
-- **Status:** Proposed for implementation design; the product direction is accepted
+- **Status:** Accepted for the Phase 3 MVP; implementation merged and verified in `main` on 2026-10-26
 - **Date:** 2026-10-26
 - **Scope:** Public component API, reactivity ergonomics, view macro, and browser renderer
 - **Related:** `ROADMAP.md`, `docs/PRODUCT_SCOPE.md`, `docs/VIEW_MODEL.md`, `docs/REACTIVITY_RUNTIME.md`
 
 ## Context
 
-RustFlow already has a typed reactive runtime, a structural view model, the `view!` procedural macro, a native component lifecycle/registry model, an initial WASM DOM adapter, and an SSR serializer. These pieces do not yet compose into the intended React-like everyday authoring experience. In particular, the current public flow uses `Runtime::signal`, component descriptors and manual registry APIs; ordinary expression interpolation is not automatically reactive; the ergonomic `signal(value)`, `Signal::update`, and `#[component]` APIs are not implemented; and reactive DOM updates currently replace the mounted range.
+When this ADR was drafted, RustFlow already had a typed reactive runtime, a structural view model, the `view!` procedural macro, a native component lifecycle/registry model, an initial WASM DOM adapter, and an SSR serializer, but those pieces had not yet composed into the intended React-like everyday authoring experience. The gaps at that point included owner-bound `signal(value)`/`Signal::update`, reactive signal interpolation, the constrained `#[component]` API, and DOM reconciliation that preserves compatible identity. The Phase 3 implementation and current status are recorded below.
 
 The product objective is a familiar declarative and reactive component workflow in Rust. This does not mean React source/API compatibility or a drop-in replacement.
 
@@ -57,14 +57,15 @@ fn App() -> impl IntoView {
 
 This snippet defines intent only. It does not compile against the current repository API and must not be presented as a working example.
 
-## Design questions to resolve before implementation
+## Phase 3 implementation decisions
 
-- How does component invocation establish the active owner/runtime context so that `signal(initial)` is ergonomic without an implicit process-global singleton?
-- How are errors from view construction represented while preserving a concise component return type such as `impl IntoView`?
-- What is the exact event type for DOM events and callback props, including extracting input values without exposing untyped browser internals?
-- What are the semantics when typed props change after initial mount, and how does that interact with component-local signal state?
-- How do child component identity, list keys, cleanup, and panic/error paths interact during partial DOM updates?
-- Which minimum browser(s) are supported for the first end-to-end vertical slice?
+- **Ownership:** component setup runs in an owned reactive scope; signals, effects, and cleanup remain scope-bound rather than using a process-global mutable runtime singleton.
+- **Errors and events:** the browser adapter exposes recoverable render errors through `ReactiveMountedDom::take_error`; DOM handlers and component callback props use typed callback APIs, including `EventHandler`.
+- **Prop updates:** `ComponentInstance::preview_update` evaluates new props/children without recreating setup state; the candidate is accepted only after the DOM plan commits successfully.
+- **Identity and cleanup:** compatible component identity is determined by component name and key. Keyed component descriptors inherit their list key, compatible instances preserve state/DOM identity, and replaced or removed instances dispose owned resources.
+- **Browser evidence:** production-bundle Playwright E2E runs in Chromium and covers Counter identity, prop updates, keyed todo reordering/CRUD, replacement cleanup, and conditional mount/unmount.
+
+These decisions close the Phase 3 MVP contract only. `use_memo`, `use_ref`, and `use_context`, SSR/hydration, and the wider server/framework roadmap remain separate work.
 
 ### React-inspired vocabulary and the selected state model
 
@@ -72,30 +73,28 @@ RustFlow will follow the **signal-first model** for state and DOM updates, while
 
 | Familiar concept | RustFlow target name | Intended contract and current status |
 | --- | --- | --- |
-| `useState` | `use_state(initial)` | Planned, component/owner-scoped convenience backed by the signal model. It must not require positional hook-cell ordering. Whether it returns the signal handle directly or another typed wrapper must be settled before implementation. |
-| Signal primitive | `signal(initial)` | Planned lower-level reactive primitive with `get`, `set`, and `update`, bound to the current explicit owner/runtime scope. |
-| `useEffect` | `use_effect(...)` | Planned ergonomic wrapper over scope-owned, dependency-tracked effects. Dependencies are intended to be tracked from signal reads, rather than requiring a React-style dependency array by default. Cleanup on rerun and on scope disposal must be specified and tested. |
+| `useState` | `use_state(initial)` | Implemented for the Phase 3 MVP as an owner-scoped convenience backed by signals; it returns `Signal<T>` and does not use positional hook-cell ordering. |
+| Signal primitive | `signal(initial)` | Implemented for the Phase 3 MVP with `get`, `set`, and `update`, bound to the active owner/runtime scope. |
+| `useEffect` | `use_effect(...)` | Implemented for the Phase 3 MVP as a scope-owned, dependency-tracked effect. Cleanup on rerun and on scope disposal is covered by tests. |
 | `useMemo` | `use_memo(...)` | Planned memoized derived computation with dependencies tracked according to RustFlow's reactive semantics, not copied hook-cell behavior. |
 | `useRef` | `use_ref(initial)` | Planned stable, component-scoped storage for non-reactive values or DOM handles; mutation alone should not trigger rendering. |
 | `useContext` | `use_context::<T>()` | Planned typed lookup from a nearest provider in the component-owner tree. Provider boundaries and missing-provider behavior must be explicit. |
 | `onClick` | `on:click` | The `view!` macro already supports this RustFlow event syntax. |
 | `className` | `class` | Use HTML naming in `view!`; do not add a JavaScript-specific alias without a demonstrated need. |
-| `key` | `key` | A stable child identity marker already exists in the view model; reconciliation remains pending. |
+| `key` | `key` | Implemented in the view model and browser reconciliation; keyed list reorders preserve compatible child identity and replacement/removal disposes obsolete instances. |
 
-The current reactivity implementation has `Runtime::signal`, `Scope::effect`, and owner scopes, but it does **not** yet expose the component-facing `use_state`, `use_effect`, `use_memo`, `use_ref`, or `use_context` façade. Treat all listed future names as proposed until compile tests and actual runtime tests exist.
+The Phase 3 implementation in `main` exposes the owner-bound `signal`, `use_state`, and `use_effect` APIs and verifies them with runtime and browser tests. `use_memo`, `use_ref`, and `use_context` remain planned and must not be described as available until their own contracts and tests exist.
 
 The design intentionally combines familiar naming with signal semantics:
 
 - A component is normally initialized once per mount; changing a signal invalidates the parts of the view that read it, rather than requiring the entire component function to re-execute for every state update.
-- Ordinary signal interpolation should bind directly to the reactive graph.
-- Structural changes, such as replacing an element type or inserting/removing/reordering keyed children, are handled by a view diff/reconciliation step.
-- Rendering/diff planning should be separated from the commit step that mutates browser DOM.
-- Root event delegation may be used for supported bubbling events, with direct-listener fallbacks for events whose semantics require them. The supported event contract and cleanup behavior must be tested.
+- Ordinary signal-identifier interpolation binds to the reactive graph; arbitrary expressions that read signals still require an explicit dynamic region.
+- Structural changes, including element replacement and keyed insertions/removals/reorders, are handled by a view diff/reconciliation step.
+- Rendering/diff planning is separated from the commit step that mutates browser DOM.
+- Supported bubbling events are delegated at the mount boundary, with direct-listener fallbacks where required; listener cleanup is tied to the owning region/component.
 - React Fiber-style interruptible scheduling and React's positional hook-cell rules are **not** MVP requirements. Add comparable scheduling complexity only if measured use cases justify it.
 
-The exact public names, signatures, error types, and lifecycle details must be settled before implementation and shown in compiling examples. Any API that uses familiar names must document RustFlow-specific semantics rather than suggesting drop-in compatibility.
-
-The implementation proposal must answer the design questions above, include alternatives and trade-offs, and be accompanied by compile tests and browser-level evidence.
+The supported Phase 3 public names, signatures, error behavior, and lifecycle details are documented in the component guide and covered by compile/runtime/browser tests. New helpers and broader lifecycle semantics require separate contracts and evidence. RustFlow documents its own signal/owner semantics and does not claim drop-in React compatibility.
 
 ## Alternatives considered
 
@@ -109,14 +108,14 @@ The implementation proposal must answer the design questions above, include alte
 ## Consequences
 
 - Phase 2 remains complete only for the native structural view/component model; this ADR does not retroactively claim that the public ergonomic contract exists.
-- Phase 3 now owns delivery and verification of the ergonomic API, fine-grained renderer, browser bundle, Counter, todo, and browser E2E gates.
+- Phase 3 delivered and verified the ergonomic API subset, fine-grained renderer, browser bundle, Counter/todo examples, and browser E2E gates; this ADR records that completed milestone.
 - SSR/hydration, client navigation, forms integration, and server-side state isolation remain separate roadmap work; this ADR does not mark them implemented.
-- Before closing Phase 3, tests and public docs must demonstrate the intended user workflow. A WASM compile check or native runtime unit tests alone are insufficient.
+- Phase 3 was closed only after its acceptance evidence was integrated into `main` and the post-merge CI passed on the exact main commit, including Rust stable/1.85, WASM, bundle budget, browser E2E, documentation, and governance checks.
 
 
-## Implementation status (stacked Phase 3 branch; not mainline closure)
+## Implementation status (merged into `main`; Phase 3 closed)
 
-The current stacked implementation branch (PR #26, based on PR #25) now includes the owner-bound `signal`/`use_state`/`use_effect` API, the constrained `#[component]` macro with typed props and callback props, reactive signal-identifier interpolation, a production WASM/Vite bundle, Counter and todo examples, browser E2E coverage, a raw-WASM size budget, and basic browser error/source-map feedback.
+The Phase 3 implementation now merged in `main` includes the owner-bound `signal`/`use_state`/`use_effect` API, the constrained `#[component]` macro with typed props and callback props, reactive signal-identifier interpolation, a production WASM/Vite bundle, Counter and todo examples, browser E2E coverage, a raw-WASM size budget, and basic browser error/source-map feedback.
 
 ### Component props without resetting setup state
 
@@ -128,4 +127,4 @@ The component macro separates one-time setup statements from the render callback
 
 Regression coverage includes a parent changing a visible child prop while its local signal and compatible DOM nodes survive, keyed reordering preserving local child state, changing a component's key replacing its DOM and resetting its local state while cleaning the old instance, row removal cleanup, and structural conditional mount/unmount.
 
-The implementation remains on a draft stacked PR. Keep Phase 3 open in `main` until CI is green on the exact current PR #26 HEAD, PR #26 is reviewed/integrated into PR #25, and PR #25 is then reviewed and merged with authorization. This status describes the implementation branch; it is not a claim that either pull request has merged.
+PR #26 was merged into the `feat/phase-3-browser-runtime` branch, and PR #25 was then merged into `main` on 2026-10-26. The post-merge CI completed successfully on commit `43f5fb9c12996ea600b47930553a9f91dc6055e9` with all seven checks green. Phase 3 is therefore closed in `main`. This closure does not imply that `use_memo`, `use_ref`, `use_context`, SSR/hydration, or other later-phase deliverables are complete.
