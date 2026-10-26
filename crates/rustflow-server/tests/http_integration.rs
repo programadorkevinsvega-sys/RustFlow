@@ -264,7 +264,7 @@ async fn real_tcp_errors_cover_custom_404_405_and_invalid_query_400() {
 
     let invalid_query = send_http(address, "GET", "/users/42?detailed=perhaps", &[], "").await;
     assert_eq!(status_code(&invalid_query), 400);
-    assert!(response_body(&invalid_query).contains("Bad Request"));
+    assert!(response_body(&invalid_query).contains("Invalid query parameters"));
 
     stop_server(shutdown, task).await;
 }
