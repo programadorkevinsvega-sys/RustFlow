@@ -1,9 +1,9 @@
-use std::{error::Error, fmt};
+use std::{cell::RefCell, error::Error, fmt, rc::Rc};
 
 use js_sys::Reflect;
 use rustflow::{
     components::{ComponentError, ComponentInstance, ComponentRegistry},
-    reactivity::{Runtime, Scope},
+    reactivity::{Runtime, RuntimeError, Scope},
 };
 use rustflow_view::{
     AttributeValue, ComponentNode, DynamicChild, Element, EventBinding, EventHandler, EventPayload,
@@ -26,6 +26,7 @@ pub enum DomError {
     Policy(DomPolicyError),
     View(ViewError),
     Component(String),
+    Runtime(String),
     PropertyRejected(String),
 }
 
@@ -38,6 +39,7 @@ impl fmt::Display for DomError {
             Self::Policy(error) => write!(f, "{error}"),
             Self::View(error) => write!(f, "view construction failed: {error}"),
             Self::Component(message) => write!(f, "component rendering failed: {message}"),
+            Self::Runtime(message) => write!(f, "reactive DOM update failed: {message}"),
             Self::PropertyRejected(name) => {
                 write!(f, "browser rejected DOM property: {name}")
             }
@@ -54,6 +56,11 @@ impl From<ViewError> for DomError {
 impl From<ComponentError> for DomError {
     fn from(error: ComponentError) -> Self {
         Self::Component(error.to_string())
+    }
+}
+impl From<RuntimeError> for DomError {
+    fn from(error: RuntimeError) -> Self {
+        Self::Runtime(error.to_string())
     }
 }
 impl From<DomPolicyError> for DomError {
@@ -104,6 +111,62 @@ impl MountedDom {
     }
 }
 
+struct ReactiveMountState {
+    mounted: MountedDom,
+    view: View,
+}
+
+/// A signal-driven mount. Dropping or explicitly unmounting this handle disposes
+/// the owned reactive scope, event listeners, and component instances.
+pub struct ReactiveMountedDom {
+    scope: Scope,
+    state: Rc<RefCell<Option<ReactiveMountState>>>,
+    last_error: Rc<RefCell<Option<DomError>>>,
+    document: Document,
+    runtime: Runtime,
+    registry: ComponentRegistry,
+}
+
+impl ReactiveMountedDom {
+    /// Whether the initial view has mounted successfully.
+    pub fn is_mounted(&self) -> bool {
+        self.state.borrow().is_some()
+    }
+
+    /// Current view snapshot, if mounted.
+    pub fn current_view(&self) -> Option<View> {
+        self.state.borrow().as_ref().map(|state| state.view.clone())
+    }
+
+    /// Take the most recent render/update error. A failed update leaves the
+    /// last successful DOM range intact.
+    pub fn take_error(&self) -> Option<DomError> {
+        self.last_error.borrow_mut().take()
+    }
+
+    /// Dispose effects and explicitly unmount the currently rendered range.
+    pub fn unmount(mut self) -> Result<(), DomError> {
+        self.scope.dispose()?;
+        if let Some(state) = self.state.borrow_mut().take() {
+            let mut renderer = DomRenderer::new(
+                self.document.clone(),
+                self.runtime.clone(),
+                self.registry.clone(),
+            );
+            renderer.root_scope = self.scope.clone();
+            renderer.unmount(state.mounted)?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for ReactiveMountedDom {
+    fn drop(&mut self) {
+        let _ = self.scope.dispose();
+        self.state.borrow_mut().take();
+    }
+}
+
 /// Renderer for an explicitly supplied Document and component registry.
 ///
 /// The initial adapter uses full replacement on update. Keyed reconciliation and
@@ -144,6 +207,98 @@ impl DomRenderer {
             return Err(error);
         }
         Ok(mounted)
+    }
+
+    /// Mount a view produced by a reactive closure and rerender it whenever
+    /// tracked signals change. Updates currently replace the full range; keyed
+    /// reconciliation and targeted DOM patching remain future improvements.
+    ///
+    /// Errors from the initial render are returned immediately. Later render
+    /// failures are available through `ReactiveMountedDom::take_error`, while
+    /// the last successful DOM remains mounted.
+    pub fn mount_reactive<F>(
+        &mut self,
+        target: &DomElement,
+        owner_scope: &Scope,
+        render: F,
+    ) -> Result<ReactiveMountedDom, DomError>
+    where
+        F: Fn() -> Result<View, DomError> + 'static,
+    {
+        let scope = owner_scope.child()?;
+        let state: Rc<RefCell<Option<ReactiveMountState>>> = Rc::new(RefCell::new(None));
+        let last_error: Rc<RefCell<Option<DomError>>> = Rc::new(RefCell::new(None));
+
+        let document = self.document.clone();
+        let runtime = self.runtime.clone();
+        let registry = self.registry.clone();
+        let effect_scope = scope.clone();
+        let target = target.clone();
+        let state_effect = state.clone();
+        let error_effect = last_error.clone();
+
+        let effect_result = scope.effect(move || {
+            let next_view = match render() {
+                Ok(view) => view,
+                Err(error) => {
+                    *error_effect.borrow_mut() = Some(error);
+                    return;
+                }
+            };
+
+            let mut renderer = DomRenderer::new(
+                document.clone(),
+                runtime.clone(),
+                registry.clone(),
+            );
+            renderer.root_scope = effect_scope.clone();
+
+            let mut current = state_effect.borrow_mut();
+            if let Some(current) = current.as_mut() {
+                let previous_view = current.view.clone();
+                match renderer.update(&mut current.mounted, &previous_view, &next_view) {
+                    Ok(()) => {
+                        current.view = next_view;
+                        *error_effect.borrow_mut() = None;
+                    }
+                    Err(error) => *error_effect.borrow_mut() = Some(error),
+                }
+            } else {
+                match renderer.mount_into(&target, &next_view) {
+                    Ok(mounted) => {
+                        *current = Some(ReactiveMountState {
+                            mounted,
+                            view: next_view,
+                        });
+                        *error_effect.borrow_mut() = None;
+                    }
+                    Err(error) => *error_effect.borrow_mut() = Some(error),
+                }
+            }
+        });
+
+        let _effect = match effect_result {
+            Ok(effect) => effect,
+            Err(error) => {
+                let _ = scope.dispose();
+                return Err(error.into());
+            }
+        };
+
+        if let Some(error) = last_error.borrow_mut().take() {
+            let _ = scope.dispose();
+            state.borrow_mut().take();
+            return Err(error);
+        }
+
+        Ok(ReactiveMountedDom {
+            scope,
+            state,
+            last_error,
+            document: self.document.clone(),
+            runtime: self.runtime.clone(),
+            registry: self.registry.clone(),
+        })
     }
 
     fn build_nodes(
