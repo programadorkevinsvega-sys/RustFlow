@@ -317,13 +317,11 @@ impl Runtime {
 
     /// Create a child scope under the active owner, or under the root if called externally.
     pub fn scope(&self) -> Result<Scope, RuntimeError> {
-        let parent = {
+        check_runtime_context(&self.inner)?;
+        let parent = current_owner_for_runtime(&self.inner).unwrap_or_else(|| {
             let inner = self.inner.borrow();
-            if inner.disposed {
-                return Err(RuntimeError::RuntimeDisposed);
-            }
             inner.active_scope.unwrap_or(inner.root_scope)
-        };
+        });
         create_scope(&self.inner, parent)
     }
 
@@ -368,13 +366,11 @@ impl Runtime {
 
     /// Create an eager effect owned by the active scope, or by the root scope.
     pub fn effect(&self, callback: impl FnMut() + 'static) -> Result<Effect, RuntimeError> {
-        let owner = {
+        check_runtime_context(&self.inner)?;
+        let owner = current_owner_for_runtime(&self.inner).unwrap_or_else(|| {
             let inner = self.inner.borrow();
-            if inner.disposed {
-                return Err(RuntimeError::RuntimeDisposed);
-            }
             inner.active_scope.unwrap_or(inner.root_scope)
-        };
+        });
         create_effect(&self.inner, owner, Box::new(callback))
     }
 
@@ -1527,13 +1523,13 @@ mod tests {
         let owner = runtime.root_scope().child().unwrap();
         let scoped_signal = with_owner_scope(&owner, || signal(21_i32)).unwrap();
         assert_eq!(scoped_signal.get(), 21);
-        assert_eq!(try_signal(1_i32), Err(RuntimeError::NoActiveOwner));
+        assert!(matches!(try_signal(1_i32), Err(RuntimeError::NoActiveOwner)));
 
         let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _ = with_owner_scope(&owner, || panic!("intentional context restoration test"));
         }));
         assert!(panic_result.is_err());
-        assert_eq!(try_signal(2_i32), Err(RuntimeError::NoActiveOwner));
+        assert!(matches!(try_signal(2_i32), Err(RuntimeError::NoActiveOwner)));
         owner.dispose().unwrap();
     }
 
