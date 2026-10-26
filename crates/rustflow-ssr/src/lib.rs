@@ -3,11 +3,7 @@
 //! This crate emits HTML fragments. It is not an HTTP server, does not serialize
 //! event callbacks, and does not make a View value trusted HTML.
 
-use std::{
-    collections::HashSet,
-    error::Error,
-    fmt,
-};
+use std::{collections::HashSet, error::Error, fmt};
 
 use rustflow::{
     components::{ComponentError, ComponentInstance, ComponentRegistry},
@@ -20,39 +16,197 @@ use rustflow_view::{
 const DEFAULT_MAX_DEPTH: usize = 256;
 
 const SUPPORTED_ELEMENTS: &[&str] = &[
-    "a", "abbr", "address", "article", "aside", "b", "blockquote", "body", "br",
-    "button", "caption", "code", "col", "colgroup", "dd", "del", "details", "div",
-    "dl", "dt", "em", "fieldset", "figcaption", "figure", "footer", "form", "h1",
-    "h2", "h3", "h4", "h5", "h6", "head", "header", "hr", "html", "i", "img",
-    "input", "ins", "kbd", "label", "legend", "li", "main", "mark", "nav", "ol",
-    "optgroup", "option", "output", "p", "picture", "pre", "progress", "q", "s",
-    "samp", "section", "select", "small", "source", "span", "strong", "sub",
-    "summary", "sup", "table", "tbody", "td", "textarea", "tfoot", "th", "thead",
-    "time", "title", "tr", "u", "ul", "var",
+    "a",
+    "abbr",
+    "address",
+    "article",
+    "aside",
+    "b",
+    "blockquote",
+    "body",
+    "br",
+    "button",
+    "caption",
+    "code",
+    "col",
+    "colgroup",
+    "dd",
+    "del",
+    "details",
+    "div",
+    "dl",
+    "dt",
+    "em",
+    "fieldset",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "head",
+    "header",
+    "hr",
+    "html",
+    "i",
+    "img",
+    "input",
+    "ins",
+    "kbd",
+    "label",
+    "legend",
+    "li",
+    "main",
+    "mark",
+    "nav",
+    "ol",
+    "optgroup",
+    "option",
+    "output",
+    "p",
+    "picture",
+    "pre",
+    "progress",
+    "q",
+    "s",
+    "samp",
+    "section",
+    "select",
+    "small",
+    "source",
+    "span",
+    "strong",
+    "sub",
+    "summary",
+    "sup",
+    "table",
+    "tbody",
+    "td",
+    "textarea",
+    "tfoot",
+    "th",
+    "thead",
+    "time",
+    "title",
+    "tr",
+    "u",
+    "ul",
+    "var",
 ];
 
 const VOID_ELEMENTS: &[&str] = &["br", "col", "hr", "img", "input", "source"];
 
 const URL_ATTRIBUTES: &[&str] = &[
-    "action", "formaction", "href", "poster", "src", "xlink:href",
+    "action",
+    "formaction",
+    "href",
+    "poster",
+    "src",
+    "xlink:href",
 ];
 
 const MULTI_URL_ATTRIBUTES: &[&str] = &["ping", "srcset"];
 
 const SAFE_ATTRIBUTES: &[&str] = &[
-    "accept", "accept-charset", "accesskey", "action", "alt", "autocapitalize",
-    "autocomplete", "autofocus", "capture", "charset", "checked", "cite", "class",
-    "cols", "colspan", "content", "contenteditable", "controls", "coords", "crossorigin",
-    "datetime", "decoding", "default", "defer", "dir", "dirname", "disabled", "download",
-    "draggable", "enctype", "for", "form", "formaction", "formenctype", "formmethod",
-    "formnovalidate", "formtarget", "height", "hidden", "high", "hreflang", "href",
-    "id", "inert", "inputmode", "integrity", "ismap", "kind", "label", "lang", "list",
-    "loop", "low", "max", "maxlength", "media", "method", "min", "minlength", "multiple",
-    "muted", "name", "novalidate", "open", "optimum", "pattern", "placeholder", "playsinline",
-    "poster", "preload", "readonly", "referrerpolicy", "rel", "required", "reversed",
-    "role", "rows", "rowspan", "sandbox", "scope", "selected", "shape", "size", "span",
-    "spellcheck", "start", "step", "tabindex", "target", "title", "translate", "type",
-    "usemap", "value", "width",
+    "accept",
+    "accept-charset",
+    "accesskey",
+    "action",
+    "alt",
+    "autocapitalize",
+    "autocomplete",
+    "autofocus",
+    "capture",
+    "charset",
+    "checked",
+    "cite",
+    "class",
+    "cols",
+    "colspan",
+    "content",
+    "contenteditable",
+    "controls",
+    "coords",
+    "crossorigin",
+    "datetime",
+    "decoding",
+    "default",
+    "defer",
+    "dir",
+    "dirname",
+    "disabled",
+    "download",
+    "draggable",
+    "enctype",
+    "for",
+    "form",
+    "formaction",
+    "formenctype",
+    "formmethod",
+    "formnovalidate",
+    "formtarget",
+    "height",
+    "hidden",
+    "high",
+    "hreflang",
+    "href",
+    "id",
+    "inert",
+    "inputmode",
+    "integrity",
+    "ismap",
+    "kind",
+    "label",
+    "lang",
+    "list",
+    "loop",
+    "low",
+    "max",
+    "maxlength",
+    "media",
+    "method",
+    "min",
+    "minlength",
+    "multiple",
+    "muted",
+    "name",
+    "novalidate",
+    "open",
+    "optimum",
+    "pattern",
+    "placeholder",
+    "playsinline",
+    "poster",
+    "preload",
+    "readonly",
+    "referrerpolicy",
+    "rel",
+    "required",
+    "reversed",
+    "role",
+    "rows",
+    "rowspan",
+    "sandbox",
+    "scope",
+    "selected",
+    "shape",
+    "size",
+    "span",
+    "spellcheck",
+    "start",
+    "step",
+    "tabindex",
+    "target",
+    "title",
+    "translate",
+    "type",
+    "usemap",
+    "value",
+    "width",
 ];
 
 /// Errors from HTML serialization or server-side component evaluation.
@@ -84,14 +238,23 @@ impl fmt::Display for SsrError {
                 write!(f, "attribute is rejected by the SSR safety policy: {name}")
             }
             Self::UnsafeProperty(name) => {
-                write!(f, "property is not serializable by the SSR safety policy: {name}")
+                write!(
+                    f,
+                    "property is not serializable by the SSR safety policy: {name}"
+                )
             }
             Self::UnsafeUrl(_) => write!(f, "URL scheme is not allowed by the SSR safety policy"),
             Self::DuplicateSerializedAttribute(name) => {
-                write!(f, "multiple inputs serialize to the same HTML attribute: {name}")
+                write!(
+                    f,
+                    "multiple inputs serialize to the same HTML attribute: {name}"
+                )
             }
             Self::InvalidPropertyValue(name) => {
-                write!(f, "property has the wrong value type for HTML serialization: {name}")
+                write!(
+                    f,
+                    "property has the wrong value type for HTML serialization: {name}"
+                )
             }
             Self::NestingLimitExceeded { limit } => {
                 write!(f, "view nesting exceeds the configured limit of {limit}")
@@ -271,12 +434,18 @@ impl RenderContext {
 
         // A textarea's initial value is represented by its text content, not a value attribute.
         if tag == "textarea" {
-            if let Some(property) = element.properties().iter().find(|p| p.name().eq_ignore_ascii_case("value")) {
+            if let Some(property) = element
+                .properties()
+                .iter()
+                .find(|p| p.name().eq_ignore_ascii_case("value"))
+            {
                 let PropertyValue::Text(value) = property.value() else {
                     return Err(SsrError::InvalidPropertyValue(property.name().to_owned()));
                 };
                 if !element.children().is_empty() {
-                    return Err(SsrError::DuplicateSerializedAttribute("textarea value/children".into()));
+                    return Err(SsrError::DuplicateSerializedAttribute(
+                        "textarea value/children".into(),
+                    ));
                 }
                 escape_text(value, &mut self.output);
             } else {
@@ -356,11 +525,7 @@ impl RenderContext {
             let PropertyValue::Boolean(value) = property.value() else {
                 return Err(SsrError::InvalidPropertyValue(property.name().to_owned()));
             };
-            return self.write_attribute(
-                attribute_name,
-                &AttributeValue::Boolean(*value),
-                emitted,
-            );
+            return self.write_attribute(attribute_name, &AttributeValue::Boolean(*value), emitted);
         }
 
         let Some(attribute_name) = text_property_attribute(tag, &name) else {
@@ -369,19 +534,22 @@ impl RenderContext {
         };
         let value = match property.value() {
             PropertyValue::Text(value) => value.clone(),
-            PropertyValue::Boolean(_) if matches!(name.as_str(), "contenteditable" | "draggable" | "spellcheck") => {
+            PropertyValue::Boolean(_)
+                if matches!(
+                    name.as_str(),
+                    "contenteditable" | "draggable" | "spellcheck"
+                ) =>
+            {
                 property_value_as_text(property.value())
             }
-            PropertyValue::Integer(_) | PropertyValue::Float(_) => property_value_as_text(property.value()),
+            PropertyValue::Integer(_) | PropertyValue::Float(_) => {
+                property_value_as_text(property.value())
+            }
             PropertyValue::Boolean(_) => {
                 return Err(SsrError::InvalidPropertyValue(property.name().to_owned()));
             }
         };
-        self.write_attribute(
-            attribute_name,
-            &AttributeValue::Text(value),
-            emitted,
-        )
+        self.write_attribute(attribute_name, &AttributeValue::Text(value), emitted)
     }
 
     fn write_keyed_list(
@@ -426,22 +594,18 @@ impl RenderContext {
 
 fn is_allowed_attribute(name: &str) -> bool {
     SAFE_ATTRIBUTES.contains(&name)
-        || name
-            .strip_prefix("aria-")
-            .is_some_and(|suffix| {
-                !suffix.is_empty()
-                    && suffix
-                        .chars()
-                        .all(|character| character.is_ascii_alphanumeric() || character == '-')
-            })
-        || name
-            .strip_prefix("data-")
-            .is_some_and(|suffix| {
-                !suffix.is_empty()
-                    && suffix
-                        .chars()
-                        .all(|character| character.is_ascii_alphanumeric() || character == '-')
-            })
+        || name.strip_prefix("aria-").is_some_and(|suffix| {
+            !suffix.is_empty()
+                && suffix
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric() || character == '-')
+        })
+        || name.strip_prefix("data-").is_some_and(|suffix| {
+            !suffix.is_empty()
+                && suffix
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric() || character == '-')
+        })
 }
 
 fn boolean_property_attribute(name: &str) -> Option<&'static str> {
@@ -550,9 +714,9 @@ fn url_scheme(value: &str) -> Option<&str> {
     {
         return None;
     }
-    if !characters.all(|character| {
-        character.is_ascii_alphanumeric() || matches!(character, '+' | '.' | '-')
-    }) {
+    if !characters
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '+' | '.' | '-'))
+    {
         return None;
     }
     Some(candidate)
@@ -615,8 +779,8 @@ mod tests {
 
     #[test]
     fn rejects_active_elements_and_void_elements_with_children() {
-        let script = View::element("script", [View::text("alert(1)")])
-            .expect("syntactically valid node");
+        let script =
+            View::element("script", [View::text("alert(1)")]).expect("syntactically valid node");
         assert!(matches!(
             render_to_string(&script),
             Err(SsrError::UnsupportedElement(_))
@@ -703,7 +867,10 @@ mod tests {
             .expect("keyed list"),
             View::dynamic(|| Ok(View::text("dynamic"))),
         ]);
-        assert_eq!(render_to_string(&view).expect("render"), "firstseconddynamic");
+        assert_eq!(
+            render_to_string(&view).expect("render"),
+            "firstseconddynamic"
+        );
     }
 
     #[test]
@@ -713,11 +880,11 @@ mod tests {
         let definition = ComponentDefinition::new("Card", move |context, _properties| {
             let cleanup_count = setup_cleanups.clone();
             context.on_cleanup(move || cleanup_count.set(cleanup_count.get() + 1))?;
-            let render: ComponentRender = Rc::new(|_properties, children| {
-                Ok(View::element("section", children.to_vec())?)
-            });
+            let render: ComponentRender =
+                Rc::new(|_properties, children| Ok(View::element("section", children.to_vec())?));
             Ok(render)
-        }).expect("definition");
+        })
+        .expect("definition");
         let mut registry = ComponentRegistry::new();
         registry.register(definition).expect("registry");
         let view = View::component("Card", [], [View::text("body")], None).expect("component");
@@ -731,7 +898,10 @@ mod tests {
     #[test]
     fn rejects_unregistered_components_and_excessive_nesting() {
         let view = View::component("Missing", [], [], None).expect("component");
-        assert!(matches!(render_to_string(&view), Err(SsrError::Component(_))));
+        assert!(matches!(
+            render_to_string(&view),
+            Err(SsrError::Component(_))
+        ));
         let nested = View::element(
             "div",
             [View::element("span", [View::text("deep")]).expect("span")],
