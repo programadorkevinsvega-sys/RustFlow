@@ -8,7 +8,7 @@ use std::{
 use js_sys::Reflect;
 use rustflow::{
     components::{ComponentError, ComponentInstance, ComponentRegistry},
-    reactivity::{Runtime, RuntimeError, Scope, untrack},
+    reactivity::{Effect, Runtime, RuntimeError, Scope, untrack},
 };
 use rustflow_view::{
     AttributeValue, ComponentNode, DynamicChild, Element, EventBinding, EventHandler, EventPayload,
@@ -109,6 +109,8 @@ struct DynamicRegion {
     scope: Scope,
     state: Rc<RefCell<Option<DynamicMountState>>>,
     error_sink: Option<Rc<RefCell<Option<DomError>>>>,
+    effect: Option<Effect>,
+    reused: bool,
 }
 
 struct DynamicMountState {
@@ -700,6 +702,8 @@ impl DomRenderer {
             scope,
             state,
             error_sink: self.error_sink.clone(),
+            effect: None,
+            reused: false,
         });
         let mut nodes = Vec::with_capacity(roots.len() + 2);
         let start_node: Node = start.unchecked_into();
