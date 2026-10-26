@@ -388,6 +388,47 @@ mod tests {
     }
 
     #[test]
+    fn view_macro_builds_nested_components_elements_attributes_events_and_dynamic_children() {
+        let view = crate::view! {
+            <Panel key={"panel"} title="container">
+                <Greeting label={"hello"} />
+                <button disabled on:click={move |_event| {}}>
+                    "Continue"
+                </button>
+                @dynamic { "later" }
+            </Panel>
+        }
+        .expect("valid macro expansion");
+
+        let View::Component(panel) = view else {
+            panic!("component descriptor expected");
+        };
+        assert_eq!(panel.name(), "Panel");
+        assert_eq!(panel.key(), Some(&rustflow_view::Key::from("panel")));
+        assert_eq!(panel.properties()[0].name(), "title");
+
+        let View::Component(greeting) = &panel.children()[0] else {
+            panic!("nested component descriptor expected");
+        };
+        assert_eq!(greeting.name(), "Greeting");
+        assert_eq!(greeting.properties()[0].name(), "label");
+
+        let View::Element(button) = &panel.children()[1] else {
+            panic!("element child expected");
+        };
+        assert_eq!(button.attributes()[0].name(), "disabled");
+        assert_eq!(
+            button.attributes()[0].value(),
+            &rustflow_view::AttributeValue::Boolean(true)
+        );
+        assert_eq!(button.events().len(), 1);
+        assert_eq!(button.events()[0].name(), "click");
+        assert_eq!(button.children(), &[View::text("Continue")]);
+
+        assert!(matches!(&panel.children()[2], View::Dynamic(_)));
+    }
+
+    #[test]
     fn setup_is_once_and_update_reuses_the_instance() {
         let runtime = Runtime::new();
         let root = runtime.root_scope();
