@@ -87,6 +87,19 @@ struct EventListener {
 struct RenderedNodes {
     listeners: Vec<EventListener>,
     components: Vec<ComponentInstance>,
+    dynamics: Vec<DynamicRegion>,
+}
+
+struct DynamicRegion {
+    dynamic: DynamicChild,
+    scope: Scope,
+    state: Rc<RefCell<Option<DynamicMountState>>>,
+    error_sink: Option<Rc<RefCell<Option<DomError>>>>,
+}
+
+struct DynamicMountState {
+    mounted: MountedDom,
+    view: View,
 }
 
 /// A mounted DOM range. Comment anchors make fragment roots updateable without
@@ -97,12 +110,21 @@ pub struct MountedDom {
     roots: Vec<Node>,
     listeners: Vec<EventListener>,
     components: Vec<ComponentInstance>,
+    dynamics: Vec<DynamicRegion>,
 }
 
 impl MountedDom {
-    /// Top-level rendered nodes, excluding invisible range anchors.
+    /// Snapshot of nodes from the last root reconciliation, excluding outer anchors.
+    /// Dynamic subregions may later change this snapshot.
     pub fn root_nodes(&self) -> &[Node] {
         &self.roots
+    }
+
+    /// Current nodes between the root anchors, including dynamically updated content.
+    pub fn current_root_nodes(&self) -> Vec<Node> {
+        let start: Node = self.start.clone().unchecked_into();
+        let end: Node = self.end.clone().unchecked_into();
+        nodes_between(&start, &end)
     }
 
     /// Whether the range is currently attached to a parent node.
