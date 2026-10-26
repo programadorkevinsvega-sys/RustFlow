@@ -34,3 +34,29 @@ ComponentInstance produces a replacement view tree; it does not itself mutate a 
 ## Declarative macro
 
 The rustflow-macros crate exposes rustflow::view! with a constrained HTML-like grammar. Tags must close correctly; children can be Rust literals or brace-delimited expressions; plain attributes, boolean attributes, prop:name values, on:event handlers, keyed nodes using key={value}, @dynamic { expression }, and uppercase component descriptors are supported. It returns Result<View, ViewError>. Parser errors use a source span and compile_error! diagnostic. See rustdoc examples and compile-fail checks for the supported contract.
+
+## React-like authoring target (planned, not implemented)
+
+The current model provides structural nodes and generic component descriptors; it is not yet the normal-use API RustFlow is aiming for. The target developer experience is a typed function component with owned local signals, automatic reactive interpolation, typed props/callbacks, and automatic component descriptor/registration integration.
+
+Illustrative design target only; this snippet is **not compilable against the current API**:
+
+```rust
+#[component]
+fn Counter(initial: i32) -> impl IntoView {
+    let count = signal(initial);
+
+    view! {
+        <div class="counter">
+            <p>"Count: " {count}</p>
+            <button on:click={move |_| count.update(|n| *n += 1)}>
+                "Add"
+            </button>
+        </div>
+    }
+}
+```
+
+For routine signal-backed children, `{count}` is intended to track and update automatically without requiring `@dynamic`. Component props and callbacks should be typed. Normal component use should not require manually constructing a `ComponentDefinition` and registering it in a `ComponentRegistry`.
+
+The implementation must define how a signal is bound to the active component/owner scope without introducing an undocumented process-global mutable runtime. It must also settle error propagation from `view!`, prop-update behavior, callback event types, and cleanup guarantees. These requirements are tracked in [ADR 0004](adr/0004-react-like-component-authoring.md) and the Phase 3 exit gate in `ROADMAP.md`.
