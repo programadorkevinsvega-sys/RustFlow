@@ -42,6 +42,10 @@ View::keyed_list conserva el orden e impide claves duplicadas. View::dynamic dif
 
 El macro acepta etiquetas anidadas, cadenas/números o expresiones entre llaves, atributos booleanos, valores de atributos, propiedades con prop:nombre={valor}, eventos con on:evento={closure}, hijos diferidos con @dynamic { expresión } y descriptores de componente con nombres en PascalCase. Cierra cada etiqueta con su nombre correspondiente. El macro devuelve Result<View, ViewError>.
 
+## Renderizado HTML en servidor
+
+El crate rustflow-ssr serializa vistas estructurales a fragmentos HTML con escape de texto/atributos y política de URL restrictiva. Puede resolver componentes registrados y ejecutar sus callbacks de limpieza. No sirve HTTP y no implementa hidratación. Los callbacks de eventos no se incluyen en el HTML; se conectarán en una fase posterior.
+
 ## Lo que sigue pendiente
 
-El renderer del navegador y los tests E2E corresponden a la fase 3; el servidor/routing, SSR, la hidratación y la CLI siguen en fases posteriores. El registro permite resolver un descriptor de componente individual, pero el recorrido recursivo del árbol y la reconciliación de componentes anidados se implementarán en el renderer. La API de vistas y componentes es todavía pre-1.0 y no está lista para producción.
+La reconciliación keyed, el bundle del navegador, los tests E2E, el servidor/routing HTTP, la hidratación y la CLI corresponden a entregables posteriores. La API sigue siendo pre-1.0 y no está lista para producción.

@@ -577,10 +577,9 @@ fn escape_attribute(value: &str, output: &mut String) {
 
 #[cfg(test)]
 mod tests {
-    use super::{HtmlRenderer, SsrError, render_to_string};
+    use super::{HtmlRenderer, SsrError, render_to_string, render_with_components};
     use rustflow::{
         components::{ComponentDefinition, ComponentRegistry, ComponentRender},
-        reactivity::Runtime,
         view::{Element, Property, View},
     };
     use std::{cell::Cell, rc::Rc};
@@ -723,7 +722,7 @@ mod tests {
         registry.register(definition).expect("registry");
         let view = View::component("Card", [], [View::text("body")], None).expect("component");
         assert_eq!(
-            rustflow_ssr::render_with_components(&view, &registry).expect("render"),
+            render_with_components(&view, &registry).expect("render"),
             "<section>body</section>"
         );
         assert_eq!(cleanups.get(), 1);

@@ -26,7 +26,7 @@ RustFlow is an early-stage framework project exploring a cohesive way to build w
 
 ## Planned architecture
 
-The workspace contains `rustflow` (single-threaded reactivity, component definitions/registry/instances, and public facade), `rustflow-view` (target-independent typed view nodes, validated names, attributes/properties/events, dynamic children, and keyed lists), and `rustflow-macros` (the constrained `view!` syntax). The native view/component contracts and macro have unit, doctest, and compile-fail coverage. A browser DOM renderer, server routing, SSR, hydration, and CLI are still pending in later roadmap phases. These APIs are pre-1.0 prototypes and are not production-ready.
+The workspace contains `rustflow` (single-threaded reactivity, component definitions/registry/instances, and public facade), `rustflow-view` (target-independent typed view nodes, validated names, attributes/properties/events, dynamic children, and keyed lists), and `rustflow-macros` (the constrained `view!` syntax). The native view/component contracts and macro have unit, doctest, and compile-fail coverage. The rustflow-ssr crate now serializes safe HTML fragments with text/attribute escaping, a conservative tag/URL policy, and optional component resolution. It is not an HTTP server or hydration implementation. Browser keyed reconciliation/bundling, HTTP routing, hydration, and CLI remain later roadmap work. These APIs are pre-1.0 prototypes and are not production-ready.
 
 | Area | Planned responsibility |
 | --- | --- |
