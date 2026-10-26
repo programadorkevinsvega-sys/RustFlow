@@ -414,10 +414,7 @@ mod tests {
         ]);
         let identity = resolve_client_identity(
             Some("127.0.0.1:80".parse().expect("peer")),
-            &headers(&[(
-                "forwarded",
-                "for=203.0.113.10;proto=http;Proto=https",
-            )]),
+            &headers(&[("forwarded", "for=203.0.113.10;proto=http;Proto=https")]),
             &policy,
             false,
         );
