@@ -468,6 +468,19 @@ impl<T: Clone + 'static> Signal<T> {
         self.try_get().unwrap_or_else(|error| panic!("{error}"))
     }
 
+    /// Mutate a cloned value and publish it as one write. If the callback panics,
+    /// the signal retains its original value.
+    pub fn update(&self, callback: impl FnOnce(&mut T)) {
+        self.try_update(callback).unwrap_or_else(|error| panic!("{error}"));
+    }
+
+    /// Fallible counterpart of update. Returns true when dependent effects were notified.
+    pub fn try_update(&self, callback: impl FnOnce(&mut T)) -> Result<bool, RuntimeError> {
+        let mut next = self.try_get()?;
+        callback(&mut next);
+        self.try_set(next)
+    }
+
     /// Write the value. Returns `true` when the value changed and `false` for
     /// equality-suppressed writes. Effects are flushed after the write completes.
     pub fn try_set(&self, value: T) -> Result<bool, RuntimeError> {
@@ -557,6 +570,20 @@ impl Scope {
         create_scope(&runtime, self.id)
     }
 
+    /// Create a signal owned by this scope. The handle becomes invalid on disposal.
+    pub fn signal<T: Clone + PartialEq + 'static>(&self, value: T) -> Result<Signal<T>, RuntimeError> {
+        let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        check_runtime_context(&runtime)?;
+        create_signal_for_scope(&runtime, self.id, value, Some(Rc::new(|old, new| old == new)))
+    }
+
+    /// Create an owner-bound signal that always notifies on writes.
+    pub fn signal_always_changed<T: Clone + 'static>(&self, value: T) -> Result<Signal<T>, RuntimeError> {
+        let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        check_runtime_context(&runtime)?;
+        create_signal_for_scope(&runtime, self.id, value, None)
+    }
+
     /// Create an eager effect explicitly owned by this scope.
     pub fn effect(&self, callback: impl FnMut() + 'static) -> Result<Effect, RuntimeError> {
         let runtime = self
@@ -588,6 +615,24 @@ impl Scope {
         Ok(())
     }
 
+    /// Register cleanup for the current effect run. It executes before that effect reruns
+    /// and at disposal if the effect has not rerun.
+    pub fn on_effect_cleanup(&self, callback: impl FnOnce() + 'static) -> Result<(), RuntimeError> {
+        let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        check_runtime_context(&runtime)?;
+        let mut inner = runtime.borrow_mut();
+        if inner.disposed {
+            return Err(RuntimeError::RuntimeDisposed);
+        }
+        let effect_id = inner.active_effect.ok_or(RuntimeError::InvalidEffect)?;
+        let effect = inner.effects.get_mut(&effect_id).ok_or(RuntimeError::InvalidEffect)?;
+        if effect.owner != self.id {
+            return Err(RuntimeError::InvalidEffect);
+        }
+        effect.cleanups.push(Box::new(callback));
+        Ok(())
+    }
+
     /// Dispose this scope and all resources it owns. Repeated disposal is harmless.
     pub fn dispose(&self) -> Result<(), RuntimeError> {
         let runtime = self
@@ -596,6 +641,42 @@ impl Scope {
             .ok_or(RuntimeError::RuntimeDisposed)?;
         dispose_scope(&runtime, self.id)
     }
+}
+
+fn create_signal_for_scope<T: Clone + 'static>(
+    runtime: &RuntimeRef,
+    owner: ScopeId,
+    value: T,
+    equality: Option<Equality<T>>,
+) -> Result<Signal<T>, RuntimeError> {
+    check_runtime_context(runtime)?;
+    let id = {
+        let mut inner = runtime.borrow_mut();
+        if inner.disposed {
+            return Err(RuntimeError::RuntimeDisposed);
+        }
+        let owner_node = inner.scopes.get(&owner).ok_or(RuntimeError::InvalidScope)?;
+        if owner_node.disposed {
+            return Err(RuntimeError::DisposedScope);
+        }
+        let id = inner.next_signal;
+        inner.next_signal += 1;
+        inner.signals.insert(
+            id,
+            SignalNode {
+                owner,
+                subscribers: BTreeSet::new(),
+            },
+        );
+        inner.scopes.get_mut(&owner).expect("owner checked").signals.push(id);
+        id
+    };
+    Ok(Signal {
+        id,
+        runtime: Rc::downgrade(runtime),
+        value: Rc::new(RefCell::new(value)),
+        equality,
+    })
 }
 
 fn create_scope(runtime: &RuntimeRef, parent: ScopeId) -> Result<Scope, RuntimeError> {
