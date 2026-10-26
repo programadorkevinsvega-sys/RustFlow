@@ -6,6 +6,7 @@ pub enum DomPolicyError {
     UnsupportedElement(String),
     VoidElementHasChildren(String),
     UnsafeAttribute(String),
+    UnsafeProperty(String),
     UnsafeUrl(String),
 }
 
@@ -20,6 +21,9 @@ impl fmt::Display for DomPolicyError {
             }
             Self::UnsafeAttribute(name) => {
                 write!(f, "attribute is not supported by the safe DOM renderer: {name}")
+            }
+            Self::UnsafeProperty(name) => {
+                write!(f, "property is not supported by the safe DOM renderer: {name}")
             }
             Self::UnsafeUrl(_) => {
                 write!(f, "URL scheme is not allowed by the safe DOM renderer")
@@ -59,6 +63,25 @@ pub(crate) fn validate_element(name: &str, child_count: usize) -> Result<(), Dom
     Ok(())
 }
 
+/// Validate a DOM property before setting it through reflection.
+///
+/// Event-handler properties and direct style mutation are intentionally not
+/// part of this initial renderer. URL-valued properties share the attribute
+/// scheme policy; non-text values are rejected for URL-bearing properties.
+pub(crate) fn validate_property(name: &str, value: &rustflow_view::PropertyValue) -> Result<(), DomPolicyError> {
+    let normalized = name.to_ascii_lowercase();
+    if normalized == "style" || (normalized.starts_with("on") && normalized.len() > 2) {
+        return Err(DomPolicyError::UnsafeProperty(name.to_owned()));
+    }
+    if URL_ATTRIBUTES.contains(&normalized.as_str()) {
+        let rustflow_view::PropertyValue::Text(value) = value else {
+            return Err(DomPolicyError::UnsafeProperty(name.to_owned()));
+        };
+        validate_attribute(name, value)?;
+    }
+    Ok(())
+}
+
 /// Reject style sinks and active URL schemes before applying an attribute.
 pub(crate) fn validate_attribute(name: &str, value: &str) -> Result<(), DomPolicyError> {
     let name = name.to_ascii_lowercase();
@@ -84,7 +107,8 @@ pub(crate) fn validate_attribute(name: &str, value: &str) -> Result<(), DomPolic
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_attribute, validate_element, DomPolicyError};
+    use super::{validate_attribute, validate_element, validate_property, DomPolicyError};
+    use rustflow_view::PropertyValue;
 
     #[test]
     fn allows_common_semantic_elements_and_rejects_active_elements() {
@@ -106,6 +130,27 @@ mod tests {
         assert!(matches!(
             validate_element("input", 1),
             Err(DomPolicyError::VoidElementHasChildren(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_dangerous_dom_properties_and_validates_url_properties() {
+        assert!(matches!(
+            validate_property("onclick", &PropertyValue::Text("alert(1)".into())),
+            Err(DomPolicyError::UnsafeProperty(_))
+        ));
+        assert!(matches!(
+            validate_property("style", &PropertyValue::Text("display:none".into())),
+            Err(DomPolicyError::UnsafeProperty(_))
+        ));
+        assert!(matches!(
+            validate_property("href", &PropertyValue::Text("javascript:alert(1)".into())),
+            Err(DomPolicyError::UnsafeUrl(_))
+        ));
+        assert!(validate_property("href", &PropertyValue::Text("/safe/path".into())).is_ok());
+        assert!(matches!(
+            validate_property("src", &PropertyValue::Boolean(true)),
+            Err(DomPolicyError::UnsafeProperty(_))
         ));
     }
 

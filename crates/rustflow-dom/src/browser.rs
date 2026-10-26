@@ -15,7 +15,7 @@ use web_sys::{
     HtmlSelectElement, HtmlTextAreaElement, Node,
 };
 
-use crate::policy::{validate_attribute, validate_element, DomPolicyError};
+use crate::policy::{validate_attribute, validate_element, validate_property, DomPolicyError};
 
 /// Errors returned by the WebAssembly DOM adapter.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -213,6 +213,7 @@ impl DomRenderer {
         }
 
         for property in view.properties() {
+            validate_property(property.name(), property.value())?;
             let value = match property.value() {
                 PropertyValue::Text(value) => JsValue::from_str(value),
                 PropertyValue::Boolean(value) => JsValue::from_bool(*value),
@@ -278,7 +279,13 @@ impl DomRenderer {
             self.registry
                 .mount(component, self.runtime.clone(), parent_scope)?;
         let view = instance.view().clone();
-        let nodes = self.build_nodes(&view, instance.scope(), resources)?;
+        let nodes = match self.build_nodes(&view, instance.scope(), resources) {
+            Ok(nodes) => nodes,
+            Err(error) => {
+                let _ = instance.unmount();
+                return Err(error);
+            }
+        };
         resources.components.push(instance);
         Ok(nodes)
     }
