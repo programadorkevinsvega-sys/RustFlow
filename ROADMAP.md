@@ -139,12 +139,12 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Implement basic path-parameter and typed query/JSON decoding helpers.
 - [x] Define an async closure-handler convention with explicit captured state.
 - [x] Map handler errors safely and provide 404/405 routing behavior.
-- [x] Add in-memory dispatch tests. Route names, route introspection, and full network-level integration tests remain pending.
+- [x] Add in-memory dispatch tests, unique named routes, and deterministic route introspection. Full route-group support and broader network-level integration tests remain pending.
 
 ### 4.3 Middleware and lifecycle
-- [ ] Implement user-configurable ordered middleware composition (a global concurrency limit exists, but is not a general middleware API).
+- [x] Implement global ordered async middleware composition with a continuation that can wrap or short-circuit handlers. Route-scoped middleware remains future work.
 - [ ] Add request IDs, structured logs, and tracing configuration.
-- [ ] Add signal-driven graceful shutdown.
+- [x] Provide graceful-shutdown APIs driven by an injected future at the composition root. Wiring OS signals into that future remains the caller's responsibility.
 - [x] Validate route templates, reject equivalent parameter-only patterns, and clamp body/timeout/concurrency configuration to safe minimums.
 - [x] Document explicit closure-captured application state; production configuration and dependency-wiring validation remain pending.
 
@@ -152,7 +152,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Add rustflow-ssr to serialize supported view nodes into HTML fragments independently of an HTTP framework.
 - [x] Escape text and attribute values by default; apply a scheme allowlist to URL attributes and reject multi-URL attributes until parsed.
 - [ ] Add complete document/layout/page responses and configurable error pages.
-- [x] Test escaping, rejected/void elements, URL policy, component cleanup, keyed order, nesting limits, route dispatch, body limits, and handler timeouts. Network-level HTTP tests and headers/status integration tests remain pending.
+- [x] Test escaping, rejected/void elements, URL policy, component cleanup, keyed order, nesting limits, route dispatch, body limits, handler timeouts, middleware, named-route introspection, and an HTTP request over a local TCP listener with graceful shutdown. Broader network-level integration and header/status test coverage remain pending.
 
 **Exit gate:** an executable example server handles multiple routes, renders safe HTML, returns JSON, and passes the in-memory handler tests. Full network-level integration tests remain a separate acceptance task.
 
