@@ -1319,7 +1319,7 @@ impl DomRenderer {
         &self,
         planned: &[PlannedChild],
         previous: &[View],
-        next: &[View],
+        _next: &[View],
         existing_nodes: &[Node],
         parent: &Node,
         before: Option<&Node>,
