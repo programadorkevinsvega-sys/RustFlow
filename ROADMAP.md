@@ -171,7 +171,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 
 ## Phase 4 — HTTP server and routing
 
-**Estado de auditoría: criterios de servidor integrados en main; el cierre final está condicionado a las subfases 4.5–4.7 de esta auditoría.** La PR #30 se fusionó en main el 2026-10-26 y sus checks pasaron en el commit 87d297df8e5ed9d9e3b20b1bb829066849bd81f8. La auditoría detectó que un handshake TLS incompleto podía retrasar la aceptación de conexiones posteriores. No declarar esta fase formalmente cerrada hasta que la regresión de TLS y los checks del HEAD exacto pasen y el cambio quede integrado en main. Esto no declara listo el despliegue de producción ni las fases 5–11.
+**Estado: Fase 4 cerrada y verificada en main el 2026-10-26.** La PR #30 integró los criterios del servidor HTTP. La auditoría de cierre se completó en la PR #31, fusionada en el commit `6f4123b94f4273701f0336c4c982973af7bf7562`. Todos los checks post-merge pasaron en ese commit: Rust 1.85 y stable, WASM, E2E Chromium y presupuesto del bundle, Rustdoc, build del website, gobernanza, revisión de dependencias y Cloudflare Pages. Este cierre no declara listo el despliegue de producción ni las fases 5–11.
 
 ### 4.1 HTTP foundation
 - [x] Integrate Axum, Tokio, and Tower behind the RustFlow-owned `rustflow-server` adapter.
@@ -212,7 +212,7 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [x] Limitar handshakes concurrentes a 64 y aplicar un timeout de 10 segundos por handshake.
 - [x] Cancelar el listener y los handshakes pendientes al finalizar el servidor.
 - [x] Añadir una regresión de TCP real que mantiene un cliente sin ClientHello y comprueba que otra conexión TLS válida recibe respuesta.
-- [ ] Verificar en CI del HEAD exacto la prueba de regresión, Clippy, Rust 1.85 y Rust stable.
+- [x] Verificar en CI la prueba de regresión, Clippy, Rust 1.85 y Rust stable en la PR #31; todos pasaron también post-merge en `main` (`6f4123b94f4273701f0336c4c982973af7bf7562`).
 
 ### 4.6 Subfase B — Consistencia de documentación
 
@@ -221,13 +221,14 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [x] Alinear el estado del alcance de producto con el cierre de la Fase 0.2 sin declarar el producto estable.
 - [x] Sincronizar la página de estado y el README del website con las fases y el hosting actual.
 - [x] Documentar el timeout y el límite de concurrencia TLS en las guías aplicables.
-- [ ] Confirmar el build de Astro y Rustdoc para el HEAD exacto.
+- [x] Confirmar build de Astro y Rustdoc en la PR #31 y post-merge en `main`; ambos gates pasaron.
 
 ### 4.7 Subfase C — Gate final y registro del cierre
 
-- [ ] Pasar todos los checks requeridos para el HEAD exacto: Rust 1.85, Rust stable, WASM, E2E Chromium/presupuesto del bundle, Build documentation, gobernanza y revisión de dependencias.
-- [ ] Revisar los resultados y comprobar que no se haya añadido ninguna afirmación de producción, SSR completo o hidratación.
-- [ ] Tras integrar el PR, comprobar CI post-merge en main y registrar el commit de evidencia antes de declarar formalmente cerrada la Fase 4.
+- [x] Pasar todos los checks de la PR #31 en el HEAD `8e92f31c2442988b4d7c5bdd3fc3f9f9066946f0`: Rust 1.85, Rust stable, WASM, E2E Chromium/presupuesto del bundle, Build documentation, gobernanza, revisión de dependencias y Cloudflare Pages.
+- [x] Revisar los resultados y confirmar que SSR/hidratación, autenticación y preparación para producción siguen correctamente fuera del alcance de esta fase.
+- [x] Tras el merge, comprobar todos los checks post-merge en `main` y registrar el SHA `6f4123b94f4273701f0336c4c982973af7bf7562`; todos terminaron correctamente.
+- [x] Auditar el ruleset activo: requiere Rust 1.85, Rust stable, Build documentation y Governance. WASM, Browser E2E/bundle y Review dependency changes también pasaron, pero no están configurados como checks obligatorios. Se recomienda añadirlos mediante una actualización administrativa de la configuración del repositorio; la configuración no se modificó en código.
 
 ## Phase 5 — SSR, hydration, and full-stack data flow
 
