@@ -43,6 +43,18 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --all-features
 
+      - name: Run reactivity benchmark smoke baseline
+        if: matrix.toolchain == 'stable'
+        run: |
+          rustc --version
+          cargo --version
+          uname -a
+          lscpu
+          for run in 1 2 3; do
+            echo "Benchmark repetition ${run}/3"
+            cargo bench -p rustflow --bench reactivity
+          done
+
       - name: Build documentation
         run: cargo doc --workspace --all-features --no-deps
         env:

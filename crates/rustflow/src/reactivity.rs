@@ -6,6 +6,19 @@
 //!
 //! Signals created with `Runtime::signal` suppress equal writes via `PartialEq`.
 //! Use `Runtime::signal_always_changed` for values without `PartialEq`.
+//! Compile-fail checks document the intended single-threaded API boundary:
+//!
+//! ```compile_fail
+//! use rustflow::reactivity::Runtime;
+//! fn require_send<T: Send>() {}
+//! require_send::<Runtime>();
+//! ```
+//!
+//! ```compile_fail
+//! use rustflow::reactivity::Runtime;
+//! fn require_sync<T: Sync>() {}
+//! require_sync::<Runtime>();
+//! ```
 
 use std::{
     cell::RefCell,
@@ -1015,5 +1028,203 @@ mod tests {
         child_value.set(1);
         assert_eq!(parent_runs.get(), 2);
         assert_eq!(child_runs.get(), 2);
+    }
+
+    #[test]
+    fn reentrant_writes_are_drained_iteratively() {
+        let runtime = Runtime::with_cycle_limit(32);
+        let value = runtime.signal_eq(0usize).unwrap();
+        let observed = Rc::new(RefCell::new(Vec::new()));
+        let signal = value.clone();
+        let log = observed.clone();
+        let _effect = runtime
+            .effect(move || {
+                let current = signal.get();
+                log.borrow_mut().push(current);
+                if current < 5 {
+                    signal.set(current + 1);
+                }
+            })
+            .unwrap();
+        assert_eq!(*observed.borrow(), vec![0, 1, 2, 3, 4, 5]);
+        assert_eq!(value.get(), 5);
+    }
+
+    #[test]
+    fn disposed_queued_effect_does_not_run() {
+        let runtime = Runtime::new();
+        let scope = runtime.root_scope().child().unwrap();
+        let value = runtime.signal_eq(0).unwrap();
+        let runs = Rc::new(Cell::new(0));
+        let signal = value.clone();
+        let count = runs.clone();
+        let _effect = scope
+            .effect(move || {
+                let _ = signal.get();
+                count.set(count.get() + 1);
+            })
+            .unwrap();
+        runtime
+            .batch(|| {
+                value.set(1);
+                scope.dispose().unwrap();
+            })
+            .unwrap();
+        assert_eq!(runs.get(), 1);
+        runtime.flush().unwrap();
+        assert_eq!(runs.get(), 1);
+    }
+
+    #[test]
+    fn effect_panic_restores_runtime_and_detaches_failed_dependencies() {
+        let runtime = Runtime::new();
+        let value = runtime.signal_eq(0).unwrap();
+        let signal = value.clone();
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _ = runtime.effect(move || {
+                let _ = signal.get();
+                panic!("intentional effect panic");
+            });
+        }));
+        assert!(result.is_err());
+        assert_eq!(value.try_set(1), Ok(true));
+        assert_eq!(runtime.flush(), Ok(()));
+        let independent = runtime.signal_eq(10).unwrap();
+        independent.set(11);
+        assert_eq!(independent.get(), 11);
+    }
+
+    #[test]
+    fn cleanup_panics_do_not_skip_remaining_cleanups() {
+        let runtime = Runtime::new();
+        let scope = runtime.root_scope().child().unwrap();
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let first_calls = calls.clone();
+        scope
+            .on_cleanup(move || first_calls.borrow_mut().push(1))
+            .unwrap();
+        let panic_calls = calls.clone();
+        scope
+            .on_cleanup(move || {
+                panic_calls.borrow_mut().push(2);
+                panic!("intentional cleanup panic");
+            })
+            .unwrap();
+        let last_calls = calls.clone();
+        scope
+            .on_cleanup(move || last_calls.borrow_mut().push(3))
+            .unwrap();
+
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| scope.dispose()));
+        assert!(result.is_err());
+        assert_eq!(*calls.borrow(), vec![3, 2, 1]);
+        assert_eq!(scope.dispose(), Ok(()));
+    }
+
+    #[test]
+    fn independent_runtimes_keep_signal_values_isolated() {
+        let first = Runtime::new();
+        let second = Runtime::new();
+        let a = first.signal_eq(1).unwrap();
+        let b = second.signal_eq(10).unwrap();
+        a.set(2);
+        assert_eq!(a.get(), 2);
+        assert_eq!(b.get(), 10);
+    }
+
+    #[test]
+    fn deterministic_operation_model_matches_signal_value() {
+        let runtime = Runtime::new();
+        let signal = runtime.signal_eq(0_i64).unwrap();
+        let mut model = 0_i64;
+        for step in 0..512_i64 {
+            let next = match step % 5 {
+                0 => model,
+                1 => model + 1,
+                2 => model - 1,
+                3 => step,
+                _ => 0,
+            };
+            signal.set(next);
+            model = next;
+            assert_eq!(signal.get(), model, "model mismatch at step {step}");
+        }
+    }
+    #[test]
+    fn values_without_partial_eq_notify_on_every_write() {
+        #[derive(Clone)]
+        struct NoEq(usize);
+
+        let runtime = Runtime::new();
+        let signal = runtime.signal_always_changed(NoEq(1)).unwrap();
+        let runs = Rc::new(Cell::new(0));
+        let observed = signal.clone();
+        let count = runs.clone();
+        let _effect = runtime
+            .effect(move || {
+                let _ = observed.get().0;
+                count.set(count.get() + 1);
+            })
+            .unwrap();
+
+        assert_eq!(signal.try_set(NoEq(1)), Ok(true));
+        assert_eq!(runs.get(), 2);
+    }
+
+    #[test]
+    fn repeated_reads_outside_effect_do_not_subscribe_an_effect() {
+        let runtime = Runtime::new();
+        let outside = runtime.signal_eq(0).unwrap();
+        let unrelated = runtime.signal_eq(10).unwrap();
+        assert_eq!(outside.get(), 0);
+        assert_eq!(outside.get(), 0);
+
+        let runs = Rc::new(Cell::new(0));
+        let observed = unrelated.clone();
+        let count = runs.clone();
+        let _effect = runtime
+            .effect(move || {
+                let _ = observed.get();
+                count.set(count.get() + 1);
+            })
+            .unwrap();
+
+        outside.set(1);
+        assert_eq!(runs.get(), 1);
+    }
+
+    #[test]
+    fn batching_preserves_fifo_order_and_deduplicates_pending_effects() {
+        let runtime = Runtime::new();
+        let signal = runtime.signal_eq(0).unwrap();
+        let order = Rc::new(RefCell::new(Vec::new()));
+
+        let first_signal = signal.clone();
+        let first_order = order.clone();
+        let _first = runtime
+            .effect(move || {
+                let _ = first_signal.get();
+                first_order.borrow_mut().push('a');
+            })
+            .unwrap();
+        let second_signal = signal.clone();
+        let second_order = order.clone();
+        let _second = runtime
+            .effect(move || {
+                let _ = second_signal.get();
+                second_order.borrow_mut().push('b');
+            })
+            .unwrap();
+        order.borrow_mut().clear();
+
+        runtime
+            .batch(|| {
+                signal.set(1);
+                signal.set(2);
+                signal.set(3);
+            })
+            .unwrap();
+
+        assert_eq!(*order.borrow(), vec!['a', 'b']);
     }
 }

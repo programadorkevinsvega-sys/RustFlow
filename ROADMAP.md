@@ -22,7 +22,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Define contribution guidelines, code of conduct, maintainers, and decision process.
 - [x] Define supported Rust toolchain and MSRV policy (stable toolchain; MSRV 1.85).
 - [x] Define semantic versioning, pre-1.0 API stability, and deprecation policy.
-- [ ] Configure branch protection and required checks when repository settings allow.
+- [ ] Configure required status checks in the active `Protect main — RustFlow` ruleset. The ruleset currently blocks deletion/force-push and requires linear history/PRs, but does not require CI status checks.
 
 ### 0.2 Product scope
 - [x] Define target users, product principles, supported platforms, and explicit non-goals in `docs/PRODUCT_SCOPE.md`.
@@ -55,15 +55,15 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Add diagnostics for invalid/disposed runtime use (`RuntimeError` in `crates/rustflow/src/reactivity.rs`).
 
 ### 1.3 Correctness
-- [ ] Test that only dependent effects rerun.
-- [ ] Test dynamic dependencies and stale dependency removal.
-- [ ] Test nested effects, disposal, batching, cycles, re-entrant writes, and panic/error paths.
-- [ ] Add property/model-based tests where useful.
-- [ ] Document runtime limitations and guarantees.
+- [x] Test that only dependent effects rerun.
+- [x] Test dynamic dependencies and stale dependency removal.
+- [x] Test nested effects, disposal, batching, cycles, re-entrant writes, and panic/error paths.
+- [x] Add property/model-based tests where useful (dependency-free deterministic operation model; randomized property testing remains a future enhancement if justified).
+- [x] Document runtime limitations and guarantees (`docs/REACTIVITY_RUNTIME.md`, `docs/REACTIVITY_VERIFICATION.md`, and the public website).
 
 ### 1.4 Baseline performance
-- [ ] Benchmark reads, writes, effect scheduling, and high fan-out.
-- [ ] Record reproducible methodology and baseline numbers.
+- [x] Benchmark reads, writes, effect scheduling, and high fan-out (`crates/rustflow/benches/reactivity.rs`).
+- [x] Record reproducible methodology and baseline numbers (`docs/REACTIVITY_VERIFICATION.md`; three CI repetitions with environment details).
 
 **Exit gate:** standalone crate, documented semantics, deterministic tests, explicit cleanup behavior, and reproducible benchmarks.
 

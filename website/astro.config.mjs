@@ -21,6 +21,9 @@ export default defineConfig({
         { label: 'Conceptos', items: [
           { label: 'Reactividad', slug: 'concepts/reactivity' },
         ]},
+        { label: 'Calidad y verificación', items: [
+          { label: 'Verificación del runtime', slug: 'verification/reactivity' },
+        ]},
         { label: 'Contribuir', items: [
           { label: 'Escribir documentación', slug: 'contributing/documentation' },
         ]},
