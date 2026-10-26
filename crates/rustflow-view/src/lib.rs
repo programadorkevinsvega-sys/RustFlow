@@ -272,6 +272,8 @@ pub enum PropertyValue {
     Integer(i64),
     /// A floating-point property.
     Float(f64),
+    /// A typed component callback; never valid as a DOM property.
+    Callback(EventHandler),
 }
 impl From<String> for PropertyValue {
     fn from(value: String) -> Self {
@@ -301,6 +303,11 @@ impl From<i64> for PropertyValue {
 impl From<f64> for PropertyValue {
     fn from(value: f64) -> Self {
         Self::Float(value)
+    }
+}
+impl From<EventHandler> for PropertyValue {
+    fn from(value: EventHandler) -> Self {
+        Self::Callback(value)
     }
 }
 
