@@ -598,7 +598,11 @@ mod tests {
         let View::Element(section) = &updated else {
             panic!("updated component returns a section");
         };
-        assert_eq!(section.children()[0], View::element("span", [View::text("after")]).expect("span"));
+        let View::Element(label) = &section.children()[0] else {
+            panic!("updated component includes a label span");
+        };
+        assert_eq!(label.tag(), "span");
+        assert_eq!(label.children(), &[View::text("after")]);
 
         let View::Element(counter) = &section.children()[2] else {
             panic!("component includes the local counter");
