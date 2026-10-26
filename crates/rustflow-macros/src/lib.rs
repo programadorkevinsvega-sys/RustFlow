@@ -41,9 +41,18 @@ pub fn component(_attributes: TokenStream, item: TokenStream) -> TokenStream {
             span: function_name.span(),
         });
     };
+    let Some(body) = tokens.iter().rev().find_map(|token| match token {
+        TokenTree::Group(group) if group.delimiter() == Delimiter::Brace => Some(group.clone()),
+        _ => None,
+    }) else {
+        return compile_error(ParseError {
+            message: "#[component] expected a function body".into(),
+            span: function_name.span(),
+        });
+    };
 
     let mut parameter_names = Vec::new();
-    let mut bindings = String::new();
+    let mut parameter_types = Vec::new();
     for parameter in split_parameters(parameters) {
         if parameter.trim().is_empty() {
             continue;
@@ -77,35 +86,56 @@ pub fn component(_attributes: TokenStream, item: TokenStream) -> TokenStream {
             .replace(" :: ", "::")
             .replace(" ::", "::")
             .replace(":: ", "::");
-        let Some(conversion) = property_conversion(&parameter_name, &type_name) else {
+        if property_conversion(&parameter_name, &type_name, "__props").is_none() {
             return compile_error(ParseError {
                 message: format!(
                     "#[component] does not support prop type {type_name} for {parameter_name}; use String, bool, i32, i64, u32, usize, f64, or EventHandler"
                 ),
                 span: function_name.span(),
             });
-        };
-        bindings.push_str(&conversion);
+        }
         parameter_names.push(parameter_name);
+        parameter_types.push(type_name);
     }
 
-    let arguments = parameter_names.join(", ");
+    let (setup_statements, render_body) = split_component_body(body.stream());
+    if let Some(span) = find_stateful_call(&render_body) {
+        return compile_error(ParseError {
+            message: "state APIs signal/use_state/use_effect/on_cleanup must be direct top-level setup statements in #[component]; use let name = signal(...) or let name = use_state(...) so state survives prop updates".into(),
+            span,
+        });
+    }
+
     let allowed_props = parameter_names
         .iter()
         .map(|parameter| format!("{parameter:?}"))
         .collect::<Vec<_>>()
         .join(",");
-    let unknown_check = format!(
-        "let __rustflow_allowed_props: &[&str] = &[{allowed_props}]; if let Some(__unknown) = __props.iter().find(|__prop| !__rustflow_allowed_props.contains(&__prop.name())) {{ return Err(::rustflow::components::ComponentError::User(format!(\"unknown prop `{{}}` for component `{{}}`\", __unknown.name(), {name:?}))); }}"
-    );
+    let unknown_check = |props: &str| {
+        format!(
+            "let __rustflow_allowed_props: &[&str] = &[{allowed_props}]; if let Some(__unknown) = {props}.iter().find(|__prop| !__rustflow_allowed_props.contains(&__prop.name())) {{ return Err(::rustflow::components::ComponentError::User(format!(\"unknown prop '{{}}' for component '{{}}'\", __unknown.name(), {name:?}))); }}"
+        )
+    };
+    let setup_bindings = parameter_names
+        .iter()
+        .zip(parameter_types.iter())
+        .filter_map(|(parameter, ty)| property_conversion(parameter, ty, "__props"))
+        .collect::<String>();
+    let render_bindings = parameter_names
+        .iter()
+        .zip(parameter_types.iter())
+        .filter_map(|(parameter, ty)| property_conversion(parameter, ty, "__next_props"))
+        .collect::<String>();
     let definition_name = format!(
         "__rustflow_component_definition_{}",
         name.to_ascii_lowercase()
     );
     let register_name = format!("register_{}", name.to_ascii_lowercase());
+    let setup_code = setup_statements.to_string();
+    let render_code = render_body.to_string();
     let generated = format!(
         r#"
-        #[allow(non_snake_case)]
+        #[allow(non_snake_case, dead_code)]
         {item}
         #[allow(dead_code)]
         pub fn {definition_name}() -> ::core::result::Result<
@@ -113,12 +143,17 @@ pub fn component(_attributes: TokenStream, item: TokenStream) -> TokenStream {
             ::rustflow::components::ComponentError
         > {{
             ::rustflow::components::ComponentDefinition::new({name:?}, move |_context, __props| {{
-                {unknown_check}
-                {bindings}
-                let __view = ::rustflow::view::IntoView::into_view({name}({arguments}))
-                    .map_err(::rustflow::components::ComponentError::View)?;
+                {unknown_setup}
+                {setup_bindings}
+                {setup_code}
                 let __render: ::rustflow::components::ComponentRender =
-                    ::std::rc::Rc::new(move |_props, _children| Ok(__view.clone()));
+                    ::std::rc::Rc::new(move |__next_props, _children| {{
+                        {unknown_render}
+                        {render_bindings}
+                        let __next_view = ::rustflow::view::IntoView::into_view({{ {render_code} }})
+                            .map_err(::rustflow::components::ComponentError::View)?;
+                        Ok(__next_view)
+                    }});
                 Ok(__render)
             }})
         }}
@@ -134,9 +169,12 @@ pub fn component(_attributes: TokenStream, item: TokenStream) -> TokenStream {
         name = name,
         definition_name = definition_name,
         register_name = register_name,
-        unknown_check = unknown_check,
-        bindings = bindings,
-        arguments = arguments,
+        unknown_setup = unknown_check("__props"),
+        unknown_render = unknown_check("__next_props"),
+        setup_bindings = setup_bindings,
+        render_bindings = render_bindings,
+        setup_code = setup_code,
+        render_code = render_code,
     );
     generated.parse().unwrap_or_else(|_| {
         compile_error(ParseError {
@@ -144,6 +182,75 @@ pub fn component(_attributes: TokenStream, item: TokenStream) -> TokenStream {
             span: function_name.span(),
         })
     })
+}
+
+fn split_component_body(body: TokenStream) -> (TokenStream, TokenStream) {
+    let mut setup = TokenStream::new();
+    let mut render = TokenStream::new();
+    let mut statement = TokenStream::new();
+
+    for token in body {
+        let is_semicolon = matches!(&token, TokenTree::Punct(punct) if punct.as_char() == ';');
+        statement.extend([token]);
+        if is_semicolon {
+            if is_setup_statement(&statement) {
+                setup.extend(statement);
+            } else {
+                render.extend(statement);
+            }
+            statement = TokenStream::new();
+        }
+    }
+    if !statement.is_empty() {
+        if is_setup_statement(&statement) {
+            setup.extend(statement);
+        } else {
+            render.extend(statement);
+        }
+    }
+    (setup, render)
+}
+
+fn is_setup_statement(statement: &TokenStream) -> bool {
+    let tokens = statement.clone().into_iter().collect::<Vec<_>>();
+    if tokens.is_empty() {
+        return false;
+    }
+    let start = if matches!(tokens.first(), Some(TokenTree::Ident(ident)) if ident.to_string() == "let") {
+        tokens.iter().position(|token| matches!(token, TokenTree::Punct(punct) if punct.as_char() == '='))
+            .map(|index| index + 1)
+            .unwrap_or(tokens.len())
+    } else {
+        0
+    };
+    tokens.iter().enumerate().skip(start).any(|(index, token)| {
+        let TokenTree::Ident(ident) = token else {
+            return false;
+        };
+        if !matches!(ident.to_string().as_str(), "signal" | "use_state" | "use_effect" | "on_cleanup") {
+            return false;
+        }
+        matches!(tokens.get(index + 1), Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis)
+    })
+}
+
+fn find_stateful_call(stream: &TokenStream) -> Option<Span> {
+    let tokens = stream.clone().into_iter().collect::<Vec<_>>();
+    for (index, token) in tokens.iter().enumerate() {
+        if let TokenTree::Ident(ident) = token {
+            if matches!(ident.to_string().as_str(), "signal" | "use_state" | "use_effect" | "on_cleanup")
+                && matches!(tokens.get(index + 1), Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis)
+            {
+                return Some(ident.span());
+            }
+        }
+        if let TokenTree::Group(group) = token {
+            if let Some(span) = find_stateful_call(&group.stream()) {
+                return Some(span);
+            }
+        }
+    }
+    None
 }
 
 fn split_parameters(parameters: TokenStream) -> Vec<String> {
@@ -163,10 +270,10 @@ fn split_parameters(parameters: TokenStream) -> Vec<String> {
     result
 }
 
-fn property_conversion(parameter: &str, type_name: &str) -> Option<String> {
+fn property_conversion(parameter: &str, type_name: &str, props_variable: &str) -> Option<String> {
     let error = format!("invalid or missing component prop {parameter}");
     let binding = format!(
-        "let __value_{parameter} = __props.iter().find(|prop| prop.name() == {parameter:?}).map(|prop| prop.value()).ok_or_else(|| ::rustflow::components::ComponentError::User({error:?}.to_owned()))?;"
+        "let __value_{parameter} = {props_variable}.iter().find(|prop| prop.name() == {parameter:?}).map(|prop| prop.value()).ok_or_else(|| ::rustflow::components::ComponentError::User({error:?}.to_owned()))?;"
     );
     let conversion = match type_name {
         "String" => format!(
