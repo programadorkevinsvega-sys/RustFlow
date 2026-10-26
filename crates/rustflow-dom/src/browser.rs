@@ -1395,8 +1395,16 @@ impl DomRenderer {
 
         let mut resources = RenderedNodes::default();
         let root_scope = self.root_scope.clone();
-        let roots = match self.commit_plan(
-            &plan,
+        let previous_view = plan.previous.clone();
+        let next_view = plan.next.clone();
+        let planned_root = [PlannedChild {
+            previous_index: Some(0),
+            plan: Box::new(plan),
+        }];
+        let roots = match self.commit_sequence(
+            &planned_root,
+            std::slice::from_ref(&previous_view),
+            std::slice::from_ref(&next_view),
             &existing_nodes,
             &parent,
             Some(&end),
