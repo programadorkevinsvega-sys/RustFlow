@@ -540,7 +540,7 @@ mod tests {
             View::Component(node) => node,
             _ => panic!("component descriptor expected"),
         };
-        let instance = registry
+        let mut instance = registry
             .mount(&descriptor, runtime.clone(), &root)
             .expect("typed component mounts");
         let View::Element(button) = instance.view() else {
