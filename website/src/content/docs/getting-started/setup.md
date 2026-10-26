@@ -1,47 +1,60 @@
 ---
-title: Preparar el entorno
-description: Ejecuta localmente el portal de documentación de RustFlow.
+title: Probar RustFlow hoy
+description: Prepara Rust y ejecuta las comprobaciones del runtime que RustFlow ya implementa.
 ---
 
-Esta guía es para contribuir al **portal de documentación**, no para instalar RustFlow como dependencia de una aplicación. El framework todavía está en desarrollo y no ofrece aún un flujo de instalación de producción.
+Esta guía es para desarrolladores que quieren evaluar **el código real de RustFlow**. No es una guía para ejecutar el portal Astro.
+
+> **Estado: prototipo de desarrollo.** RustFlow todavía no ofrece una instalación de producción, un paquete publicado y estable para aplicaciones, ni un CLI propio. La fase 1 implementa la base del runtime reactivo; consulta [Estado y fases](/project-status/) antes de adoptarlo.
 
 ## Requisitos
 
 - Git.
-- Node.js y npm en versiones compatibles con la versión de Astro declarada en website/package.json.
+- Rust estable con una versión compatible con el MSRV del repositorio (actualmente Rust 1.85).
+- Cargo, incluido con Rust.
 
-## Ejecutar el sitio
+Comprueba que Rust está disponible:
+
+~~~sh
+rustc --version
+cargo --version
+~~~
+
+## Descargar el código
+
+Clona el repositorio y entra en él:
+
+~~~sh
+git clone https://github.com/programadorkevinsvega-sys/RustFlow.git
+cd RustFlow
+~~~
+
+## Ejecutar las pruebas del crate
 
 Desde la raíz del repositorio:
 
 ~~~sh
-cd website
-npm install
-npm run dev
+cargo test -p rustflow
 ~~~
 
-Abre la URL local que Astro muestre en la terminal.
-
-## Validar una compilación estática
+Para ejecutar también las comprobaciones principales del workspace:
 
 ~~~sh
-npm run build
-npm run preview
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
 ~~~
 
-Astro genera el sitio estático en website/dist/. El contenido publicado no requiere un servidor de aplicación ni una base de datos.
+Las pruebas validan el código implementado en el repositorio. No significan que RustFlow ya pueda compilar una aplicación web completa ni que esté listo para producción.
 
-## Añadir una página
+## ¿Cómo se integra en una aplicación?
 
-Crea un archivo Markdown dentro de website/src/content/docs/, por ejemplo guides/mi-guia.md:
+Por ahora no hay un flujo de instalación recomendado para una aplicación nueva ni una versión estable publicada en crates.io. No uses cargo add rustflow suponiendo que el paquete está publicado, y no dependas de APIs no documentadas.
 
-~~~md
----
-title: Mi guía
-description: Qué aprenderá el desarrollador.
----
+El runtime reactivo puede explorarse dentro del propio workspace. La API implementada está en [crates/rustflow/src/reactivity.rs](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow/src/reactivity.rs); sus garantías y limitaciones se explican en [Reactividad disponible](/concepts/reactivity/).
 
-Explica el concepto, muestra un ejemplo verificable y describe las limitaciones actuales.
-~~~
+## ¿Dónde están los componentes y los comandos?
 
-Añade después la página a la barra lateral en website/astro.config.mjs cuando deba aparecer en la navegación principal.
+El sistema de componentes y su sintaxis están en la fase 2 del [roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md). El runtime de navegador aparece en la fase 3 y el CLI —incluidos los futuros comandos para crear proyectos y generar código— en la fase 6.
+
+Consulta las guías de [componentes](/guides/components/) y [CLI](/guides/cli/) para conocer el alcance previsto sin confundirlo con funcionalidades actuales.
