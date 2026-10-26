@@ -1,0 +1,373 @@
+# RustFlow Roadmap
+
+This roadmap defines a path from an empty repository to a production-grade full-stack Rust web framework. Every phase starts as planned. Mark an item complete only when its acceptance criteria are met and supported by code, tests, documentation, or release evidence. Dates are intentionally omitted.
+
+## Vision
+
+RustFlow aims to combine React-like reactive UI components, a Rust-owned reactivity engine, server rendering and hydration, and a Laravel-inspired full-stack developer experience: routing, handlers/controllers, middleware, validation, sessions, authentication, database integration, migrations, generators, and CLI tooling.
+
+Reuse mature infrastructure for HTTP, async execution, database drivers, serialization, and cryptography. Do not reinvent an async runtime, database drivers, or cryptographic primitives.
+
+## Status policy
+
+- [ ] Planned
+- [x] Complete and verified
+
+All tasks begin unchecked. Discussion, scaffolding, or an unverified implementation does not count as completion.
+
+## Phase 0 — Project foundation
+
+### 0.1 Governance
+- [ ] Select and add a license before accepting external contributions.
+- [ ] Define contribution guidelines, code of conduct, maintainers, and decision process.
+- [ ] Define supported Rust toolchain and MSRV policy.
+- [ ] Define semantic versioning, pre-1.0 API stability, and deprecation policy.
+- [ ] Configure branch protection and required checks when repository settings allow.
+
+### 0.2 Product scope
+- [ ] Define target users, product principles, supported platforms, and explicit non-goals.
+- [ ] Define MVP user stories and acceptance criteria.
+- [ ] Establish a risk register for reactivity, macros, WASM, hydration, security, and maintenance.
+- [ ] Create ADRs for crate boundaries, client runtime, and server integration.
+
+### 0.3 Engineering baseline
+- [ ] Establish workspace naming and dependency conventions.
+- [ ] Add CI for formatting, Clippy, unit tests, documentation tests, and dependency review.
+- [ ] Add issue/PR templates and review checklist.
+- [ ] Ensure README, architecture rules, security policy, and contributor instructions agree.
+
+**Exit gate:** project scope and policies are explicit; CI runs on pull requests; major architectural decisions have recorded context and trade-offs.
+
+## Phase 1 — Reactivity engine prototype
+
+### 1.1 Semantics
+- [ ] Specify signal reads/writes and dependency tracking.
+- [ ] Specify effects, nested effects, dynamic dependency replacement, and cleanup.
+- [ ] Define scheduling order, batching, re-entrancy, and cycle behavior.
+- [ ] Define ownership scopes and deterministic disposal.
+- [ ] Define single-threaded browser behavior and any server-side thread-safety guarantees.
+
+### 1.2 Implementation
+- [ ] Implement typed signals.
+- [ ] Implement effects and dependency graph.
+- [ ] Implement scheduler and batching.
+- [ ] Implement owner scopes and disposal.
+- [ ] Add diagnostics for invalid/disposed runtime use.
+
+### 1.3 Correctness
+- [ ] Test that only dependent effects rerun.
+- [ ] Test dynamic dependencies and stale dependency removal.
+- [ ] Test nested effects, disposal, batching, cycles, re-entrant writes, and panic/error paths.
+- [ ] Add property/model-based tests where useful.
+- [ ] Document runtime limitations and guarantees.
+
+### 1.4 Baseline performance
+- [ ] Benchmark reads, writes, effect scheduling, and high fan-out.
+- [ ] Record reproducible methodology and baseline numbers.
+
+**Exit gate:** standalone crate, documented semantics, deterministic tests, explicit cleanup behavior, and reproducible benchmarks.
+
+## Phase 2 — View and component model
+
+### 2.1 View representation
+- [ ] Define typed nodes for text, elements, fragments, and components.
+- [ ] Define attributes, properties, boolean attributes, events, and dynamic children.
+- [ ] Define keys and identity rules for dynamic lists.
+- [ ] Define construction errors and rendering contracts.
+
+### 2.2 Lifecycle
+- [ ] Specify create, mount, update, and unmount behavior.
+- [ ] Connect component scopes to reactive cleanup.
+- [ ] Specify event listener ownership and cleanup.
+- [ ] Define context/provider semantics if needed.
+- [ ] Document constraints on render-time side effects.
+
+### 2.3 Declarative syntax
+- [ ] Prototype a small view! procedural macro.
+- [ ] Parse a constrained HTML-like grammar with expressions.
+- [ ] Support text, attributes, nested components, and events.
+- [ ] Emit actionable diagnostics with source spans.
+- [ ] Add compile-fail tests and document supported syntax.
+
+### 2.4 Tests
+- [ ] Test nested components, attributes, text, fragments, and keys.
+- [ ] Test macro diagnostics and expansion examples.
+
+**Exit gate:** reusable typed components work; lifecycle is explicit; macro errors are understandable.
+
+## Phase 3 — Browser runtime and interactive MVP
+
+### 3.1 Build pipeline
+- [ ] Configure the wasm32-unknown-unknown target and browser build toolchain.
+- [ ] Integrate wasm-bindgen and web-sys where appropriate.
+- [ ] Separate browser dependencies from server-only crates.
+- [ ] Produce a browser-loadable bundle and static assets.
+
+### 3.2 DOM runtime
+- [ ] Create and mount text and element nodes.
+- [ ] Safely apply and update attributes/properties.
+- [ ] Attach and remove event listeners.
+- [ ] Connect reactive computations to targeted DOM updates.
+- [ ] Dispose component scopes and listeners on unmount.
+- [ ] Implement conditional rendering and keyed dynamic lists.
+
+### 3.3 MVP examples
+- [ ] Build a reactive counter.
+- [ ] Build a todo list with add, toggle, and remove.
+- [ ] Support basic form and input semantics.
+- [ ] Use semantic HTML and accessible labels.
+- [ ] Add browser end-to-end tests and measure bundle size.
+
+### 3.4 Developer feedback
+- [ ] Provide useful development-mode runtime errors.
+- [ ] Add source maps or equivalent debugging support where feasible.
+- [ ] Document clean Ubuntu setup and troubleshooting.
+
+**Exit gate:** counter and todo examples run in supported browsers; listeners and effects clean up; CI builds the browser target.
+
+## Phase 4 — HTTP server and routing
+
+### 4.1 HTTP foundation
+- [ ] Integrate Axum, Tokio, and Tower behind RustFlow-owned boundaries.
+- [ ] Define request, response, error, and application-state types.
+- [ ] Implement route matching, parameters, query strings, and HTTP methods.
+- [ ] Provide HTML, JSON, redirect, file, and status helpers.
+- [ ] Set request body limits and timeout defaults.
+
+### 4.2 Handlers and errors
+- [ ] Implement route registration and route names.
+- [ ] Implement typed path/query extraction.
+- [ ] Add handler/controller conventions.
+- [ ] Handle 404, 405, and centralized errors.
+- [ ] Add route introspection and integration tests.
+
+### 4.3 Middleware and lifecycle
+- [ ] Implement ordered middleware composition.
+- [ ] Add request IDs and structured logs.
+- [ ] Implement graceful shutdown.
+- [ ] Validate configuration at startup.
+- [ ] Document application state and dependency wiring.
+
+### 4.4 Safe server rendering
+- [ ] Render supported view nodes to HTML.
+- [ ] Escape text and attribute values by default.
+- [ ] Add layout/page responses and error pages.
+- [ ] Test escaping, headers, status codes, and malformed requests.
+
+**Exit gate:** an example server handles multiple routes, renders safe HTML, returns JSON, and passes integration tests.
+
+## Phase 5 — SSR, hydration, and full-stack data flow
+
+### 5.1 Rendering contract
+- [ ] Define server-capable and browser-only components.
+- [ ] Define safe serialization for hydration data.
+- [ ] Prevent server-only types and secrets entering client bundles.
+- [ ] Define deterministic rendering and non-hydratable fallbacks.
+
+### 5.2 SSR
+- [ ] Render view trees on the server.
+- [ ] Integrate layouts and route handlers.
+- [ ] Support title and document metadata.
+- [ ] Test escaping, request isolation, and error states.
+
+### 5.3 Hydration
+- [ ] Add minimal, safely serialized hydration data.
+- [ ] Map rendered nodes to client component boundaries.
+- [ ] Attach events without duplicating DOM or handlers.
+- [ ] Detect and report mismatches in development.
+- [ ] Define safe mismatch recovery.
+- [ ] Test forms, conditions, lists, and navigation.
+
+### 5.4 Navigation and forms
+- [ ] Add client navigation after route semantics stabilize.
+- [ ] Implement browser history and link interception.
+- [ ] Define progressive-enhancement behavior for forms.
+- [ ] Test server/client boundaries and reload fallbacks.
+
+**Exit gate:** pages deliver meaningful HTML before client execution and hydrate correctly in supported cases.
+
+## Phase 6 — Laravel-inspired developer experience
+
+### 6.1 CLI
+- [ ] Implement rustflow new.
+- [ ] Implement rustflow dev and rustflow build.
+- [ ] Generate components, pages, controllers, models, and migrations.
+- [ ] Prevent generators from silently overwriting user files.
+- [ ] Add deterministic CLI integration tests.
+
+### 6.2 Configuration
+- [ ] Define configuration precedence and validation.
+- [ ] Add a safe .env.example without real secrets.
+- [ ] Separate development, test, and production settings.
+- [ ] Fail fast on invalid production configuration.
+- [ ] Document secret management.
+
+### 6.3 Validation and forms
+- [ ] Implement typed input extraction and validation.
+- [ ] Return structured field/form errors.
+- [ ] Add CSRF protection for cookie-authenticated mutations.
+- [ ] Add safe redirect-back behavior.
+- [ ] Test oversized payloads and unexpected input.
+
+### 6.4 Sessions and access control
+- [ ] Define session abstraction and secure cookie defaults.
+- [ ] Implement expiry, rotation, invalidation, and storage adapters.
+- [ ] Implement authentication guards and identity extraction.
+- [ ] Implement authorization policies with deny-by-default behavior.
+- [ ] Use maintained password hashing and cryptographic libraries.
+- [ ] Test fixation, CSRF, privilege escalation, and access boundaries.
+
+### 6.5 Database and migrations
+- [ ] Integrate SQLx and configurable connection pools.
+- [ ] Add transaction helpers and error mapping.
+- [ ] Implement versioned migrations and rollback policy.
+- [ ] Design model/query abstractions only after real use cases validate them.
+- [ ] Use parameterized SQL and test supported database engines.
+- [ ] Document pool sizing and deployment migration practices.
+
+**Exit gate:** a generated CRUD application validates input, persists records, uses sessions/auth, renders pages, and has repeatable integration tests.
+
+## Phase 7 — Core framework completeness
+
+### 7.1 Operational capabilities
+- [ ] Add structured tracing and configurable log levels.
+- [ ] Add safe error-reporting hooks.
+- [ ] Add health/readiness endpoints.
+- [ ] Define cache interfaces if justified.
+- [ ] Define queue, email, and storage integrations only when delivery/security contracts are clear.
+- [ ] Ensure graceful shutdown and timeouts are tested.
+
+### 7.2 UI completeness
+- [ ] Improve contexts, dynamic lists, fragments, forms, and controlled inputs.
+- [ ] Define error isolation behavior.
+- [ ] Add loading/async rendering semantics only when runtime design supports them.
+- [ ] Document styling and asset integration.
+- [ ] Include accessibility guidance and examples.
+
+### 7.3 Testing and docs
+- [ ] Provide test app builders and request helpers.
+- [ ] Add isolated database and browser test utilities.
+- [ ] Add a full CRUD example and an authenticated example.
+- [ ] Document every stable public API and feature flag.
+- [ ] Verify examples in CI where practical.
+
+**Exit gate:** common app tasks need no undocumented workaround; APIs and examples match actual behavior.
+
+## Phase 8 — Performance, accessibility, and DX
+
+### 8.1 Performance
+- [ ] Benchmark reactivity, DOM updates, SSR throughput, latency, and memory.
+- [ ] Track client bundle size and startup cost.
+- [ ] Profile large lists, nested components, and frequent updates.
+- [ ] Define measurable performance budgets.
+- [ ] Optimize only from reproducible measurements.
+
+### 8.2 DX
+- [ ] Improve macro diagnostics.
+- [ ] Add hot reload only with documented state-preservation semantics.
+- [ ] Improve incremental build behavior.
+- [ ] Document editor support and formatting.
+- [ ] Test dev/production behavior differences.
+
+### 8.3 Accessibility and compatibility
+- [ ] Test keyboard interaction and focus management.
+- [ ] Define supported browser policy.
+- [ ] Test Chromium, Firefox, and WebKit where CI permits.
+- [ ] Document unsupported browser APIs and progressive enhancement.
+
+**Exit gate:** benchmarks are reproducible, accessibility is part of review, and supported targets are explicit.
+
+## Phase 9 — Security and supply-chain hardening
+
+### 9.1 Threat model
+- [ ] Threat-model SSR, hydration, sessions, cookies, server actions, uploads, and database access.
+- [ ] Document trust boundaries and untrusted input.
+- [ ] Review XSS, CSRF, SSRF, path traversal, request smuggling, and denial of service where applicable.
+- [ ] Require a security checklist for sensitive features.
+
+### 9.2 Automation
+- [ ] Run dependency advisory checks and secret scanning.
+- [ ] Inventory and review unsafe Rust.
+- [ ] Fuzz parsers, routing, deserialization, and exposed input surfaces.
+- [ ] Add regression tests for escaping and authorization.
+- [ ] Audit CI actions and release dependencies.
+
+### 9.3 Operations
+- [ ] Document TLS, secure headers, cookies, proxy trust, and rate limiting.
+- [ ] Ensure production errors do not leak secrets or internals.
+- [ ] Document backups, restores, incident response, and key rotation where relevant.
+- [ ] Verify private vulnerability reporting instructions.
+
+**Exit gate:** release-scope threat model and security review are complete; unresolved high-severity findings block release.
+
+## Phase 10 — Release candidate and production readiness
+
+### 10.1 API and compatibility
+- [ ] Review public APIs and experimental feature labels.
+- [ ] Define 1.0 API and deprecation policy.
+- [ ] Test feature combinations and supported targets.
+- [ ] Audit panic paths and error propagation.
+
+### 10.2 Reliability
+- [ ] Run unit, integration, browser E2E, and migration suites.
+- [ ] Run load and soak tests on representative applications.
+- [ ] Test shutdown, dependency outages, timeouts, and pool exhaustion.
+- [ ] Test repeated navigation and memory/lifecycle stability.
+- [ ] Verify rollback and recovery procedures.
+
+### 10.3 Deployment
+- [ ] Publish production build and deployment guides.
+- [ ] Document TLS/reverse proxy, environment, health checks, and asset caching.
+- [ ] Document migration rollout and rollback.
+- [ ] Document logs, metrics, tracing, alerting, backup, and restore.
+- [ ] Produce a dependency inventory/SBOM where feasible.
+
+### 10.4 Release
+- [ ] Verify license and third-party notices.
+- [ ] Publish release notes and known limitations.
+- [ ] Tag a release candidate and attach reproducible test evidence.
+- [ ] Obtain independent review and explicit maintainer approval.
+- [ ] Publish 1.0 only after all mandatory gates pass.
+
+**Exit gate:** security issues are resolved, compatibility is documented, deployment is tested, and maintainers approve the release.
+
+## Phase 11 — Ecosystem and maintenance
+
+### 11.1 Ecosystem
+- [ ] Add extension points only for validated use cases.
+- [ ] Publish component library and design-system guidance.
+- [ ] Maintain official integrations and starter templates.
+- [ ] Consider internationalization and advanced accessibility tooling.
+- [ ] Establish community support pathways.
+
+### 11.2 Maintenance
+- [ ] Maintain Rust/dependency support policy.
+- [ ] Publish security advisories and patch releases.
+- [ ] Track browser/database compatibility and regressions.
+- [ ] Maintain migration tools and upgrade guides.
+- [ ] Revisit ADRs and retire obsolete abstractions.
+
+**Exit gate:** repeatable release, support, security, and compatibility processes are established.
+
+## MVP definition
+
+The MVP must demonstrate:
+1. A Rust component with reactive signal state.
+2. An effect updating the correct DOM node after state changes.
+3. Event handlers and cleanup on component unmount.
+4. A todo example with conditional and keyed list updates.
+5. A Rust server serving routes and safe HTML/JSON responses.
+6. Unit, browser, and server integration tests in CI.
+7. A clean-checkout developer guide.
+
+SSR/hydration, full authentication, a custom ORM, and production deployment are later milestones. Do not imply they are part of the MVP.
+
+## Definition of done
+
+- [ ] Acceptance criteria pass.
+- [ ] Normal, edge, and failure paths have tests.
+- [ ] Public APIs and limitations are documented.
+- [ ] Security, accessibility, and performance impact is considered.
+- [ ] Examples and CI are updated.
+- [ ] Breaking changes are recorded.
+- [ ] No secrets, build artifacts, or unrelated changes are included.
