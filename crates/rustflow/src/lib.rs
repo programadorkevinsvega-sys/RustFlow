@@ -1,12 +1,15 @@
 //! RustFlow is an early-stage Rust-first full-stack web framework.
 //!
-//! This crate is the initial workspace anchor. Public APIs will be introduced
-//! only after their behavior and architectural boundaries are specified.
+//! This crate contains the initial RustFlow runtime foundations.
+//!
+//! The first implemented subsystem is the single-threaded reactive runtime.
 //!
 //! # Project status
 //!
 //! RustFlow is not production-ready. See the repository README and roadmap
 //! before relying on the project.
+
+pub mod reactivity;
 
 /// Returns the framework's current pre-release version.
 ///
