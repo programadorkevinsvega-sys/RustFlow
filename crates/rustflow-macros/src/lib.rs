@@ -10,7 +10,152 @@ use proc_macro::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenSt
 /// not adopt React's positional hook model.
 #[proc_macro_attribute]
 pub fn component(_attributes: TokenStream, item: TokenStream) -> TokenStream {
-    item
+    let tokens = item.clone().into_iter().collect::<Vec<_>>();
+    let Some(function_index) = tokens
+        .iter()
+        .position(|token| matches!(token, TokenTree::Ident(ident) if ident.to_string() == "fn"))
+    else {
+        return compile_error(ParseError {
+            message: "#[component] can only annotate a Rust function".into(),
+            span: Span::call_site(),
+        });
+    };
+    let Some(TokenTree::Ident(function_name)) = tokens.get(function_index + 1) else {
+        return compile_error(ParseError {
+            message: "#[component] expected a function name".into(),
+            span: Span::call_site(),
+        });
+    };
+    let name = function_name.to_string();
+    let Some(parameters) = tokens
+        .iter()
+        .skip(function_index + 2)
+        .find_map(|token| match token {
+            TokenTree::Group(group) if group.delimiter() == Delimiter::Parenthesis => {
+                Some(group.stream())
+            }
+            _ => None,
+        })
+    else {
+        return compile_error(ParseError {
+            message: "#[component] expected a parameter list".into(),
+            span: function_name.span(),
+        });
+    };
+
+    let mut parameter_names = Vec::new();
+    let mut bindings = String::new();
+    for parameter in split_parameters(parameters) {
+        if parameter.trim().is_empty() {
+            continue;
+        }
+        let Some((pattern, type_name)) = parameter.split_once(':') else {
+            return compile_error(ParseError {
+                message: "#[component] parameters must use simple named patterns with explicit types".into(),
+                span: function_name.span(),
+            });
+        };
+        let parameter_name = pattern
+            .split_whitespace()
+            .last()
+            .unwrap_or("")
+            .trim_start_matches("r#")
+            .to_owned();
+        if parameter_name.is_empty()
+            || !parameter_name
+                .chars()
+                .all(|character| character == '_' || character.is_ascii_alphanumeric())
+        {
+            return compile_error(ParseError {
+                message: "#[component] parameters must have simple identifier names".into(),
+                span: function_name.span(),
+            });
+        }
+        let type_name = type_name.trim();
+        let Some(conversion) = property_conversion(&parameter_name, type_name) else {
+            return compile_error(ParseError {
+                message: format!(
+                    "#[component] does not support prop type {type_name} for {parameter_name}; use String, bool, i32, i64, u32, usize, f64, or EventHandler"
+                ),
+                span: function_name.span(),
+            });
+        };
+        bindings.push_str(&conversion);
+        parameter_names.push(parameter_name);
+    }
+
+    let arguments = parameter_names.join(", ");
+    let definition_name = format!("__rustflow_component_definition_{}", name.to_ascii_lowercase());
+    let generated = format!(
+        r#"
+        #[allow(non_snake_case)]
+        {item}
+        #[allow(dead_code)]
+        pub fn {definition_name}() -> ::core::result::Result<
+            ::rustflow::components::ComponentDefinition,
+            ::rustflow::components::ComponentError
+        > {{
+            ::rustflow::components::ComponentDefinition::new({name:?}, move |_context, __props| {{
+                {bindings}
+                let __view = ::rustflow::view::IntoView::into_view({name}({arguments}))
+                    .map_err(::rustflow::components::ComponentError::View)?;
+                let __render: ::rustflow::components::ComponentRender =
+                    ::std::rc::Rc::new(move |_props, _children| Ok(__view.clone()));
+                Ok(__render)
+            }})
+        }}
+        "#,
+        item = item,
+        name = name,
+        definition_name = definition_name,
+        bindings = bindings,
+        arguments = arguments,
+    );
+    generated.parse().unwrap_or_else(|_| compile_error(ParseError {
+        message: "#[component] could not generate a valid typed component adapter".into(),
+        span: function_name.span(),
+    }))
+}
+
+fn split_parameters(parameters: TokenStream) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut current = TokenStream::new();
+    for token in parameters {
+        if matches!(&token, TokenTree::Punct(punct) if punct.as_char() == ',') {
+            result.push(current.to_string());
+            current = TokenStream::new();
+        } else {
+            current.extend([token]);
+        }
+    }
+    if !current.is_empty() {
+        result.push(current.to_string());
+    }
+    result
+}
+
+fn property_conversion(parameter: &str, type_name: &str) -> Option<String> {
+    let error = format!("invalid or missing component prop {parameter}");
+    let binding = format!("let __value_{parameter} = __props.iter().find(|prop| prop.name() == {parameter:?}).map(|prop| prop.value()).ok_or_else(|| ::rustflow::components::ComponentError::User({error:?}.to_owned()))?;");
+    let conversion = match type_name {
+        "String" => format!(
+            "let {parameter}: String = match __value_{parameter} {{ ::rustflow::view::PropertyValue::Text(value) => value.clone(), _ => return Err(::rustflow::components::ComponentError::User({error:?}.to_owned())), }};"
+        ),
+        "bool" => format!(
+            "let {parameter}: bool = match __value_{parameter} {{ ::rustflow::view::PropertyValue::Boolean(value) => *value, _ => return Err(::rustflow::components::ComponentError::User({error:?}.to_owned())), }};"
+        ),
+        "i32" | "i64" | "u32" | "usize" => format!(
+            "let {parameter}: {type_name} = match __value_{parameter} {{ ::rustflow::view::PropertyValue::Integer(value) => <{type_name} as ::core::convert::TryFrom<i64>>::try_from(*value).map_err(|_| ::rustflow::components::ComponentError::User({error:?}.to_owned()))?, _ => return Err(::rustflow::components::ComponentError::User({error:?}.to_owned())), }};"
+        ),
+        "f64" => format!(
+            "let {parameter}: f64 = match __value_{parameter} {{ ::rustflow::view::PropertyValue::Float(value) => *value, ::rustflow::view::PropertyValue::Integer(value) => *value as f64, _ => return Err(::rustflow::components::ComponentError::User({error:?}.to_owned())), }};"
+        ),
+        "EventHandler" | "::rustflow::view::EventHandler" => format!(
+            "let {parameter}: ::rustflow::view::EventHandler = match __value_{parameter} {{ ::rustflow::view::PropertyValue::Callback(value) => value.clone(), _ => return Err(::rustflow::components::ComponentError::User({error:?}.to_owned())), }};"
+        ),
+        _ => return None,
+    };
+    Some(format!("{binding}{conversion}"))
 }
 
 #[proc_macro]
@@ -125,12 +270,16 @@ impl ElementNode {
             let mut properties = Vec::new();
             let mut key = "None".to_owned();
             for attribute in &self.attributes {
-                if attribute.kind == AttributeKind::Event {
-                    continue;
-                }
                 let value = attribute.value.as_deref().unwrap_or("true");
                 if attribute.kind == AttributeKind::Key {
                     key = format!("Some(::rustflow::view::Key::from(({value})))");
+                    continue;
+                }
+                if attribute.kind == AttributeKind::Event {
+                    properties.push(format!(
+                        "::rustflow::view::Property::new({:?}, ::rustflow::view::PropertyValue::Callback(::rustflow::view::EventHandler::new(({value}))))?",
+                        format!("on_{}", attribute.name)
+                    ));
                     continue;
                 }
                 properties.push(format!(
@@ -273,21 +422,6 @@ impl Parser {
                 );
             }
             attributes.push(self.parse_attribute()?);
-        }
-
-        if component
-            && attributes
-                .iter()
-                .any(|attribute| attribute.kind == AttributeKind::Event)
-        {
-            let attribute = attributes
-                .iter()
-                .find(|attribute| attribute.kind == AttributeKind::Event)
-                .expect("event checked");
-            return Err(self.error(
-                "on:event handlers belong on DOM elements; component callback props are not yet part of view! syntax",
-                attribute.span,
-            ));
         }
 
         let mut children = Vec::new();
