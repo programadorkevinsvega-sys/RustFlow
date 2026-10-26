@@ -45,6 +45,14 @@ fn main() -> Result<(), RuntimeError> {
 
 `RuntimeError` distinguishes a disposed runtime, invalid signal/effect/scope handles, attempts to use disposed scopes, and scheduler cycle detection. Error text is informative but not a stable API in this prototype. The scheduler clears queued work when the cycle limit is exceeded and can be used for later independent updates.
 
+## Planned ergonomic component API (not implemented)
+
+RustFlow's product target is to let component authors use an API conceptually like `signal(initial)`, followed by `get()`, `set(value)`, and `update(|value| ...)`, without manually creating a `Runtime` in each component. This is a design target, not part of the current public API.
+
+The implemented API remains `Runtime::new()`, `Runtime::signal(value)`, and `Signal::get/set`; `Signal::update` and the standalone component-facing `signal(value)` helper are not currently available. See [ADR 0004](adr/0004-react-like-component-authoring.md) for the target experience and design questions.
+
+Any ergonomic façade must preserve explicit ownership and isolated runtime state. It must not be implemented as an undocumented process-global mutable runtime singleton. Reads inside view expressions must participate in documented dependency tracking once the renderer integration is implemented.
+
 ## Current limitations
 
-This prototype does not provide async effects, tracking across `await`, cross-thread notifications, DOM integration, components, SSR, hydration, or automatic scope disposal from `Drop`. Cleanup callbacks and effects are synchronous. With `panic = "abort"`, Rust cannot recover from user panics.
+This prototype does not provide async effects, tracking across `await`, cross-thread notifications, the ergonomic component-facing `signal(value)` façade, the `Signal::update` helper, automatic reactive interpolation in `view!`, the `#[component]` API, fine-grained DOM integration, SSR hydration, or automatic scope disposal from `Drop`. The lower-level component model and an initial DOM adapter exist, but they are not yet the integrated React-like authoring experience. Cleanup callbacks and effects are synchronous. With `panic = "abort"`, Rust cannot recover from user panics.
