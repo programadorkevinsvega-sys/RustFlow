@@ -168,10 +168,7 @@ struct DiffContext<'a> {
 }
 
 impl<'a> DiffContext<'a> {
-    fn new(
-        component_regions: &'a [ComponentRegion],
-        dynamic_regions: &'a [DynamicRegion],
-    ) -> Self {
+    fn new(component_regions: &'a [ComponentRegion], dynamic_regions: &'a [DynamicRegion]) -> Self {
         Self {
             component_regions,
             dynamic_regions,
@@ -193,9 +190,13 @@ impl<'a> DiffContext<'a> {
     }
 
     fn take_dynamic(&mut self, dynamic: &DynamicChild) -> Option<usize> {
-        let index = self.dynamic_regions.iter().enumerate().find_map(|(index, region)| {
-            (!self.used_dynamics[index] && region.dynamic.id() == dynamic.id()).then_some(index)
-        })?;
+        let index = self
+            .dynamic_regions
+            .iter()
+            .enumerate()
+            .find_map(|(index, region)| {
+                (!self.used_dynamics[index] && region.dynamic.id() == dynamic.id()).then_some(index)
+            })?;
         self.used_dynamics[index] = true;
         Some(index)
     }
@@ -927,13 +928,9 @@ impl DomRenderer {
                     context,
                 )?)
             }
-            (View::Fragment(old), View::Fragment(new)) => {
-                ReconciliationAction::Fragment(self.plan_sequence(
-                    old.children(),
-                    new.children(),
-                    context,
-                )?)
-            }
+            (View::Fragment(old), View::Fragment(new)) => ReconciliationAction::Fragment(
+                self.plan_sequence(old.children(), new.children(), context)?,
+            ),
             (View::KeyedList(old), View::KeyedList(new)) => {
                 ReconciliationAction::Keyed(self.plan_keyed_children(old, new, context)?)
             }
@@ -951,10 +948,8 @@ impl DomRenderer {
                 let next_view = region
                     .instance
                     .preview_update(&new.properties().to_vec(), &new.children().to_vec())?;
-                let mut nested_context = DiffContext::new(
-                    &region.mounted.component_regions,
-                    &region.mounted.dynamics,
-                );
+                let mut nested_context =
+                    DiffContext::new(&region.mounted.component_regions, &region.mounted.dynamics);
                 let child_plan =
                     self.plan_diff_with_context(&region.view, &next_view, &mut nested_context)?;
                 ReconciliationAction::Component {
@@ -981,11 +976,8 @@ impl DomRenderer {
                     &current.mounted.component_regions,
                     &current.mounted.dynamics,
                 );
-                let child_plan = self.plan_diff_with_context(
-                    &current.view,
-                    &next_view,
-                    &mut nested_context,
-                )?;
+                let child_plan =
+                    self.plan_diff_with_context(&current.view, &next_view, &mut nested_context)?;
                 ReconciliationAction::Dynamic {
                     region_index,
                     next_view,
