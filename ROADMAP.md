@@ -10,7 +10,7 @@ Reuse mature infrastructure for HTTP, async execution, database drivers, seriali
 
 ## Product-level acceptance gate: React-like authoring
 
-RustFlow is **not** intended to be a drop-in React-compatible replacement. However, its ordinary component-authoring experience must be recognizably declarative, typed, reactive, and convenient. This is a product requirement, not merely a future polish item.
+RustFlow is **not** intended to be a drop-in React-compatible replacement. However, its ordinary component-authoring experience must be recognizably declarative, typed, reactive, and convenient, using familiar React-inspired concepts and Rust-style names such as `use_state` and `use_effect`. This is a product requirement, not merely a future polish item. API names do not imply React's hook-cell ordering or exact signatures.
 
 The following is a **design target, not code that compiles against today's API**:
 
@@ -131,6 +131,9 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 ### 3.1 React-like public authoring API
 - [x] Record the public authoring contract and unresolved ownership/syntax decisions in an ADR before implementing the ergonomics layer (`docs/adr/0004-react-like-component-authoring.md`); the runtime/API implementation remains pending.
 - [ ] Provide an ergonomic `signal(value)` API with documented read, write, and update operations inside components; runtime/owner-scope isolation must remain explicit and tested.
+- [ ] Provide `use_state(initial)` as a familiar component-facing convenience backed by owner-bound signals; define its return type and document that it does not use React-style positional hook cells.
+- [ ] Provide `use_effect(...)` as an owner-scoped wrapper over dependency-tracked effects; specify cleanup before reruns and on component disposal.
+- [ ] Document the target `snake_case` vocabulary for `use_state`, `use_effect`, `use_memo`, `use_ref`, and `use_context`; clearly separate planned helpers from APIs already available.
 - [ ] Implement a `#[component]`-style function component API with typed props, useful missing/unknown/type-mismatch diagnostics, and automatic descriptor/registration integration for normal usage.
 - [ ] Support typed callback props so parent components can pass callbacks to child components.
 - [ ] Make ordinary signal interpolation in `view!` reactive by default; `@dynamic` must not be required for common signal-backed text/children.
@@ -149,6 +152,8 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [ ] Add targeted/dirty-subtree DOM updates. `DomRenderer::mount_reactive` now runs a render closure in an owned reactive effect and rerenders when tracked signals change, but it currently replaces the full mounted range; the target is to patch affected regions while preserving node/component identity.
 - [x] Dispose registered component scopes and listeners on unmount.
 - [ ] Implement conditional rendering and keyed dynamic-list reconciliation (keyed snapshots render in order, but updates currently replace the full range).
+- [ ] Separate dynamic view evaluation/diff planning from DOM commit; diff compatible nodes by type and properties and reconcile keyed children by stable key, with safe replacement when node types are incompatible.
+- [ ] Implement root-level event delegation for supported bubbling events, with direct-listener fallbacks when native event semantics require them; test propagation, normalized payloads, and disposal.
 
 ### 3.4 MVP examples
 - [ ] Build a reactive counter.
@@ -283,6 +288,10 @@ The broader transport/deployment tests listed under Phase 4.2 remain pending and
 
 ### 7.2 UI completeness
 - [ ] Improve contexts, dynamic lists, fragments, forms, and controlled inputs.
+- [ ] Add `use_memo` for derived computations with documented dependency tracking and caching semantics.
+- [ ] Add `use_ref` for stable non-reactive component-scoped storage and DOM handles.
+- [ ] Add typed provider/context support and `use_context`, including nearest-provider lookup and missing-context behavior.
+- [ ] Keep all `use_*` APIs owner-scoped and signal-model-native; do not introduce positional hook cells unless a separate ADR explicitly changes the architecture.
 - [ ] Define error isolation behavior.
 - [ ] Add loading/async rendering semantics only when runtime design supports them.
 - [ ] Document styling and asset integration.
