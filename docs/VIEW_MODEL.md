@@ -29,4 +29,4 @@ ComponentInstance produces a replacement view tree; it does not itself mutate a 
 
 ## Declarative macro
 
-The follow-up macro crate is not part of this commit yet. Until its grammar and compile-fail tests are merged, construct views with the typed builders and check all fallible constructors.
+The rustflow-macros crate exposes rustflow::view! with a constrained HTML-like grammar. Tags must close correctly; children can be Rust literals or brace-delimited expressions; plain attributes, boolean attributes, prop:name values, on:event handlers, keyed nodes using key={value}, @dynamic { expression }, and uppercase component descriptors are supported. It returns Result<View, ViewError>. Parser errors use a source span and compile_error! diagnostic. See rustdoc examples and compile-fail checks for the supported contract.

@@ -9,6 +9,8 @@
 //! RustFlow is not production-ready. See the repository README and roadmap
 //! before relying on the project.
 
+extern crate self as rustflow;
+
 pub mod components;
 pub mod reactivity;
 
@@ -30,6 +32,7 @@ pub mod reactivity;
 /// let _page = page().expect("valid static view tree");
 /// ```
 pub use rustflow_view as view;
+pub use rustflow_macros::view;
 
 /// Returns the framework's current pre-release version.
 ///
@@ -48,3 +51,26 @@ mod tests {
         assert_eq!(version(), "0.1.0");
     }
 }
+
+#[doc = "Builds a typed view tree from constrained HTML-like syntax."]
+#[doc = ""]
+#[doc = "Text is written as a Rust literal, expressions are wrapped in braces, event handlers use on:event={closure}, DOM properties use prop:name={value}, and @dynamic { expression } defers a child evaluator. Uppercase tags create component descriptors."]
+#[doc = ""]
+#[doc = "The macro returns Result<View, ViewError>."]
+#[doc = ""]
+#[doc = "Example:"]
+#[doc = "```"]
+#[doc = "use rustflow::{view, view::View};"]
+#[doc = "fn page() -> Result<View, rustflow::view::ViewError> {"]
+#[doc = "    view! { <main class=\"welcome\"><h1>\"Hello, RustFlow\"</h1><button disabled on:click={move |_event| {}}> \"Continue\" </button></main> }"]
+#[doc = "}"]
+#[doc = "let _page = page().expect(\"valid view\");"]
+#[doc = "```"]
+#[doc = ""]
+#[doc = "A mismatched closing tag produces a source-located compile error:"]
+#[doc = ""]
+#[doc = "```compile_fail"]
+#[doc = "fn invalid() -> Result<rustflow::view::View, rustflow::view::ViewError> {"]
+#[doc = "    rustflow::view! { <div>\"text\"</span> }"]
+#[doc = "}"]
+#[doc = "```"]
