@@ -14,7 +14,7 @@ Introduce the `rustflow-dom` adapter crate. Its browser implementation compiles 
 
 The initial DOM renderer uses comment anchors around the mounted range so fragment roots can be replaced without a visible wrapper. It supports a deliberately constrained allowlist of common semantic elements, text nodes, typed attributes/properties, event callbacks, fragments, keyed-list snapshots, deferred child evaluation on mount/update, and component descriptors registered with `ComponentRegistry`. Event listeners and component scopes are released on update/unmount. Updates currently rebuild the rendered range rather than perform keyed reconciliation.
 
-The renderer rejects elements outside its allowlist, inline `style` attributes, and URL values with active schemes. This renderer policy is separate from the view model's syntax validation. It is a starting safety boundary, not a complete browser security review.
+The renderer rejects elements outside its allowlist, inline `style` attributes, DOM properties named `style` or `on*`, and URL values whose explicit scheme is not one of `http`, `https`, `mailto`, or `tel`. Relative URLs (including root-relative and fragment URLs) are allowed. URL schemes are normalized by removing ASCII control characters and lowercasing before the scheme check. The `srcset` and `ping` multi-URL attributes are rejected until a dedicated parser can validate each candidate. The renderer's policy is separate from the view model's syntax validation. It is a starting safety boundary, not a complete browser security review; the tree itself must never be treated as safe HTML.
 
 ## Alternatives considered
 
