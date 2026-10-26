@@ -802,11 +802,10 @@ impl Application {
                 .await
                 {
                     Ok(response) => response,
-                    Err(_) => attach_request_id(
-                        HttpError::gateway_timeout().into_response(),
-                        &request_id,
-                    )
-                    .into_axum_response(),
+                    Err(_) => {
+                        attach_request_id(HttpError::gateway_timeout().into_response(), &request_id)
+                            .into_axum_response()
+                    }
                 }
             }
         };
