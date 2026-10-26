@@ -200,12 +200,15 @@ fn url_scheme(value: &str) -> Option<&str> {
     }
     let candidate = &value[..colon];
     let mut characters = candidate.chars();
-    if !characters.next().is_some_and(|character| character.is_ascii_alphabetic()) {
+    if !characters
+        .next()
+        .is_some_and(|character| character.is_ascii_alphabetic())
+    {
         return None;
     }
-    if !characters.all(|character| {
-        character.is_ascii_alphanumeric() || matches!(character, '+' | '.' | '-')
-    }) {
+    if !characters
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '+' | '.' | '-'))
+    {
         return None;
     }
     Some(candidate)
