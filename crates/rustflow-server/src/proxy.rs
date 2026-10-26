@@ -210,9 +210,12 @@ fn parse_x_forwarded_for(value: &str) -> Vec<IpAddr> {
 }
 
 fn parse_forwarded_proto(value: &str) -> Option<String> {
+    // Some proxies emit a comma-separated X-Forwarded-Proto chain. The rightmost
+    // token is the value supplied by the closest trusted proxy; never let an
+    // earlier client-supplied token override it.
     let token = value
         .split(',')
-        .next()
+        .next_back()
         .unwrap_or(value)
         .trim()
         .trim_matches('"');
@@ -415,6 +418,20 @@ mod tests {
                 "forwarded",
                 "for=203.0.113.10;proto=http;Proto=https",
             )]),
+            &policy,
+            false,
+        );
+        assert!(!identity.https);
+    }
+
+    #[test]
+    fn x_forwarded_proto_uses_rightmost_trusted_value() {
+        let policy = ClientAddressPolicy::TrustedProxies(vec![
+            IpNetwork::parse("127.0.0.1/32").expect("loopback"),
+        ]);
+        let identity = resolve_client_identity(
+            Some("127.0.0.1:80".parse().expect("peer")),
+            &headers(&[("x-forwarded-proto", "https, http")]),
             &policy,
             false,
         );
