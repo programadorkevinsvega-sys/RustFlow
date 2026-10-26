@@ -48,11 +48,11 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Define single-threaded browser behavior and server-side isolation/thread-safety boundaries (accepted contract: `docs/REACTIVITY_SEMANTICS.md`).
 
 ### 1.2 Implementation
-- [ ] Implement typed signals.
-- [ ] Implement effects and dependency graph.
-- [ ] Implement scheduler and batching.
-- [ ] Implement owner scopes and disposal.
-- [ ] Add diagnostics for invalid/disposed runtime use.
+- [x] Implement typed signals (`crates/rustflow/src/reactivity.rs`).
+- [x] Implement effects and dependency graph (`crates/rustflow/src/reactivity.rs`).
+- [x] Implement scheduler and batching (`crates/rustflow/src/reactivity.rs`).
+- [x] Implement owner scopes and disposal (`crates/rustflow/src/reactivity.rs`).
+- [x] Add diagnostics for invalid/disposed runtime use (`RuntimeError` in `crates/rustflow/src/reactivity.rs`).
 
 ### 1.3 Correctness
 - [ ] Test that only dependent effects rerun.
