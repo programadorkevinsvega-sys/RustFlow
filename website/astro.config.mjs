@@ -8,7 +8,7 @@ export default defineConfig({
     starlight({
       title: 'RustFlow',
       description: 'Documentación para desarrolladores de RustFlow.',
-      defaultLocale: 'es',
+      defaultLocale: 'root',
       locales: { root: { label: 'Español', lang: 'es' } },
       sidebar: [
         { label: 'Introducción', items: [
