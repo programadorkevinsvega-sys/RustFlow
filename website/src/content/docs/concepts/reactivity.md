@@ -18,7 +18,7 @@ El runtime reactivo de RustFlow se implementa en crates/rustflow/src/reactivity.
 
 El runtime inicial utiliza Rc y RefCell y es de un solo hilo: no es Send ni Sync. No lo trates como un runtime concurrente.
 
-La implementación ya existe, pero la fase de corrección y los benchmarks siguen pendientes en el roadmap. Por ello, esta guía describe el comportamiento actual sin afirmar que todos los casos límite estén validados.
+La fase de corrección cuenta con pruebas de regresión ampliadas que pasaron CI en Rust 1.85 y stable. La fase de rendimiento dispone de una línea base inicial medida en tres repeticiones; los números y las limitaciones del entorno están documentados en `docs/REACTIVITY_VERIFICATION.md`. Esto mejora la evidencia disponible, pero no afirma que se hayan probado todas las secuencias posibles ni establece una garantía de rendimiento.
 
 ## Fuente técnica
 
