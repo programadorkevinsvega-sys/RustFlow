@@ -62,7 +62,7 @@ For shutdown, call `serve_with_shutdown(address, shutdown_future)` or `serve_lis
 
 `ServerConfig::production()` requires HTTPS after client-address resolution. Plaintext `serve` is accepted in production only when `with_trusted_proxies` lists the reverse-proxy networks that may set `Forwarded` / `X-Forwarded-For` / `X-Forwarded-Proto`. Direct client addresses with HTTPS use `serve_tls` / `serve_tls_with_shutdown` and PEM material via `tls_server_config_from_pem`. Call `validate()` before a plaintext bind and `validate_tls()` before a TLS bind.
 
-Forwarded headers are ignored unless the TCP peer is in the trusted-proxy set. `Request::client_ip()` and `Request::is_https()` expose the reconstructed identity. Spoofed headers from untrusted peers do not change the client IP or scheme. Missing HTTPS when required returns 400 with a generic public message.
+Forwarded headers are ignored unless the TCP peer is in the trusted-proxy set. `Request::client_ip()` and `Request::is_https()` expose the reconstructed identity. For RFC 7239 `Forwarded`, the scheme is taken only from the rightmost element; an absent, invalid, or duplicated `proto` there fails closed instead of falling back to an earlier element that could be client-supplied. For comma-separated `X-Forwarded-Proto`, the rightmost token is used. Configure the trusted edge proxy to emit the authoritative scheme value at the rightmost position and protect the proxy-to-origin connection. Spoofed values from untrusted peers do not change the resolved identity. Missing HTTPS when required returns 400 with a generic public message.
 
 ## Request IDs and tracing
 
