@@ -124,6 +124,12 @@ Rules:
 - Define keyed-list identity and hydration behavior explicitly.
 - Signal reads must not trigger hidden network requests.
 - Semantic HTML and accessibility are product requirements.
+- **React-like authoring is a product contract, not a promise of React API compatibility.** The common component workflow must offer typed function components/props, owned ergonomic signals, automatically tracked signal interpolation, typed callback props, and deterministic cleanup.
+- Do not treat the existence of `view!`, a `Dynamic` node, or a reactive full-range rerender as sufficient completion of that contract.
+- Component-facing signal helpers must remain bound to an explicit runtime/owner scope. Do not use a hidden process-global mutable runtime to make `signal(value)` superficially convenient; record any alternative in an ADR and prove component/request isolation.
+- Fine-grained rendering must preserve node/component identity where reconciliation says a child is the same. Tests must verify observable DOM changes and keyed identity, not just equality of generated view trees.
+- Before Phase 3 closes, compile and run the intended Counter and todo examples with browser E2E tests, including callback props, conditional/keyed updates, and listener/effect cleanup.
+- If the illustrative public syntax changes, update the ADR, roadmap, examples, and public documentation before implementation is accepted.
 
 ## 9. Server/client boundary
 
@@ -225,3 +231,4 @@ Public documentation is a developer-facing product surface, not a mirror of Rust
 - [ ] Security, accessibility, performance, and MSRV impact were considered.
 - [ ] Unsafe code has a written safety argument.
 - [ ] Relevant ADRs and roadmap items are updated.
+- [ ] React-like authoring acceptance criteria are evaluated against compiling examples and browser behavior, not syntax similarity alone.
