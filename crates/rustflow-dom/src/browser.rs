@@ -88,9 +88,17 @@ struct EventListener {
     callback: Closure<dyn FnMut(Event)>,
 }
 
+#[derive(Clone)]
+struct DelegatedBinding {
+    element: DomElement,
+    name: String,
+    handler: EventHandler,
+}
+
 #[derive(Default)]
 struct RenderedNodes {
     listeners: Vec<EventListener>,
+    delegated: Vec<DelegatedBinding>,
     components: Vec<ComponentInstance>,
     dynamics: Vec<DynamicRegion>,
 }
@@ -114,6 +122,8 @@ pub struct MountedDom {
     end: Comment,
     roots: Vec<Node>,
     listeners: Vec<EventListener>,
+    delegated_listeners: Vec<EventListener>,
+    delegated_bindings: Rc<RefCell<Vec<DelegatedBinding>>>,
     components: Vec<ComponentInstance>,
     dynamics: Vec<DynamicRegion>,
 }
@@ -235,6 +245,11 @@ impl DomRenderer {
             let _ = cleanup_mounted_resources(&mut mounted);
             return Err(error);
         }
+        if let Err(error) = self.activate_delegated_listeners(&mut mounted, &parent) {
+            let _ = detach_range(&mut mounted);
+            let _ = cleanup_mounted_resources(&mut mounted);
+            return Err(error);
+        }
         if let Err(error) = self.activate_dynamic_regions(&mut mounted.dynamics) {
             let _ = detach_range(&mut mounted);
             let _ = cleanup_mounted_resources(&mut mounted);
@@ -276,6 +291,7 @@ impl DomRenderer {
             let next_view = match render() {
                 Ok(view) => view,
                 Err(error) => {
+                    web_sys::console::error_1(&JsValue::from_str(&error.to_string()));
                     *error_effect.borrow_mut() = Some(error);
                     return;
                 }
@@ -294,7 +310,10 @@ impl DomRenderer {
                         current.view = next_view;
                         *error_effect.borrow_mut() = None;
                     }
-                    Err(error) => *error_effect.borrow_mut() = Some(error),
+                    Err(error) => {
+                        web_sys::console::error_1(&JsValue::from_str(&error.to_string()));
+                        *error_effect.borrow_mut() = Some(error);
+                    },
                 }
             } else {
                 match renderer.mount_into(&target, &next_view) {
@@ -334,11 +353,92 @@ impl DomRenderer {
         })
     }
 
+    fn activate_delegated_listeners(
+        &self,
+        mounted: &mut MountedDom,
+        boundary: &Node,
+    ) -> Result<(), DomError> {
+        let event_names = {
+            let bindings = mounted.delegated_bindings.borrow();
+            let mut names = Vec::<String>::new();
+            for binding in bindings.iter() {
+                if event_uses_delegation(&binding.name) && !names.iter().any(|name| name == &binding.name) {
+                    names.push(binding.name.clone());
+                }
+            }
+            names
+        };
+
+        for name in event_names {
+            // Keep one listener per event type and mount boundary. Its shared
+            // binding table is replaced during reconciliation, without dropping
+            // the currently-dispatching closure or adding duplicate listeners.
+            if mounted.delegated_listeners.iter().any(|listener| listener.name == name) {
+                continue;
+            }
+
+            let target: EventTarget = boundary.clone().unchecked_into();
+            let bindings = mounted.delegated_bindings.clone();
+            let event_name = name.clone();
+            let boundary_node = boundary.clone();
+            let callback = Closure::<dyn FnMut(Event)>::new(move |event| {
+                let Some(event_target) = event.target() else {
+                    return;
+                };
+                let Ok(mut current) = event_target.dyn_into::<Node>() else {
+                    return;
+                };
+
+                loop {
+                    let handlers = {
+                        let registered = bindings.borrow();
+                        registered
+                            .iter()
+                            .filter_map(|binding| {
+                                if binding.name != event_name {
+                                    return None;
+                                }
+                                let bound_node: Node = binding.element.clone().unchecked_into();
+                                bound_node
+                                    .is_same_node(Some(&current))
+                                    .then(|| binding.handler.clone())
+                            })
+                            .collect::<Vec<_>>()
+                    };
+                    for handler in handlers {
+                        handler.invoke(event_payload(&event));
+                    }
+
+                    if current.is_same_node(Some(&boundary_node)) {
+                        break;
+                    }
+                    let Some(parent_node) = current.parent_node() else {
+                        break;
+                    };
+                    current = parent_node;
+                }
+            });
+
+            target
+                .add_event_listener_with_callback(&name, callback.as_ref().unchecked_ref())
+                .map_err(js_error)?;
+            mounted.delegated_listeners.push(EventListener {
+                target,
+                name,
+                callback,
+            });
+        }
+        Ok(())
+    }
+
     fn activate_dynamic_regions(&self, regions: &mut [DynamicRegion]) -> Result<(), DomError> {
         for region in regions {
             {
                 let mut state = region.state.borrow_mut();
                 if let Some(state) = state.as_mut() {
+                    if let Some(parent) = state.mounted.start.parent_node() {
+                        self.activate_delegated_listeners(&mut state.mounted, &parent)?;
+                    }
                     self.activate_dynamic_regions(&mut state.mounted.dynamics)?;
                 }
             }
@@ -357,8 +457,10 @@ impl DomRenderer {
                 let next_view = match dynamic.evaluate() {
                     Ok(view) => view,
                     Err(error) => {
+                        let error = DomError::from(error);
+                        web_sys::console::error_1(&JsValue::from_str(&error.to_string()));
                         if let Some(sink) = &error_sink {
-                            *sink.borrow_mut() = Some(DomError::from(error));
+                            *sink.borrow_mut() = Some(error);
                         }
                         return;
                     }
@@ -387,6 +489,7 @@ impl DomRenderer {
                         }
                     }
                     Err(error) => {
+                        web_sys::console::error_1(&JsValue::from_str(&error.to_string()));
                         if let Some(sink) = &error_sink {
                             *sink.borrow_mut() = Some(error);
                         }
@@ -483,9 +586,17 @@ impl DomRenderer {
 
         let event_target: EventTarget = element.clone().unchecked_into();
         for binding in view.events() {
-            resources
-                .listeners
-                .push(create_event_listener(&event_target, binding)?);
+            if event_uses_delegation(binding.name()) {
+                resources.delegated.push(DelegatedBinding {
+                    element: element.clone(),
+                    name: binding.name().to_owned(),
+                    handler: binding.handler(),
+                });
+            } else {
+                resources
+                    .listeners
+                    .push(create_event_listener(&event_target, binding)?);
+            }
         }
 
         for child in view.children() {
@@ -544,6 +655,8 @@ impl DomRenderer {
             end: end.clone(),
             roots: roots.clone(),
             listeners: inner.listeners,
+            delegated_listeners: Vec::new(),
+            delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
             components: inner.components,
             dynamics: inner.dynamics,
         };
@@ -620,11 +733,15 @@ impl DomRenderer {
             }
         }
 
-        cleanup_mounted_resources(mounted)?;
+        cleanup_mounted_content(mounted)?;
         mounted.roots = next_roots;
         mounted.listeners = resources.listeners;
         mounted.components = resources.components;
         mounted.dynamics = resources.dynamics;
+        *mounted.delegated_bindings.borrow_mut() = resources.delegated;
+        if let Some(parent) = mounted.start.parent_node() {
+            self.activate_delegated_listeners(mounted, &parent)?;
+        }
         self.activate_dynamic_regions(&mut mounted.dynamics)?;
         Ok(())
     }
@@ -765,9 +882,17 @@ impl DomRenderer {
 
         let target: EventTarget = element.clone().unchecked_into();
         for binding in next.events() {
-            resources
-                .listeners
-                .push(create_event_listener(&target, binding)?);
+            if event_uses_delegation(binding.name()) {
+                resources.delegated.push(DelegatedBinding {
+                    element: element.clone(),
+                    name: binding.name().to_owned(),
+                    handler: binding.handler(),
+                });
+            } else {
+                resources
+                    .listeners
+                    .push(create_event_listener(&target, binding)?);
+            }
         }
         Ok(())
     }
@@ -1007,6 +1132,8 @@ impl Renderer for DomRenderer {
             end,
             roots,
             listeners: resources.listeners,
+            delegated_listeners: Vec::new(),
+            delegated_bindings: Rc::new(RefCell::new(resources.delegated)),
             components: resources.components,
             dynamics: resources.dynamics,
         })
@@ -1050,16 +1177,17 @@ impl Renderer for DomRenderer {
                 }
             };
 
-            let cleanup_error = cleanup_mounted_resources(mounted).err();
+            let cleanup_error = cleanup_mounted_content(mounted).err();
             mounted.roots = roots;
             mounted.listeners = resources.listeners;
             mounted.components = resources.components;
             mounted.dynamics = resources.dynamics;
-            let activation_error = self.activate_dynamic_regions(&mut mounted.dynamics).err();
-            match (cleanup_error, activation_error) {
-                (Some(error), _) | (None, Some(error)) => Err(error),
-                (None, None) => Ok(()),
+            *mounted.delegated_bindings.borrow_mut() = resources.delegated;
+            if let Some(error) = cleanup_error {
+                return Err(error);
             }
+            self.activate_delegated_listeners(mounted, &parent)?;
+            self.activate_dynamic_regions(&mut mounted.dynamics)
         } else {
             self.replace_range(mounted, next)
         }
@@ -1120,6 +1248,7 @@ fn cleanup_rendered_nodes(resources: &mut RenderedNodes) -> Result<(), DomError>
         cleanup_resources(&mut resources.listeners, &mut resources.components),
     );
     first_error(&mut error, cleanup_dynamic_regions(&mut resources.dynamics));
+    resources.delegated.clear();
     match error {
         Some(error) => Err(error),
         None => Ok(()),
@@ -1132,14 +1261,7 @@ fn cleanup_dynamic_regions(regions: &mut Vec<DynamicRegion>) -> Result<(), DomEr
         first_error(&mut error, region.scope.dispose().map_err(Into::into));
         if let Some(mut state) = region.state.borrow_mut().take() {
             first_error(&mut error, detach_range(&mut state.mounted));
-            first_error(
-                &mut error,
-                cleanup_resources(&mut state.mounted.listeners, &mut state.mounted.components),
-            );
-            first_error(
-                &mut error,
-                cleanup_dynamic_regions(&mut state.mounted.dynamics),
-            );
+            first_error(&mut error, cleanup_mounted_resources(&mut state.mounted));
         }
     }
     match error {
@@ -1148,13 +1270,27 @@ fn cleanup_dynamic_regions(regions: &mut Vec<DynamicRegion>) -> Result<(), DomEr
     }
 }
 
-fn cleanup_mounted_resources(mounted: &mut MountedDom) -> Result<(), DomError> {
+fn cleanup_mounted_content(mounted: &mut MountedDom) -> Result<(), DomError> {
     let mut error = None;
     first_error(
         &mut error,
         cleanup_resources(&mut mounted.listeners, &mut mounted.components),
     );
     first_error(&mut error, cleanup_dynamic_regions(&mut mounted.dynamics));
+    mounted.delegated_bindings.borrow_mut().clear();
+    match error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+fn cleanup_mounted_resources(mounted: &mut MountedDom) -> Result<(), DomError> {
+    let mut error = None;
+    first_error(&mut error, cleanup_mounted_content(mounted));
+    first_error(
+        &mut error,
+        cleanup_event_listeners(&mut mounted.delegated_listeners),
+    );
     match error {
         Some(error) => Err(error),
         None => Ok(()),
@@ -1214,10 +1350,7 @@ fn detach_range(mounted: &mut MountedDom) -> Result<(), DomError> {
     }
 }
 
-fn cleanup_resources(
-    listeners: &mut Vec<EventListener>,
-    components: &mut Vec<ComponentInstance>,
-) -> Result<(), DomError> {
+fn cleanup_event_listeners(listeners: &mut Vec<EventListener>) -> Result<(), DomError> {
     let mut first_error = None;
     for listener in listeners.drain(..) {
         if let Err(error) = listener.target.remove_event_listener_with_callback(
@@ -1230,6 +1363,17 @@ fn cleanup_resources(
         }
         drop(listener.callback);
     }
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+fn cleanup_resources(
+    listeners: &mut Vec<EventListener>,
+    components: &mut Vec<ComponentInstance>,
+) -> Result<(), DomError> {
+    let mut first_error = cleanup_event_listeners(listeners).err();
     for component in components.iter_mut().rev() {
         if let Err(error) = component.unmount() {
             if first_error.is_none() {
@@ -1242,6 +1386,35 @@ fn cleanup_resources(
         Some(error) => Err(error),
         None => Ok(()),
     }
+}
+
+fn event_uses_delegation(name: &str) -> bool {
+    matches!(
+        name,
+        "click"
+            | "dblclick"
+            | "input"
+            | "change"
+            | "submit"
+            | "keydown"
+            | "keyup"
+            | "keypress"
+            | "pointerdown"
+            | "pointerup"
+            | "pointermove"
+            | "mousedown"
+            | "mouseup"
+            | "mouseover"
+            | "mouseout"
+            | "contextmenu"
+            | "focusin"
+            | "focusout"
+            | "touchstart"
+            | "touchend"
+            | "dragstart"
+            | "dragend"
+            | "drop"
+    )
 }
 
 fn create_event_listener(

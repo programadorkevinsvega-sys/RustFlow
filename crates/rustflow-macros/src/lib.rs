@@ -90,10 +90,19 @@ pub fn component(_attributes: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     let arguments = parameter_names.join(", ");
+    let allowed_props = parameter_names
+        .iter()
+        .map(|parameter| format!("{parameter:?}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let unknown_check = format!(
+        "let __rustflow_allowed_props: &[&str] = &[{allowed_props}]; if let Some(__unknown) = __props.iter().find(|__prop| !__rustflow_allowed_props.contains(&__prop.name())) {{ return Err(::rustflow::components::ComponentError::User(format!(\"unknown prop `{{}}` for component `{{}}`\", __unknown.name(), {name:?}))); }}"
+    );
     let definition_name = format!(
         "__rustflow_component_definition_{}",
         name.to_ascii_lowercase()
     );
+    let register_name = format!("register_{}", name.to_ascii_lowercase());
     let generated = format!(
         r#"
         #[allow(non_snake_case)]
@@ -104,6 +113,7 @@ pub fn component(_attributes: TokenStream, item: TokenStream) -> TokenStream {
             ::rustflow::components::ComponentError
         > {{
             ::rustflow::components::ComponentDefinition::new({name:?}, move |_context, __props| {{
+                {unknown_check}
                 {bindings}
                 let __view = ::rustflow::view::IntoView::into_view({name}({arguments}))
                     .map_err(::rustflow::components::ComponentError::View)?;
@@ -112,10 +122,19 @@ pub fn component(_attributes: TokenStream, item: TokenStream) -> TokenStream {
                 Ok(__render)
             }})
         }}
+
+        #[allow(dead_code)]
+        pub fn {register_name}(
+            registry: &mut ::rustflow::components::ComponentRegistry,
+        ) -> ::core::result::Result<(), ::rustflow::components::ComponentError> {{
+            registry.register({definition_name}()?)
+        }}
         "#,
         item = item,
         name = name,
         definition_name = definition_name,
+        register_name = register_name,
+        unknown_check = unknown_check,
         bindings = bindings,
         arguments = arguments,
     );

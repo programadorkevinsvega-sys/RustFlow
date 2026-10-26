@@ -30,7 +30,7 @@ fn Counter(initial: i32) -> impl IntoView {
                 <span data-testid="counter-value">{count}</span>
             </p>
             <button on:click={move |_payload| count_for_button.update(|value| *value += 1)}>
-                "Increment"
+                <span data-testid="increment-label">"Increment"</span>
             </button>
         </section>
     }
@@ -97,9 +97,7 @@ pub fn start() -> Result<(), JsValue> {
     let show_help = runtime.signal(true).map_err(display_error)?;
 
     let mut registry = ComponentRegistry::new();
-    registry
-        .register(__rustflow_component_definition_counter().map_err(display_error)?)
-        .map_err(display_error)?;
+    register_counter(&mut registry).map_err(display_error)?;
 
     let mut renderer = DomRenderer::new(document.clone(), runtime, registry);
     let mounted = renderer

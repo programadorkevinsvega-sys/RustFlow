@@ -9,7 +9,7 @@ From this directory:
 ```sh
 cargo install wasm-pack --locked --version 0.13.1
 npm install
-npm run build:wasm
+npm run build
 npm run check:bundle
 npm run dev
 ```
@@ -23,6 +23,8 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The browser tests verify that counter updates retain the relevant DOM element, conditional regions mount and unmount, and keyed todo nodes keep their identity when their order changes. CI also reports raw and gzip WASM sizes and enforces a 1.5 MiB raw WASM budget.
+The production build emits static assets under `dist/` and JavaScript source maps. The debug-only WASM build (`npm run build:wasm:debug`) retains development symbols; reactive DOM errors are reported to the browser console and are also available through `ReactiveMountedDom::take_error`. The example intentionally keeps the optimized release WASM separate from the debug build.
+
+The browser tests verify that a click originating inside a nested button child bubbles to its delegated handler, counter updates retain the relevant DOM element, conditional regions mount and unmount, and keyed todo nodes keep their identity when their order changes. CI also reports raw and gzip WASM sizes and enforces a 1.5 MiB raw WASM budget.
 
 This is an early-stage framework example, not a production-ready app. The server-side rendering, hydration, and deployment phases are deliberately outside this package.

@@ -9,7 +9,7 @@ test("counter increments by patching its existing DOM node", async ({ page }) =>
   const originalNode = await counterValue.elementHandle();
 
   await expect(counterValue).toHaveText("0");
-  await page.getByRole("button", { name: "Increment" }).click();
+  await page.getByTestId("increment-label").click();
   await expect(counterValue).toHaveText("1");
   await page.getByRole("button", { name: "Increment" }).click();
   await expect(counterValue).toHaveText("2");
@@ -41,6 +41,8 @@ test("todo CRUD and keyed reorder preserve existing row identity", async ({ page
   await page.getByRole("button", { name: "Remove First task" }).click();
   await expect(page.getByTestId("todo-1")).toHaveCount(0);
   await expect(page.getByTestId("todo-2")).toContainText("Second task");
+  await page.getByRole("checkbox", { name: "Mark Second task complete" }).check();
+  await expect(page.getByTestId("todo-2")).toContainText("✓ Second task");
 });
 
 test("conditional child mounts and unmounts without replacing the application", async ({ page }) => {

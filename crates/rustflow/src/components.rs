@@ -648,10 +648,11 @@ mod tests {
         let count = retained.borrow().as_ref().unwrap().clone();
         assert_eq!(count.get(), 1);
         count.set(2);
+        assert_eq!(cleanup_count.get(), 1);
         assert_eq!(instance.view(), &View::text("1"));
 
         instance.unmount().expect("unmount component owner");
-        assert_eq!(cleanup_count.get(), 1);
+        assert_eq!(cleanup_count.get(), 2);
         assert_eq!(
             count.try_get(),
             Err(crate::reactivity::RuntimeError::InvalidSignal)
