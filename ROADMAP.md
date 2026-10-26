@@ -129,7 +129,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 ## Phase 3 — Browser runtime and interactive MVP
 
 ### 3.1 React-like public authoring API
-- [ ] Record the public authoring contract and unresolved ownership/syntax decisions in an ADR before implementing the ergonomics layer.
+- [x] Record the public authoring contract and unresolved ownership/syntax decisions in an ADR before implementing the ergonomics layer (`docs/adr/0004-react-like-component-authoring.md`); the runtime/API implementation remains pending.
 - [ ] Provide an ergonomic `signal(value)` API with documented read, write, and update operations inside components; runtime/owner-scope isolation must remain explicit and tested.
 - [ ] Implement a `#[component]`-style function component API with typed props, useful missing/unknown/type-mismatch diagnostics, and automatic descriptor/registration integration for normal usage.
 - [ ] Support typed callback props so parent components can pass callbacks to child components.
