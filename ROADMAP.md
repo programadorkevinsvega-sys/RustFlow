@@ -8,6 +8,37 @@ RustFlow aims to combine React-like reactive UI components, a Rust-owned reactiv
 
 Reuse mature infrastructure for HTTP, async execution, database drivers, serialization, and cryptography. Do not reinvent an async runtime, database drivers, or cryptographic primitives.
 
+## Product-level acceptance gate: React-like authoring
+
+RustFlow is **not** intended to be a drop-in React-compatible replacement. However, its ordinary component-authoring experience must be recognizably declarative, typed, reactive, and convenient. This is a product requirement, not merely a future polish item.
+
+The following is a **design target, not code that compiles against today's API**:
+
+```rust
+#[component]
+fn Counter(initial: i32) -> impl IntoView {
+    let count = signal(initial);
+
+    view! {
+        <button on:click={move |_| count.update(|n| *n += 1)}>
+            "Count: " {count}
+        </button>
+    }
+}
+```
+
+Before Phase 3 can pass its exit gate, the public API and browser runtime must demonstrate all of the following:
+
+- An ergonomic `signal(value)` API with read, write, and update operations inside a component, while ownership remains tied to an explicit component/runtime scope. Do not introduce a process-global mutable runtime singleton as a shortcut.
+- Ordinary signal interpolation in `view!` tracks dependencies and updates automatically; users do not need to wrap every normal signal child in `@dynamic`.
+- A `#[component]`-style function-component API with typed props, useful compile-time diagnostics, and automatic integration into component descriptors/registration for normal use.
+- Typed callback props between components, in addition to typed DOM event handlers.
+- DOM updates that patch only the affected nodes/regions, preserving mounted DOM/component identity when keys and component identity indicate continuity.
+- Deterministic cleanup of effects, subscriptions, event listeners, and child scopes on unmount.
+- A browser-loadable example and automated browser E2E coverage for a counter and a todo list using the intended public API.
+
+The exact public syntax and runtime ownership mechanism must be recorded in an ADR and verified with compile tests before implementation is treated as complete. Any syntax change from this illustrative target must preserve the stated developer experience or be explicitly reviewed and documented. SSR/hydration remain separate milestones and must not be implied by these client-side criteria.
+
 ## Status policy
 
 - [ ] Planned
@@ -93,37 +124,45 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Test text, nested elements/components, attributes, properties, fragments, event callbacks, dynamic children, and keyed-list duplicate detection.
 - [x] Test macro expansion and mismatched-closing-tag diagnostics.
 
-**Exit gate: complete for the native view/component model.** Typed view construction, reusable component definitions and registry resolution, explicit lifecycle/cleanup, and macro diagnostics are covered by tests. Browser DOM reconciliation, actual browser event attachment, and E2E tests remain Phase 3; this does not close the SSR, hydration, server, or CLI roadmap phases.
+**Exit gate: complete for the native structural view/component model only.** Typed view construction, reusable component definitions and registry resolution, explicit lifecycle/cleanup, and macro diagnostics are covered by tests. This does not mean the ergonomic React-like authoring contract is complete: `#[component]`, typed props/callback props, automatic reactive interpolation, browser DOM reconciliation, and E2E tests remain explicit Phase 3 requirements. It also does not close the SSR, hydration, server, or CLI roadmap phases.
 
 ## Phase 3 — Browser runtime and interactive MVP
 
-### 3.1 Build pipeline
+### 3.1 React-like public authoring API
+- [ ] Record the public authoring contract and unresolved ownership/syntax decisions in an ADR before implementing the ergonomics layer.
+- [ ] Provide an ergonomic `signal(value)` API with documented read, write, and update operations inside components; runtime/owner-scope isolation must remain explicit and tested.
+- [ ] Implement a `#[component]`-style function component API with typed props, useful missing/unknown/type-mismatch diagnostics, and automatic descriptor/registration integration for normal usage.
+- [ ] Support typed callback props so parent components can pass callbacks to child components.
+- [ ] Make ordinary signal interpolation in `view!` reactive by default; `@dynamic` must not be required for common signal-backed text/children.
+- [ ] Add compile tests and a public example for the intended Counter API. Label the example as a design target until the code actually compiles and runs.
+
+### 3.2 Build pipeline
 - [x] Configure the wasm32-unknown-unknown target and add a dedicated CI compile check for rustflow-dom.
 - [x] Integrate wasm-bindgen and web-sys in target-specific dependencies.
 - [x] Separate browser dependencies from the target-independent view and reactive crates.
 - [ ] Produce a browser-loadable bundle and static assets.
 
-### 3.2 DOM runtime
+### 3.3 DOM runtime
 - [x] Create and mount text, element, and fragment nodes through comment-anchored DOM ranges.
 - [x] Apply typed attributes and properties through DOM APIs; the initial renderer uses an element allowlist and URL-scheme checks.
 - [x] Attach event callbacks and remove their listeners during cleanup.
-- [ ] Add targeted/dirty-subtree DOM updates. `DomRenderer::mount_reactive` now runs a render closure in an owned reactive effect and rerenders when tracked signals change, but it currently replaces the full mounted range.
+- [ ] Add targeted/dirty-subtree DOM updates. `DomRenderer::mount_reactive` now runs a render closure in an owned reactive effect and rerenders when tracked signals change, but it currently replaces the full mounted range; the target is to patch affected regions while preserving node/component identity.
 - [x] Dispose registered component scopes and listeners on unmount.
 - [ ] Implement conditional rendering and keyed dynamic-list reconciliation (keyed snapshots render in order, but updates currently replace the full range).
 
-### 3.3 MVP examples
+### 3.4 MVP examples
 - [ ] Build a reactive counter.
 - [ ] Build a todo list with add, toggle, and remove.
 - [ ] Support basic form and input semantics.
 - [ ] Use semantic HTML and accessible labels.
 - [ ] Add browser end-to-end tests and measure bundle size.
 
-### 3.4 Developer feedback
+### 3.5 Developer feedback
 - [ ] Provide useful development-mode runtime errors.
 - [ ] Add source maps or equivalent debugging support where feasible.
 - [ ] Document clean Ubuntu setup and troubleshooting.
 
-**Exit gate:** counter and todo examples run in supported browsers; listeners and effects clean up; CI builds the browser target.
+**Exit gate:** the Phase 3.1 authoring contract is implemented and compile-tested; the counter and todo examples use the intended ergonomic API and run in supported browsers; only affected DOM regions update where possible; keyed children preserve identity; listeners/effects clean up; CI builds browser-loadable assets and runs browser E2E tests.
 
 ## Phase 4 — HTTP server and routing
 
@@ -357,10 +396,10 @@ The broader transport/deployment tests listed under Phase 4.2 remain pending and
 ## MVP definition
 
 The MVP must demonstrate:
-1. A Rust component with reactive signal state.
-2. An effect updating the correct DOM node after state changes.
-3. Event handlers and cleanup on component unmount.
-4. A todo example with conditional and keyed list updates.
+1. A typed Rust function component with local reactive signal state and typed props, using the intended ergonomic public API.
+2. Signal-backed view interpolation that updates automatically and patches the relevant DOM region.
+3. Typed DOM event handlers and component callback props, with cleanup on component unmount.
+4. A todo example using the same public API, with conditional rendering and keyed-list reconciliation that preserves identity.
 5. A Rust server serving routes and safe HTML/JSON responses.
 6. Unit, browser, and server integration tests in CI.
 7. A clean-checkout developer guide.
