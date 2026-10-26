@@ -2,7 +2,6 @@
 
 use proc_macro::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
 
-
 /// Mark a Rust function as a RustFlow component authoring function.
 ///
 /// The function remains an ordinary typed Rust function; its result can be
@@ -51,7 +50,9 @@ pub fn component(_attributes: TokenStream, item: TokenStream) -> TokenStream {
         }
         let Some((pattern, type_name)) = parameter.split_once(':') else {
             return compile_error(ParseError {
-                message: "#[component] parameters must use simple named patterns with explicit types".into(),
+                message:
+                    "#[component] parameters must use simple named patterns with explicit types"
+                        .into(),
                 span: function_name.span(),
             });
         };
@@ -85,7 +86,10 @@ pub fn component(_attributes: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     let arguments = parameter_names.join(", ");
-    let definition_name = format!("__rustflow_component_definition_{}", name.to_ascii_lowercase());
+    let definition_name = format!(
+        "__rustflow_component_definition_{}",
+        name.to_ascii_lowercase()
+    );
     let generated = format!(
         r#"
         #[allow(non_snake_case)]
@@ -111,10 +115,12 @@ pub fn component(_attributes: TokenStream, item: TokenStream) -> TokenStream {
         bindings = bindings,
         arguments = arguments,
     );
-    generated.parse().unwrap_or_else(|_| compile_error(ParseError {
-        message: "#[component] could not generate a valid typed component adapter".into(),
-        span: function_name.span(),
-    }))
+    generated.parse().unwrap_or_else(|_| {
+        compile_error(ParseError {
+            message: "#[component] could not generate a valid typed component adapter".into(),
+            span: function_name.span(),
+        })
+    })
 }
 
 fn split_parameters(parameters: TokenStream) -> Vec<String> {
@@ -136,7 +142,9 @@ fn split_parameters(parameters: TokenStream) -> Vec<String> {
 
 fn property_conversion(parameter: &str, type_name: &str) -> Option<String> {
     let error = format!("invalid or missing component prop {parameter}");
-    let binding = format!("let __value_{parameter} = __props.iter().find(|prop| prop.name() == {parameter:?}).map(|prop| prop.value()).ok_or_else(|| ::rustflow::components::ComponentError::User({error:?}.to_owned()))?;");
+    let binding = format!(
+        "let __value_{parameter} = __props.iter().find(|prop| prop.name() == {parameter:?}).map(|prop| prop.value()).ok_or_else(|| ::rustflow::components::ComponentError::User({error:?}.to_owned()))?;"
+    );
     let conversion = match type_name {
         "String" => format!(
             "let {parameter}: String = match __value_{parameter} {{ ::rustflow::view::PropertyValue::Text(value) => value.clone(), _ => return Err(::rustflow::components::ComponentError::User({error:?}.to_owned())), }};"
