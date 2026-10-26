@@ -1137,5 +1137,4 @@ mod tests {
             assert_eq!(signal.get(), model, "model mismatch at step {step}");
         }
     }
-
 }
