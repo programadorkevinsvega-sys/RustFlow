@@ -304,7 +304,7 @@ fn property_conversion(parameter: &str, type_name: &str, props_variable: &str) -
         ),
         _ => return None,
     };
-    Some(format!("{binding}{conversion}"))
+    Some(format!("{binding}{conversion}let _ = &{parameter};"))
 }
 
 #[proc_macro]
