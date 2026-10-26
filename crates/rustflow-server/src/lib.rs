@@ -10,7 +10,10 @@ use std::{
     future::Future,
     net::SocketAddr,
     pin::Pin,
-    sync::{Arc, RwLock},
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
@@ -27,6 +30,7 @@ use http_body_util::LengthLimitError;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::net::TcpListener;
 use tower::limit::GlobalConcurrencyLimitLayer;
+use tracing::Instrument;
 
 use rustflow::components::ComponentRegistry;
 use rustflow_view::View;
@@ -34,6 +38,8 @@ use rustflow_view::View;
 /// Future returned by a RustFlow route handler.
 pub type HandlerFuture =
     Pin<Box<dyn Future<Output = Result<Response, HttpError>> + Send + 'static>>;
+static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
+
 type SharedHandler = Arc<dyn Fn(Request) -> HandlerFuture + Send + Sync + 'static>;
 
 type SharedMiddleware = Arc<dyn Fn(Request, Next) -> HandlerFuture + Send + Sync + 'static>;
@@ -140,6 +146,7 @@ pub struct Request {
     path_params: HashMap<String, String>,
     headers: HeaderMap,
     body: Bytes,
+    request_id: String,
 }
 
 impl Request {
@@ -149,6 +156,7 @@ impl Request {
         path_params: HashMap<String, String>,
         headers: HeaderMap,
         body: Bytes,
+        request_id: String,
     ) -> Self {
         Self {
             method,
@@ -157,7 +165,15 @@ impl Request {
             path_params,
             headers,
             body,
+            request_id,
         }
+    }
+
+    /// Return the opaque request identifier assigned at the HTTP boundary.
+    ///
+    /// It is intended for log/trace correlation only, never for authorization.
+    pub fn request_id(&self) -> &str {
+        &self.request_id
     }
 
     /// Return the HTTP method.
@@ -758,11 +774,13 @@ impl Application {
         let handler: SharedHandler = Arc::new(move |request| Box::pin(handler(request)));
         let config = self.config.clone();
         let middleware_stack = self.middleware.clone();
+        let route_template = path.clone();
         let adapter = move |Path(path_params): Path<HashMap<String, String>>,
                             request: AxumRequest| {
             let handler = handler.clone();
             let config = config.clone();
             let middleware_stack = middleware_stack.clone();
+            let route_template = route_template.clone();
             async move {
                 match tokio::time::timeout(
                     config.request_timeout,
@@ -772,6 +790,7 @@ impl Application {
                         request,
                         config.clone(),
                         middleware_stack,
+                        route_template,
                     ),
                 )
                 .await
@@ -864,38 +883,97 @@ async fn dispatch_request(
     request: AxumRequest,
     config: ServerConfig,
     middleware_registry: Arc<RwLock<Vec<Middleware>>>,
+    route_template: String,
 ) -> AxumResponse {
     let (parts, body) = request.into_parts();
-    let body = match to_bytes(body, config.max_body_bytes).await {
-        Ok(body) => body,
-        Err(error) => {
-            let too_large = error_is_length_limit(&error);
-            let response = if too_large {
-                HttpError::payload_too_large()
-            } else {
-                HttpError::bad_body()
-            };
-            return response.into_response().into_axum_response();
-        }
-    };
-    let request = Request::new(parts.method, parts.uri, path_params, parts.headers, body);
-    let middleware = match middleware_registry.read() {
-        Ok(middleware) => Arc::new(middleware.clone()),
-        Err(_) => {
-            return HttpError::internal_server_error()
-                .into_response()
-                .into_axum_response();
-        }
-    };
-    let next = Next {
-        index: 0,
-        middleware,
-        terminal: handler,
-    };
-    match next.run(request).await {
-        Ok(response) => response.into_axum_response(),
-        Err(error) => error.into_response().into_axum_response(),
+    let request_id = request_id_from_headers(&parts.headers);
+    let request_id_for_response = request_id.clone();
+    let method = parts.method.clone();
+    let span = tracing::info_span!(
+        "http.request",
+        request_id = %request_id,
+        method = %method,
+        route = %route_template,
+    );
+
+    async move {
+        let body = match to_bytes(body, config.max_body_bytes).await {
+            Ok(body) => body,
+            Err(error) => {
+                let too_large = error_is_length_limit(&error);
+                let response = if too_large {
+                    HttpError::payload_too_large()
+                } else {
+                    HttpError::bad_body()
+                };
+                tracing::warn!(status = %response.status, "request rejected while reading body");
+                return attach_request_id(response, &request_id_for_response).into_axum_response();
+            }
+        };
+
+        let request = Request::new(
+            parts.method,
+            parts.uri,
+            path_params,
+            parts.headers,
+            body,
+            request_id_for_response.clone(),
+        );
+        let middleware = match middleware_registry.read() {
+            Ok(middleware) => Arc::new(middleware.clone()),
+            Err(_) => {
+                tracing::error!("middleware registry is unavailable");
+                let response = HttpError::internal_server_error().into_response();
+                return attach_request_id(response, &request_id_for_response).into_axum_response();
+            }
+        };
+        let next = Next {
+            index: 0,
+            middleware,
+            terminal: handler,
+        };
+        let response = match next.run(request).await {
+            Ok(response) => {
+                tracing::info!(status = %response.status, "request completed");
+                response
+            }
+            Err(error) => {
+                tracing::warn!(status = %error.status, "request failed");
+                error.into_response()
+            }
+        };
+        attach_request_id(response, &request_id_for_response).into_axum_response()
     }
+    .instrument(span)
+    .await
+}
+
+fn request_id_from_headers(headers: &HeaderMap) -> String {
+    if let Some(candidate) = headers.get("x-request-id").and_then(|value| value.to_str().ok()) {
+        if is_valid_request_id(candidate) {
+            return candidate.to_owned();
+        }
+    }
+
+    let sequence = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+    format!("rf-{:x}-{:x}", std::process::id(), sequence)
+}
+
+fn is_valid_request_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        })
+}
+
+fn attach_request_id(mut response: Response, request_id: &str) -> Response {
+    if let Ok(value) = HeaderValue::from_str(request_id) {
+        response
+            .headers
+            .insert(HeaderName::from_static("x-request-id"), value);
+    }
+    response
 }
 
 fn error_is_length_limit(error: &(dyn Error + 'static)) -> bool {
@@ -1100,6 +1178,42 @@ mod tests {
             "application/json; charset=utf-8"
         );
         assert_eq!(body_text(response).await, r#"{"message":"hello"}"#);
+    }
+
+    #[tokio::test]
+    async fn request_id_is_available_to_handlers_and_echoed_safely() {
+        let mut app = Application::new();
+        app.get("/request-id", |request| async move {
+            Ok(Response::text(request.request_id().to_owned()))
+        })
+        .expect("route registration");
+
+        let request = AxumHttpRequest::builder()
+            .uri("/request-id")
+            .header("x-request-id", "client_trace_42")
+            .body(Body::empty())
+            .expect("request");
+        let response = send(app, request).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["x-request-id"], "client_trace_42");
+        assert_eq!(body_text(response).await, "client_trace_42");
+
+        let mut app = Application::new();
+        app.get("/request-id", |request| async move {
+            Ok(Response::text(request.request_id().to_owned()))
+        })
+        .expect("route registration");
+        let request = AxumHttpRequest::builder()
+            .uri("/request-id")
+            .header("x-request-id", "invalid id with spaces")
+            .body(Body::empty())
+            .expect("syntactically valid HTTP field");
+        let response = send(app, request).await;
+        let generated = response.headers()["x-request-id"]
+            .to_str()
+            .expect("request id is a header value");
+        assert!(generated.starts_with("rf-"));
+        assert_eq!(body_text(response).await, generated);
     }
 
     #[tokio::test]
