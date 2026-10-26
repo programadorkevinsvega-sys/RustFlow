@@ -195,11 +195,17 @@ impl ComponentInstance {
             runtime: runtime.clone(),
             scope: scope.clone(),
         };
-        let render = match (definition.setup)(&context, &properties) {
-            Ok(render) => render,
-            Err(error) => {
+        let render = match crate::reactivity::with_owner_scope(&scope, || {
+            (definition.setup)(&context, &properties)
+        }) {
+            Ok(Ok(render)) => render,
+            Ok(Err(error)) => {
                 scope.dispose()?;
                 return Err(error);
+            }
+            Err(error) => {
+                scope.dispose()?;
+                return Err(error.into());
             }
         };
         let view = match render(&properties, &children) {
