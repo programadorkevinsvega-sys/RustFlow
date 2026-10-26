@@ -134,7 +134,7 @@ const URL_ATTRIBUTES: &[&str] = &[
 ];
 
 /// Validate a tag against the initial renderer allowlist and void-element rules.
-pub(crate) fn validate_element(name: &str, child_count: usize) -> Result<(), DomPolicyError> {
+pub fn validate_element(name: &str, child_count: usize) -> Result<(), DomPolicyError> {
     let normalized = name.to_ascii_lowercase();
     if !SUPPORTED_ELEMENTS.contains(&normalized.as_str()) {
         return Err(DomPolicyError::UnsupportedElement(name.to_owned()));
@@ -150,7 +150,7 @@ pub(crate) fn validate_element(name: &str, child_count: usize) -> Result<(), Dom
 /// Event-handler properties and direct style mutation are intentionally not
 /// part of this initial renderer. URL-valued properties share the attribute
 /// scheme policy; non-text values are rejected for URL-bearing properties.
-pub(crate) fn validate_property(
+pub fn validate_property(
     name: &str,
     value: &rustflow_view::PropertyValue,
 ) -> Result<(), DomPolicyError> {
@@ -168,7 +168,7 @@ pub(crate) fn validate_property(
 }
 
 /// Reject style sinks and active URL schemes before applying an attribute.
-pub(crate) fn validate_attribute(name: &str, value: &str) -> Result<(), DomPolicyError> {
+pub fn validate_attribute(name: &str, value: &str) -> Result<(), DomPolicyError> {
     let name = name.to_ascii_lowercase();
     if name == "style" {
         return Err(DomPolicyError::UnsafeAttribute(name));
