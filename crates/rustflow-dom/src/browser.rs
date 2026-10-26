@@ -108,7 +108,9 @@ fn append_rendered_nodes(target: &mut RenderedNodes, mut source: RenderedNodes) 
     target.listeners.append(&mut source.listeners);
     target.delegated.append(&mut source.delegated);
     target.components.append(&mut source.components);
-    target.component_regions.append(&mut source.component_regions);
+    target
+        .component_regions
+        .append(&mut source.component_regions);
     target.dynamics.append(&mut source.dynamics);
 }
 
@@ -970,14 +972,9 @@ impl DomRenderer {
             (View::Fragment(old), View::Fragment(new)) => ReconciliationAction::Fragment(
                 self.plan_sequence(old.children(), new.children(), context, owner_scope)?,
             ),
-            (View::KeyedList(old), View::KeyedList(new)) => {
-                ReconciliationAction::Keyed(self.plan_keyed_children(
-                    old,
-                    new,
-                    context,
-                    owner_scope,
-                )?)
-            }
+            (View::KeyedList(old), View::KeyedList(new)) => ReconciliationAction::Keyed(
+                self.plan_keyed_children(old, new, context, owner_scope)?,
+            ),
             (View::Component(old), View::Component(new))
                 if old.name() == new.name() && old.key() == new.key() =>
             {
@@ -1315,16 +1312,9 @@ impl DomRenderer {
                     }
                     Ok(vec![node.clone()])
                 } else {
-                    let mut prepared_resources = RenderedNodes::default();
-                    let nodes = match self.build_nodes(&plan.next, owner_scope, &mut prepared_resources) {
-                        Ok(nodes) => nodes,
-                        Err(error) => {
-                            let _ = cleanup_rendered_nodes(&mut prepared_resources);
-                            return Err(error);
-                        }
-                    };
-                    append_rendered_nodes(resources, prepared_resources);
-                    Ok(nodes)
+                    Err(DomError::JavaScript(
+                        "text reconciliation plan does not match its mounted DOM node".into(),
+                    ))
                 }
             }
             ReconciliationAction::Element(children_plan) => {
@@ -1335,16 +1325,9 @@ impl DomRenderer {
                     ));
                 };
                 if existing_nodes.len() != 1 {
-                    let mut prepared_resources = RenderedNodes::default();
-                    let nodes = match self.build_nodes(&plan.next, owner_scope, &mut prepared_resources) {
-                        Ok(nodes) => nodes,
-                        Err(error) => {
-                            let _ = cleanup_rendered_nodes(&mut prepared_resources);
-                            return Err(error);
-                        }
-                    };
-                    append_rendered_nodes(resources, prepared_resources);
-                    return Ok(nodes);
+                    return Err(DomError::JavaScript(
+                        "element reconciliation plan does not match its mounted DOM range".into(),
+                    ));
                 }
                 let element: DomElement = existing_nodes[0].clone().dyn_into().map_err(|_| {
                     DomError::JavaScript("expected an element node while reconciling".into())
