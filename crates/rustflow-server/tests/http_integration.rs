@@ -43,8 +43,9 @@ async fn send_http(
     headers: &[(&str, &str)],
     body: &str,
 ) -> String {
-    let mut stream = TcpStream::connect(address)
+    let mut stream = tokio::time::timeout(Duration::from_secs(2), TcpStream::connect(address))
         .await
+        .expect("timed out connecting to server")
         .expect("connect to server");
     let mut request = format!(
         "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: {}\r\n",
@@ -59,14 +60,14 @@ async fn send_http(
     request.push_str("\r\n");
     request.push_str(body);
 
-    stream
-        .write_all(request.as_bytes())
+    tokio::time::timeout(Duration::from_secs(2), stream.write_all(request.as_bytes()))
         .await
+        .expect("timed out writing HTTP request")
         .expect("write HTTP request");
     let mut bytes = Vec::new();
-    stream
-        .read_to_end(&mut bytes)
+    tokio::time::timeout(Duration::from_secs(2), stream.read_to_end(&mut bytes))
         .await
+        .expect("timed out reading HTTP response")
         .expect("read HTTP response");
     String::from_utf8(bytes).expect("HTTP response is UTF-8")
 }
