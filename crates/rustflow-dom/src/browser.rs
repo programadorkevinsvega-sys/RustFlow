@@ -126,6 +126,29 @@ struct ComponentRegion {
     reused: bool,
 }
 
+/// Immutable output of the view-diff phase. DOM mutation is only performed by
+/// commit_plan after the next tree has passed policy validation.
+struct ReconciliationPlan {
+    previous: View,
+    next: View,
+    action: ReconciliationAction,
+}
+
+enum ReconciliationAction {
+    Replace,
+    Text,
+    Element(Vec<PlannedChild>),
+    Fragment(Vec<PlannedChild>),
+    Keyed(Vec<PlannedChild>),
+    Component,
+    Dynamic,
+}
+
+struct PlannedChild {
+    previous_index: Option<usize>,
+    plan: Box<ReconciliationPlan>,
+}
+
 /// A mounted DOM range. Comment anchors make fragment roots updateable without
 /// introducing a visible wrapper element.
 pub struct MountedDom {
