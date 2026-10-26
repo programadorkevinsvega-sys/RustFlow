@@ -171,7 +171,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 
 ## Phase 4 — HTTP server and routing
 
-**Estado: criterios de fase implementados y documentados.** El cierre cubre el adaptador HTTP de prototipo (grupos, middleware por ruta, TLS local, proxies de confianza, abortos, entrada malformada y concurrencia acotada). No declara listo el despliegue de producción ni las fases 5–11.
+**Estado de auditoría: criterios de servidor integrados en main; el cierre final está condicionado a las subfases 4.5–4.7 de esta auditoría.** La PR #30 se fusionó en main el 2026-10-26 y sus checks pasaron en el commit 87d297df8e5ed9d9e3b20b1bb829066849bd81f8. La auditoría detectó que un handshake TLS incompleto podía retrasar la aceptación de conexiones posteriores. No declarar esta fase formalmente cerrada hasta que la regresión de TLS y los checks del HEAD exacto pasen y el cambio quede integrado en main. Esto no declara listo el despliegue de producción ni las fases 5–11.
 
 ### 4.1 HTTP foundation
 - [x] Integrate Axum, Tokio, and Tower behind the RustFlow-owned `rustflow-server` adapter.
@@ -205,6 +205,29 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconstruction, client abort, malformed input, and bounded concurrency. It does not replace a production threat model, reverse-proxy deployment recipe, or Phase 9 security review.
 
 **Exit gate:** an executable example server handles multiple routes, renders safe HTML, and returns JSON. Automated coverage includes in-memory dispatch, route groups, route-scoped middleware, local TLS, trusted-proxy policy, client abort, malformed input, and bounded concurrency. This prototype is not production-ready: sessions, auth, CSRF, rate limiting, and full-stack SSR/hydration remain later phases.
+
+### 4.5 Subfase A — Resiliencia del handshake TLS
+
+- [x] Separar la aceptación TCP de los handshakes TLS para que una conexión lenta no bloquee la aceptación de otras.
+- [x] Limitar handshakes concurrentes a 64 y aplicar un timeout de 10 segundos por handshake.
+- [x] Cancelar el listener y los handshakes pendientes al finalizar el servidor.
+- [x] Añadir una regresión de TCP real que mantiene un cliente sin ClientHello y comprueba que otra conexión TLS válida recibe respuesta.
+- [ ] Verificar en CI del HEAD exacto la prueba de regresión, Clippy, Rust 1.85 y Rust stable.
+
+### 4.6 Subfase B — Consistencia de documentación
+
+- [x] Actualizar el README raíz para describir la reconciliación DOM y los E2E actuales.
+- [x] Corregir estados obsoletos de la guía pública de componentes y explicar los límites del modelo de la Fase 2.
+- [x] Alinear el estado del alcance de producto con el cierre de la Fase 0.2 sin declarar el producto estable.
+- [x] Sincronizar la página de estado y el README del website con las fases y el hosting actual.
+- [x] Documentar el timeout y el límite de concurrencia TLS en las guías aplicables.
+- [ ] Confirmar el build de Astro y Rustdoc para el HEAD exacto.
+
+### 4.7 Subfase C — Gate final y registro del cierre
+
+- [ ] Pasar todos los checks requeridos para el HEAD exacto: Rust 1.85, Rust stable, WASM, E2E Chromium/presupuesto del bundle, Build documentation, gobernanza y revisión de dependencias.
+- [ ] Revisar los resultados y comprobar que no se haya añadido ninguna afirmación de producción, SSR completo o hidratación.
+- [ ] Tras integrar el PR, comprobar CI post-merge en main y registrar el commit de evidencia antes de declarar formalmente cerrada la Fase 4.
 
 ## Phase 5 — SSR, hydration, and full-stack data flow
 

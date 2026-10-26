@@ -5,6 +5,10 @@ description: Capacidades verificadas de RustFlow y criterios funcionales que aú
 
 RustFlow está en desarrollo y sus APIs son pre-1.0. El [roadmap del repositorio](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) es la fuente de verdad para el progreso y los criterios de aceptación. Ninguna fase se considera cerrada solo porque la CI esté verde.
 
+### Fase 0 — Fundación del proyecto, completada
+
+La fundación define licencia dual, gobernanza, reglas de contribución, alcance inicial, decisiones de arquitectura, MSRV Rust 1.85 y controles de ingeniería/CI. El alcance de producto documenta los objetivos y no-objetivos del prototipo; este estado no significa que RustFlow sea estable ni que el MVP full-stack completo exista.
+
 ## Disponible como prototipo
 
 ### Fase 1 — Runtime reactivo
@@ -13,7 +17,7 @@ El runtime incluye señales tipadas, efectos, grafo de dependencias, scheduler, 
 
 ### Fase 2 — Vistas y componentes
 
-El modelo nativo incluye nodos tipados, atributos, propiedades, callbacks de eventos, ciclo de vida, scopes de limpieza, registro de componentes y la macro view!. El contrato de autoría de componentes se implementa parcialmente en la Fase 3: #[component], un subconjunto de props tipados, callbacks y registro generado ya funcionan, pero la API no pretende ser compatible con React ni adopta hooks posicionales. Véase [Crear componentes](/guides/components/).
+El modelo nativo de la Fase 2 define nodos tipados, atributos, propiedades, callbacks de eventos, ciclo de vida, scopes de limpieza, registro y la macro view!. Su cierre cubre el modelo estructural, no el producto completo de autoría ergonómica de componentes. La API #[component], el subconjunto de props tipados, los callbacks y el runtime de navegador se implementaron y verificaron como parte de la Fase 3. RustFlow no pretende ser compatible con React ni adopta hooks posicionales. Véase [Crear componentes](/guides/components/).
 
 ### Fase 3 — Navegador/WASM, cerrada y verificada
 
@@ -23,11 +27,11 @@ La suite de Chromium incluye cuatro escenarios: identidad DOM del Counter, actua
 
 **Estado: cerrada en `main` el 2026-10-26.** La PR #26 se fusionó primero en la rama de la PR #25; después la PR #25 se fusionó en `main`. Los siete checks post-merge terminaron correctamente en el commit [`43f5fb9`](https://github.com/programadorkevinsvega-sys/RustFlow/commit/43f5fb9c12996ea600b47930553a9f91dc6055e9), incluidos Rust estable/1.85, compilación WASM, E2E Chromium, presupuesto del bundle, documentación, gobernanza y despliegue de Pages. El cierre se limita al runtime de navegador y los criterios de la Fase 3; SSR/hidratación y otros hitos posteriores permanecen separados.
 
-### Fase 4 — Servidor HTTP, criterios de fase cerrados
+### Fase 4 — Servidor HTTP, prototipo integrado
 
-El crate rustflow-server integra Axum/Tokio/Tower detrás de tipos de RustFlow. Incluye rutas y handlers asíncronos, grupos de rutas, parámetros de ruta y query, extracción básica de JSON, respuestas de texto/HTML/JSON, middleware global, de grupo y por ruta, rutas nombradas, request IDs, eventos/spans de tracing, límites de body, timeouts, límite de concurrencia, apagado graceful, servicio TLS local con rustls, política de proxies de confianza y validación de cableado de producción para HTTPS.
+El crate rustflow-server integra Axum/Tokio/Tower detrás de tipos de RustFlow. Incluye rutas y handlers asíncronos, grupos de rutas, parámetros de ruta y query, extracción básica de JSON, respuestas de texto/HTML/JSON, middleware global, de grupo y por ruta, rutas nombradas, request IDs, eventos/spans de tracing, límites de body, timeouts, límite de concurrencia, apagado graceful, servicio TLS local con rustls y política de proxies de confianza.
 
-El serializador rustflow-ssr genera fragmentos HTML escapados. Desde el servidor se pueden generar documentos HTML completos mediante html_document y páginas de error HTML configurables para estados 4xx/5xx. Las pruebas cubren dispatch in-memory, TCP local, TLS local, cabeceras reenviadas de confianza y falsificadas, abortos de cliente, entrada malformada y concurrencia acotada. Esto no implica que SSR full-stack, hidratación o un despliegue de producción estén completos.
+La PR #30 integró estos criterios en main y pasó los checks del commit de merge. La subfase de auditoría de cierre añade manejo concurrente y acotado de handshakes TLS con timeout, una regresión frente a clientes que abren TCP sin enviar ClientHello y sincronización de la documentación. El serializador rustflow-ssr genera fragmentos HTML escapados; html_document y las páginas configurables 4xx/5xx no implican hidratación ni SSR full-stack. Véase el roadmap para las subfases y el gate de verificación.
 
 Guía práctica: [Servidor HTTP experimental](/guides/server/). Detalles y límites: [docs/HTTP_SERVER.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/HTTP_SERVER.md) y [docs/SSR_RENDERING.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/SSR_RENDERING.md).
 

@@ -1,6 +1,6 @@
 # RustFlow Product Scope (Phase 0.2)
 
-**Status:** Proposed for review  
+**Status:** Accepted as the initial product-scope baseline  
 **Phase:** 0.2 — Product scope  
 **Audience:** maintainers, contributors, and users evaluating the project
 

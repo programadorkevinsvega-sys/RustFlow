@@ -23,7 +23,7 @@ El ejemplo escucha en `127.0.0.1:3000` y expone rutas para una página HTML, est
 - Límites configurables de body, timeout de lectura/handler y límite de concurrencia.
 - Correlación mediante `Request::request_id()` y `x-request-id`; el servidor emite spans/eventos `tracing`, pero el binario de la aplicación debe configurar su propio subscriber/exporter.
 - API de apagado graceful que recibe una future desde el punto de composición de la aplicación.
-- TLS local (`serve_tls`) y política de proxies de confianza; `ServerConfig::production()` exige HTTPS vía TLS o proto reenviado por un proxy listado. Solo se acepta el esquema autoritativo del último valor reenviado; el proxy de confianza debe sanear o añadir correctamente estas cabeceras y proteger el enlace hacia el origen.
+- TLS local (`serve_tls`) con handshakes limitados a 64 conexiones concurrentes y timeout de 10 segundos, más política de proxies de confianza; `ServerConfig::production()` exige HTTPS vía TLS o proto reenviado por un proxy listado. Solo se acepta el esquema autoritativo del último valor reenviado; el proxy de confianza debe sanear o añadir correctamente estas cabeceras y proteger el enlace hacia el origen.
 
 Consulta la [guía técnica HTTP](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/HTTP_SERVER.md) para ejemplos de registro, configuración y límites.
 

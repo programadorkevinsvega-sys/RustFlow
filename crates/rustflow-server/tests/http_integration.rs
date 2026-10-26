@@ -567,6 +567,73 @@ fn test_tls_material() -> (Vec<u8>, Vec<u8>, rustls::RootCertStore) {
 }
 
 #[tokio::test]
+async fn incomplete_tls_handshake_does_not_block_valid_connections() {
+    let (cert_pem, key_pem, roots) = test_tls_material();
+    let tls = tls_server_config_from_pem(&cert_pem, &key_pem).expect("tls config");
+    let mut app = Application::new();
+    app.get("/health", |request: Request| async move {
+        Ok(Response::text(if request.is_https() {
+            "secure"
+        } else {
+            "plain"
+        }))
+    })
+    .expect("health");
+
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind tls listener");
+    let address = listener.local_addr().expect("tls address");
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let task = tokio::spawn(app.serve_tls_with_shutdown(listener, tls, async move {
+        let _ = shutdown_rx.await;
+    }));
+
+    // Connect without sending a ClientHello. This socket must not serialize
+    // TLS acceptance and delay the following valid client.
+    let stalled = TcpStream::connect(address)
+        .await
+        .expect("stalled tcp connect");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let tcp = TcpStream::connect(address)
+        .await
+        .expect("valid tcp connect");
+    let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(
+        rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth(),
+    ));
+    let server_name = rustls_pki_types::ServerName::try_from("localhost").expect("dns name");
+    let mut stream =
+        tokio::time::timeout(Duration::from_secs(2), connector.connect(server_name, tcp))
+            .await
+            .expect("a stalled peer must not block a valid TLS handshake")
+            .expect("valid tls handshake");
+
+    tokio::time::timeout(
+        Duration::from_secs(2),
+        stream.write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"),
+    )
+    .await
+    .expect("write tls request timeout")
+    .expect("write tls request");
+
+    let mut bytes = Vec::new();
+    tokio::time::timeout(Duration::from_secs(2), stream.read_to_end(&mut bytes))
+        .await
+        .expect("read tls response timeout")
+        .expect("read tls response");
+    let response = String::from_utf8(bytes).expect("utf8 response");
+    assert_eq!(status_code(&response), 200);
+    assert!(response_body(&response).contains("secure"));
+
+    drop(stalled);
+    shutdown_tx.send(()).expect("tls shutdown");
+    task.await.expect("tls task").expect("tls server stop");
+}
+
+#[tokio::test]
 async fn real_tls_serves_https_and_marks_the_connection_secure() {
     let (cert_pem, key_pem, roots) = test_tls_material();
     let tls = tls_server_config_from_pem(&cert_pem, &key_pem).expect("tls config");
