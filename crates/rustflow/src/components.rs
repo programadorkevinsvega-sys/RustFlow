@@ -244,6 +244,11 @@ impl ComponentInstance {
     pub fn runtime(&self) -> &Runtime {
         &self.runtime
     }
+
+    /// Return the owner scope for nested component/resource cleanup.
+    pub fn scope(&self) -> &Scope {
+        &self.scope
+    }
     /// Recompute the view with new properties/children. Setup is not repeated.
     ///
     /// On render failure, the old view and inputs remain unchanged.
