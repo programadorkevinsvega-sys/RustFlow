@@ -162,7 +162,10 @@ fn property_conversion(parameter: &str, type_name: &str) -> Option<String> {
         "f64" => format!(
             "let {parameter}: f64 = match __value_{parameter} {{ ::rustflow::view::PropertyValue::Float(value) => *value, ::rustflow::view::PropertyValue::Integer(value) => *value as f64, _ => return Err(::rustflow::components::ComponentError::User({error:?}.to_owned())), }};"
         ),
-        "EventHandler" | "::rustflow::view::EventHandler" => format!(
+        "EventHandler"
+        | "rustflow_view::EventHandler"
+        | "rustflow::view::EventHandler"
+        | "::rustflow::view::EventHandler" => format!(
             "let {parameter}: ::rustflow::view::EventHandler = match __value_{parameter} {{ ::rustflow::view::PropertyValue::Callback(value) => value.clone(), _ => return Err(::rustflow::components::ComponentError::User({error:?}.to_owned())), }};"
         ),
         _ => return None,
