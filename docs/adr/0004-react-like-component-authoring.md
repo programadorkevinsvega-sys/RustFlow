@@ -112,3 +112,8 @@ The implementation proposal must answer the design questions above, include alte
 - Phase 3 now owns delivery and verification of the ergonomic API, fine-grained renderer, browser bundle, Counter, todo, and browser E2E gates.
 - SSR/hydration, client navigation, forms integration, and server-side state isolation remain separate roadmap work; this ADR does not mark them implemented.
 - Before closing Phase 3, tests and public docs must demonstrate the intended user workflow. A WASM compile check or native runtime unit tests alone are insufficient.
+
+
+## Implementation status (not an acceptance claim)
+
+The Phase 3 renderer work has started on a separate implementation branch. Its first reconciliation slice updates compatible text and element nodes in place and reuses compatible nodes with matching keys in keyed lists, but only where the full tree contains no deferred dynamic evaluator or component descriptor. Opaque subtrees still use the conservative full-range replacement path. This does **not** satisfy the Phase 3 exit gate: the owner-bound ergonomic API, function-component macro/typed callback props, automatically reactive interpolation, complete lifecycle-aware reconciliation, browser bundle, runnable counter/todo, browser E2E suite, bundle measurement, and debugging feedback remain unverified or unimplemented until their individual checks pass.
