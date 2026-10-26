@@ -265,6 +265,7 @@ impl Runtime {
     /// User panics are propagated after batch bookkeeping is restored. Scheduler cycle
     /// diagnostics are returned as `Err`.
     pub fn batch<R>(&self, callback: impl FnOnce() -> R) -> Result<R, RuntimeError> {
+        check_runtime_context(&self.inner)?;
         {
             let mut inner = self.inner.borrow_mut();
             if inner.disposed {
@@ -404,6 +405,7 @@ impl Scope {
     /// Return whether this scope has been disposed.
     pub fn is_disposed(&self) -> Result<bool, RuntimeError> {
         let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        check_runtime_context(&runtime)?;
         let inner = runtime.borrow();
         if inner.disposed {
             return Err(RuntimeError::RuntimeDisposed);
@@ -426,6 +428,7 @@ impl Scope {
     /// Register cleanup to run once on disposal, in reverse registration order.
     pub fn on_cleanup(&self, callback: impl FnOnce() + 'static) -> Result<(), RuntimeError> {
         let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        check_runtime_context(&runtime)?;
         let mut inner = runtime.borrow_mut();
         if inner.disposed {
             return Err(RuntimeError::RuntimeDisposed);
@@ -542,7 +545,7 @@ fn detach_dependencies(inner: &mut RuntimeInner, effect_id: EffectId) {
 }
 
 fn run_effect(runtime: &RuntimeRef, effect_id: EffectId) {
-    let (callback, owner, previous_effect, previous_scope) = {
+    let (callback, previous_effect, previous_scope) = {
         let mut inner = runtime.borrow_mut();
         if inner.disposed || !inner.effects.contains_key(&effect_id) {
             return;
@@ -555,9 +558,8 @@ fn run_effect(runtime: &RuntimeRef, effect_id: EffectId) {
         let previous_scope = inner.active_scope;
         inner.active_effect = Some(effect_id);
         inner.active_scope = Some(owner);
-        (callback, owner, previous_effect, previous_scope)
+        (callback, previous_effect, previous_scope)
     };
-    let _ = owner;
     let previous_runtime_id = ACTIVE_RUNTIME_ID.with(|active| {
         let previous = active.get();
         active.set(runtime_id(runtime));
@@ -579,6 +581,7 @@ fn run_effect(runtime: &RuntimeRef, effect_id: EffectId) {
 }
 
 fn flush_runtime(runtime: &RuntimeRef) -> Result<(), RuntimeError> {
+    check_runtime_context(runtime)?;
     {
         let mut inner = runtime.borrow_mut();
         if inner.disposed {
