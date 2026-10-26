@@ -6,6 +6,19 @@
 //!
 //! Signals created with `Runtime::signal` suppress equal writes via `PartialEq`.
 //! Use `Runtime::signal_always_changed` for values without `PartialEq`.
+//! Compile-fail checks document the intended single-threaded API boundary:
+//!
+//! ```compile_fail
+//! use rustflow::reactivity::Runtime;
+//! fn require_send<T: Send>() {}
+//! require_send::<Runtime>();
+//! ```
+//!
+//! ```compile_fail
+//! use rustflow::reactivity::Runtime;
+//! fn require_sync<T: Sync>() {}
+//! require_sync::<Runtime>();
+//! ```
 
 use std::{
     cell::RefCell,
