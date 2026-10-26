@@ -1,29 +1,39 @@
 ---
-title: Bienvenido a RustFlow
-description: Aprende qué es RustFlow, cómo está organizado y dónde empezar.
+title: RustFlow para desarrolladores
+description: Conoce el estado real de RustFlow, prueba la reactividad disponible y consulta qué falta para crear aplicaciones.
 template: splash
 hero:
-  tagline: Un framework full-stack en Rust, construido paso a paso.
+  tagline: Un framework full-stack en Rust, con una experiencia de desarrollo inspirada en Laravel.
   actions:
-    - text: Explorar el estado del proyecto
-      link: /project-status/
-      icon: right-arrow
-    - text: Preparar el entorno
+    - text: Probar RustFlow hoy
       link: /getting-started/setup/
+      icon: right-arrow
+    - text: Ver estado y fases
+      link: /project-status/
       variant: minimal
 ---
 
-RustFlow busca combinar una interfaz reactiva con un motor de reactividad propio en Rust y una experiencia full-stack inspirada en herramientas como Laravel.
+RustFlow busca ofrecer componentes de interfaz reactivos y una experiencia full-stack en Rust: rutas, controladores, validación, sesiones, base de datos y herramientas de línea de comandos.
 
-El framework está en desarrollo. Esta documentación distingue entre capacidades implementadas, trabajo en progreso y objetivos futuros para que los ejemplos no prometan APIs que todavía no existen.
+**RustFlow todavía está en desarrollo temprano y no está listo para producción.** Hoy, la parte implementada es la base del runtime reactivo de Rust. El modelo de componentes, el runtime de navegador y el CLI aún no están disponibles.
 
-## Una guía que evoluciona con el framework
+## ¿Qué puedes hacer hoy?
 
-- **Aprende los conceptos:** comprende las decisiones de diseño y los límites actuales.
-- **Sigue ejemplos verificables:** los ejemplos deben corresponder al código disponible en el repositorio.
-- **Consulta el estado real:** cada sección indica cuándo una capacidad está planificada, en desarrollo o verificada.
-- **Contribuye:** mejora el código y su documentación en el mismo cambio siempre que sea posible.
+- **Probar el runtime reactivo:** trabajar con señales, efectos, actualizaciones agrupadas y scopes de limpieza desde Rust.
+- **Revisar código y pruebas reales:** las guías se limitan a las APIs que existen en el repositorio.
+- **Evaluar el estado del framework:** distinguir capacidades verificadas de las que siguen en diseño o implementación.
 
-## Principio de documentación
+## ¿Qué todavía no puedes hacer?
 
-Una función solo se documenta como disponible cuando su implementación y criterios de aceptación están respaldados por código y pruebas. Los planes se presentan explícitamente como planes.
+- Crear una aplicación completa con un comando rustflow new.
+- Generar componentes con comandos tipo artisan make:component.
+- Montar componentes reactivos en el DOM del navegador.
+- Usar routing, SSR, autenticación o persistencia como funcionalidades integradas de RustFlow.
+
+Estas capacidades aparecen en fases futuras del [roadmap público](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md). No se presentan como comandos ni APIs disponibles hasta que estén implementadas y probadas.
+
+## Ruta recomendada
+
+1. [Prueba RustFlow hoy](/getting-started/setup/) con la base de Rust que ya existe.
+2. [Conoce el runtime reactivo](/concepts/reactivity/) y sus límites.
+3. Consulta [el estado y las fases](/project-status/) antes de decidir si RustFlow cubre las necesidades de tu proyecto.
