@@ -1,0 +1,24 @@
+name: Dependency review
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    name: Review dependency changes
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Review dependency diff
+        uses: actions/dependency-review-action@v5.0.0
+        with:
+          fail-on-severity: high
+          # GitHub's dependency API reports these Actions with license=null.
+          # Their upstream LICENSE files were manually verified as MIT; keep
+          # these exact-version exclusions in sync with action upgrades.
+          allow-dependencies-licenses: "pkg:githubactions/actions/checkout@7.0.1, pkg:githubactions/actions/dependency-review-action@5.0.0"

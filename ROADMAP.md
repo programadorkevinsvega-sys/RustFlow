@@ -25,16 +25,16 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [ ] Configure branch protection and required checks when repository settings allow.
 
 ### 0.2 Product scope
-- [ ] Define target users, product principles, supported platforms, and explicit non-goals.
-- [ ] Define MVP user stories and acceptance criteria.
-- [ ] Establish a risk register for reactivity, macros, WASM, hydration, security, and maintenance.
-- [ ] Create ADRs for crate boundaries, client runtime, and server integration.
+- [x] Define target users, product principles, supported platforms, and explicit non-goals in `docs/PRODUCT_SCOPE.md`.
+- [x] Define MVP user stories and acceptance criteria in `docs/PRODUCT_SCOPE.md`.
+- [x] Establish a risk register for reactivity, macros, WASM, hydration, security, and maintenance in `docs/PRODUCT_SCOPE.md`.
+- [x] Create ADRs for crate boundaries, client runtime, and server integration (`docs/adr/`).
 
 ### 0.3 Engineering baseline
-- [ ] Establish workspace naming and dependency conventions.
-- [ ] Add CI for formatting, Clippy, unit tests, documentation tests, and dependency review.
-- [ ] Add issue/PR templates and review checklist.
-- [ ] Ensure README, architecture rules, security policy, and contributor instructions agree.
+- [x] Establish workspace naming and dependency conventions in `docs/ENGINEERING_BASELINE.md` and the root Cargo manifest.
+- [ ] Add and verify CI for formatting, Clippy, unit tests, documentation tests, and dependency review (workflows added; successful PR run still required).
+- [x] Add issue/PR templates and review checklist.
+- [x] Align README and contributor instructions with the initial workspace and CI baseline; re-check policy consistency during review.
 
 **Exit gate:** project scope and policies are explicit; CI runs on pull requests; major architectural decisions have recorded context and trade-offs.
 

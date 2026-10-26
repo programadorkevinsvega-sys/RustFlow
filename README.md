@@ -26,7 +26,7 @@ RustFlow is an early-stage framework project exploring a cohesive way to build w
 
 ## Planned architecture
 
-The repository is intended to become a Cargo workspace with independently testable crates. The exact package split may change as implementation teaches us where boundaries belong.
+The repository now has a minimal Cargo workspace and an initial `rustflow` crate under `crates/rustflow`. This is an engineering baseline, not the implementation of the framework runtime. The exact package split may change as implementation teaches us where boundaries belong.
 
 | Area | Planned responsibility |
 | --- | --- |
@@ -68,7 +68,7 @@ Core UI reactivity and component lifecycle behavior are RustFlow-owned. Infrastr
 
 ## Getting started
 
-The implementation workspace is not yet established. Once the initial crates are added, the intended baseline commands will be:
+The workspace is established with a minimal crate. From the repository root, run the baseline checks:
 
 ```bash
 cargo fmt --all -- --check
@@ -76,7 +76,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-The repository currently has a stable Rust toolchain policy and a governance workflow. The Cargo MSRV policy is Rust 1.85 or later; the initial workspace must declare `rust-version = "1.85"` in its package manifests and CI must test both MSRV and current stable. Browser/WASM checks and end-to-end tests will be documented once the build pipeline is implemented. Do not assume code checks pass until they are actually running.
+The workspace inherits edition, MSRV, license, repository metadata, and lint policy from the root manifest. CI is configured to test Rust 1.85 and current stable, and to run formatting, Clippy, tests, and documentation builds. Dependency review and Dependabot are configured. These workflows still need a successful GitHub Actions run to verify the baseline; browser/WASM checks and end-to-end tests will be added with the browser runtime. Do not assume checks pass until the runs confirm it.
 
 ## Contributing and governance
 
@@ -87,6 +87,7 @@ Contributions are welcome under the project's dual MIT/Apache-2.0 license. Befor
 - [MAINTAINERS.md](MAINTAINERS.md) for maintainership and decision-making.
 - [AGENTS.md](AGENTS.md) for repository-wide instructions for contributors and coding agents.
 - [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md) for DDD, Clean Architecture, Hexagonal Architecture and SOLID rules.
+- [docs/ENGINEERING_BASELINE.md](docs/ENGINEERING_BASELINE.md) for workspace and dependency conventions.
 - [ROADMAP.md](ROADMAP.md) for project scope and acceptance criteria.
 - [SECURITY.md](SECURITY.md) for responsible vulnerability reporting.
 
