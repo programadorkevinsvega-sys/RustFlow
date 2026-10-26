@@ -1786,12 +1786,8 @@ fn cleanup_rendered_nodes(resources: &mut RenderedNodes) -> Result<(), DomError>
 
 fn cleanup_dynamic_regions(regions: &mut Vec<DynamicRegion>) -> Result<(), DomError> {
     let mut error = None;
-    for region in regions.drain(..).rev() {
-        first_error(&mut error, region.scope.dispose().map_err(Into::into));
-        if let Some(mut state) = region.state.borrow_mut().take() {
-            first_error(&mut error, detach_range(&mut state.mounted));
-            first_error(&mut error, cleanup_mounted_resources(&mut state.mounted));
-        }
+    for mut region in regions.drain(..).rev() {
+        first_error(&mut error, cleanup_one_dynamic_region(&mut region));
     }
     match error {
         Some(error) => Err(error),
