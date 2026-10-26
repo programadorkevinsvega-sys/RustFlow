@@ -56,6 +56,8 @@ Never claim a test, build, browser check, scan, or benchmark passed unless it wa
 - Do not claim `signal(value)`, `Signal::update`, `#[component]`, typed callback props, automatic `{signal}` interpolation, keyed reconciliation, or hydration exists unless the corresponding code/tests actually provide it.
 - Do not close Phase 3 based only on successful WASM compilation. The intended Counter and todo examples must compile with the documented public API and pass browser E2E tests for state updates, DOM identity, callback props, and cleanup.
 - Keep any proposed API examples clearly labeled as design targets until compile-tested. Never add a hidden process-global mutable runtime to simplify syntax without an explicit, reviewed ADR.
+- Use Rust-style `snake_case` for React-inspired API names. Treat `use_state`, `use_effect`, `use_memo`, `use_ref`, and `use_context` as planned names until exported and tested; familiar naming must not imply React-compatible signatures or positional hook semantics.
+- Preserve the signal-first architecture: prefer automatic dependency tracking and owner-bound cleanup. Do not introduce hook-cell-by-call-order machinery or Fiber-like scheduling unless an ADR justifies it with specific requirements and evidence.
 
 ## 6. Backend and security
 
