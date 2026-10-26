@@ -73,9 +73,9 @@ enum Node {
 impl Node {
     fn emit(&self) -> String {
         match self {
-            Self::Literal(expression) | Self::Expression(expression) => format!(
-                "::rustflow::view::IntoView::into_view(({expression}))"
-            ),
+            Self::Literal(expression) | Self::Expression(expression) => {
+                format!("::rustflow::view::IntoView::into_view(({expression}))")
+            }
             Self::Dynamic(expression) => format!(
                 "Ok(::rustflow::view::View::dynamic(move || ::rustflow::view::IntoView::into_view(({expression}))))"
             ),
@@ -154,7 +154,10 @@ struct Parser {
 
 impl Parser {
     fn new(input: TokenStream) -> Self {
-        Self { tokens: input.into_iter().collect(), cursor: 0 }
+        Self {
+            tokens: input.into_iter().collect(),
+            cursor: 0,
+        }
     }
 
     fn parse_roots(mut self) -> Result<Vec<Node>, ParseError> {
@@ -183,13 +186,20 @@ impl Parser {
                 self.cursor += 1;
                 let keyword = self.take_ident()?;
                 if keyword.to_string() != "dynamic" {
-                    return Err(self.error("expected @dynamic followed by a brace expression", keyword.span()));
+                    return Err(self.error(
+                        "expected @dynamic followed by a brace expression",
+                        keyword.span(),
+                    ));
                 }
                 let Some(TokenTree::Group(group)) = self.peek().cloned() else {
-                    return Err(self.error("expected a brace expression after @dynamic", keyword.span()));
+                    return Err(
+                        self.error("expected a brace expression after @dynamic", keyword.span())
+                    );
                 };
                 if group.delimiter() != Delimiter::Brace {
-                    return Err(self.error("expected a brace expression after @dynamic", group.span()));
+                    return Err(
+                        self.error("expected a brace expression after @dynamic", group.span())
+                    );
                 }
                 self.cursor += 1;
                 Ok(Node::Dynamic(group.stream().to_string()))
@@ -211,7 +221,10 @@ impl Parser {
             return Err(self.error("unexpected closing tag", open.span()));
         }
         let name = self.take_name()?;
-        let component = name.chars().next().is_some_and(|ch| ch.is_ascii_uppercase());
+        let component = name
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_uppercase());
         let mut attributes = Vec::new();
         let self_closing;
 
@@ -227,13 +240,22 @@ impl Parser {
                 break;
             }
             if self.cursor >= self.tokens.len() {
-                return Err(self.error("unterminated element header; expected > or />", open.span()));
+                return Err(
+                    self.error("unterminated element header; expected > or />", open.span())
+                );
             }
             attributes.push(self.parse_attribute()?);
         }
 
-        if component && attributes.iter().any(|attribute| attribute.kind == AttributeKind::Event) {
-            let attribute = attributes.iter().find(|attribute| attribute.kind == AttributeKind::Event).expect("event checked");
+        if component
+            && attributes
+                .iter()
+                .any(|attribute| attribute.kind == AttributeKind::Event)
+        {
+            let attribute = attributes
+                .iter()
+                .find(|attribute| attribute.kind == AttributeKind::Event)
+                .expect("event checked");
             return Err(self.error(
                 "on:event handlers belong on DOM elements; component callback props are not yet part of view! syntax",
                 attribute.span,
@@ -244,7 +266,9 @@ impl Parser {
         if !self_closing {
             loop {
                 if self.cursor >= self.tokens.len() {
-                    return Err(self.error(format!("missing closing tag for <{name}>"), open.span()));
+                    return Err(
+                        self.error(format!("missing closing tag for <{name}>"), open.span())
+                    );
                 }
                 if self.peek_punct(0, '<') && self.peek_punct(1, '/') {
                     self.cursor += 2;
@@ -263,7 +287,12 @@ impl Parser {
             }
         }
 
-        Ok(Node::Element(ElementNode { name, component, attributes, children }))
+        Ok(Node::Element(ElementNode {
+            name,
+            component,
+            attributes,
+            children,
+        }))
     }
 
     fn parse_attribute(&mut self) -> Result<Attribute, ParseError> {
@@ -278,9 +307,17 @@ impl Parser {
             self.cursor += 1;
             let suffix = self.take_name()?;
             match name.as_str() {
-                "on" => { kind = AttributeKind::Event; name = suffix; }
-                "prop" => { kind = AttributeKind::Property; name = suffix; }
-                _ => { name = format!("{name}:{suffix}"); }
+                "on" => {
+                    kind = AttributeKind::Event;
+                    name = suffix;
+                }
+                "prop" => {
+                    kind = AttributeKind::Property;
+                    name = suffix;
+                }
+                _ => {
+                    name = format!("{name}:{suffix}");
+                }
             }
         }
         if name == "key" && kind == AttributeKind::Html {
@@ -296,7 +333,12 @@ impl Parser {
         if matches!(kind, AttributeKind::Event | AttributeKind::Key) && value.is_none() {
             return Err(self.error("this attribute requires a value expression in braces", span));
         }
-        Ok(Attribute { name, kind, value, span })
+        Ok(Attribute {
+            name,
+            kind,
+            value,
+            span,
+        })
     }
 
     fn take_value(&mut self) -> Result<String, ParseError> {
@@ -316,14 +358,19 @@ impl Parser {
                 self.cursor += 1;
                 Ok(ident.to_string())
             }
-            _ => Err(self.error("attribute values must be literals or brace-delimited expressions", token.span())),
+            _ => Err(self.error(
+                "attribute values must be literals or brace-delimited expressions",
+                token.span(),
+            )),
         }
     }
 
     fn take_name(&mut self) -> Result<String, ParseError> {
         let first = self.take_ident()?;
         let mut name = first.to_string();
-        while self.peek_punct(0, '-') && matches!(self.tokens.get(self.cursor + 1), Some(TokenTree::Ident(_))) {
+        while self.peek_punct(0, '-')
+            && matches!(self.tokens.get(self.cursor + 1), Some(TokenTree::Ident(_)))
+        {
             self.cursor += 1;
             let suffix = self.take_ident()?;
             name.push('-');
@@ -334,7 +381,10 @@ impl Parser {
 
     fn take_ident(&mut self) -> Result<Ident, ParseError> {
         match self.peek().cloned() {
-            Some(TokenTree::Ident(ident)) => { self.cursor += 1; Ok(ident) }
+            Some(TokenTree::Ident(ident)) => {
+                self.cursor += 1;
+                Ok(ident)
+            }
             Some(token) => Err(self.error("expected an identifier", token.span())),
             None => Err(self.error("unexpected end of view! input", Span::call_site())),
         }
@@ -342,7 +392,10 @@ impl Parser {
 
     fn take_punct(&mut self, ch: char) -> Result<Punct, ParseError> {
         match self.peek().cloned() {
-            Some(TokenTree::Punct(punct)) if punct.as_char() == ch => { self.cursor += 1; Ok(punct) }
+            Some(TokenTree::Punct(punct)) if punct.as_char() == ch => {
+                self.cursor += 1;
+                Ok(punct)
+            }
             Some(token) => Err(self.error(format!("expected {ch}"), token.span())),
             None => Err(self.error(format!("expected {ch}"), Span::call_site())),
         }
@@ -352,14 +405,19 @@ impl Parser {
         self.take_punct(ch).map(|_| ())
     }
 
-    fn peek(&self) -> Option<&TokenTree> { self.tokens.get(self.cursor) }
+    fn peek(&self) -> Option<&TokenTree> {
+        self.tokens.get(self.cursor)
+    }
 
     fn peek_punct(&self, offset: usize, ch: char) -> bool {
         matches!(self.tokens.get(self.cursor + offset), Some(TokenTree::Punct(punct)) if punct.as_char() == ch)
     }
 
     fn error(&self, message: impl Into<String>, span: Span) -> ParseError {
-        ParseError { message: message.into(), span }
+        ParseError {
+            message: message.into(),
+            span,
+        }
     }
 }
 
@@ -377,7 +435,12 @@ fn compile_error(error: ParseError) -> TokenStream {
     group.set_span(span);
     let mut semicolon = Punct::new(';', Spacing::Alone);
     semicolon.set_span(span);
-    [TokenTree::Ident(ident), TokenTree::Punct(bang), TokenTree::Group(group), TokenTree::Punct(semicolon)]
-        .into_iter()
-        .collect()
+    [
+        TokenTree::Ident(ident),
+        TokenTree::Punct(bang),
+        TokenTree::Group(group),
+        TokenTree::Punct(semicolon),
+    ]
+    .into_iter()
+    .collect()
 }
