@@ -405,6 +405,23 @@ mod tests {
     }
 
     #[test]
+    fn rfc7239_duplicate_proto_parameters_fail_closed() {
+        let policy = ClientAddressPolicy::TrustedProxies(vec![
+            IpNetwork::parse("127.0.0.1/32").expect("loopback"),
+        ]);
+        let identity = resolve_client_identity(
+            Some("127.0.0.1:80".parse().expect("peer")),
+            &headers(&[(
+                "forwarded",
+                "for=203.0.113.10;proto=http;Proto=https",
+            )]),
+            &policy,
+            false,
+        );
+        assert!(!identity.https);
+    }
+
+    #[test]
     fn direct_policy_ignores_headers() {
         let identity = resolve_client_identity(
             Some("[::1]:9".parse().expect("peer")),
