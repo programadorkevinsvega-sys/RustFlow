@@ -175,6 +175,7 @@ fn parse_rfc7239_forwarded(value: &str) -> ForwardedChain {
         // the immediately preceding hop to the trusted proxy at our boundary.
         // Do not fall back to a proto in an earlier element: it may be client-supplied.
         let mut element_proto = None;
+        let mut seen_proto = false;
         let mut duplicate_proto = false;
         for pair in element.split(';') {
             let Some((name, raw_value)) = pair.trim().split_once('=') else {
@@ -186,9 +187,10 @@ fn parse_rfc7239_forwarded(value: &str) -> ForwardedChain {
                     for_ips.push(ip);
                 }
             } else if name.eq_ignore_ascii_case("proto") {
-                if element_proto.is_some() {
+                if seen_proto {
                     duplicate_proto = true;
                 } else {
+                    seen_proto = true;
                     element_proto = parse_forwarded_proto(raw_value);
                 }
             }
