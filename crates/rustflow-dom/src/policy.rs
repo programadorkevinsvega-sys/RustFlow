@@ -157,6 +157,9 @@ pub fn validate_property(
     name: &str,
     value: &rustflow_view::PropertyValue,
 ) -> Result<(), DomPolicyError> {
+    if matches!(value, rustflow_view::PropertyValue::Callback(_)) {
+        return Err(DomPolicyError::UnsafeProperty(name.to_owned()));
+    }
     let normalized = name.to_ascii_lowercase();
     if normalized == "style" || (normalized.starts_with("on") && normalized.len() > 2) {
         return Err(DomPolicyError::UnsafeProperty(name.to_owned()));
