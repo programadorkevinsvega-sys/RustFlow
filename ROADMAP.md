@@ -141,7 +141,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Map handler errors safely and provide 404/405 routing behavior.
 - [x] Add in-memory dispatch tests, unique named routes, and deterministic route introspection.
 - [x] Add representative real-TCP integration tests for HTML/JSON routes, path/query decoding, 400/404/405/413/504 responses, request-ID correlation, custom error pages, body limits/timeouts, and graceful shutdown (`crates/rustflow-server/tests/http_integration.rs`).
-- [ ] Expand network/deployment coverage for TLS, reverse-proxy trust, client aborts, malformed transport input, and concurrent/load behavior; these are not covered by the current TCP suite.
+- [ ] Add full route-group support; route groups are not part of the current server API.
 
 ### 4.3 Middleware and lifecycle
 - [x] Implement global ordered async middleware composition with a continuation that can wrap or short-circuit handlers. Route-scoped middleware remains future work.
@@ -155,7 +155,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Escape text and attribute values by default; apply a scheme allowlist to URL attributes and reject multi-URL attributes until parsed.
 - [x] Add safe full-document responses from structural views (`html_document`) and configurable escaped HTML error pages for selected 4xx/5xx statuses. Layout composition remains an application-level concern.
 - [x] Test escaping, rejected/void elements, URL policy, component cleanup, keyed order, nesting limits, full-document charset/title/body escaping, configurable 404/405 pages, route dispatch, body limits, handler timeouts, middleware, named-route introspection, and representative TCP requests covering status/content-type/request-ID headers, error cases, body limits, timeouts, and graceful shutdown.
-- [ ] Extend network coverage to TLS/reverse-proxy trust, client aborts, malformed transport input, and concurrency/load. These are deployment/reliability tasks and are not verified by the current local TCP tests.
+The broader transport/deployment tests listed under Phase 4.2 remain pending and are not implied by this rendering/test coverage.
 
 **Exit gate:** an executable example server handles multiple routes, renders safe HTML, and returns JSON. Automated coverage includes in-memory dispatch and representative local-TCP integration tests. Wider transport/deployment coverage remains open as listed above; this prototype is not production-ready.
 
