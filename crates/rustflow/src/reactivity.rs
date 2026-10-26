@@ -1118,6 +1118,17 @@ fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeE
     Ok(())
 }
 
+
+impl<T> rustflow_view::IntoView for Signal<T>
+where
+    T: Clone + rustflow_view::IntoView + 'static,
+{
+    fn into_view(self) -> Result<rustflow_view::View, rustflow_view::ViewError> {
+        let signal = self;
+        Ok(rustflow_view::View::dynamic(move || signal.get().into_view()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
