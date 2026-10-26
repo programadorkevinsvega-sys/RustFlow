@@ -1006,22 +1006,18 @@ impl Renderer for DomRenderer {
         previous: &View,
         next: &View,
     ) -> Result<(), Self::Error> {
-        // Diff only trees whose node-to-view correspondence is knowable. Dynamic
-        // evaluators and component descriptors remain on the conservative
-        // replacement path until their owned subranges are represented explicitly.
+        // Opaque component descriptors currently use safe range replacement.
+        // Dynamic nodes have their own child effects/ranges and are not read by
+        // this root effect; static trees can therefore be reconciled in place.
         if can_reconcile(previous) && can_reconcile(next) {
-            // Validate the complete next tree before mutating the mounted DOM.
-            // This catches policy/name/DOM construction failures before commit.
             let mut validation = RenderedNodes::default();
             if let Err(error) = self.build_nodes(next, &self.root_scope, &mut validation) {
-                let _ = cleanup_resources(&mut validation.listeners, &mut validation.components);
+                let _ = cleanup_rendered_nodes(&mut validation);
                 return Err(error);
             }
-            cleanup_resources(&mut validation.listeners, &mut validation.components)?;
+            cleanup_rendered_nodes(&mut validation)?;
 
             let Some(parent) = mounted.start.parent_node() else {
-                // A detached mount has no stable parent/boundary for reconciliation.
-                // Keep the established safe replacement behavior in this case.
                 return self.replace_range(mounted, next);
             };
             let end: Node = mounted.end.clone().unchecked_into();
@@ -1037,23 +1033,24 @@ impl Renderer for DomRenderer {
             ) {
                 Ok(nodes) => nodes,
                 Err(error) => {
-                    let _ = cleanup_resources(&mut resources.listeners, &mut resources.components);
+                    let _ = cleanup_rendered_nodes(&mut resources);
                     return Err(error);
                 }
             };
 
-            let cleanup_error =
-                cleanup_resources(&mut mounted.listeners, &mut mounted.components).err();
+            let cleanup_error = cleanup_mounted_resources(mounted).err();
             mounted.roots = roots;
             mounted.listeners = resources.listeners;
             mounted.components = resources.components;
-            return match cleanup_error {
-                Some(error) => Err(error),
-                None => Ok(()),
-            };
+            mounted.dynamics = resources.dynamics;
+            let activation_error = self.activate_dynamic_regions(&mut mounted.dynamics).err();
+            match (cleanup_error, activation_error) {
+                (Some(error), _) | (None, Some(error)) => Err(error),
+                (None, None) => Ok(()),
+            }
+        } else {
+            self.replace_range(mounted, next)
         }
-
-        self.replace_range(mounted, next)
     }
 
     fn unmount(&mut self, mut mounted: Self::Mounted) -> Result<(), Self::Error> {
@@ -1177,24 +1174,26 @@ fn attach_range(parent: &Node, mounted: &MountedDom) -> Result<(), DomError> {
 }
 
 fn detach_range(mounted: &mut MountedDom) -> Result<(), DomError> {
-    let Some(parent) = mounted.start.parent_node() else {
+    let start: Node = mounted.start.clone().unchecked_into();
+    let end: Node = mounted.end.clone().unchecked_into();
+    let Some(parent) = start.parent_node() else {
         return Ok(());
     };
     let mut first_error = None;
-    for node in &mounted.roots {
-        if let Err(error) = parent.remove_child(node) {
+    // Root arrays are snapshots: a dynamic region may have changed its child
+    // count since mount. Remove the live DOM range rather than stale node handles.
+    for node in nodes_between(&start, &end) {
+        if let Err(error) = parent.remove_child(&node) {
             if first_error.is_none() {
                 first_error = Some(js_error(error));
             }
         }
     }
-    let start: Node = mounted.start.clone().unchecked_into();
     if let Err(error) = parent.remove_child(&start) {
         if first_error.is_none() {
             first_error = Some(js_error(error));
         }
     }
-    let end: Node = mounted.end.clone().unchecked_into();
     if let Err(error) = parent.remove_child(&end) {
         if first_error.is_none() {
             first_error = Some(js_error(error));
