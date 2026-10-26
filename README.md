@@ -26,7 +26,7 @@ RustFlow is an early-stage framework project exploring a cohesive way to build w
 
 ## Planned architecture
 
-The workspace contains `rustflow` (single-threaded reactivity and component lifecycle), `rustflow-view` (target-independent typed nodes), `rustflow-macros` (the constrained `view!` syntax), `rustflow-dom` (an initial safe-subset WASM DOM renderer with signal-driven full-range rerenders), and `rustflow-ssr` (escaped HTML-fragment serialization with component resolution and a conservative element/URL policy). Targeted keyed reconciliation, browser bundles/E2E, HTTP routing, hydration, and CLI scaffolding remain separate roadmap work. These APIs are pre-1.0 prototypes and are not production-ready.
+The workspace contains `rustflow` (single-threaded reactivity and component lifecycle), `rustflow-view` (target-independent typed nodes), `rustflow-macros` (the constrained `view!` syntax), `rustflow-dom` (an initial safe-subset WASM DOM renderer with signal-driven full-range rerenders), `rustflow-ssr` (escaped HTML-fragment serialization), and `rustflow-server` (a bounded Axum/Tokio/Tower HTTP adapter with RustFlow-owned request/response types and route helpers). The server example covers HTML, JSON, query/path parameters, and JSON input. Targeted keyed reconciliation, browser bundles/E2E, configurable middleware, network-level integration tests, hydration, and CLI scaffolding remain pending. These APIs are pre-1.0 prototypes and are not production-ready.
 
 | Area | Planned responsibility |
 | --- | --- |
