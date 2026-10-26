@@ -949,7 +949,10 @@ async fn dispatch_request(
 }
 
 fn request_id_from_headers(headers: &HeaderMap) -> String {
-    if let Some(candidate) = headers.get("x-request-id").and_then(|value| value.to_str().ok()) {
+    if let Some(candidate) = headers
+        .get("x-request-id")
+        .and_then(|value| value.to_str().ok())
+    {
         if is_valid_request_id(candidate) {
             return candidate.to_owned();
         }
