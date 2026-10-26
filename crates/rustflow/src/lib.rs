@@ -36,7 +36,7 @@ pub mod reactivity;
 #[doc = "    rustflow::view! { <div>\"text\"</span> }"]
 #[doc = "}"]
 #[doc = "```"]
-pub use rustflow_macros::view;
+pub use rustflow_macros::{component, view};
 
 /// Common imports for authoring RustFlow reactive views and components.
 pub mod prelude {
@@ -45,7 +45,7 @@ pub mod prelude {
         use_state, with_owner_scope,
     };
     pub use crate::view::{IntoView, View};
-    pub use rustflow_macros::view;
+    pub use rustflow_macros::{component, view};
 }
 /// Public, target-independent view-model types.
 ///
