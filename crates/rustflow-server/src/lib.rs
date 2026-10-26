@@ -163,28 +163,30 @@ pub struct Request {
     https: bool,
 }
 
+struct RequestInit {
+    method: Method,
+    uri: Uri,
+    path_params: HashMap<String, String>,
+    headers: HeaderMap,
+    body: Bytes,
+    request_id: String,
+    identity: proxy::ClientIdentity,
+    peer_addr: Option<SocketAddr>,
+}
+
 impl Request {
-    fn new(
-        method: Method,
-        uri: Uri,
-        path_params: HashMap<String, String>,
-        headers: HeaderMap,
-        body: Bytes,
-        request_id: String,
-        identity: proxy::ClientIdentity,
-        peer_addr: Option<SocketAddr>,
-    ) -> Self {
+    fn new(init: RequestInit) -> Self {
         Self {
-            method,
-            path: uri.path().to_owned(),
-            query_string: uri.query().map(str::to_owned),
-            path_params,
-            headers,
-            body,
-            request_id,
-            peer_addr,
-            client_ip: identity.client_ip,
-            https: identity.https,
+            method: init.method,
+            path: init.uri.path().to_owned(),
+            query_string: init.uri.query().map(str::to_owned),
+            path_params: init.path_params,
+            headers: init.headers,
+            body: init.body,
+            request_id: init.request_id,
+            peer_addr: init.peer_addr,
+            client_ip: init.identity.client_ip,
+            https: init.identity.https,
         }
     }
 
@@ -1326,16 +1328,16 @@ async fn dispatch_request(
             }
         };
 
-        let request = Request::new(
-            parts.method,
-            parts.uri,
+        let request = Request::new(RequestInit {
+            method: parts.method,
+            uri: parts.uri,
             path_params,
-            parts.headers,
+            headers: parts.headers,
             body,
-            request_id_for_response.clone(),
+            request_id: request_id_for_response.clone(),
             identity,
-            peer,
-        );
+            peer_addr: peer,
+        });
         let middleware = match (middleware_registry.read(), route_middleware.read()) {
             (Ok(global), Ok(scoped)) => {
                 let mut stack = global.clone();
