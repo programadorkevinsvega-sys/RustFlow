@@ -72,8 +72,12 @@ pub fn component(_attributes: TokenStream, item: TokenStream) -> TokenStream {
                 span: function_name.span(),
             });
         }
-        let type_name = type_name.trim();
-        let Some(conversion) = property_conversion(&parameter_name, type_name) else {
+        let type_name = type_name
+            .trim()
+            .replace(" :: ", "::")
+            .replace(" ::", "::")
+            .replace(":: ", "::");
+        let Some(conversion) = property_conversion(&parameter_name, &type_name) else {
             return compile_error(ParseError {
                 message: format!(
                     "#[component] does not support prop type {type_name} for {parameter_name}; use String, bool, i32, i64, u32, usize, f64, or EventHandler"
