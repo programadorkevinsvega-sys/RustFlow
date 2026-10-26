@@ -6,7 +6,7 @@
 use std::{collections::HashSet, error::Error, fmt};
 
 use rustflow::{
-    components::{ComponentError, ComponentInstance, ComponentRegistry},
+    components::{ComponentError, ComponentRegistry},
     reactivity::{Runtime, RuntimeError, Scope},
 };
 use rustflow_view::{
@@ -744,7 +744,7 @@ mod tests {
     use super::{HtmlRenderer, SsrError, render_to_string, render_with_components};
     use rustflow::{
         components::{ComponentDefinition, ComponentRegistry, ComponentRender},
-        view::{Element, Property, View},
+        view::{Element, View},
     };
     use std::{cell::Cell, rc::Rc};
 
