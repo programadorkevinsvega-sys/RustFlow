@@ -483,6 +483,12 @@ impl IntoView for View {
         Ok(self)
     }
 }
+
+impl IntoView for Result<View, ViewError> {
+    fn into_view(self) -> Result<View, ViewError> {
+        self
+    }
+}
 impl IntoView for String {
     fn into_view(self) -> Result<View, ViewError> {
         Ok(View::text(self))
