@@ -7,7 +7,7 @@
 
 ## Context
 
-RustFlow already has a typed reactive runtime, a structural view model, the `view!` procedural macro, a native component lifecycle/registry model, an initial WASM DOM adapter, and an SSR serializer. These pieces do not yet compose into the intended React-like everyday authoring experience. In particular, the current public flow uses `Runtime::signal`, component descriptors and manual registry APIs; ordinary expression interpolation is not automatically reactive; the ergonomic `signal(value)`, `Signal::update`, and `#[component]` APIs are not implemented; and reactive DOM updates currently replace the mounted range.
+When this ADR was drafted, RustFlow already had a typed reactive runtime, a structural view model, the `view!` procedural macro, a native component lifecycle/registry model, an initial WASM DOM adapter, and an SSR serializer, but those pieces had not yet composed into the intended React-like everyday authoring experience. The gaps at that point included owner-bound `signal(value)`/`Signal::update`, reactive signal interpolation, the constrained `#[component]` API, and DOM reconciliation that preserves compatible identity. The Phase 3 implementation and current status are recorded below.
 
 The product objective is a familiar declarative and reactive component workflow in Rust. This does not mean React source/API compatibility or a drop-in replacement.
 
@@ -108,7 +108,7 @@ The supported Phase 3 public names, signatures, error behavior, and lifecycle de
 ## Consequences
 
 - Phase 2 remains complete only for the native structural view/component model; this ADR does not retroactively claim that the public ergonomic contract exists.
-- Phase 3 now owns delivery and verification of the ergonomic API, fine-grained renderer, browser bundle, Counter, todo, and browser E2E gates.
+- Phase 3 delivered and verified the ergonomic API subset, fine-grained renderer, browser bundle, Counter/todo examples, and browser E2E gates; this ADR records that completed milestone.
 - SSR/hydration, client navigation, forms integration, and server-side state isolation remain separate roadmap work; this ADR does not mark them implemented.
 - Phase 3 was closed only after its acceptance evidence was integrated into `main` and the post-merge CI passed on the exact main commit, including Rust stable/1.85, WASM, bundle budget, browser E2E, documentation, and governance checks.
 
