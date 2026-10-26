@@ -4,7 +4,7 @@ use rustls::ServerConfig;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::{mpsc, watch, Semaphore},
+    sync::{Semaphore, mpsc, watch},
     time::timeout,
 };
 use tokio_rustls::{TlsAcceptor, server::TlsStream};

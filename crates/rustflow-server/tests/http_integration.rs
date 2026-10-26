@@ -572,7 +572,11 @@ async fn incomplete_tls_handshake_does_not_block_valid_connections() {
     let tls = tls_server_config_from_pem(&cert_pem, &key_pem).expect("tls config");
     let mut app = Application::new();
     app.get("/health", |request: Request| async move {
-        Ok(Response::text(if request.is_https() { "secure" } else { "plain" }))
+        Ok(Response::text(if request.is_https() {
+            "secure"
+        } else {
+            "plain"
+        }))
     })
     .expect("health");
 
@@ -587,23 +591,25 @@ async fn incomplete_tls_handshake_does_not_block_valid_connections() {
 
     // Connect without sending a ClientHello. This socket must not serialize
     // TLS acceptance and delay the following valid client.
-    let stalled = TcpStream::connect(address).await.expect("stalled tcp connect");
+    let stalled = TcpStream::connect(address)
+        .await
+        .expect("stalled tcp connect");
     tokio::time::sleep(Duration::from_millis(50)).await;
 
-    let tcp = TcpStream::connect(address).await.expect("valid tcp connect");
+    let tcp = TcpStream::connect(address)
+        .await
+        .expect("valid tcp connect");
     let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(
         rustls::ClientConfig::builder()
             .with_root_certificates(roots)
             .with_no_client_auth(),
     ));
     let server_name = rustls_pki_types::ServerName::try_from("localhost").expect("dns name");
-    let mut stream = tokio::time::timeout(
-        Duration::from_secs(2),
-        connector.connect(server_name, tcp),
-    )
-    .await
-    .expect("a stalled peer must not block a valid TLS handshake")
-    .expect("valid tls handshake");
+    let mut stream =
+        tokio::time::timeout(Duration::from_secs(2), connector.connect(server_name, tcp))
+            .await
+            .expect("a stalled peer must not block a valid TLS handshake")
+            .expect("valid tls handshake");
 
     tokio::time::timeout(
         Duration::from_secs(2),
