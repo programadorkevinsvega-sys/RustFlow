@@ -1,6 +1,6 @@
 ---
 title: Estado del proyecto
-description: Capacidades verificadas de RustFlow y criterios funcionales que aún bloquean el cierre de fases.
+description: Capacidades verificadas de RustFlow, estado de las fases y alcance que permanece pendiente.
 ---
 
 RustFlow está en desarrollo y sus APIs son pre-1.0. El [roadmap del repositorio](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) es la fuente de verdad para el progreso y los criterios de aceptación. Ninguna fase se considera cerrada solo porque la CI esté verde.
@@ -27,11 +27,13 @@ La suite de Chromium incluye cuatro escenarios: identidad DOM del Counter, actua
 
 **Estado: cerrada en `main` el 2026-10-26.** La PR #26 se fusionó primero en la rama de la PR #25; después la PR #25 se fusionó en `main`. Los siete checks post-merge terminaron correctamente en el commit [`43f5fb9`](https://github.com/programadorkevinsvega-sys/RustFlow/commit/43f5fb9c12996ea600b47930553a9f91dc6055e9), incluidos Rust estable/1.85, compilación WASM, E2E Chromium, presupuesto del bundle, documentación, gobernanza y despliegue de Pages. El cierre se limita al runtime de navegador y los criterios de la Fase 3; SSR/hidratación y otros hitos posteriores permanecen separados.
 
-### Fase 4 — Servidor HTTP, prototipo integrado
+### Fase 4 — Servidor HTTP, cerrada y verificada
 
-El crate rustflow-server integra Axum/Tokio/Tower detrás de tipos de RustFlow. Incluye rutas y handlers asíncronos, grupos de rutas, parámetros de ruta y query, extracción básica de JSON, respuestas de texto/HTML/JSON, middleware global, de grupo y por ruta, rutas nombradas, request IDs, eventos/spans de tracing, límites de body, timeouts, límite de concurrencia, apagado graceful, servicio TLS local con rustls y política de proxies de confianza.
+El crate `rustflow-server` integra Axum/Tokio/Tower detrás de tipos de RustFlow. Incluye rutas y handlers asíncronos, grupos de rutas, parámetros de ruta y query, extracción básica de JSON, respuestas de texto/HTML/JSON, middleware global, de grupo y por ruta, rutas nombradas, request IDs, eventos/spans de `tracing`, límites de body, timeouts, límite de concurrencia, apagado graceful, TLS local con rustls y política de proxies de confianza.
 
-La PR #30 integró estos criterios en main y pasó los checks del commit de merge. La subfase de auditoría de cierre añade manejo concurrente y acotado de handshakes TLS con timeout, una regresión frente a clientes que abren TCP sin enviar ClientHello y sincronización de la documentación. El serializador rustflow-ssr genera fragmentos HTML escapados; html_document y las páginas configurables 4xx/5xx no implican hidratación ni SSR full-stack. Véase el roadmap para las subfases y el gate de verificación.
+**Cierre formal:** la PR #31 añadió handshakes TLS concurrentes limitados a 64, un timeout de 10 segundos y una regresión TCP real para demostrar que un cliente sin ClientHello no bloquea conexiones TLS válidas. La PR #31 se fusionó en `main` el 2026-10-26 mediante el commit [`6f4123b`](https://github.com/programadorkevinsvega-sys/RustFlow/commit/6f4123b94f4273701f0336c4c982973af7bf7562). Los checks post-merge pasaron: Rust 1.85, Rust stable, WASM, E2E Chromium/presupuesto de bundle, Rustdoc, build del website, gobernanza, revisión de dependencias y Cloudflare Pages.
+
+El serializador `rustflow-ssr` genera fragmentos HTML escapados; `html_document` y las páginas configurables 4xx/5xx no implican hidratación ni SSR full-stack. La fase se cierra dentro de su alcance de servidor HTTP de prototipo, no como declaración de preparación para producción. Siguen pendientes sesiones/autenticación, CSRF, rate limiting, recetas de despliegue y threat model de producción, SSR completo e hidratación. Véase el [roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) para la evidencia y los límites.
 
 Guía práctica: [Servidor HTTP experimental](/guides/server/). Detalles y límites: [docs/HTTP_SERVER.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/HTTP_SERVER.md) y [docs/SSR_RENDERING.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/SSR_RENDERING.md).
 
