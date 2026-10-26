@@ -1333,28 +1333,23 @@ impl DomRenderer {
                     resources,
                 )
             }
-            ReconciliationAction::Component => {
+            ReconciliationAction::Component {
+                region_index,
+                next_view,
+                child_plan,
+            } => {
                 let View::Component(next) = &plan.next else {
                     return Err(DomError::JavaScript(
                         "component reconciliation plan contains a non-component view".into(),
                     ));
                 };
-                let Some(first_node) = existing_nodes.first() else {
-                    return self.build_nodes(&plan.next, owner_scope, resources);
-                };
-                let region_index = previous_components.iter().position(|region| {
-                    let start: Node = region.mounted.start.clone().unchecked_into();
-                    start.is_same_node(Some(first_node))
-                });
-                let Some(region_index) = region_index else {
-                    return self.build_nodes(&plan.next, owner_scope, resources);
-                };
-                let region = &mut previous_components[region_index];
+                let region = previous_components.get_mut(*region_index).ok_or_else(|| {
+                    DomError::JavaScript(
+                        "component diff plan references a missing mounted region".into(),
+                    )
+                })?;
                 let next_properties = next.properties().to_vec();
                 let next_children = next.children().to_vec();
-                let next_view = region
-                    .instance
-                    .preview_update(&next_properties, &next_children)?;
                 let mut renderer = DomRenderer::new(
                     self.document.clone(),
                     self.runtime.clone(),
@@ -1362,47 +1357,35 @@ impl DomRenderer {
                 );
                 renderer.root_scope = region.instance.scope().clone();
                 renderer.error_sink = self.error_sink.clone();
-                let child_plan = renderer.plan_diff(&region.view, &next_view)?;
-                renderer.update_with_plan(&mut region.mounted, child_plan)?;
+
+                // The rendered view was precomputed during diff planning. Commit
+                // its child plan before accepting the new props on the instance.
+                renderer.update_with_plan(&mut region.mounted, (**child_plan).clone())?;
                 region.instance.commit_preview_update(
                     next_properties,
                     next_children,
                     next_view.clone(),
                 )?;
                 region.descriptor = next.clone();
-                region.view = next_view;
+                region.view = next_view.clone();
                 region.reused = true;
                 Ok(mounted_range_nodes(&region.mounted))
             }
-            ReconciliationAction::Dynamic => {
+            ReconciliationAction::Dynamic {
+                region_index,
+                next_view,
+                child_plan,
+            } => {
                 let View::Dynamic(next) = &plan.next else {
                     return Err(DomError::JavaScript(
                         "dynamic reconciliation plan contains a non-dynamic view".into(),
                     ));
                 };
-                let Some(first_node) = existing_nodes.first() else {
-                    return self.build_nodes(&plan.next, owner_scope, resources);
-                };
-                let region_index = previous_dynamics.iter().position(|region| {
-                    let state = region.state.borrow();
-                    state.as_ref().is_some_and(|current| {
-                        let start: Node = current.mounted.start.clone().unchecked_into();
-                        start.is_same_node(Some(first_node))
-                    })
-                });
-                let Some(region_index) = region_index else {
-                    return self.build_nodes(&plan.next, owner_scope, resources);
-                };
-                let region = &mut previous_dynamics[region_index];
-                let next_view = untrack(|| next.evaluate())?;
-                let previous_view = region
-                    .state
-                    .borrow()
-                    .as_ref()
-                    .map(|current| current.view.clone())
-                    .ok_or_else(|| {
-                        DomError::JavaScript("dynamic region has already been disposed".into())
-                    })?;
+                let region = previous_dynamics.get_mut(*region_index).ok_or_else(|| {
+                    DomError::JavaScript(
+                        "dynamic diff plan references a missing mounted region".into(),
+                    )
+                })?;
                 let mut renderer = DomRenderer::new(
                     self.document.clone(),
                     self.runtime.clone(),
@@ -1410,14 +1393,13 @@ impl DomRenderer {
                 );
                 renderer.root_scope = region.scope.clone();
                 renderer.error_sink = region.error_sink.clone();
-                let child_plan = renderer.plan_diff(&previous_view, &next_view)?;
                 {
                     let mut state = region.state.borrow_mut();
                     let current = state.as_mut().ok_or_else(|| {
                         DomError::JavaScript("dynamic region has already been disposed".into())
                     })?;
-                    renderer.update_with_plan(&mut current.mounted, child_plan)?;
-                    current.view = next_view;
+                    renderer.update_with_plan(&mut current.mounted, (**child_plan).clone())?;
+                    current.view = next_view.clone();
                 }
                 region.dynamic = next.clone();
                 region.reused = true;
