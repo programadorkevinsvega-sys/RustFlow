@@ -83,6 +83,7 @@ jobs:
   browser-e2e:
     name: Browser E2E and bundle size
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -119,6 +120,7 @@ jobs:
 
       - name: Install Chromium for Playwright
         working-directory: examples/browser
+        timeout-minutes: 10
         run: npx playwright install --with-deps chromium
 
       - name: Run browser end-to-end tests
