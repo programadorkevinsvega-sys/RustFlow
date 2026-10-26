@@ -1822,7 +1822,12 @@ impl Renderer for DomRenderer {
         previous: &View,
         next: &View,
     ) -> Result<(), Self::Error> {
-        let plan = self.plan_diff(previous, next)?;
+        let plan = self.plan_diff(
+            previous,
+            next,
+            &mounted.component_regions,
+            &mounted.dynamics,
+        )?;
         self.update_with_plan(mounted, plan)
     }
 
