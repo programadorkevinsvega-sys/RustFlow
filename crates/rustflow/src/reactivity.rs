@@ -454,8 +454,10 @@ impl<T: Clone + 'static> Signal<T> {
             if inner.disposed {
                 return Err(RuntimeError::RuntimeDisposed);
             }
-            if !inner.signals.contains_key(&self.id) {
-                return Err(RuntimeError::InvalidSignal);
+            let signal = inner.signals.get(&self.id).ok_or(RuntimeError::InvalidSignal)?;
+            let owner = inner.scopes.get(&signal.owner).ok_or(RuntimeError::InvalidSignal)?;
+            if owner.disposed {
+                return Err(RuntimeError::DisposedScope);
             }
         }
         let value = self.value.borrow().clone();
@@ -494,8 +496,10 @@ impl<T: Clone + 'static> Signal<T> {
             if inner.disposed {
                 return Err(RuntimeError::RuntimeDisposed);
             }
-            if !inner.signals.contains_key(&self.id) {
-                return Err(RuntimeError::InvalidSignal);
+            let signal = inner.signals.get(&self.id).ok_or(RuntimeError::InvalidSignal)?;
+            let owner = inner.scopes.get(&signal.owner).ok_or(RuntimeError::InvalidSignal)?;
+            if owner.disposed {
+                return Err(RuntimeError::DisposedScope);
             }
         }
 
@@ -931,23 +935,63 @@ fn flush_runtime(runtime: &RuntimeRef) -> Result<(), RuntimeError> {
 
 fn dispose_effect(runtime: &RuntimeRef, effect_id: EffectId) -> Result<(), RuntimeError> {
     check_runtime_context(runtime)?;
-    let mut inner = runtime.borrow_mut();
-    if inner.disposed {
-        return Err(RuntimeError::RuntimeDisposed);
+    let (owner, cleanups) = {
+        let mut inner = runtime.borrow_mut();
+        if inner.disposed {
+            return Err(RuntimeError::RuntimeDisposed);
+        }
+        if !inner.effects.contains_key(&effect_id) {
+            return Ok(());
+        }
+        detach_dependencies(&mut inner, effect_id);
+        let effect = inner.effects.remove(&effect_id).expect("effect checked");
+        inner.pending.remove(&effect_id);
+        inner.queue.retain(|queued| *queued != effect_id);
+        (effect.owner, effect.cleanups)
+    };
+
+    let _owner_guard = OwnerContextGuard::enter(runtime, owner);
+    let mut first_panic = None;
+    for cleanup in cleanups.into_iter().rev() {
+        let previous_effect = {
+            let mut inner = runtime.borrow_mut();
+            let previous = inner.active_effect;
+            inner.active_effect = None;
+            previous
+        };
+        let result = catch_unwind(AssertUnwindSafe(cleanup));
+        {
+            let mut inner = runtime.borrow_mut();
+            inner.active_effect = previous_effect;
+        }
+        if let Err(payload) = result {
+            if first_panic.is_none() {
+                first_panic = Some(payload);
+            }
+        }
     }
-    if !inner.effects.contains_key(&effect_id) {
-        return Ok(());
+    {
+        let mut inner = runtime.borrow_mut();
+        for signal_id in signals {
+            if let Some(signal) = inner.signals.remove(&signal_id) {
+                for effect_id in signal.subscribers {
+                    if let Some(effect) = inner.effects.get_mut(&effect_id) {
+                        effect.dependencies.remove(&signal_id);
+                    }
+                }
+            }
+        }
     }
-    detach_dependencies(&mut inner, effect_id);
-    inner.effects.remove(&effect_id);
-    inner.pending.remove(&effect_id);
-    inner.queue.retain(|queued| *queued != effect_id);
+
+    if let Some(payload) = first_panic {
+        resume_unwind(payload);
+    }
     Ok(())
 }
 
 fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeError> {
     check_runtime_context(runtime)?;
-    let (children, effects, cleanups) = {
+    let (children, effects, signals, cleanups) = {
         let mut inner = runtime.borrow_mut();
         if inner.disposed {
             return Err(RuntimeError::RuntimeDisposed);
@@ -963,6 +1007,7 @@ fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeE
         (
             std::mem::take(&mut scope.children),
             std::mem::take(&mut scope.effects),
+            std::mem::take(&mut scope.signals),
             std::mem::take(&mut scope.cleanups),
         )
     };
