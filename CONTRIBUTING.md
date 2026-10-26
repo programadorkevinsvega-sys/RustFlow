@@ -51,9 +51,17 @@ Use concise imperative messages with an optional scope, for example:
 - `feat(reactivity): add signal tracking`
 - `fix(router): reject malformed path parameters`
 
-## Versioning and compatibility
+## Versioning, MSRV, and compatibility
 
-RustFlow is pre-1.0. Public APIs are not stable, and breaking changes may occur between minor releases. Such changes must be documented with rationale and migration notes. After 1.0, the project will follow Semantic Versioning and a documented deprecation policy.
+RustFlow is pre-1.0. Public APIs are not stable, and breaking changes may occur between minor releases. Such changes must be documented with rationale and migration notes.
+
+- **Version format:** use `MAJOR.MINOR.PATCH` once versioned releases begin.
+- **Before 1.0:** `0.y.z` denotes pre-stable development. A breaking public API change increments the minor version; patch releases are reserved for fixes intended not to break the documented API. Experimental APIs may change, but must be clearly labelled.
+- **After 1.0:** follow Semantic Versioning. Breaking public API changes require a new major version except where the SemVer specification permits otherwise.
+- **Deprecation:** after 1.0, mark deprecated Rust APIs with `#[deprecated]` where applicable, explain the replacement, and provide migration notes. Keep deprecated APIs for at least one subsequent minor release before removal in a major release, except where a security or legal issue requires faster action. Document exceptions in release notes.
+- **MSRV:** the initial Minimum Supported Rust Version is 1.85. Use the stable channel for development. Once Cargo manifests exist, every published crate must declare `rust-version = "1.85"` (or the then-approved project MSRV), and CI must test the declared MSRV plus current stable. Raising MSRV requires a documented rationale, a roadmap/release note, and an update to all relevant manifests and documentation. Before 1.0, MSRV may be raised in a minor release; after 1.0, MSRV policy changes must be announced and follow the project's compatibility policy.
+- **Toolchain:** `rust-toolchain.toml` selects `stable` and installs `rustfmt` and `clippy`. The toolchain file intentionally tracks stable; the MSRV is a separate compatibility floor.
+
 
 ## Security reports
 
