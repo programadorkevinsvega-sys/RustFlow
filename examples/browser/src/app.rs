@@ -139,7 +139,9 @@ pub fn start() -> Result<(), JsValue> {
     let draft = runtime.signal(String::new()).map_err(display_error)?;
     let next_id = runtime.signal(1_i64).map_err(display_error)?;
     let show_help = runtime.signal(true).map_err(display_error)?;
-    let counter_label = runtime.signal(String::from("Initial label")).map_err(display_error)?;
+    let counter_label = runtime
+        .signal(String::from("Initial label"))
+        .map_err(display_error)?;
     let cleanup_count = runtime.signal(0_i32).map_err(display_error)?;
 
     let mut registry = ComponentRegistry::new();
