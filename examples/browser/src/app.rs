@@ -143,6 +143,7 @@ pub fn start() -> Result<(), JsValue> {
         .signal(String::from("Initial label"))
         .map_err(display_error)?;
     let cleanup_count = runtime.signal(0_i32).map_err(display_error)?;
+    let todo_identity = runtime.signal(0_i64).map_err(display_error)?;
 
     let mut registry = ComponentRegistry::new();
     register_counter(&mut registry).map_err(display_error)?;
@@ -166,14 +167,22 @@ pub fn start() -> Result<(), JsValue> {
             let counter_label_for_button = counter_label.clone();
             let cleanup_count_for_rows = cleanup_count.clone();
             let cleanup_count_for_display = cleanup_count.clone();
+            let todo_identity_for_region = todo_identity.clone();
+            let todo_identity_for_button = todo_identity.clone();
 
             let todo_region = View::dynamic(move || {
                 let snapshot = todos_for_region.get();
+                let identity = todo_identity_for_region.get();
                 let mut children = Vec::with_capacity(snapshot.len());
                 for todo in snapshot {
                     let id = todo.id;
+                    let key = if id == 1 {
+                        format!("todo-{id}-{identity}")
+                    } else {
+                        format!("todo-{id}")
+                    };
                     children.push(KeyedChild::new(
-                        id,
+                        key,
                         todo_component(
                             todo,
                             todos_for_rows.clone(),
@@ -247,6 +256,11 @@ pub fn start() -> Result<(), JsValue> {
                         todos_for_reverse.update(|items| items.reverse());
                     }}>
                         "Reverse order"
+                    </button>
+                    <button data-testid="change-todo-key" on:click={move |_payload| {
+                        todo_identity_for_button.update(|identity| *identity += 1);
+                    }}>
+                        "Replace first todo instance"
                     </button>
                     <button on:click={move |_payload| {
                         show_for_button.update(|visible| *visible = !*visible);

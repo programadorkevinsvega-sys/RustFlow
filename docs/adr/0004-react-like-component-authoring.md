@@ -114,6 +114,18 @@ The implementation proposal must answer the design questions above, include alte
 - Before closing Phase 3, tests and public docs must demonstrate the intended user workflow. A WASM compile check or native runtime unit tests alone are insufficient.
 
 
-## Implementation status (not an acceptance claim)
+## Implementation status (stacked Phase 3 branch; not mainline closure)
 
-The current Phase 3 implementation branch includes an owner-bound `signal`/`use_state`/`use_effect` API, a constrained `#[component]` macro with typed props and callback props, reactive signal-identifier interpolation, a production WASM/Vite bundle, Counter and todo examples, Chromium E2E tests, a raw-WASM size budget, and basic browser error/source-map feedback. These implemented slices do not satisfy the Phase 3 exit gate by themselves. In `crates/rustflow-dom/src/browser.rs`, `can_reconcile` still excludes `View::Dynamic` and `View::Component`, so updates containing either kind of subtree can take the full-range replacement path; the current implementation does not yet reliably preserve compatible component instances and their internal state when parent-rendered descriptors or props change. The diff/evaluation planning and DOM commit are also not yet separated into explicit phases. Keep Phase 3 open until these gaps have regression tests and the exact current HEAD passes all required CI checks.
+The current stacked implementation branch (PR #26, based on PR #25) now includes the owner-bound `signal`/`use_state`/`use_effect` API, the constrained `#[component]` macro with typed props and callback props, reactive signal-identifier interpolation, a production WASM/Vite bundle, Counter and todo examples, browser E2E coverage, a raw-WASM size budget, and basic browser error/source-map feedback.
+
+### Component props without resetting setup state
+
+The component macro separates one-time setup statements from the render callback. Stateful APIs must be direct top-level setup statements; the generated render callback reads the current typed props on every render. `ComponentInstance::preview_update` computes a candidate view from new props and children without recreating the owner scope, and `commit_preview_update` accepts that candidate only after the host has successfully committed its DOM plan. A compatible component therefore keeps its existing signals/effects while refreshing values derived from props.
+
+### Diff/evaluation and DOM commit
+
+`crates/rustflow-dom/src/browser.rs` now builds an explicit `ReconciliationPlan` before applying DOM mutations. The evaluation phase validates the candidate tree and prebuilds inserted/replaced subtrees off-DOM inside `PreparedReplacement`; its owned resources are cleaned if the plan is discarded. The commit phase consumes the plan, patches compatible text/elements and child ranges, moves prepared nodes into place, and disposes obsolete component/dynamic regions and their scopes, effects, listeners, and cleanups. Component compatibility is based on name and key, not equality of changing props. `KeyedChild::new` propagates the list key to a root component descriptor so keyed component identity follows the list key.
+
+Regression coverage includes a parent changing a visible child prop while its local signal and compatible DOM nodes survive, keyed reordering preserving local child state, changing a component's key replacing its DOM and resetting its local state while cleaning the old instance, row removal cleanup, and structural conditional mount/unmount.
+
+The implementation remains on a draft stacked PR. Keep Phase 3 open in `main` until CI is green on the exact current PR #26 HEAD, PR #26 is reviewed/integrated into PR #25, and PR #25 is then reviewed and merged with authorization. This status describes the implementation branch; it is not a claim that either pull request has merged.

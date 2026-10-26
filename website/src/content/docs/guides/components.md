@@ -3,7 +3,7 @@ title: Crear componentes
 description: API actual de componentes RustFlow, vistas tipadas y runtime de navegador.
 ---
 
-> **Estado: prototipo en desarrollo.** RustFlow ya tiene un subconjunto ejecutable de la API React-like, un runtime WASM con regiones dinámicas y un ejemplo de navegador. La Fase 3 permanece abierta porque la reconciliación completa de componentes y la separación diff/commit siguen pendientes.
+> **Estado: prototipo en desarrollo; integración de Fase 3 pendiente.** La rama apilada #26 sobre la PR #25 ya implementa reconciliación explícita diff/commit, actualización de props sin reinicializar el setup, preservación de estado/identidad cuando componente y clave son compatibles, y cleanup de rangos sustituidos. La Fase 3 permanece abierta en `main` hasta que ambas PR se revisen e integren.
 
 ## API disponible hoy
 
@@ -65,7 +65,7 @@ Los nombres son inspiración de vocabulario, no promesa de compatibilidad semán
 
 El adaptador aplica atributos y propiedades mediante APIs DOM, valida nombres y restringe esquemas URL; no inserta el árbol como HTML crudo. Los eventos que burbujean usan delegación en el límite del montaje y otros eventos conservan listeners directos. La limpieza está ligada a los rangos, scopes y ciclo de vida.
 
-El renderer parchea texto y elementos compatibles, tiene scopes/effects por hijo dinámico y conserva nodos compatibles de una lista al cambiar su orden por clave. **Sigue incompleto** el diff/commit explícito y la preservación de identidad de componentes al cambiar descriptores/props: algunos árboles con componentes aún usan reemplazo de rango completo. Por eso no se declara cerrada la Fase 3 aunque el bundle y los E2E actuales pasen.
+El renderer calcula un `ReconciliationPlan` antes del commit DOM; valida las vistas candidatas y prepara fuera del DOM las ramas nuevas o incompatibles. Durante el commit conserva nodos compatibles, actualiza props a través del render del componente sin recrear su scope, sigue la clave del `KeyedChild` para componentes de lista y limpia las instancias/scope/efectos/listeners salientes. Las pruebas del navegador cubren cambios de props, identidad DOM, reordenación keyed, sustitución por cambio de clave y cleanup. El gate funcional de la rama requiere CI verde en el HEAD exacto; la Fase 3 sigue abierta en `main` hasta que se integren las PR apiladas #26 y #25.
 
 ## Compilar y ejecutar el ejemplo de navegador
 
