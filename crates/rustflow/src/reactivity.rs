@@ -61,7 +61,6 @@ struct EffectNode {
 }
 
 struct ScopeNode {
-    parent: Option<ScopeId>,
     children: Vec<ScopeId>,
     effects: Vec<EffectId>,
     cleanups: Vec<Cleanup>,
@@ -141,7 +140,6 @@ impl Runtime {
         scopes.insert(
             root_scope,
             ScopeNode {
-                parent: None,
                 children: Vec::new(),
                 effects: Vec::new(),
                 cleanups: Vec::new(),
@@ -339,7 +337,7 @@ impl<T: Clone + 'static> Signal<T> {
         }
 
         if let Some(equal) = &self.equality {
-            if equal(&self.value.borrow(), &value) {
+            if equal(&*self.value.borrow(), &value) {
                 return Ok(false);
             }
         }
@@ -435,7 +433,6 @@ fn create_scope(runtime: &RuntimeRef, parent: ScopeId) -> Result<Scope, RuntimeE
         let id = inner.next_scope;
         inner.next_scope += 1;
         inner.scopes.insert(id, ScopeNode {
-            parent: Some(parent),
             children: Vec::new(),
             effects: Vec::new(),
             cleanups: Vec::new(),
@@ -761,7 +758,7 @@ mod tests {
         value.set(1);
         assert_eq!(runs.get(), 1);
         assert_eq!(*order.borrow(), vec![2, 1]);
-        assert_eq!(scope.effect(|| {}).unwrap_err(), RuntimeError::DisposedScope);
+        assert_eq!(scope.effect(|| {}).err().unwrap(), RuntimeError::DisposedScope);
     }
 
     #[test]
@@ -770,7 +767,7 @@ mod tests {
         let value = runtime.signal(0usize).unwrap();
         let signal = value.clone();
         let effect = runtime.effect(move || signal.set(signal.get() + 1));
-        assert_eq!(effect.unwrap_err(), RuntimeError::CycleDetected { limit: 8 });
+        assert_eq!(effect.err().unwrap(), RuntimeError::CycleDetected { limit: 8 });
         assert!(matches!(runtime.flush(), Ok(())));
         let independent = runtime.signal_eq(0).unwrap();
         independent.set(1);
@@ -783,7 +780,7 @@ mod tests {
         let signal = runtime.signal_eq(1).unwrap();
         runtime.dispose().unwrap();
         assert_eq!(signal.try_get().unwrap_err(), RuntimeError::RuntimeDisposed);
-        assert_eq!(runtime.signal_eq(2).unwrap_err(), RuntimeError::RuntimeDisposed);
+        assert_eq!(runtime.signal_eq(2).err().unwrap(), RuntimeError::RuntimeDisposed);
     }
 
     #[test]
@@ -797,13 +794,14 @@ mod tests {
         let c_count = child_runs.clone();
         let created = Rc::new(Cell::new(false));
         let created_flag = created.clone();
+        let scope_for_nested_effect = runtime.root_scope();
         let _parent = runtime.effect(move || {
             let _ = parent_value.get();
             p_count.set(p_count.get() + 1);
             if !created_flag.replace(true) {
                 let child = child_value.clone();
                 let child_count = c_count.clone();
-                Runtime::current_effect_scope().effect(move || {
+                scope_for_nested_effect.effect(move || {
                     let _ = child.get();
                     child_count.set(child_count.get() + 1);
                 }).unwrap();
