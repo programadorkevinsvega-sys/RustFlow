@@ -846,11 +846,7 @@ impl DomRenderer {
         Ok(())
     }
 
-    fn plan_diff(
-        &self,
-        previous: &View,
-        next: &View,
-    ) -> Result<ReconciliationPlan, DomError> {
+    fn plan_diff(&self, previous: &View, next: &View) -> Result<ReconciliationPlan, DomError> {
         self.validate_view(next)?;
         let action = match (previous, next) {
             (View::Text(_), View::Text(_)) => ReconciliationAction::Text,
@@ -888,9 +884,7 @@ impl DomRenderer {
                 for attribute in element.attributes() {
                     match attribute.value() {
                         AttributeValue::Boolean(_) => validate_attribute(attribute.name(), "")?,
-                        AttributeValue::Text(value) => {
-                            validate_attribute(attribute.name(), value)?
-                        }
+                        AttributeValue::Text(value) => validate_attribute(attribute.name(), value)?,
                     }
                 }
                 for property in element.properties() {
@@ -1108,9 +1102,7 @@ impl DomRenderer {
         resources: &mut RenderedNodes,
     ) -> Result<Vec<Node>, DomError> {
         match &plan.action {
-            ReconciliationAction::Replace => {
-                self.build_nodes(&plan.next, owner_scope, resources)
-            }
+            ReconciliationAction::Replace => self.build_nodes(&plan.next, owner_scope, resources),
             ReconciliationAction::Text => {
                 let View::Text(text) = &plan.next else {
                     return Err(DomError::JavaScript(
@@ -1127,8 +1119,7 @@ impl DomRenderer {
                 }
             }
             ReconciliationAction::Element(children_plan) => {
-                let (View::Element(previous), View::Element(next)) =
-                    (&plan.previous, &plan.next)
+                let (View::Element(previous), View::Element(next)) = (&plan.previous, &plan.next)
                 else {
                     return Err(DomError::JavaScript(
                         "element reconciliation plan contains an incompatible view".into(),
@@ -1137,14 +1128,9 @@ impl DomRenderer {
                 if existing_nodes.len() != 1 {
                     return self.build_nodes(&plan.next, owner_scope, resources);
                 }
-                let element: DomElement = existing_nodes[0]
-                    .clone()
-                    .dyn_into()
-                    .map_err(|_| {
-                        DomError::JavaScript(
-                            "expected an element node while reconciling".into(),
-                        )
-                    })?;
+                let element: DomElement = existing_nodes[0].clone().dyn_into().map_err(|_| {
+                    DomError::JavaScript("expected an element node while reconciling".into())
+                })?;
                 self.patch_element(previous, next, &element, resources)?;
                 let parent_node: Node = element.clone().unchecked_into();
                 let current_children = direct_children(&parent_node);
@@ -1163,8 +1149,7 @@ impl DomRenderer {
                 Ok(vec![existing_nodes[0].clone()])
             }
             ReconciliationAction::Fragment(children_plan) => {
-                let (View::Fragment(previous), View::Fragment(next)) =
-                    (&plan.previous, &plan.next)
+                let (View::Fragment(previous), View::Fragment(next)) = (&plan.previous, &plan.next)
                 else {
                     return Err(DomError::JavaScript(
                         "fragment reconciliation plan contains an incompatible view".into(),
@@ -1433,8 +1418,8 @@ impl DomRenderer {
             }
         };
 
-        let mut cleanup_error = cleanup_resources(&mut mounted.listeners, &mut mounted.components)
-            .err();
+        let mut cleanup_error =
+            cleanup_resources(&mut mounted.listeners, &mut mounted.components).err();
         first_error(
             &mut cleanup_error,
             cleanup_stale_component_regions(&mut mounted.component_regions),
@@ -1447,7 +1432,9 @@ impl DomRenderer {
         mounted.roots = roots;
         mounted.listeners = resources.listeners;
         mounted.components = resources.components;
-        mounted.component_regions.extend(resources.component_regions);
+        mounted
+            .component_regions
+            .extend(resources.component_regions);
         mounted.dynamics.extend(resources.dynamics);
         *mounted.delegated_bindings.borrow_mut() = resources.delegated;
 
@@ -1472,7 +1459,6 @@ impl DomRenderer {
             None => Ok(()),
         }
     }
-
 }
 
 fn mounted_range_nodes(mounted: &MountedDom) -> Vec<Node> {
@@ -1589,9 +1575,7 @@ fn view_key(view: &View) -> Option<&Key> {
     }
 }
 
-fn cleanup_stale_component_regions(
-    regions: &mut Vec<ComponentRegion>,
-) -> Result<(), DomError> {
+fn cleanup_stale_component_regions(regions: &mut Vec<ComponentRegion>) -> Result<(), DomError> {
     let mut retained = Vec::new();
     let mut error = None;
     for mut region in regions.drain(..).rev() {
