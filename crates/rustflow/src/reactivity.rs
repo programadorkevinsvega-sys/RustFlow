@@ -87,6 +87,105 @@ fn check_runtime_context(runtime: &RuntimeRef) -> Result<(), RuntimeError> {
     Ok(())
 }
 
+struct OwnerContextGuard {
+    previous_scope: Option<Scope>,
+    previous_runtime_id: usize,
+}
+impl OwnerContextGuard {
+    fn enter(runtime: &RuntimeRef, owner: ScopeId) -> Self {
+        let previous_scope = ACTIVE_OWNER_SCOPE.with(|active| {
+            active.replace(Some(Scope {
+                id: owner,
+                runtime: Rc::downgrade(runtime),
+            }))
+        });
+        let previous_runtime_id = ACTIVE_RUNTIME_ID.with(|active| {
+            let previous = active.get();
+            active.set(runtime_id(runtime));
+            previous
+        });
+        Self { previous_scope, previous_runtime_id }
+    }
+}
+impl Drop for OwnerContextGuard {
+    fn drop(&mut self) {
+        ACTIVE_OWNER_SCOPE.with(|active| {
+            active.replace(self.previous_scope.take());
+        });
+        ACTIVE_RUNTIME_ID.with(|active| active.set(self.previous_runtime_id));
+    }
+}
+
+fn current_owner_for_runtime(runtime: &RuntimeRef) -> Option<ScopeId> {
+    ACTIVE_OWNER_SCOPE.with(|active| {
+        active.borrow().as_ref().and_then(|scope| {
+            scope.runtime.upgrade().and_then(|owner_runtime| {
+                (runtime_id(&owner_runtime) == runtime_id(runtime)).then_some(scope.id)
+            })
+        })
+    })
+}
+
+/// Execute a closure with a temporary, explicitly owned component context.
+/// The context is restored even if the callback panics; it is not a global runtime singleton.
+pub fn with_owner_scope<R>(scope: &Scope, callback: impl FnOnce() -> R) -> Result<R, RuntimeError> {
+    let runtime = scope.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+    check_runtime_context(&runtime)?;
+    {
+        let inner = runtime.borrow();
+        if inner.disposed {
+            return Err(RuntimeError::RuntimeDisposed);
+        }
+        let owner = inner.scopes.get(&scope.id).ok_or(RuntimeError::InvalidScope)?;
+        if owner.disposed {
+            return Err(RuntimeError::DisposedScope);
+        }
+    }
+    let _guard = OwnerContextGuard::enter(&runtime, scope.id);
+    Ok(callback())
+}
+
+/// Fallibly create a signal owned by the currently active component scope.
+pub fn try_signal<T: Clone + PartialEq + 'static>(value: T) -> Result<Signal<T>, RuntimeError> {
+    let scope = ACTIVE_OWNER_SCOPE
+        .with(|active| active.borrow().clone())
+        .ok_or(RuntimeError::NoActiveOwner)?;
+    scope.signal(value)
+}
+
+/// Create an owner-bound signal during component setup.
+/// Calling this outside an active component owner panics with a diagnostic.
+pub fn signal<T: Clone + PartialEq + 'static>(value: T) -> Signal<T> {
+    try_signal(value).unwrap_or_else(|error| panic!("signal requires an active component owner scope: {error}"))
+}
+
+/// Familiar component-state helper, backed by signals rather than positional hook cells.
+pub fn use_state<T: Clone + PartialEq + 'static>(initial: T) -> Signal<T> {
+    signal(initial)
+}
+
+/// Run a dependency-tracked effect owned by the active component scope.
+pub fn use_effect(callback: impl FnMut() + 'static) -> Effect {
+    let scope = ACTIVE_OWNER_SCOPE
+        .with(|active| active.borrow().clone())
+        .unwrap_or_else(|| panic!("use_effect requires an active component owner scope"));
+    scope.effect(callback).unwrap_or_else(|error| panic!("{error}"))
+}
+
+/// Register cleanup against the current effect run, or against its owner scope during setup.
+pub fn on_cleanup(callback: impl FnOnce() + 'static) -> Result<(), RuntimeError> {
+    let scope = ACTIVE_OWNER_SCOPE
+        .with(|active| active.borrow().clone())
+        .ok_or(RuntimeError::NoActiveOwner)?;
+    let runtime = scope.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+    let active_effect = { runtime.borrow().active_effect };
+    match active_effect {
+        Some(effect_id) if runtime.borrow().effects.get(&effect_id).is_some_and(|effect| effect.owner == scope.id) => scope.on_effect_cleanup(callback),
+        _ => scope.on_cleanup(callback),
+    }
+}
+
+
 struct SignalNode {
     owner: ScopeId,
     subscribers: BTreeSet<EffectId>,
