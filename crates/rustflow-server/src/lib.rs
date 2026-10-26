@@ -908,12 +908,13 @@ async fn dispatch_request(
             Ok(body) => body,
             Err(error) => {
                 let too_large = error_is_length_limit(&error);
-                let response = if too_large {
+                let error = if too_large {
                     HttpError::payload_too_large()
                 } else {
                     HttpError::bad_body()
                 };
-                tracing::warn!(status = %response.status, "request rejected while reading body");
+                tracing::warn!(status = %error.status, "request rejected while reading body");
+                let response = error.into_response();
                 return attach_request_id(response, &request_id_for_response).into_axum_response();
             }
         };
@@ -1221,7 +1222,8 @@ mod tests {
         let response = send(app, request).await;
         let generated = response.headers()["x-request-id"]
             .to_str()
-            .expect("request id is a header value");
+            .expect("request id is a header value")
+            .to_owned();
         assert!(generated.starts_with("rf-"));
         assert_eq!(body_text(response).await, generated);
     }
