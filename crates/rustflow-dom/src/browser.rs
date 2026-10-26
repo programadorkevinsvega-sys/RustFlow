@@ -246,11 +246,8 @@ impl DomRenderer {
                 }
             };
 
-            let mut renderer = DomRenderer::new(
-                document.clone(),
-                runtime.clone(),
-                registry.clone(),
-            );
+            let mut renderer =
+                DomRenderer::new(document.clone(), runtime.clone(), registry.clone());
             renderer.root_scope = effect_scope.clone();
 
             let mut current = state_effect.borrow_mut();
