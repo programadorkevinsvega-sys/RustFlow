@@ -2,8 +2,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 export default defineConfig({
-  site: 'https://programadorkevinsvega-sys.github.io',
-  base: '/RustFlow',
+  site: 'https://rustflow.pages.dev',
   integrations: [
     starlight({
       title: 'RustFlow',
