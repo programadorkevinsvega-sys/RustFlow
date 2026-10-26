@@ -1564,7 +1564,6 @@ impl DomRenderer {
 
         let mut resources = RenderedNodes::default();
         let previous_view = plan.previous.clone();
-        let next_view = plan.next.clone();
         let planned_root = vec![PlannedChild {
             previous_index: Some(0),
             plan: Box::new(plan),
@@ -1872,6 +1871,12 @@ impl Renderer for DomRenderer {
         previous: &View,
         next: &View,
     ) -> Result<(), Self::Error> {
+        // A detached mount has no live DOM range to reconcile. Skip preparation
+        // and perform a single replacement build so component setup is not run twice.
+        if mounted.start.parent_node().is_none() {
+            return self.replace_range(mounted, next);
+        }
+
         let plan = self.plan_diff(
             previous,
             next,
