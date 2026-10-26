@@ -1,12 +1,23 @@
 [workspace]
 resolver = "2"
-members = ["crates/rustflow", "crates/rustflow-view", "crates/rustflow-macros", "crates/rustflow-dom", "crates/rustflow-ssr"]
+members = ["crates/rustflow", "crates/rustflow-view", "crates/rustflow-macros", "crates/rustflow-dom", "crates/rustflow-ssr", "crates/rustflow-server"]
 
 [workspace.package]
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/programadorkevinsvega-sys/RustFlow"
+
+[workspace.dependencies]
+axum = "0.8"
+bytes = "1"
+http = "1"
+http-body-util = "0.1"
+serde = "1"
+serde_json = "1"
+serde_urlencoded = "0.7"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "signal"] }
+tower = { version = "0.5", features = ["limit", "util"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
