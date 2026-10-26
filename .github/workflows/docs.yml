@@ -2,9 +2,6 @@ name: Documentation site
 
 on:
   pull_request:
-    paths:
-      - "website/**"
-      - ".github/workflows/docs.yml"
   push:
     branches: [main]
     paths:
