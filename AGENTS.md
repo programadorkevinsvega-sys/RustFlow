@@ -52,6 +52,10 @@ Never claim a test, build, browser check, scan, or benchmark passed unless it wa
 - Escape text and attributes by default; raw HTML requires explicit API design and security review.
 - Preserve keyed-list identity and test hydration behavior when implemented.
 - Include semantic HTML and accessibility considerations.
+- Treat the React-like component-authoring contract in `docs/adr/0004-react-like-component-authoring.md` and `ROADMAP.md` as a product requirement, not optional ergonomic polish.
+- Do not claim `signal(value)`, `Signal::update`, `#[component]`, typed callback props, automatic `{signal}` interpolation, keyed reconciliation, or hydration exists unless the corresponding code/tests actually provide it.
+- Do not close Phase 3 based only on successful WASM compilation. The intended Counter and todo examples must compile with the documented public API and pass browser E2E tests for state updates, DOM identity, callback props, and cleanup.
+- Keep any proposed API examples clearly labeled as design targets until compile-tested. Never add a hidden process-global mutable runtime to simplify syntax without an explicit, reviewed ADR.
 
 ## 6. Backend and security
 
