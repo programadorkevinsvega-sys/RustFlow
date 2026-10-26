@@ -1,0 +1,130 @@
+use std::fmt;
+
+/// Rejections made by the initial browser renderer's safety policy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DomPolicyError {
+    UnsupportedElement(String),
+    VoidElementHasChildren(String),
+    UnsafeAttribute(String),
+    UnsafeUrl(String),
+}
+
+impl fmt::Display for DomPolicyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnsupportedElement(name) => {
+                write!(f, "element is not supported by the initial DOM renderer: {name}")
+            }
+            Self::VoidElementHasChildren(name) => {
+                write!(f, "void element cannot have children: {name}")
+            }
+            Self::UnsafeAttribute(name) => {
+                write!(f, "attribute is not supported by the safe DOM renderer: {name}")
+            }
+            Self::UnsafeUrl(_) => {
+                write!(f, "URL scheme is not allowed by the safe DOM renderer")
+            }
+        }
+    }
+}
+
+impl std::error::Error for DomPolicyError {}
+
+const SUPPORTED_ELEMENTS: &[&str] = &[
+    "a", "abbr", "address", "article", "aside", "b", "blockquote", "br", "button",
+    "caption", "code", "col", "colgroup", "dd", "del", "details", "div", "dl", "dt",
+    "em", "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4",
+    "h5", "h6", "header", "hr", "i", "img", "input", "ins", "kbd", "label", "legend",
+    "li", "main", "mark", "nav", "ol", "optgroup", "option", "output", "p", "picture",
+    "pre", "progress", "q", "s", "samp", "section", "select", "small", "source", "span",
+    "strong", "sub", "summary", "sup", "table", "tbody", "td", "textarea", "tfoot",
+    "th", "thead", "time", "tr", "u", "ul", "var",
+];
+
+const VOID_ELEMENTS: &[&str] = &["br", "col", "hr", "img", "input", "source"];
+
+const URL_ATTRIBUTES: &[&str] = &[
+    "action", "formaction", "href", "poster", "src", "xlink:href",
+];
+
+/// Validate a tag against the initial renderer allowlist and void-element rules.
+pub(crate) fn validate_element(name: &str, child_count: usize) -> Result<(), DomPolicyError> {
+    let normalized = name.to_ascii_lowercase();
+    if !SUPPORTED_ELEMENTS.contains(&normalized.as_str()) {
+        return Err(DomPolicyError::UnsupportedElement(name.to_owned()));
+    }
+    if child_count > 0 && VOID_ELEMENTS.contains(&normalized.as_str()) {
+        return Err(DomPolicyError::VoidElementHasChildren(name.to_owned()));
+    }
+    Ok(())
+}
+
+/// Reject style sinks and active URL schemes before applying an attribute.
+pub(crate) fn validate_attribute(name: &str, value: &str) -> Result<(), DomPolicyError> {
+    let name = name.to_ascii_lowercase();
+    if name == "style" {
+        return Err(DomPolicyError::UnsafeAttribute(name));
+    }
+    if URL_ATTRIBUTES.contains(&name.as_str()) {
+        let normalized = value
+            .chars()
+            .filter(|character| !character.is_ascii_control())
+            .collect::<String>()
+            .trim()
+            .to_ascii_lowercase();
+        if ["javascript:", "vbscript:", "data:", "blob:", "filesystem:"]
+            .iter()
+            .any(|scheme| normalized.starts_with(scheme))
+        {
+            return Err(DomPolicyError::UnsafeUrl(value.to_owned()));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{validate_attribute, validate_element, DomPolicyError};
+
+    #[test]
+    fn allows_common_semantic_elements_and_rejects_active_elements() {
+        assert!(validate_element("button", 1).is_ok());
+        assert!(validate_element("custom-widget", 0).is_err());
+        assert!(matches!(
+            validate_element("script", 0),
+            Err(DomPolicyError::UnsupportedElement(_))
+        ));
+        assert!(matches!(
+            validate_element("iframe", 0),
+            Err(DomPolicyError::UnsupportedElement(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_children_on_void_elements() {
+        assert!(validate_element("img", 0).is_ok());
+        assert!(matches!(
+            validate_element("input", 1),
+            Err(DomPolicyError::VoidElementHasChildren(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_inline_style_and_active_url_schemes() {
+        assert!(matches!(
+            validate_attribute("style", "color:red"),
+            Err(DomPolicyError::UnsafeAttribute(_))
+        ));
+        assert!(matches!(
+            validate_attribute("href", "javascript:alert(1)"),
+            Err(DomPolicyError::UnsafeUrl(_))
+        ));
+        assert!(matches!(
+            validate_attribute("src", "java\nscript:alert(1)"),
+            Err(DomPolicyError::UnsafeUrl(_))
+        ));
+        assert!(validate_attribute("href", "/docs/start").is_ok());
+        assert!(validate_attribute("href", "https://example.com").is_ok());
+        assert!(validate_attribute("aria-label", "Search").is_ok());
+    }
+}

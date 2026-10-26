@@ -98,18 +98,18 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 ## Phase 3 — Browser runtime and interactive MVP
 
 ### 3.1 Build pipeline
-- [ ] Configure the wasm32-unknown-unknown target and browser build toolchain.
-- [ ] Integrate wasm-bindgen and web-sys where appropriate.
-- [ ] Separate browser dependencies from server-only crates.
+- [x] Configure the wasm32-unknown-unknown target and add a dedicated CI compile check for rustflow-dom.
+- [x] Integrate wasm-bindgen and web-sys in target-specific dependencies.
+- [x] Separate browser dependencies from the target-independent view and reactive crates.
 - [ ] Produce a browser-loadable bundle and static assets.
 
 ### 3.2 DOM runtime
-- [ ] Create and mount text and element nodes.
-- [ ] Safely apply and update attributes/properties.
-- [ ] Attach and remove event listeners.
-- [ ] Connect reactive computations to targeted DOM updates.
-- [ ] Dispose component scopes and listeners on unmount.
-- [ ] Implement conditional rendering and keyed dynamic lists.
+- [x] Create and mount text, element, and fragment nodes through comment-anchored DOM ranges.
+- [x] Apply typed attributes and properties through DOM APIs; the initial renderer uses an element allowlist and URL-scheme checks.
+- [x] Attach event callbacks and remove their listeners during cleanup.
+- [ ] Connect reactive computations to targeted DOM updates (dynamic children are evaluated during a render; no automatic signal-to-DOM scheduling yet).
+- [x] Dispose registered component scopes and listeners on unmount.
+- [ ] Implement conditional rendering and keyed dynamic-list reconciliation (keyed snapshots render in order, but updates currently replace the full range).
 
 ### 3.3 MVP examples
 - [ ] Build a reactive counter.
