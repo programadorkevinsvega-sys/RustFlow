@@ -142,6 +142,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Add in-memory dispatch tests, unique named routes, and deterministic route introspection.
 - [x] Add representative real-TCP integration tests for HTML/JSON routes, path/query decoding, 400/404/405/413/504 responses, request-ID correlation, custom error pages, body limits/timeouts, and graceful shutdown (`crates/rustflow-server/tests/http_integration.rs`).
 - [ ] Add full route-group support; route groups are not part of the current server API.
+- [ ] Expand network/deployment coverage for TLS/reverse-proxy trust, client aborts, malformed transport input, and concurrent/load behavior. The current local TCP suite does not cover these cases.
 
 ### 4.3 Middleware and lifecycle
 - [x] Implement global ordered async middleware composition with a continuation that can wrap or short-circuit handlers. Route-scoped middleware remains future work.
