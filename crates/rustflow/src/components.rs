@@ -503,7 +503,6 @@ mod tests {
         runtime.dispose().expect("runtime dispose");
     }
 
-
     #[crate::component]
     fn MacroCounter(initial: i32) -> impl rustflow_view::IntoView {
         let count = crate::reactivity::signal(initial);
@@ -566,14 +565,21 @@ mod tests {
             View::Component(node) => node,
             _ => panic!("component descriptor expected"),
         };
-        assert!(matches!(parent.properties()[0].value(), PropertyValue::Callback(_)));
+        assert!(matches!(
+            parent.properties()[0].value(),
+            PropertyValue::Callback(_)
+        ));
         let callback_runtime = Runtime::new();
         let mut callback_registry = ComponentRegistry::new();
         callback_registry
             .register(__rustflow_component_definition_callbackreceiver().expect("callback adapter"))
             .expect("register callback component");
         let mut callback_instance = callback_registry
-            .mount(&parent, callback_runtime.clone(), &callback_runtime.root_scope())
+            .mount(
+                &parent,
+                callback_runtime.clone(),
+                &callback_runtime.root_scope(),
+            )
             .expect("callback component mounts");
         let View::Element(button) = callback_instance.view() else {
             panic!("callback component renders a button");
@@ -583,7 +589,9 @@ mod tests {
             checked: Some(true),
         });
         assert!(invoked.get());
-        callback_instance.unmount().expect("unmount callback component");
+        callback_instance
+            .unmount()
+            .expect("unmount callback component");
         callback_runtime.dispose().expect("dispose runtime");
     }
 
