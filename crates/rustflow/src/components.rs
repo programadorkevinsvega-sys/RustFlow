@@ -522,4 +522,56 @@ mod tests {
         instance.unmount().expect("unmount");
         runtime.dispose().expect("runtime dispose");
     }
+    #[test]
+    fn component_setup_can_create_owner_bound_state_and_effects() {
+        use crate::reactivity::{on_cleanup, signal, use_effect};
+
+        let runtime = Runtime::new();
+        let root = runtime.root_scope();
+        let retained = Rc::new(std::cell::RefCell::new(None));
+        let retained_setup = retained.clone();
+        let cleanup_count = Rc::new(Cell::new(0));
+        let cleanup_setup = cleanup_count.clone();
+
+        let definition = ComponentDefinition::new("SignalCounter", move |_context, _props| {
+            let count = signal(1_i32);
+            *retained_setup.borrow_mut() = Some(count.clone());
+
+            let observed = count.clone();
+            let cleanup_setup = cleanup_setup.clone();
+            use_effect(move || {
+                let _ = observed.get();
+                let cleanup_setup = cleanup_setup.clone();
+                on_cleanup(move || cleanup_setup.set(cleanup_setup.get() + 1)).unwrap();
+            });
+
+            let render: ComponentRender = Rc::new(move |_props, _children| {
+                Ok(View::text(count.get().to_string()))
+            });
+            Ok(render)
+        })
+        .expect("valid component definition");
+
+        let mut instance = ComponentInstance::mount(
+            definition,
+            runtime.clone(),
+            &root,
+            [],
+            [],
+        )
+        .expect("component setup can create signals");
+        let count = retained.borrow().as_ref().unwrap().clone();
+        assert_eq!(count.get(), 1);
+        count.set(2);
+        assert_eq!(instance.view(), &View::text("1"));
+
+        instance.unmount().expect("unmount component owner");
+        assert_eq!(cleanup_count.get(), 1);
+        assert_eq!(
+            count.try_get(),
+            Err(crate::reactivity::RuntimeError::InvalidSignal)
+        );
+        runtime.dispose().expect("dispose runtime");
+    }
+
 }
