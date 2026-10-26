@@ -28,8 +28,12 @@ impl fmt::Display for ComponentError {
             Self::Runtime(error) => write!(f, "component runtime error: {error}"),
             Self::Unmounted => write!(f, "component instance has been unmounted"),
             Self::User(message) => write!(f, "component callback failed: {message}"),
-            Self::DuplicateDefinition(name) => write!(f, "component definition already registered: {name}"),
-            Self::UnknownComponent(name) => write!(f, "no component definition registered for: {name}"),
+            Self::DuplicateDefinition(name) => {
+                write!(f, "component definition already registered: {name}")
+            }
+            Self::UnknownComponent(name) => {
+                write!(f, "no component definition registered for: {name}")
+            }
         }
     }
 }
@@ -318,7 +322,7 @@ mod tests {
 
     #[test]
     fn registry_mounts_descriptors_and_rejects_unknown_or_duplicate_names() {
-        use super::{ComponentRegistry, ComponentError};
+        use super::{ComponentError, ComponentRegistry};
 
         let definition = ComponentDefinition::new("Greeting", |_context, _properties| {
             let render: ComponentRender = Rc::new(|properties, children| {
@@ -336,10 +340,13 @@ mod tests {
                 ]))
             });
             Ok(render)
-        }).expect("valid definition");
+        })
+        .expect("valid definition");
 
         let mut registry = ComponentRegistry::new();
-        registry.register(definition.clone()).expect("first registration");
+        registry
+            .register(definition.clone())
+            .expect("first registration");
         assert!(registry.contains("Greeting"));
         assert!(matches!(
             registry.register(definition),
@@ -351,13 +358,17 @@ mod tests {
             [Property::new("label", "welcome").expect("property")],
             [View::text("child")],
             None,
-        ).expect("component descriptor") {
+        )
+        .expect("component descriptor")
+        {
             View::Component(node) => node,
             _ => panic!("component descriptor expected"),
         };
         let runtime = Runtime::new();
         let root = runtime.root_scope();
-        let mut instance = registry.mount(&descriptor, runtime.clone(), &root).expect("mount");
+        let mut instance = registry
+            .mount(&descriptor, runtime.clone(), &root)
+            .expect("mount");
         assert_eq!(instance.name(), "Greeting");
         assert_eq!(
             instance.view(),
