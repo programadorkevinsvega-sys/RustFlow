@@ -44,8 +44,8 @@ El macro acepta etiquetas anidadas, cadenas/números o expresiones entre llaves,
 
 ## Renderizado HTML en servidor
 
-El crate rustflow-ssr serializa vistas estructurales a fragmentos HTML con escape de texto/atributos y política de URL restrictiva. Puede resolver componentes registrados y ejecutar sus callbacks de limpieza. El crate rustflow-server integra ese resultado con respuestas HTTP y agrega rutas, JSON, query/path parameters, límites de cuerpo y timeout. Los callbacks de eventos no se incluyen en el HTML; la hidratación sigue pendiente.
+El crate rustflow-ssr serializa vistas estructurales a fragmentos HTML con escape de texto/atributos y política de URL restrictiva. Puede resolver componentes registrados y ejecutar sus callbacks de limpieza. El crate rustflow-server integra ese resultado con respuestas HTTP y agrega rutas, JSON, query/path parameters, límites de cuerpo, timeout, middleware global ordenado, rutas nombradas e introspección. También permite apagado graceful mediante un future que inyecta el composition root. Los callbacks de eventos no se incluyen en el HTML; la hidratación sigue pendiente.
 
 ## Lo que sigue pendiente
 
-La reconciliación keyed, el bundle del navegador, los tests E2E, middleware configurable, pruebas de red completas, la hidratación y la CLI corresponden a entregables posteriores. La API sigue siendo pre-1.0 y no está lista para producción.
+La reconciliación keyed, el bundle del navegador, los tests E2E, middleware por ruta, tracing/logging, pruebas de red más amplias, wiring automático de señales del sistema operativo, la hidratación y la CLI corresponden a entregables posteriores. La API sigue siendo pre-1.0 y no está lista para producción.

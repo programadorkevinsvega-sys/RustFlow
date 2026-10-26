@@ -31,6 +31,12 @@ Use `Response::text`, `Response::html`, `Response::json`, `Response::redirect`, 
 
 Defaults cap buffered request bodies at 1 MiB, allow up to 256 concurrent requests, and time out body reads/handlers after 30 seconds. These are initial defaults, not a substitute for reverse-proxy, TLS, deployment, rate-limit, or application-specific protections. Use `Application::with_config(ServerConfig::new()...)` to change them.
 
+## Middleware, route metadata, and graceful shutdown
+
+Register middleware with `app.middleware(Middleware::new(|request, next| async move { /* before */ let response = next.run(request).await?; /* after */ Ok(response) }))`. The stack is global and ordered; middleware may short-circuit without calling `next.run`. Register a route with `route_named("users.show", HttpMethod::Get, "/users/{id}", handler)` and inspect it with `app.routes()`.
+
+For shutdown, call `serve_with_shutdown(address, shutdown_future)` or `serve_listener_with_shutdown(listener, shutdown_future)`. The application composition root owns the trigger (for example, an OS signal future); the adapter does not silently install a process-wide signal handler.
+
 ## Boundaries and limitations
 
-Routing supports conventional methods and Axum path templates such as `/users/{id}`. Duplicate method/path registration and equivalent parameter-only route shapes are rejected before router construction. Unknown paths return 404, unsupported methods return 405, oversized bodies return 413, and handler/body timeouts return 504. This crate does not yet include configurable middleware composition, route groups/names, route introspection, typed extraction traits, production tracing/logging, signal-driven graceful shutdown, network-level integration tests, or database/session integrations.
+Routing supports conventional methods and Axum path templates such as `/users/{id}`. Duplicate method/path registration and equivalent parameter-only route shapes are rejected before router construction. Unknown paths return 404, unsupported methods return 405, oversized bodies return 413, and handler/body timeouts return 504. The adapter now provides ordered global async middleware through `Middleware::new` and `Next::run`, uniquely named routes with `route_named`, deterministic metadata from `Application::routes()`, and `serve_with_shutdown`/`serve_listener_with_shutdown` APIs that accept a caller-owned shutdown future. It still lacks route-scoped middleware, route groups, typed extraction traits, built-in tracing/logging, automatic OS-signal wiring, broad network-level integration tests, and database/session integrations.
