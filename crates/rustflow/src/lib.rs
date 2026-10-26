@@ -11,6 +11,21 @@
 
 pub mod reactivity;
 
+/// Public, target-independent view-model types.
+///
+/// This re-export currently supports structural text, element, and fragment
+/// nodes only. It does not provide components, rendering, or DOM integration.
+///
+/// ```
+/// use rustflow::view::View;
+///
+/// let _page = View::element(
+///     "main",
+///     [View::element("h1", [View::text("Hello, RustFlow")])],
+/// );
+/// ```
+pub use rustflow_view as view;
+
 /// Returns the framework's current pre-release version.
 ///
 /// This small function exists only to give the initial crate a verifiable

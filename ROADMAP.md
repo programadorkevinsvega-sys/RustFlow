@@ -22,7 +22,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Define contribution guidelines, code of conduct, maintainers, and decision process.
 - [x] Define supported Rust toolchain and MSRV policy (stable toolchain; MSRV 1.85).
 - [x] Define semantic versioning, pre-1.0 API stability, and deprecation policy.
-- [ ] Configure required status checks in the active `Protect main — RustFlow` ruleset. The ruleset currently blocks deletion/force-push and requires linear history/PRs, but does not require CI status checks.
+- [x] Configure required status checks in the active `Protect main — RustFlow` ruleset. The active ruleset requires `Rust checks (1.85)`, `Rust checks (stable)`, `Build documentation`, and `Governance files and whitespace`.
 
 ### 0.2 Product scope
 - [x] Define target users, product principles, supported platforms, and explicit non-goals in `docs/PRODUCT_SCOPE.md`.
@@ -70,7 +70,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 ## Phase 2 — View and component model
 
 ### 2.1 View representation
-- [ ] Define typed nodes for text, elements, fragments, and components.
+- [ ] Define typed nodes for text, elements, fragments, and components. The initial `rustflow-view` slice provides text, element, and fragment nodes; component nodes remain pending.
 - [ ] Define attributes, properties, boolean attributes, events, and dynamic children.
 - [ ] Define keys and identity rules for dynamic lists.
 - [ ] Define construction errors and rendering contracts.

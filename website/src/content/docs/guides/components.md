@@ -1,25 +1,51 @@
 ---
 title: Crear componentes
-description: Estado actual y alcance previsto del modelo de componentes de RustFlow.
+description: Estado del modelo de vistas y del sistema de componentes de RustFlow.
 ---
 
-> **Estado: planificado.** El modelo de componentes corresponde a la fase 2 del roadmap y todavía no es una API utilizable.
+> **Estado: parcial.** RustFlow ya incorpora un modelo estructural tipado para texto, elementos y fragmentos. El sistema de componentes, el ciclo de vida y el renderizado continúan pendientes.
 
-RustFlow busca ofrecer componentes reutilizables escritos en Rust, con composición declarativa y estado reactivo. Antes de publicar una guía práctica, el proyecto debe completar y probar:
+## Modelo de vistas disponible
 
-- Una representación tipada de nodos de texto, elementos, fragmentos y componentes.
-- Atributos, propiedades, eventos e hijos dinámicos.
-- Reglas de identidad para listas dinámicas.
-- Ciclo de vida de montaje, actualización y desmontaje.
-- Limpieza de efectos y listeners al desmontar componentes.
-- Una sintaxis declarativa con errores de compilación comprensibles.
+El modelo está disponible desde `rustflow::view`. Permite construir un árbol en memoria sin depender de un navegador:
 
-## ¿Se puede crear un componente hoy?
+```rust
+use rustflow::view::View;
 
-Todavía no con una API pública de RustFlow. La fase 1 entrega un runtime reactivo aislado, no el modelo de vistas ni la integración con el DOM. Por eso no publicamos ejemplos ficticios como #[component], view! o macros equivalentes mientras no estén implementados y verificados.
+fn main() {
+    let _page = View::element(
+        "main",
+        [
+            View::element("h1", [View::text("Hola, RustFlow")]),
+            View::fragment([
+                View::text("Este árbol es "),
+                View::text("estructural."),
+            ]),
+        ],
+    );
+}
+```
 
-## Qué debe incluir la guía cuando esté disponible
+Los nodos admitidos por esta primera porción son:
 
-La guía final mostrará un componente mínimo que compile, cómo declarar su estado, cómo manejar eventos, el resultado observable en el navegador y cómo se limpia al desmontarse. Los ejemplos se añadirán junto con la implementación y sus pruebas.
+- **Texto:** conserva el contenido como una cadena; aún no se transforma en HTML.
+- **Elemento:** conserva el nombre de etiqueta y sus hijos en orden.
+- **Fragmento:** agrupa hijos sin introducir una regla de aplanamiento.
 
-Consulta la fase 2 del [roadmap de RustFlow](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) para ver los criterios de aceptación.
+El árbol es una representación de datos, no un renderer. No crea nodos del DOM, no aplica actualizaciones reactivas y no representa todavía componentes ejecutables. Los nombres de etiqueta tampoco se validan en esta versión inicial.
+
+## Lo que sigue pendiente
+
+Antes de ofrecer una API de componentes utilizable, el roadmap exige definir y probar:
+
+- Nodos de componente y contratos de composición.
+- Atributos, propiedades, atributos booleanos, eventos e hijos dinámicos.
+- Claves e identidad para listas dinámicas.
+- Errores de construcción y contratos de renderizado.
+- Ciclo de vida de creación, montaje, actualización y desmontaje.
+- Limpieza de efectos y listeners al desmontar.
+- Una futura sintaxis declarativa con diagnósticos comprobables.
+
+Todavía no existe una macro `view!`, un renderer de navegador ni un flujo completo para crear y ejecutar una aplicación web. La implementación de este árbol nativo es el primer paso de la fase 2, no una fase completada.
+
+Consulta el [roadmap de RustFlow](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) para conocer los criterios de aceptación.
