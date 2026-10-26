@@ -1,4 +1,4 @@
-# Reactivity Semantics Contract (Phase 0.4)
+# Reactivity Semantics Contract (Phase 1.1)
 
 **Status:** Proposed contract; implementation has not started.  
 **Purpose:** Establish observable behavior for the first RustFlow reactivity prototype before selecting internal data structures.
@@ -84,4 +84,4 @@ These choices should be informed by a minimal prototype and tests, not by undocu
 
 ## Acceptance gate
 
-This document is a proposed contract until reviewed. Phase 0.4 is complete only when the contract is reviewed, open decisions are resolved or explicitly deferred with rationale, and the roadmap reflects that status. The implementation must not be marked complete by this design document alone.
+This document is a proposed contract until reviewed. Phase 1.1 is complete only when the contract is reviewed, open decisions are resolved or explicitly deferred with rationale, and the roadmap reflects that status. The implementation must not be marked complete by this design document alone.
