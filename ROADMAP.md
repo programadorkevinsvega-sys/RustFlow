@@ -151,8 +151,8 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 ### 4.4 Safe server rendering
 - [x] Add rustflow-ssr to serialize supported view nodes into HTML fragments independently of an HTTP framework.
 - [x] Escape text and attribute values by default; apply a scheme allowlist to URL attributes and reject multi-URL attributes until parsed.
-- [ ] Add complete document/layout/page responses and configurable error pages.
-- [x] Test escaping, rejected/void elements, URL policy, component cleanup, keyed order, nesting limits, route dispatch, body limits, handler timeouts, middleware, named-route introspection, and an HTTP request over a local TCP listener with graceful shutdown. Broader network-level integration and header/status test coverage remain pending.
+- [x] Add safe full-document responses from structural views (`html_document`) and configurable escaped HTML error pages for selected 4xx/5xx statuses. Layout composition remains an application-level concern.
+- [x] Test escaping, rejected/void elements, URL policy, component cleanup, keyed order, nesting limits, full-document charset/title/body escaping, configurable 404/405 pages, route dispatch, body limits, handler timeouts, middleware, named-route introspection, and a local TCP request with status, content-type, request-ID headers, and graceful shutdown. Broader network-level integration remains pending.
 
 **Exit gate:** an executable example server handles multiple routes, renders safe HTML, returns JSON, and passes the in-memory handler tests. Full network-level integration tests remain a separate acceptance task.
 

@@ -62,6 +62,7 @@ const SUPPORTED_ELEMENTS: &[&str] = &[
     "li",
     "main",
     "mark",
+    "meta",
     "nav",
     "ol",
     "optgroup",
@@ -98,7 +99,7 @@ const SUPPORTED_ELEMENTS: &[&str] = &[
     "var",
 ];
 
-const VOID_ELEMENTS: &[&str] = &["br", "col", "hr", "img", "input", "source"];
+const VOID_ELEMENTS: &[&str] = &["br", "col", "hr", "img", "input", "meta", "source"];
 
 const URL_ATTRIBUTES: &[&str] = &[
     "action",
@@ -759,6 +760,19 @@ mod tests {
         assert_eq!(
             render_to_string(&view).expect("render"),
             "<div title=\"&quot;&lt;hello &amp; goodbye&gt;&#39;\">&lt;script&gt; &amp; &quot;quoted&quot;</div>"
+        );
+    }
+
+    #[test]
+    fn serializes_charset_meta_as_a_void_element() {
+        let meta = Element::new("meta")
+            .expect("element")
+            .with_attribute("charset", "utf-8")
+            .expect("charset attribute")
+            .build();
+        assert_eq!(
+            render_to_string(&meta).expect("render"),
+            "<meta charset=\"utf-8\">"
         );
     }
 

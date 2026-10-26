@@ -17,10 +17,11 @@ use std::{
     time::Duration,
 };
 
+use axum::middleware::{self, Next as AxumNext};
 use axum::{
     Router,
     body::{Body, to_bytes},
-    extract::{Path, Request as AxumRequest},
+    extract::{Path, Request as AxumRequest, State},
     response::Response as AxumResponse,
     routing::{MethodFilter, MethodRouter},
 };
@@ -33,7 +34,7 @@ use tower::limit::GlobalConcurrencyLimitLayer;
 use tracing::Instrument;
 
 use rustflow::components::ComponentRegistry;
-use rustflow_view::View;
+use rustflow_view::{Element, View};
 
 /// Future returned by a RustFlow route handler.
 pub type HandlerFuture =
@@ -452,12 +453,129 @@ pub fn html_view_with_components(
     Ok(Response::html(html))
 }
 
+/// Render a complete HTML document from a title, language, and structural body.
+///
+/// The document shell and title are built as structural nodes; title, language,
+/// attributes, and body text are escaped/validated by the safe SSR serializer.
+/// No caller-supplied string is inserted as raw markup.
+pub fn html_document(title: &str, lang: &str, body: &View) -> Result<Response, HttpError> {
+    render_html_document(title, lang, body, None)
+}
+
+/// Render a complete HTML document while resolving components in the body.
+pub fn html_document_with_components(
+    title: &str,
+    lang: &str,
+    body: &View,
+    registry: &ComponentRegistry,
+) -> Result<Response, HttpError> {
+    render_html_document(title, lang, body, Some(registry))
+}
+
+fn render_html_document(
+    title: &str,
+    lang: &str,
+    body: &View,
+    registry: Option<&ComponentRegistry>,
+) -> Result<Response, HttpError> {
+    let title = View::element("title", [View::text(title)])
+        .map_err(|_| HttpError::internal_server_error())?;
+    let charset = Element::new("meta")
+        .and_then(|element| element.with_attribute("charset", "utf-8"))
+        .map_err(|_| HttpError::internal_server_error())?
+        .build();
+    let head =
+        View::element("head", [charset, title]).map_err(|_| HttpError::internal_server_error())?;
+    let body =
+        View::element("body", [body.clone()]).map_err(|_| HttpError::internal_server_error())?;
+    let root = Element::new("html")
+        .and_then(|element| element.with_attribute("lang", lang))
+        .map_err(|_| HttpError::internal_server_error())?
+        .with_children([head, body])
+        .build();
+    let tree = root;
+    let markup = match registry {
+        Some(registry) => rustflow_ssr::render_with_components(&tree, registry),
+        None => rustflow_ssr::render_to_string(&tree),
+    }
+    .map_err(|_| HttpError::internal_server_error())?;
+    Ok(Response::html(format!("<!doctype html>{markup}")))
+}
+
+/// A custom safe HTML error page's title and visible message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ErrorPage {
+    title: String,
+    message: String,
+}
+
+/// Configurable HTML bodies for selected 4xx/5xx status codes.
+///
+/// Only error statuses are accepted. A configured page replaces the response body
+/// for that status after routing/handler processing. Title and message are rendered
+/// as text nodes and are never interpreted as HTML.
+#[derive(Debug, Clone, Default)]
+pub struct ErrorPages {
+    pages: HashMap<StatusCode, ErrorPage>,
+}
+
+impl ErrorPages {
+    /// Create an empty error-page map; unconfigured statuses keep their normal response.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Configure a page for a client or server error status.
+    ///
+    /// Configuring the same status more than once replaces its previous page.
+    pub fn with_page(
+        mut self,
+        status: StatusCode,
+        title: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Result<Self, ErrorPageConfigError> {
+        if !status.is_client_error() && !status.is_server_error() {
+            return Err(ErrorPageConfigError::NotErrorStatus(status));
+        }
+        self.pages.insert(
+            status,
+            ErrorPage {
+                title: title.into(),
+                message: message.into(),
+            },
+        );
+        Ok(self)
+    }
+}
+
+/// Invalid configuration for a custom error page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ErrorPageConfigError {
+    NotErrorStatus(StatusCode),
+}
+
+impl fmt::Display for ErrorPageConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotErrorStatus(status) => {
+                write!(
+                    f,
+                    "custom error pages require a 4xx or 5xx status, got {status}"
+                )
+            }
+        }
+    }
+}
+
+impl Error for ErrorPageConfigError {}
+
 /// Configuration for request buffering, handler timeouts, and concurrency.
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     max_body_bytes: usize,
     request_timeout: Duration,
     max_concurrent_requests: usize,
+    error_pages: ErrorPages,
 }
 
 impl ServerConfig {
@@ -485,6 +603,12 @@ impl ServerConfig {
         self
     }
 
+    /// Configure safe HTML pages for selected error statuses.
+    pub fn with_error_pages(mut self, error_pages: ErrorPages) -> Self {
+        self.error_pages = error_pages;
+        self
+    }
+
     /// Return the configured body limit.
     pub fn max_body_bytes(&self) -> usize {
         self.max_body_bytes
@@ -507,6 +631,7 @@ impl Default for ServerConfig {
             max_body_bytes: 1024 * 1024,
             request_timeout: Duration::from_secs(30),
             max_concurrent_requests: 256,
+            error_pages: ErrorPages::default(),
         }
     }
 }
@@ -872,9 +997,14 @@ impl Application {
         for (path, methods) in routes {
             router = router.route(&path, methods);
         }
-        router.layer(GlobalConcurrencyLimitLayer::new(
-            config.max_concurrent_requests,
-        ))
+        router
+            .layer(GlobalConcurrencyLimitLayer::new(
+                config.max_concurrent_requests,
+            ))
+            .layer(middleware::from_fn_with_state(
+                config.error_pages,
+                request_metadata_and_error_pages,
+            ))
     }
 }
 
@@ -954,6 +1084,69 @@ async fn dispatch_request(
     }
     .instrument(span)
     .await
+}
+
+async fn request_metadata_and_error_pages(
+    State(error_pages): State<ErrorPages>,
+    mut request: AxumRequest,
+    next: AxumNext,
+) -> AxumResponse {
+    let request_id = request_id_from_headers(request.headers());
+    let method = request.method().clone();
+    if let Ok(value) = HeaderValue::from_str(&request_id) {
+        request
+            .headers_mut()
+            .insert(HeaderName::from_static("x-request-id"), value);
+    }
+
+    let mut response = next.run(request).await;
+    let status = response.status();
+    if let Some(page) = error_pages.pages.get(&status) {
+        match render_error_page(status, page) {
+            Ok(rendered) => {
+                let (mut parts, _) = response.into_parts();
+                parts.headers.remove(http::header::CONTENT_LENGTH);
+                if let Some(content_type) = rendered.headers().get(http::header::CONTENT_TYPE) {
+                    parts
+                        .headers
+                        .insert(http::header::CONTENT_TYPE, content_type.clone());
+                }
+                response = AxumResponse::from_parts(parts, Body::from(rendered.body().to_vec()));
+            }
+            Err(_) => tracing::error!(
+                request_id = %request_id,
+                status = %status,
+                "configured error page could not be rendered"
+            ),
+        }
+    }
+
+    response.headers_mut().insert(
+        HeaderName::from_static("x-request-id"),
+        HeaderValue::from_str(&request_id)
+            .unwrap_or_else(|_| HeaderValue::from_static("rustflow-request")),
+    );
+    if status.is_client_error() || status.is_server_error() {
+        tracing::warn!(
+            request_id = %request_id,
+            method = %method,
+            status = %status,
+            "HTTP error response"
+        );
+    }
+    response
+}
+
+fn render_error_page(status: StatusCode, page: &ErrorPage) -> Result<Response, HttpError> {
+    let heading = View::element("h1", [View::text(page.title.clone())])
+        .map_err(|_| HttpError::internal_server_error())?;
+    let message = View::element("p", [View::text(page.message.clone())])
+        .map_err(|_| HttpError::internal_server_error())?;
+    let content = View::element("main", [heading, message])
+        .map_err(|_| HttpError::internal_server_error())?;
+    let mut response = html_document(&page.title, "en", &content)?;
+    response.status = status;
+    Ok(response)
 }
 
 fn request_id_from_headers(headers: &HeaderMap) -> String {
@@ -1075,8 +1268,8 @@ fn is_safe_redirect_location(location: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        Application, HttpMethod, Middleware, Response, RouteInfo, ServerConfig, ServerError, View,
-        html_view,
+        Application, ErrorPageConfigError, ErrorPages, HttpMethod, Middleware, Response, RouteInfo,
+        ServerConfig, ServerError, View, html_document, html_view,
     };
     use axum::{
         body::{Body, to_bytes},
@@ -1228,6 +1421,81 @@ mod tests {
         assert_eq!(body_text(response).await, generated);
     }
 
+    #[test]
+    fn complete_html_documents_escape_title_language_and_body() {
+        let body = View::element("main", [View::text("<body> & content")]).expect("body view");
+        let response =
+            html_document("RustFlow <admin>", "en", &body).expect("complete HTML document");
+        assert_eq!(response.status_code(), StatusCode::OK);
+        let html = String::from_utf8(response.body().to_vec()).expect("HTML is UTF-8");
+        assert!(html.starts_with("<!doctype html><html lang=\"en\">"));
+        assert!(html.contains("<title>RustFlow &lt;admin&gt;</title>"));
+        assert!(html.contains("&lt;body&gt; &amp; content"));
+        assert!(!html.contains("<body> & content"));
+    }
+
+    #[test]
+    fn error_page_configuration_rejects_non_error_statuses() {
+        assert!(matches!(
+            ErrorPages::new().with_page(StatusCode::OK, "No", "No"),
+            Err(ErrorPageConfigError::NotErrorStatus(StatusCode::OK))
+        ));
+    }
+
+    #[tokio::test]
+    async fn configured_error_pages_render_escaped_html_and_keep_request_id() {
+        let pages = ErrorPages::new()
+            .with_page(
+                StatusCode::NOT_FOUND,
+                "Missing <page>",
+                "Cannot find <script>alert(1)</script>",
+            )
+            .expect("404 is an error status")
+            .with_page(
+                StatusCode::METHOD_NOT_ALLOWED,
+                "Wrong method",
+                "This route is read-only.",
+            )
+            .expect("405 is an error status");
+        let config = ServerConfig::new().with_error_pages(pages);
+        let mut app = Application::with_config(config.clone());
+        app.get("/only-get", |_request| async { Ok(Response::text("ok")) })
+            .expect("route registration");
+
+        let request = AxumHttpRequest::builder()
+            .uri("/missing")
+            .header("x-request-id", "missing_case_4")
+            .body(Body::empty())
+            .expect("request");
+        let response = send(app, request).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            response.headers()[http::header::CONTENT_TYPE],
+            "text/html; charset=utf-8"
+        );
+        assert_eq!(response.headers()["x-request-id"], "missing_case_4");
+        let html = body_text(response).await;
+        assert!(html.contains("<title>Missing &lt;page&gt;</title>"));
+        assert!(html.contains("Cannot find &lt;script&gt;alert(1)&lt;/script&gt;"));
+        assert!(!html.contains("<script>alert(1)</script>"));
+
+        let mut app = Application::with_config(config);
+        app.get("/only-get", |_request| async { Ok(Response::text("ok")) })
+            .expect("route registration");
+        let request = AxumHttpRequest::builder()
+            .method("POST")
+            .uri("/only-get")
+            .body(Body::empty())
+            .expect("request");
+        let response = send(app, request).await;
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert!(
+            body_text(response)
+                .await
+                .contains("This route is read-only.")
+        );
+    }
+
     #[tokio::test]
     async fn body_limit_returns_413_and_unknown_routes_return_404() {
         let mut app = Application::with_config(ServerConfig::new().with_max_body_bytes(4));
@@ -1363,13 +1631,25 @@ mod tests {
 
         let mut stream = TcpStream::connect(address).await.expect("TCP connect");
         stream
-            .write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .write_all(
+                b"GET /health HTTP/1.1\r\nHost: localhost\r\nx-request-id: tcp_health_1\r\nConnection: close\r\n\r\n",
+            )
             .await
             .expect("write request");
         let mut bytes = Vec::new();
         stream.read_to_end(&mut bytes).await.expect("read response");
         let response = String::from_utf8(bytes).expect("HTTP response is UTF-8");
         assert!(response.starts_with("HTTP/1.1 200 OK"));
+        assert!(
+            response
+                .to_ascii_lowercase()
+                .contains("x-request-id: tcp_health_1")
+        );
+        assert!(
+            response
+                .to_ascii_lowercase()
+                .contains("content-type: text/plain; charset=utf-8")
+        );
         assert!(response.ends_with("ok"));
 
         shutdown_tx.send(()).expect("shutdown signal");

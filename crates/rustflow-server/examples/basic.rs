@@ -2,7 +2,7 @@ use std::{error::Error, net::SocketAddr};
 
 use rustflow::view::View;
 use rustflow_server::{
-    Application, HttpError, HttpMethod, Middleware, Request, Response, html_view,
+    Application, HttpError, HttpMethod, Middleware, Request, Response, html_document,
 };
 use serde::{Deserialize, Serialize};
 
@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .map_err(|_| HttpError::internal_server_error())?;
         let page = View::element("main", [heading, note])
             .map_err(|_| HttpError::internal_server_error())?;
-        html_view(&page)
+        html_document("RustFlow server", "es", &page)
     })?;
 
     app.route_named(
