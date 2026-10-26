@@ -128,33 +128,33 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 ## Phase 4 — HTTP server and routing
 
 ### 4.1 HTTP foundation
-- [ ] Integrate Axum, Tokio, and Tower behind RustFlow-owned boundaries.
-- [ ] Define request, response, error, and application-state types.
-- [ ] Implement route matching, parameters, query strings, and HTTP methods.
-- [ ] Provide HTML, JSON, redirect, file, and status helpers.
-- [ ] Set request body limits and timeout defaults.
+- [x] Integrate Axum, Tokio, and Tower behind the RustFlow-owned `rustflow-server` adapter.
+- [x] Define RustFlow-owned request, response, HTTP error, method, server configuration, and application types. State is captured explicitly by route closures; a separate state container remains optional future work.
+- [x] Implement route matching, path parameters, query strings, and conventional HTTP methods.
+- [x] Provide text, HTML, JSON, redirect, byte-download, and status helpers.
+- [x] Set request-body limits, request timeouts, and a global concurrency cap with configurable defaults.
 
 ### 4.2 Handlers and errors
-- [ ] Implement route registration and route names.
-- [ ] Implement typed path/query extraction.
-- [ ] Add handler/controller conventions.
-- [ ] Handle 404, 405, and centralized errors.
-- [ ] Add route introspection and integration tests.
+- [x] Implement async route registration and reject duplicate method/path registrations.
+- [x] Implement basic path-parameter and typed query/JSON decoding helpers.
+- [x] Define an async closure-handler convention with explicit captured state.
+- [x] Map handler errors safely and provide 404/405 routing behavior.
+- [x] Add in-memory dispatch tests. Route names, route introspection, and full network-level integration tests remain pending.
 
 ### 4.3 Middleware and lifecycle
-- [ ] Implement ordered middleware composition.
-- [ ] Add request IDs and structured logs.
-- [ ] Implement graceful shutdown.
-- [ ] Validate configuration at startup.
-- [ ] Document application state and dependency wiring.
+- [ ] Implement user-configurable ordered middleware composition (a global concurrency limit exists, but is not a general middleware API).
+- [ ] Add request IDs, structured logs, and tracing configuration.
+- [ ] Add signal-driven graceful shutdown.
+- [x] Validate route templates, reject equivalent parameter-only patterns, and clamp body/timeout/concurrency configuration to safe minimums.
+- [x] Document explicit closure-captured application state; production configuration and dependency-wiring validation remain pending.
 
 ### 4.4 Safe server rendering
 - [x] Add rustflow-ssr to serialize supported view nodes into HTML fragments independently of an HTTP framework.
 - [x] Escape text and attribute values by default; apply a scheme allowlist to URL attributes and reject multi-URL attributes until parsed.
-- [ ] Add layout/page responses and error pages to the future HTTP application layer.
-- [x] Test escaping, unsupported/void elements, URL policy, component cleanup, keyed order and nesting limits. HTTP headers/statuses and malformed requests remain pending until a server exists.
+- [ ] Add complete document/layout/page responses and configurable error pages.
+- [x] Test escaping, rejected/void elements, URL policy, component cleanup, keyed order, nesting limits, route dispatch, body limits, and handler timeouts. Network-level HTTP tests and headers/status integration tests remain pending.
 
-**Exit gate:** an example server handles multiple routes, renders safe HTML, returns JSON, and passes integration tests.
+**Exit gate:** an executable example server handles multiple routes, renders safe HTML, returns JSON, and passes the in-memory handler tests. Full network-level integration tests remain a separate acceptance task.
 
 ## Phase 5 — SSR, hydration, and full-stack data flow
 
