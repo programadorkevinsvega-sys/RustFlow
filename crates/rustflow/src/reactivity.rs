@@ -1024,11 +1024,15 @@ mod tests {
         let observed = Rc::new(RefCell::new(Vec::new()));
         let signal = value.clone();
         let log = observed.clone();
-        let _effect = runtime.effect(move || {
-            let current = signal.get();
-            log.borrow_mut().push(current);
-            if current < 5 { signal.set(current + 1); }
-        }).unwrap();
+        let _effect = runtime
+            .effect(move || {
+                let current = signal.get();
+                log.borrow_mut().push(current);
+                if current < 5 {
+                    signal.set(current + 1);
+                }
+            })
+            .unwrap();
         assert_eq!(*observed.borrow(), vec![0, 1, 2, 3, 4, 5]);
         assert_eq!(value.get(), 5);
     }
@@ -1041,14 +1045,18 @@ mod tests {
         let runs = Rc::new(Cell::new(0));
         let signal = value.clone();
         let count = runs.clone();
-        let _effect = scope.effect(move || {
-            let _ = signal.get();
-            count.set(count.get() + 1);
-        }).unwrap();
-        runtime.batch(|| {
-            value.set(1);
-            scope.dispose().unwrap();
-        }).unwrap();
+        let _effect = scope
+            .effect(move || {
+                let _ = signal.get();
+                count.set(count.get() + 1);
+            })
+            .unwrap();
+        runtime
+            .batch(|| {
+                value.set(1);
+                scope.dispose().unwrap();
+            })
+            .unwrap();
         assert_eq!(runs.get(), 1);
         runtime.flush().unwrap();
         assert_eq!(runs.get(), 1);
@@ -1079,14 +1087,20 @@ mod tests {
         let scope = runtime.root_scope().child().unwrap();
         let calls = Rc::new(RefCell::new(Vec::new()));
         let first_calls = calls.clone();
-        scope.on_cleanup(move || first_calls.borrow_mut().push(1)).unwrap();
+        scope
+            .on_cleanup(move || first_calls.borrow_mut().push(1))
+            .unwrap();
         let panic_calls = calls.clone();
-        scope.on_cleanup(move || {
-            panic_calls.borrow_mut().push(2);
-            panic!("intentional cleanup panic");
-        }).unwrap();
+        scope
+            .on_cleanup(move || {
+                panic_calls.borrow_mut().push(2);
+                panic!("intentional cleanup panic");
+            })
+            .unwrap();
         let last_calls = calls.clone();
-        scope.on_cleanup(move || last_calls.borrow_mut().push(3)).unwrap();
+        scope
+            .on_cleanup(move || last_calls.borrow_mut().push(3))
+            .unwrap();
 
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| scope.dispose()));
         assert!(result.is_err());
