@@ -1,4 +1,9 @@
-use std::{cell::{Cell, RefCell}, error::Error, fmt, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    error::Error,
+    fmt,
+    rc::Rc,
+};
 
 use js_sys::Reflect;
 use rustflow::{
@@ -340,6 +345,7 @@ impl DomRenderer {
 
             let dynamic = region.dynamic.clone();
             let scope = region.scope.clone();
+            let effect_scope = scope.clone();
             let state = region.state.clone();
             let document = self.document.clone();
             let runtime = self.runtime.clone();
@@ -371,7 +377,7 @@ impl DomRenderer {
                 let previous_view = current.view.clone();
                 let mut renderer =
                     DomRenderer::new(document.clone(), runtime.clone(), registry.clone());
-                renderer.root_scope = scope.clone();
+                renderer.root_scope = effect_scope.clone();
                 renderer.error_sink = error_sink.clone();
                 match renderer.update(&mut current.mounted, &previous_view, &next_view) {
                     Ok(()) => {
@@ -1076,10 +1082,10 @@ impl Drop for MountedDom {
 
 fn nodes_between(start: &Node, end: &Node) -> Vec<Node> {
     let mut nodes = Vec::new();
-    if !start
-        .parent_node()
-        .is_some_and(|parent| end.parent_node().is_some_and(|end_parent| parent.is_same_node(Some(&end_parent))))
-    {
+    if !start.parent_node().is_some_and(|parent| {
+        end.parent_node()
+            .is_some_and(|end_parent| parent.is_same_node(Some(&end_parent)))
+    }) {
         return nodes;
     }
     let mut current = start.next_sibling();
@@ -1116,16 +1122,13 @@ fn cleanup_rendered_nodes(resources: &mut RenderedNodes) -> Result<(), DomError>
 
 fn cleanup_dynamic_regions(regions: &mut Vec<DynamicRegion>) -> Result<(), DomError> {
     let mut error = None;
-    for mut region in regions.drain(..).rev() {
+    for region in regions.drain(..).rev() {
         first_error(&mut error, region.scope.dispose().map_err(Into::into));
         if let Some(mut state) = region.state.borrow_mut().take() {
             first_error(&mut error, detach_range(&mut state.mounted));
             first_error(
                 &mut error,
-                cleanup_resources(
-                    &mut state.mounted.listeners,
-                    &mut state.mounted.components,
-                ),
+                cleanup_resources(&mut state.mounted.listeners, &mut state.mounted.components),
             );
             first_error(
                 &mut error,
