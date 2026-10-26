@@ -37,6 +37,7 @@ The first milestone is a small, testable vertical slice—not a complete full-st
 7. **Honest maturity.** Do not claim features, compatibility, performance, or production readiness without evidence.
 8. **Incremental decisions.** Architectural choices remain revisitable through documented ADRs and implementation evidence.
 9. **React-like authoring is a product requirement.** Prefer a working, typed component API with local state, reactive interpolation, callbacks, and efficient DOM updates over isolated syntax that looks JSX-like but does not deliver reactive behavior.
+10. **Familiar vocabulary, RustFlow semantics.** Expose recognizable names such as `use_state`, `use_effect`, `use_memo`, `use_ref`, and `use_context` in idiomatic `snake_case` when those capabilities are implemented. Do not imply exact React signatures or hook-order semantics; document the signal-first contract and actual availability.
 
 ## 4. Supported platforms and compatibility policy
 
