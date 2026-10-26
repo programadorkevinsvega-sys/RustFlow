@@ -898,27 +898,100 @@ impl DomRenderer {
         Ok(())
     }
 
-    fn plan_diff(&self, previous: &View, next: &View) -> Result<ReconciliationPlan, DomError> {
+    fn plan_diff(
+        &self,
+        previous: &View,
+        next: &View,
+        component_regions: &[ComponentRegion],
+        dynamic_regions: &[DynamicRegion],
+    ) -> Result<ReconciliationPlan, DomError> {
+        let mut context = DiffContext::new(component_regions, dynamic_regions);
+        self.plan_diff_with_context(previous, next, &mut context)
+    }
+
+    fn plan_diff_with_context(
+        &self,
+        previous: &View,
+        next: &View,
+        context: &mut DiffContext<'_>,
+    ) -> Result<ReconciliationPlan, DomError> {
         self.validate_view(next)?;
         let action = match (previous, next) {
             (View::Text(_), View::Text(_)) => ReconciliationAction::Text,
             (View::Element(old), View::Element(new))
                 if old.tag().eq_ignore_ascii_case(new.tag()) =>
             {
-                ReconciliationAction::Element(self.plan_sequence(old.children(), new.children())?)
+                ReconciliationAction::Element(self.plan_sequence(
+                    old.children(),
+                    new.children(),
+                    context,
+                )?)
             }
             (View::Fragment(old), View::Fragment(new)) => {
-                ReconciliationAction::Fragment(self.plan_sequence(old.children(), new.children())?)
+                ReconciliationAction::Fragment(self.plan_sequence(
+                    old.children(),
+                    new.children(),
+                    context,
+                )?)
             }
             (View::KeyedList(old), View::KeyedList(new)) => {
-                ReconciliationAction::Keyed(self.plan_keyed_children(old, new)?)
+                ReconciliationAction::Keyed(self.plan_keyed_children(old, new, context)?)
             }
             (View::Component(old), View::Component(new))
                 if old.name() == new.name() && old.key() == new.key() =>
             {
-                ReconciliationAction::Component
+                let Some(region_index) = context.take_component(old) else {
+                    return Ok(ReconciliationPlan {
+                        previous: previous.clone(),
+                        next: next.clone(),
+                        action: ReconciliationAction::Replace,
+                    });
+                };
+                let region = &context.component_regions[region_index];
+                let next_view = region
+                    .instance
+                    .preview_update(&new.properties().to_vec(), &new.children().to_vec())?;
+                let mut nested_context = DiffContext::new(
+                    &region.mounted.component_regions,
+                    &region.mounted.dynamics,
+                );
+                let child_plan =
+                    self.plan_diff_with_context(&region.view, &next_view, &mut nested_context)?;
+                ReconciliationAction::Component {
+                    region_index,
+                    next_view,
+                    child_plan: Box::new(child_plan),
+                }
             }
-            (View::Dynamic(_), View::Dynamic(_)) => ReconciliationAction::Dynamic,
+            (View::Dynamic(old), View::Dynamic(next_dynamic)) => {
+                let Some(region_index) = context.take_dynamic(old) else {
+                    return Ok(ReconciliationPlan {
+                        previous: previous.clone(),
+                        next: next.clone(),
+                        action: ReconciliationAction::Replace,
+                    });
+                };
+                let region = &context.dynamic_regions[region_index];
+                let next_view = untrack(|| next_dynamic.evaluate())?;
+                let state = region.state.borrow();
+                let current = state.as_ref().ok_or_else(|| {
+                    DomError::JavaScript("dynamic region has already been disposed".into())
+                })?;
+                let mut nested_context = DiffContext::new(
+                    &current.mounted.component_regions,
+                    &current.mounted.dynamics,
+                );
+                let child_plan = self.plan_diff_with_context(
+                    &current.view,
+                    &next_view,
+                    &mut nested_context,
+                )?;
+                ReconciliationAction::Dynamic {
+                    region_index,
+                    next_view,
+                    child_plan: Box::new(child_plan),
+                }
+            }
             _ => ReconciliationAction::Replace,
         };
         Ok(ReconciliationPlan {
@@ -969,6 +1042,9 @@ impl DomRenderer {
                         component.name()
                     )));
                 }
+                for child in component.children() {
+                    self.validate_view(child)?;
+                }
                 Ok(())
             }
             // A deferred evaluator belongs to its own scope/effect. It is evaluated
@@ -981,6 +1057,7 @@ impl DomRenderer {
         &self,
         previous: &[View],
         next: &[View],
+        context: &mut DiffContext<'_>,
     ) -> Result<Vec<PlannedChild>, DomError> {
         let mut used = vec![false; previous.len()];
         let mut planned = Vec::with_capacity(next.len());
@@ -1003,7 +1080,7 @@ impl DomRenderer {
 
             let child_plan = if let Some(previous_index) = matched {
                 used[previous_index] = true;
-                self.plan_diff(&previous[previous_index], next_view)?
+                self.plan_diff_with_context(&previous[previous_index], next_view, context)?
             } else {
                 self.replacement_plan(next_view)
             };
@@ -1019,6 +1096,7 @@ impl DomRenderer {
         &self,
         previous: &KeyedList,
         next: &KeyedList,
+        context: &mut DiffContext<'_>,
     ) -> Result<Vec<PlannedChild>, DomError> {
         let old_children = previous.children();
         let mut used = vec![false; old_children.len()];
@@ -1032,7 +1110,11 @@ impl DomRenderer {
                 });
             let child_plan = if let Some(previous_index) = matched {
                 used[previous_index] = true;
-                self.plan_diff(old_children[previous_index].view(), child.view())?
+                self.plan_diff_with_context(
+                    old_children[previous_index].view(),
+                    child.view(),
+                    context,
+                )?
             } else {
                 self.replacement_plan(child.view())
             };
