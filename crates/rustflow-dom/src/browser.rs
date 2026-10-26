@@ -169,8 +169,9 @@ impl Drop for ReactiveMountedDom {
 
 /// Renderer for an explicitly supplied Document and component registry.
 ///
-/// The initial adapter uses full replacement on update. Keyed reconciliation and
-/// automatic signal-to-DOM scheduling are not implemented in this first slice.
+/// Compatible text/element nodes and keyed lists are reconciled in place. Trees
+/// containing deferred dynamic children or component descriptors still use the
+/// conservative full-range replacement path until those nodes own explicit DOM subranges.
 pub struct DomRenderer {
     document: Document,
     runtime: Runtime,
@@ -210,8 +211,9 @@ impl DomRenderer {
     }
 
     /// Mount a view produced by a reactive closure and rerender it whenever
-    /// tracked signals change. Updates currently replace the full range; keyed
-    /// reconciliation and targeted DOM patching remain future improvements.
+    /// tracked signals change. Compatible text/element nodes are patched in place
+    /// and keyed lists retain same-key compatible DOM nodes. Trees containing
+    /// dynamic evaluators or component descriptors still use full-range replacement.
     ///
     /// Errors from the initial render are returned immediately. Later render
     /// failures are available through `ReactiveMountedDom::take_error`, while
@@ -731,7 +733,13 @@ impl DomRenderer {
 }
 
 fn can_reconcile(view: &View) -> bool {
-    tree_node_count(view).is_some()
+    match view {
+        View::Text(_) => true,
+        View::Element(element) => element.children().iter().all(can_reconcile),
+        View::Fragment(fragment) => fragment.children().iter().all(can_reconcile),
+        View::KeyedList(list) => list.children().iter().all(|child| can_reconcile(child.view())),
+        View::Dynamic(_) | View::Component(_) => false,
+    }
 }
 
 fn tree_node_count(view: &View) -> Option<usize> {
