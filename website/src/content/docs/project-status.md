@@ -15,7 +15,7 @@ Consulta la [implementación](https://github.com/programadorkevinsvega-sys/RustF
 
 ### Fase 2 — Vistas y componentes
 
-El modelo nativo incluye nodos tipados, atributos y propiedades, callbacks de eventos, ciclo de vida, scopes de limpieza, registro de componentes y la macro `view!`. Esto es un modelo estructural de prototipo, no todavía una experiencia de aplicación completa en navegador. Consulta [Crear componentes](/guides/components/).
+El modelo nativo incluye nodos tipados, atributos y propiedades, callbacks de eventos, ciclo de vida, scopes de limpieza, registro de componentes y la macro `view!`. Esto es un modelo estructural de prototipo, no todavía la experiencia React-like integrada que se busca. La API `signal(value)`, `Signal::update`, `#[component]`, props/callbacks tipados e interpolación reactiva automática siguen pendientes. Consulta [Crear componentes](/guides/components/) para diferenciar lo disponible del objetivo futuro.
 
 ### Fase 3 — Navegador/WASM, parcialmente implementada
 
@@ -31,7 +31,8 @@ Guía práctica: [Servidor HTTP experimental](/guides/server/). Detalles y lími
 
 ## Qué sigue pendiente
 
-- Un bundle de navegador, actualización DOM por subárbol, condicionales/listas keyed y tests E2E.
+- La API ergonómica de componentes React-like: `signal(value)` con `get/set/update`, `#[component]`, props y callbacks tipados, e interpolación reactiva automática en `view!`.
+- Un bundle de navegador, actualización DOM por subárbol, condicionales/listas keyed y tests E2E; el renderer actual reemplaza el rango montado en actualizaciones reactivas.
 - Composición avanzada de layouts, serialización de datos para hidratación e hidratación de cliente; los documentos HTML completos no equivalen a hidratación.
 - Grupos de rutas, middleware por ruta, configuración de producción y más pruebas de red para TLS/reverse proxy, cabeceras de proxy confiables, abortos de cliente y carga/concurrencia.
 - CLI, scaffolding, validación de formularios, sesiones/autenticación y persistencia integrada.
