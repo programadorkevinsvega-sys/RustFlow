@@ -1,0 +1,25 @@
+[package]
+name = "rustflow-server"
+version = "0.1.0"
+description = "RustFlow-owned HTTP application boundary and Axum server adapter"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+axum.workspace = true
+bytes.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_urlencoded.workspace = true
+tokio.workspace = true
+tower.workspace = true
+rustflow = { path = "../rustflow" }
+rustflow-view = { path = "../rustflow-view" }
+rustflow-ssr = { path = "../rustflow-ssr" }
+
+[lints]
+workspace = true
