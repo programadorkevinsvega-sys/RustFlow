@@ -1,7 +1,6 @@
 use std::{net::SocketAddr, time::Duration};
 
-use axum::body::Body;
-use http::{Request as AxumRequest, StatusCode};
+use http::StatusCode;
 use rustflow::view::View;
 use rustflow_server::{
     Application, ErrorPages, HttpError, Request, Response, ServerConfig, ServerError, html_document,
