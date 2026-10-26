@@ -25,7 +25,7 @@ Handlers are async closures that return `Result<Response, HttpError>`. Route han
 
 ## Responses
 
-Use `Response::text`, `Response::html`, `Response::json`, `Response::redirect`, `Response::file_download`, or `Response::status`. `Response::html` emits the supplied string as-is, so it must only receive trusted/escaped content. Prefer `html_view` or `html_view_with_components` for structural views; they use `rustflow-ssr` and map render errors to a generic 500 response.
+Use `Response::text`, `Response::html`, `Response::json`, `Response::redirect`, `Response::file_download`, or `Response::status`. `Response::html` emits the supplied string as-is, so it must only receive trusted/escaped content. Prefer `html_view` or `html_view_with_components` for safe structural fragments, or `html_document(title, lang, &view)` for a complete document with doctype, UTF-8 metadata, title, and body. The component-aware document helper is `html_document_with_components`.
 
 ## Resource limits
 
@@ -39,10 +39,29 @@ For shutdown, call `serve_with_shutdown(address, shutdown_future)` or `serve_lis
 
 ## Request IDs and tracing
 
-Every handled request receives a correlation ID exposed as \`Request::request_id()\` and echoed in the response header \`x-request-id\`, including body-read errors. A supplied ID is retained only if it is 1–128 ASCII letters, digits, dots, underscores, or hyphens; otherwise the server generates an ID with the \`rf-\` prefix. It is for log correlation only and must never be used as an authorization credential.
+Every handled request receives a correlation ID exposed as `Request::request_id()` and echoed in the response header `x-request-id`, including body-read errors. A supplied ID is retained only if it is 1–128 ASCII letters, digits, dots, underscores, or hyphens; otherwise the server generates an ID with the `rf-` prefix. It is for log correlation only and must never be used as an authorization credential.
 
-The adapter emits a \`tracing\` span named \`http.request\` with the request ID, HTTP method, and registered route template. It records completion/failure status through tracing events. The library does not install a global subscriber: configure \`tracing-subscriber\` (or an application-selected tracing layer/exporter) in the binary/composition root.
+The adapter emits a `tracing` span named `http.request` with the request ID, HTTP method, and registered route template. It records completion/failure status through tracing events. The library does not install a global subscriber: configure `tracing-subscriber` (or an application-selected tracing layer/exporter) in the binary/composition root.
+
+## Complete documents and configurable error pages
+
+Use `html_document(title, lang, &view)` when a handler should return a complete HTML document rather than a fragment. It builds the document shell, UTF-8 charset metadata, title, and body structurally. The title, language attribute, and view text are escaped/validated by `rustflow-ssr`. `html_document_with_components` also resolves registered components in the body.
+
+Configure pages for selected error statuses through `ErrorPages`:
+
+```rust
+use http::StatusCode;
+use rustflow_server::{Application, ErrorPages, ServerConfig};
+
+let error_pages = ErrorPages::new()
+    .with_page(StatusCode::NOT_FOUND, "No encontrado", "La página no existe.")
+    .expect("404 is an error status");
+let config = ServerConfig::new().with_error_pages(error_pages);
+let app = Application::with_config(config);
+```
+
+Only 4xx/5xx statuses can be configured. Unconfigured statuses keep their normal response. Configured title/message strings are rendered as text nodes inside a full HTML document, never as raw HTML. The adapter preserves the original status and `x-request-id` header when replacing the body, including router-generated 404/405 responses.
 
 ## Boundaries and limitations
 
-Routing supports conventional methods and Axum path templates such as `/users/{id}`. Duplicate method/path registration and equivalent parameter-only route shapes are rejected before router construction. Unknown paths return 404, unsupported methods return 405, oversized bodies return 413, and handler/body timeouts return 504. The adapter now provides ordered global async middleware through `Middleware::new` and `Next::run`, uniquely named routes with `route_named`, deterministic metadata from `Application::routes()`, and `serve_with_shutdown`/`serve_listener_with_shutdown` APIs that accept a caller-owned shutdown future. It still lacks route-scoped middleware, route groups, typed extraction traits, built-in subscriber/export configuration, automatic OS-signal wiring, broad network-level integration tests, and database/session integrations.
+Routing supports conventional methods and Axum path templates such as `/users/{id}`. Duplicate method/path registration and equivalent parameter-only route shapes are rejected before router construction. Unknown paths return 404, unsupported methods return 405, oversized bodies return 413, and handler/body timeouts return 504. The adapter now provides ordered global async middleware through `Middleware::new` and `Next::run`, uniquely named routes with `route_named`, deterministic metadata from `Application::routes()`, `serve_with_shutdown`/`serve_listener_with_shutdown`, safe full HTML documents, and configurable escaped 4xx/5xx error pages. It still lacks route-scoped middleware, route groups, typed extraction traits, built-in subscriber/export configuration, automatic OS-signal wiring, broader network-level integration tests, and database/session integrations.

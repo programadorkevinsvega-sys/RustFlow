@@ -31,4 +31,4 @@ El texto y los valores de atributos se escapan. Solo se serializa un conjunto co
 
 Los callbacks de eventos nunca se serializan como atributos HTML `on*`. Un subconjunto de propiedades reflejables (como `value` y `checked` en formularios) se convierte a atributos; las propiedades exclusivas del cliente se omiten. Si un atributo y una propiedad producirían el mismo atributo HTML, se devuelve un error.
 
-El renderer emite fragmentos, no un documento completo ni una respuesta HTTP. Layouts, status/headers, rutas, datos de hidratación e hidratación siguen siendo trabajo posterior.
+El renderer de `rustflow-ssr` emite fragmentos, no documentos ni respuestas HTTP. El adaptador `rustflow-server` puede envolver una vista estructural con `html_document(title, lang, &view)`, que produce doctype, atributo `lang`, metadatos UTF-8, título y cuerpo mediante nodos seguros. También puede aplicar páginas HTML configuradas para estados 4xx/5xx. Layouts avanzados, rutas, datos de hidratación e hidratación siguen siendo trabajo posterior.
