@@ -970,19 +970,6 @@ fn dispose_effect(runtime: &RuntimeRef, effect_id: EffectId) -> Result<(), Runti
             }
         }
     }
-    {
-        let mut inner = runtime.borrow_mut();
-        for signal_id in signals {
-            if let Some(signal) = inner.signals.remove(&signal_id) {
-                for effect_id in signal.subscribers {
-                    if let Some(effect) = inner.effects.get_mut(&effect_id) {
-                        effect.dependencies.remove(&signal_id);
-                    }
-                }
-            }
-        }
-    }
-
     if let Some(payload) = first_panic {
         resume_unwind(payload);
     }
@@ -1047,6 +1034,19 @@ fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeE
         if let Err(payload) = result {
             if first_panic.is_none() {
                 first_panic = Some(payload);
+            }
+        }
+    }
+
+    {
+        let mut inner = runtime.borrow_mut();
+        for signal_id in signals {
+            if let Some(signal) = inner.signals.remove(&signal_id) {
+                for effect_id in signal.subscribers {
+                    if let Some(effect) = inner.effects.get_mut(&effect_id) {
+                        effect.dependencies.remove(&signal_id);
+                    }
+                }
             }
         }
     }
