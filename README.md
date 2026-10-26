@@ -4,7 +4,7 @@
 >
 > Reactive UI components, a custom reactivity engine, and a Laravel-inspired developer experience.
 
-RustFlow is an early-stage framework project exploring a cohesive way to build web applications in Rust. The long-term goal is to combine a React-like component model and reactive client runtime with a batteries-included, Laravel-inspired full-stack workflow.
+RustFlow is an early-stage framework project exploring a cohesive way to build web applications in Rust. The product target is a React-like component-authoring experience—typed function components and props, owned reactive signals, automatic reactive view interpolation, typed callbacks, and efficient DOM updates—combined with a batteries-included, Laravel-inspired full-stack workflow. This is the target contract, not a claim that those APIs are all available today; see the roadmap and [ADR 0004](docs/adr/0004-react-like-component-authoring.md).
 
 **Status: early pre-1.0 prototype.** The repository includes an initial reactive runtime, typed view/component model, a preliminary WASM DOM renderer, and a prototype HTTP server with routing, JSON, safe HTML documents, and configurable error pages. APIs remain unstable; RustFlow is not production-ready.
 
