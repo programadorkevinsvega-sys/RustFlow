@@ -18,10 +18,10 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 ## Phase 0 — Project foundation
 
 ### 0.1 Governance
-- [ ] Select and add a license before accepting external contributions.
-- [ ] Define contribution guidelines, code of conduct, maintainers, and decision process.
-- [ ] Define supported Rust toolchain and MSRV policy.
-- [ ] Define semantic versioning, pre-1.0 API stability, and deprecation policy.
+- [x] Select and add a dual MIT/Apache-2.0 license.
+- [x] Define contribution guidelines, code of conduct, maintainers, and decision process.
+- [x] Define supported Rust toolchain and MSRV policy (stable toolchain; MSRV 1.85).
+- [x] Define semantic versioning, pre-1.0 API stability, and deprecation policy.
 - [ ] Configure branch protection and required checks when repository settings allow.
 
 ### 0.2 Product scope
