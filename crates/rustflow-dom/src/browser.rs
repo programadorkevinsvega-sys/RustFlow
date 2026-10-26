@@ -145,7 +145,7 @@ impl ReactiveMountedDom {
     }
 
     /// Dispose effects and explicitly unmount the currently rendered range.
-    pub fn unmount(mut self) -> Result<(), DomError> {
+    pub fn unmount(self) -> Result<(), DomError> {
         self.scope.dispose()?;
         if let Some(state) = self.state.borrow_mut().take() {
             let mut renderer = DomRenderer::new(
@@ -163,7 +163,7 @@ impl ReactiveMountedDom {
 impl Drop for ReactiveMountedDom {
     fn drop(&mut self) {
         let _ = self.scope.dispose();
-        self.state.borrow_mut().take();
+        drop(self.state.borrow_mut().take());
     }
 }
 
@@ -287,7 +287,7 @@ impl DomRenderer {
 
         if let Some(error) = last_error.borrow_mut().take() {
             let _ = scope.dispose();
-            state.borrow_mut().take();
+            drop(state.borrow_mut().take());
             return Err(error);
         }
 
