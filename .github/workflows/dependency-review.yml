@@ -18,3 +18,7 @@ jobs:
         uses: actions/dependency-review-action@v5.0.0
         with:
           fail-on-severity: high
+          # GitHub's dependency API reports these Actions with license=null.
+          # Their upstream LICENSE files were manually verified as MIT; keep
+          # these exact-version exclusions in sync with action upgrades.
+          allow-dependencies-licenses: "pkg:githubactions/actions/checkout@7.0.1, pkg:githubactions/actions/dependency-review-action@5.0.0"
