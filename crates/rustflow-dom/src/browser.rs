@@ -1289,7 +1289,6 @@ impl DomRenderer {
         existing_nodes: &[Node],
         parent: &Node,
         before: Option<&Node>,
-        owner_scope: &Scope,
         previous_components: &mut Vec<ComponentRegion>,
         previous_dynamics: &mut Vec<DynamicRegion>,
         resources: &mut RenderedNodes,
@@ -1341,7 +1340,6 @@ impl DomRenderer {
                     &current_children,
                     &parent_node,
                     None,
-                    owner_scope,
                     previous_components,
                     previous_dynamics,
                     resources,
@@ -1362,7 +1360,6 @@ impl DomRenderer {
                     existing_nodes,
                     parent,
                     before,
-                    owner_scope,
                     previous_components,
                     previous_dynamics,
                     resources,
@@ -1387,7 +1384,6 @@ impl DomRenderer {
                     existing_nodes,
                     parent,
                     before,
-                    owner_scope,
                     previous_components,
                     previous_dynamics,
                     resources,
@@ -1483,7 +1479,6 @@ impl DomRenderer {
         existing_nodes: &[Node],
         parent: &Node,
         before: Option<&Node>,
-        owner_scope: &Scope,
         previous_components: &mut Vec<ComponentRegion>,
         previous_dynamics: &mut Vec<DynamicRegion>,
         resources: &mut RenderedNodes,
@@ -1535,7 +1530,6 @@ impl DomRenderer {
                 existing,
                 parent,
                 before,
-                owner_scope,
                 previous_components,
                 previous_dynamics,
                 resources,
@@ -1569,7 +1563,6 @@ impl DomRenderer {
         }
 
         let mut resources = RenderedNodes::default();
-        let root_scope = self.root_scope.clone();
         let previous_view = plan.previous.clone();
         let next_view = plan.next.clone();
         let planned_root = vec![PlannedChild {
@@ -1582,7 +1575,6 @@ impl DomRenderer {
             &existing_nodes,
             &parent,
             Some(&end),
-            &root_scope,
             &mut mounted.component_regions,
             &mut mounted.dynamics,
             &mut resources,
