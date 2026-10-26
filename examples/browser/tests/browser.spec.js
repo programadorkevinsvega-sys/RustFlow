@@ -19,6 +19,32 @@ test("counter increments by patching its existing DOM node", async ({ page }) =>
   ).toBe(true);
 });
 
+test("component prop updates preserve local state and compatible DOM identity", async ({ page }) => {
+  const label = page.getByTestId("counter-label");
+  const value = page.getByTestId("counter-value");
+  const originalLabel = await label.elementHandle();
+  const originalValue = await value.elementHandle();
+
+  await expect(label).toHaveText("Initial label");
+  await expect(value).toHaveText("0");
+  await page.getByRole("button", { name: "Increment" }).click();
+  await expect(value).toHaveText("1");
+
+  await page.getByTestId("change-counter-label").click();
+  await expect(label).toHaveText("Updated label");
+  await expect(value).toHaveText("1");
+
+  expect(
+    await originalLabel.evaluate((node) => node === document.querySelector('[data-testid="counter-label"]')),
+  ).toBe(true);
+  expect(
+    await originalValue.evaluate((node) => node === document.querySelector('[data-testid="counter-value"]')),
+  ).toBe(true);
+
+  await page.getByRole("button", { name: "Increment" }).click();
+  await expect(value).toHaveText("2");
+});
+
 test("todo CRUD and keyed reorder preserve existing row identity", async ({ page }) => {
   const input = page.getByRole("textbox", { name: "New todo" });
   await input.fill("First task");
