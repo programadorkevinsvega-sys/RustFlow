@@ -4,7 +4,7 @@ The `rustflow-server` crate is the HTTP adapter and composition boundary. It wra
 
 ## Ejecutar el ejemplo
 
-Ejecuta `cargo run -p rustflow-server --example basic`. El servidor de ejemplo escucha en `127.0.0.1:3000` y expone `/`, `/api/health`, `/users/{id}?detailed=true` y `POST /api/echo`.
+Ejecuta `cargo run -p rustflow-server --example basic`. El servidor de ejemplo escucha en `127.0.0.1:3000` y expone `/`, `/api/health`, `/users/{id}?detailed=true` y `POST /api/echo`. Añade una cabecera mediante middleware global, registra la ruta de salud con el nombre `health`, imprime la tabla de rutas y usa `Ctrl+C` como future de apagado graceful.
 
 ## Route example
 
