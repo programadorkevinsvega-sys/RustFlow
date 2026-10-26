@@ -17,6 +17,7 @@ serde_json.workspace = true
 serde_urlencoded.workspace = true
 tokio.workspace = true
 tower.workspace = true
+tracing.workspace = true
 rustflow = { path = "../rustflow" }
 rustflow-view = { path = "../rustflow-view" }
 rustflow-ssr = { path = "../rustflow-ssr" }
