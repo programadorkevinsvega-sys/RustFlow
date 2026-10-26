@@ -127,26 +127,78 @@ struct ComponentRegion {
 }
 
 /// Immutable output of the view-diff phase. DOM mutation is only performed by
-/// commit_plan after the next tree has passed policy validation.
+/// commit_plan after the next tree and compatible component renders have been validated.
+#[derive(Clone)]
 struct ReconciliationPlan {
     previous: View,
     next: View,
     action: ReconciliationAction,
 }
 
+#[derive(Clone)]
 enum ReconciliationAction {
     Replace,
     Text,
     Element(Vec<PlannedChild>),
     Fragment(Vec<PlannedChild>),
     Keyed(Vec<PlannedChild>),
-    Component,
-    Dynamic,
+    Component {
+        region_index: usize,
+        next_view: View,
+        child_plan: Box<ReconciliationPlan>,
+    },
+    Dynamic {
+        region_index: usize,
+        next_view: View,
+        child_plan: Box<ReconciliationPlan>,
+    },
 }
 
+#[derive(Clone)]
 struct PlannedChild {
     previous_index: Option<usize>,
     plan: Box<ReconciliationPlan>,
+}
+
+struct DiffContext<'a> {
+    component_regions: &'a [ComponentRegion],
+    dynamic_regions: &'a [DynamicRegion],
+    used_components: Vec<bool>,
+    used_dynamics: Vec<bool>,
+}
+
+impl<'a> DiffContext<'a> {
+    fn new(
+        component_regions: &'a [ComponentRegion],
+        dynamic_regions: &'a [DynamicRegion],
+    ) -> Self {
+        Self {
+            component_regions,
+            dynamic_regions,
+            used_components: vec![false; component_regions.len()],
+            used_dynamics: vec![false; dynamic_regions.len()],
+        }
+    }
+
+    fn take_component(&mut self, descriptor: &ComponentNode) -> Option<usize> {
+        let index = self
+            .component_regions
+            .iter()
+            .enumerate()
+            .find_map(|(index, region)| {
+                (!self.used_components[index] && region.descriptor == *descriptor).then_some(index)
+            })?;
+        self.used_components[index] = true;
+        Some(index)
+    }
+
+    fn take_dynamic(&mut self, dynamic: &DynamicChild) -> Option<usize> {
+        let index = self.dynamic_regions.iter().enumerate().find_map(|(index, region)| {
+            (!self.used_dynamics[index] && region.dynamic.id() == dynamic.id()).then_some(index)
+        })?;
+        self.used_dynamics[index] = true;
+        Some(index)
+    }
 }
 
 /// A mounted DOM range. Comment anchors make fragment roots updateable without
