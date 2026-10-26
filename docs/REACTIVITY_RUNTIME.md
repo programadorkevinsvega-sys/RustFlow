@@ -5,23 +5,26 @@ This document describes the first implemented API in `rustflow::reactivity`. The
 ## Quick start
 
 ```rust
-use rustflow::reactivity::Runtime;
+use rustflow::reactivity::{Runtime, RuntimeError};
 
-let runtime = Runtime::new();
-let count = runtime.signal_eq(0_i32)?;
-let doubled = count.clone();
-let effect = runtime.effect(move || {
-    println!("count = {}, doubled = {}", count.get(), doubled.get() * 2);
-})?;
+fn main() -> Result<(), RuntimeError> {
+    let runtime = Runtime::new();
+    let count = runtime.signal_eq(0_i32)?;
+    let read_count = count.clone();
+    let doubled = count.clone();
+    let effect = runtime.effect(move || {
+        println!("count = {}, doubled = {}", read_count.get(), doubled.get() * 2);
+    })?;
 
-count.set(1);
-runtime.batch(|| {
-    count.set(2);
-    count.set(3);
-})?;
-effect.dispose()?;
-runtime.dispose()?;
-# Ok::<(), rustflow::reactivity::RuntimeError>(())
+    count.set(1);
+    runtime.batch(|| {
+        count.set(2);
+        count.set(3);
+    })?;
+    effect.dispose()?;
+    runtime.dispose()?;
+    Ok(())
+}
 ```
 
 ## API and behavior
