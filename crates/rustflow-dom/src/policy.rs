@@ -133,6 +133,9 @@ const URL_ATTRIBUTES: &[&str] = &[
     "xlink:href",
 ];
 
+// Multi-URL attributes require dedicated parsing; fail closed until implemented.
+const MULTI_URL_ATTRIBUTES: &[&str] = &["ping", "srcset"];
+
 /// Validate a tag against the initial renderer allowlist and void-element rules.
 pub fn validate_element(name: &str, child_count: usize) -> Result<(), DomPolicyError> {
     let normalized = name.to_ascii_lowercase();
@@ -170,7 +173,7 @@ pub fn validate_property(
 /// Reject style sinks and active URL schemes before applying an attribute.
 pub fn validate_attribute(name: &str, value: &str) -> Result<(), DomPolicyError> {
     let name = name.to_ascii_lowercase();
-    if name == "style" {
+    if name == "style" || MULTI_URL_ATTRIBUTES.contains(&name.as_str()) {
         return Err(DomPolicyError::UnsafeAttribute(name));
     }
     if URL_ATTRIBUTES.contains(&name.as_str()) {
@@ -180,14 +183,32 @@ pub fn validate_attribute(name: &str, value: &str) -> Result<(), DomPolicyError>
             .collect::<String>()
             .trim()
             .to_ascii_lowercase();
-        if ["javascript:", "vbscript:", "data:", "blob:", "filesystem:"]
-            .iter()
-            .any(|scheme| normalized.starts_with(scheme))
-        {
-            return Err(DomPolicyError::UnsafeUrl(value.to_owned()));
+        if let Some(scheme) = url_scheme(&normalized) {
+            if !matches!(scheme, "http" | "https" | "mailto" | "tel") {
+                return Err(DomPolicyError::UnsafeUrl(value.to_owned()));
+            }
         }
     }
     Ok(())
+}
+
+fn url_scheme(value: &str) -> Option<&str> {
+    let colon = value.find(':')?;
+    let delimiter = value.find(|character: char| matches!(character, '/' | '?' | '#'));
+    if delimiter.is_some_and(|delimiter| delimiter < colon) {
+        return None;
+    }
+    let candidate = &value[..colon];
+    let mut characters = candidate.chars();
+    if !characters.next().is_some_and(|character| character.is_ascii_alphabetic()) {
+        return None;
+    }
+    if !characters.all(|character| {
+        character.is_ascii_alphanumeric() || matches!(character, '+' | '.' | '-')
+    }) {
+        return None;
+    }
+    Some(candidate)
 }
 
 #[cfg(test)]
@@ -254,7 +275,21 @@ mod tests {
             Err(DomPolicyError::UnsafeUrl(_))
         ));
         assert!(validate_attribute("href", "/docs/start").is_ok());
+        assert!(validate_attribute("href", "#section").is_ok());
         assert!(validate_attribute("href", "https://example.com").is_ok());
+        assert!(validate_attribute("href", "mailto:hello@example.com").is_ok());
+        assert!(matches!(
+            validate_attribute("href", "file:///etc/passwd"),
+            Err(DomPolicyError::UnsafeUrl(_))
+        ));
+        assert!(matches!(
+            validate_attribute("href", "custom-scheme:payload"),
+            Err(DomPolicyError::UnsafeUrl(_))
+        ));
+        assert!(matches!(
+            validate_attribute("srcset", "a.png 1x, b.png 2x"),
+            Err(DomPolicyError::UnsafeAttribute(_))
+        ));
         assert!(validate_attribute("aria-label", "Search").is_ok());
     }
 }
