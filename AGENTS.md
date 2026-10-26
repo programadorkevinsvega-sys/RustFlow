@@ -13,9 +13,12 @@ For non-trivial work, read README.md, ROADMAP.md, ARCHITECTURE_RULES.md, SECURIT
 3. Make the smallest coherent change.
 4. Preserve dependency direction and security boundaries.
 5. Add/update tests for normal, edge, and failure paths.
-6. Update docs and examples when behavior changes.
-7. Run applicable checks.
-8. Report exactly what changed, what ran, and what remains unverified.
+6. Before implementing a roadmap phase, inspect the planned changes and decide whether they require public documentation updates. Record the documentation impact in the phase/PR plan.
+7. Update public docs and examples alongside the implementation whenever a developer-visible capability, API, behavior, workflow, limitation, or breaking change is introduced or changed.
+8. Run applicable checks, including the documentation build when public docs or the website change.
+9. Report exactly what changed, what ran, and what remains unverified.
+
+A phase must not be considered ready for completion until its public-documentation impact has been reviewed and any required updates are included or explicitly justified as not applicable.
 
 Never claim a test, build, browser check, scan, or benchmark passed unless it was actually run and observed.
 
@@ -76,13 +79,21 @@ These commands may not run until the workspace and crates are implemented. If a 
 
 For relevant changes, also run macro compile-fail tests, WASM/browser E2E tests, HTTP/database integration tests, dependency/secret scans, or benchmarks as appropriate. Avoid tests depending on uncontrolled external networks or wall-clock timing.
 
-## 8. Documentation and roadmap
+## 8. Public documentation and roadmap
 
-- Keep docs aligned with implemented behavior, not only the intended design.
+- Treat the public developer documentation portal as part of the product and maintain it alongside implementation, not as a later cleanup task.
+- Before starting each roadmap phase, inspect the planned implementation and explicitly assess whether it changes or adds anything that developers or technical teams need to know publicly. Include the documentation plan in the phase/PR scope.
+- Before a phase is marked complete or work moves to the next phase, verify that all applicable public documentation updates are included. If no update is needed, state why in the PR/phase notes.
+- For each developer-visible feature, document the relevant concepts, supported public API, intended use cases, tutorial or usage flow, accurate examples, limitations, failure modes, and relevant tests/verification.
+- Keep the public documentation journey coherent: environment/tooling setup, first verifiable example, core concepts, reactive components and applications as they become available, and later server, SSR, routing, and CLI guides only when those capabilities actually exist.
+- Public documentation is for RustFlow users: developers, software engineers, technical teams, and technology companies. Explain how to use supported capabilities, not how private internals work.
+- Do not publish internal backend business logic, private system workflows, secrets, credentials, private operational details, internal-only implementation notes, or sensitive security mechanisms. Keep internal architecture and engineering notes in repository-internal docs/ADRs where appropriate; only expose the minimum public API contracts, integration behavior, and security guidance users need.
+- Keep docs aligned with implemented behavior, not only intended design. Never invent APIs or imply planned capabilities are available.
 - Mark roadmap items complete only with evidence.
-- Label illustrative snippets as proposed if they are not compilable.
-- Update limitations and breaking-change notes.
+- Label illustrative snippets as proposed if they are not compilable; prefer examples that can be compiled or verified.
+- Update limitations and breaking-change/migration notes.
 - Do not claim production readiness while release gates remain open.
+- Run the website build for public documentation changes and ensure navigation/links are updated.
 
 ## 9. Dependencies
 

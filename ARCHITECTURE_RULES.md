@@ -195,7 +195,22 @@ Prefer deterministic tests and in-memory adapters for core logic. Integration te
 
 Create an ADR for decisions affecting reactivity scheduling/lifecycle, view syntax, rendering/hydration, server/client serialization, server actions, middleware order, persistence/ORM, threading/unsafe code, major dependencies, or public compatibility. Each ADR includes context, decision, alternatives, consequences, and migration impact. Exceptions must be explicit, narrow, reviewed, and documented.
 
-## 16. Pull request checklist
+## 16. Public documentation boundary and phase gate
+
+Public documentation is a developer-facing product surface, not a mirror of RustFlow's internal engineering system.
+
+- Audience: application developers, framework integrators, technical decision-makers, and technology companies evaluating or using RustFlow.
+- Document supported public concepts, APIs, configuration, integration contracts, user workflows, practical use cases, accurate examples, limitations, errors developers can act on, migration guidance, and relevant verification.
+- Do not publish internal backend business logic, private system workflows, credentials, secrets, internal operational procedures, or implementation details that users do not need to integrate with RustFlow. Do not expose private architecture or security-sensitive internals merely to make documentation appear comprehensive.
+- Public documentation may explain externally observable behavior and the security guarantees/configuration users need. Keep deeper internal design rationale, implementation notes, and ADRs in internal engineering documentation unless a deliberate public API or security explanation requires a sanitized summary.
+- Never document a planned API as if it already exists. Every code sample must match the current public API, and must be labeled illustrative/proposed if it cannot be verified.
+- Astro/Starlight documentation remains a static, primarily Markdown/MDX site; public docs must not depend on a dynamic backend or reveal internal backend implementation.
+- At the start of every roadmap phase, review its planned work and record which public pages, examples, API references, or tutorials may need to change.
+- Before declaring a phase complete or starting the next phase, review the implementation diff and explicitly confirm that required public docs were updated. If no public update is warranted, record the reason in the PR.
+- Feature PRs that change a developer-visible contract must include matching public documentation and relevant examples/tests in the same PR where practical.
+- Build and validate the docs site in CI whenever website content, navigation, configuration, or public documentation is changed.
+
+## 17. Pull request checklist
 
 - [ ] Dependency direction remains inward.
 - [ ] Domain/application policy does not depend on concrete infrastructure.
@@ -203,7 +218,10 @@ Create an ADR for decisions affecting reactivity scheduling/lifecycle, view synt
 - [ ] Server/client boundaries remain enforced.
 - [ ] Errors are explicit and do not leak sensitive details.
 - [ ] Tests cover invariants, edge cases, and failure paths.
-- [ ] Public API and examples are documented.
+- [ ] Public API, use cases, examples, limitations, and migration notes are documented where applicable.
+- [ ] Public-documentation scope was reviewed for the current phase; any no-change decision is explained.
+- [ ] Public docs contain no internal backend business logic, secrets, private system workflows, or unnecessary sensitive implementation details.
+- [ ] Documentation site build and navigation/link checks pass when public docs change.
 - [ ] Security, accessibility, performance, and MSRV impact were considered.
 - [ ] Unsafe code has a written safety argument.
 - [ ] Relevant ADRs and roadmap items are updated.
