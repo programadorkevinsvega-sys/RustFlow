@@ -27,7 +27,23 @@ fn Counter(initial: i32) -> impl IntoView {
 }
 ```
 
-Para llegar a esa experiencia aún faltan, entre otras piezas, la API ergonómica de `signal(value)` con `update`, la macro `#[component]`, props y callbacks tipados, la interpolación reactiva automática y el parcheo DOM fino. El contrato y los criterios de aceptación están en [ADR 0004 — Autoría de componentes React-like](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0004-react-like-component-authoring.md) y en el [roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md).
+Para llegar a esa experiencia aún faltan, entre otras piezas, la API ergonómica de `signal(value)` con `update`, la macro `#[component]`, props y callbacks tipados, la interpolación reactiva automática y el parcheo DOM fino.
+
+### Vocabulario familiar con semántica RustFlow
+
+La meta es que los nombres resulten reconocibles para quienes conocen React, escritos con la convención de Rust. **Estos nombres son objetivos de diseño; no están exportados por la API actual.**
+
+| Concepto conocido | Nombre RustFlow propuesto | Intención |
+| --- | --- | --- |
+| `useState` | `use_state` | Estado local ligado al scope del componente y respaldado por señales. |
+| `useEffect` | `use_effect` | Efecto ligado al scope, con dependencias detectadas al leer señales. |
+| `useMemo` | `use_memo` | Cálculo derivado con memoización y seguimiento reactivo. |
+| `useRef` | `use_ref` | Almacenamiento estable no reactivo o referencia a un nodo. |
+| `useContext` | `use_context` | Acceso tipado al contexto/provider más cercano. |
+| `onClick` / `className` | `on:click` / `class` | La sintaxis actual de `view!` ya usa convenciones HTML/RustFlow. |
+| `key` | `key` | Ya existe en el modelo de vistas; la reconciliación permanece pendiente. |
+
+RustFlow seguirá el modelo de señales: no requiere identificar estado por el orden de llamada de hooks. Por eso, nombres parecidos no garantizan las mismas firmas, arrays de dependencias ni reglas que React. Véase [ADR 0004](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0004-react-like-component-authoring.md) y [ROADMAP.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md).
 
 
 ## Construir un árbol de vistas
