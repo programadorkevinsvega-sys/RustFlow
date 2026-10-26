@@ -194,7 +194,7 @@ pub fn validate_attribute(name: &str, value: &str) -> Result<(), DomPolicyError>
 
 fn url_scheme(value: &str) -> Option<&str> {
     let colon = value.find(':')?;
-    let delimiter = value.find(|character: char| matches!(character, '/' | '?' | '#'));
+    let delimiter = value.find(['/', '?', '#']);
     if delimiter.is_some_and(|delimiter| delimiter < colon) {
         return None;
     }
