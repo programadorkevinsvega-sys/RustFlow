@@ -387,7 +387,7 @@ impl DomRenderer {
             let bindings = mounted.delegated_bindings.clone();
             let event_name = name.clone();
             let boundary_node = boundary.clone();
-            let callback = Closure::<dyn FnMut(Event)>::new(move |event| {
+            let callback = Closure::<dyn FnMut(Event)>::new(move |event: Event| {
                 let Some(event_target) = event.target() else {
                     return;
                 };
