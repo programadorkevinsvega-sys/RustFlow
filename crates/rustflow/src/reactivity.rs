@@ -1486,4 +1486,80 @@ mod tests {
 
         assert_eq!(*order.borrow(), vec!['a', 'b']);
     }
+    #[test]
+    fn signal_update_is_one_equality_aware_write() {
+        let runtime = Runtime::new();
+        let signal = runtime.signal(4_i32).unwrap();
+        let runs = Rc::new(Cell::new(0));
+        let observed = signal.clone();
+        let count = runs.clone();
+        let _effect = runtime
+            .effect(move || {
+                let _ = observed.get();
+                count.set(count.get() + 1);
+            })
+            .unwrap();
+
+        assert_eq!(runs.get(), 1);
+        signal.update(|value| *value += 3);
+        assert_eq!(signal.get(), 7);
+        assert_eq!(runs.get(), 2);
+        assert!(!signal.try_update(|value| *value = 7).unwrap());
+        assert_eq!(runs.get(), 2);
+    }
+
+    #[test]
+    fn owner_bound_signal_is_invalid_after_scope_disposal() {
+        let runtime = Runtime::new();
+        let owner = runtime.root_scope().child().unwrap();
+        let signal = owner.signal(12_i32).unwrap();
+        assert_eq!(signal.get(), 12);
+
+        owner.dispose().unwrap();
+
+        assert_eq!(signal.try_get(), Err(RuntimeError::InvalidSignal));
+        assert_eq!(signal.try_set(13), Err(RuntimeError::InvalidSignal));
+    }
+
+    #[test]
+    fn component_owner_context_creates_signals_and_restores_after_panic() {
+        let runtime = Runtime::new();
+        let owner = runtime.root_scope().child().unwrap();
+        let scoped_signal = with_owner_scope(&owner, || signal(21_i32)).unwrap();
+        assert_eq!(scoped_signal.get(), 21);
+        assert_eq!(try_signal(1_i32), Err(RuntimeError::NoActiveOwner));
+
+        let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = with_owner_scope(&owner, || panic!("intentional context restoration test"));
+        }));
+        assert!(panic_result.is_err());
+        assert_eq!(try_signal(2_i32), Err(RuntimeError::NoActiveOwner));
+        owner.dispose().unwrap();
+    }
+
+    #[test]
+    fn effect_cleanup_runs_before_rerun_and_at_final_disposal() {
+        let runtime = Runtime::new();
+        let owner = runtime.root_scope().child().unwrap();
+        let trigger = owner.signal(0_i32).unwrap();
+        let cleanup_values = Rc::new(RefCell::new(Vec::new()));
+        let observed = trigger.clone();
+        let cleanup_log = cleanup_values.clone();
+
+        let _effect = owner
+            .effect(move || {
+                let value = observed.get();
+                let log = cleanup_log.clone();
+                on_cleanup(move || log.borrow_mut().push(value)).unwrap();
+            })
+            .unwrap();
+
+        trigger.set(1);
+        assert_eq!(*cleanup_values.borrow(), vec![0]);
+        trigger.set(2);
+        assert_eq!(*cleanup_values.borrow(), vec![0, 1]);
+        owner.dispose().unwrap();
+        assert_eq!(*cleanup_values.borrow(), vec![0, 1, 2]);
+    }
+
 }
