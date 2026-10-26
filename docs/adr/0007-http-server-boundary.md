@@ -12,11 +12,11 @@ RustFlow needs HTTP routing and request/response helpers, but domain, reactivity
 
 Add `rustflow-server` as the application/server adapter. Axum, Tokio, Tower, HTTP primitives, body buffering, and request scheduling are isolated in this crate. Public handlers receive RustFlow's `Request`, return RustFlow's `Response` or `HttpError`, and register against a `HttpMethod` and route template. Application state is captured explicitly by handlers rather than resolved through a hidden service locator.
 
-The adapter provides bounded body reads, a per-request timeout, a global concurrency cap, path/query/JSON accessors, standard response helpers, and bridges structural views into `rustflow-ssr`. It now also supports global ordered async middleware, named routes with deterministic introspection, and graceful-shutdown APIs driven by a future supplied by the composition root. Default settings cap bodies at 1 MiB, concurrent requests at 256, and request execution at 30 seconds.
+The adapter provides bounded body reads, a per-request timeout, a global concurrency cap, path/query/JSON accessors, standard response helpers, and bridges structural views into `rustflow-ssr`. It also supports global ordered async middleware, named routes with deterministic introspection, graceful-shutdown APIs driven by a future supplied by the composition root, and validated/generated request IDs echoed in response headers. A `tracing` span records request ID, method, route template and status; subscriber/export setup stays in the application binary. Default settings cap bodies at 1 MiB, concurrent requests at 256, and request execution at 30 seconds.
 
 ## Consequences and limitations
 
 - The core and view model remain independent of Axum/Tokio/Tower.
 - Route dispatch and response helpers can be tested in memory without opening a TCP listener.
-- This is not production hardening: route groups, route-scoped middleware, tracing/logging, automatic OS-signal wiring, TLS/proxy policy, rate limiting, auth/CSRF, persistence, broader network integration tests, and deployment recipes remain future work.
+- This is not production hardening: route groups, route-scoped middleware, subscriber/export setup, automatic OS-signal wiring, TLS/proxy policy, rate limiting, auth/CSRF, persistence, broader network integration tests, and deployment recipes remain future work.
 - `Response::html` is an explicit raw-string response helper and is not a sanitizer. Prefer `html_view` for structural content.
