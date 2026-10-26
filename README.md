@@ -6,7 +6,7 @@
 
 RustFlow is an early-stage framework project exploring a cohesive way to build web applications in Rust. The long-term goal is to combine a React-like component model and reactive client runtime with a batteries-included, Laravel-inspired full-stack workflow.
 
-**Status: design and foundation phase.** APIs, crate boundaries, and implementation details are not stable. Do not use RustFlow for production workloads yet.
+**Status: early pre-1.0 prototype.** The repository includes an initial reactive runtime, typed view/component model, a preliminary WASM DOM renderer, and a prototype HTTP server with routing, JSON, safe HTML documents, and configurable error pages. APIs remain unstable; RustFlow is not production-ready.
 
 ## Project goals
 
@@ -26,7 +26,7 @@ RustFlow is an early-stage framework project exploring a cohesive way to build w
 
 ## Planned architecture
 
-The workspace contains `rustflow` (single-threaded reactivity and component lifecycle), `rustflow-view` (target-independent typed nodes), `rustflow-macros` (the constrained `view!` syntax), `rustflow-dom` (an initial safe-subset WASM DOM renderer with signal-driven full-range rerenders), `rustflow-ssr` (escaped HTML-fragment serialization), and `rustflow-server` (a bounded Axum/Tokio/Tower HTTP adapter with RustFlow-owned request/response types, global ordered middleware, named-route introspection, injectable graceful shutdown, complete safe HTML documents, and configurable 4xx/5xx HTML error pages). The server example covers HTML, JSON, query/path parameters, JSON input, middleware, named-route introspection, and Ctrl+C shutdown wiring. The HTTP adapter propagates validated/generated request IDs and emits `tracing` spans/events, while subscriber/export configuration remains application-owned. Targeted keyed reconciliation, browser bundles/E2E, route-scoped middleware, broader network-level integration tests, OS-signal wiring inside the framework, hydration, and CLI scaffolding remain pending. These APIs are pre-1.0 prototypes and are not production-ready.
+The workspace contains `rustflow` (single-threaded reactivity and component lifecycle), `rustflow-view` (target-independent typed nodes), `rustflow-macros` (the constrained `view!` syntax), `rustflow-dom` (an initial safe-subset WASM DOM renderer whose reactive updates replace the mounted range), `rustflow-ssr` (escaped HTML-fragment serialization), and `rustflow-server` (a bounded Axum/Tokio/Tower HTTP adapter with RustFlow-owned request/response types, global ordered middleware, named-route introspection, injectable graceful shutdown, complete safe HTML documents, and configurable 4xx/5xx HTML error pages). The server example covers HTML, JSON, query/path parameters, JSON input, middleware, named-route introspection, and Ctrl+C shutdown wiring. The adapter propagates validated/generated request IDs and emits `tracing` spans/events; subscriber/export configuration remains application-owned. Representative real-TCP integration tests cover routes and responses, custom error pages, request-ID headers, body limits, timeouts, and graceful shutdown. Targeted/keyed DOM updates, conditional rendering, browser bundles/E2E, route-scoped middleware, route groups, broader transport/deployment testing, OS-signal wiring inside the framework, hydration, and CLI scaffolding remain pending. These APIs are pre-1.0 prototypes and are not production-ready.
 
 | Area | Planned responsibility |
 | --- | --- |
@@ -76,7 +76,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-The workspace inherits edition, MSRV, license, repository metadata, and lint policy from the root manifest. CI is configured to test Rust 1.85 and current stable, and to run formatting, Clippy, tests, and documentation builds. Dependency review and Dependabot are configured. These workflows still need a successful GitHub Actions run to verify the baseline; browser/WASM checks and end-to-end tests will be added with the browser runtime. Do not assume checks pass until the runs confirm it.
+The workspace inherits edition, MSRV, license, repository metadata, and lint policy from the root manifest. CI is configured for Rust 1.85 and current stable, formatting, Clippy, workspace tests, Rust documentation, a `wasm32-unknown-unknown` compile check, governance, and dependency review. The server includes representative real-TCP integration tests. A browser-loadable bundle and browser end-to-end tests remain pending; check the latest GitHub Actions runs rather than assuming any new commit has passed.
 
 ## Contributing and governance
 

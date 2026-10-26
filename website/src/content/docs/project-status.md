@@ -1,26 +1,39 @@
 ---
 title: Estado del proyecto
-description: Qué está implementado y qué sigue pendiente en RustFlow.
+description: Capacidades de RustFlow verificadas en el repositorio y trabajo que sigue pendiente.
 ---
 
-RustFlow se encuentra en una etapa temprana de desarrollo. El [roadmap del repositorio](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) es la fuente de verdad para el progreso del proyecto.
+RustFlow está en desarrollo activo y sus APIs son pre-1.0. El [roadmap del repositorio](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) es la fuente de verdad para el progreso y los criterios de aceptación.
 
-## Disponible actualmente
+## Disponible como prototipo
 
-### Semántica de reactividad
+### Fase 1 — Runtime reactivo
 
-La especificación aceptada describe señales, efectos, dependencias dinámicas, limpieza, batching, planificación, ciclos y scopes.
+El runtime incluye señales tipadas, efectos, grafo de dependencias, scheduler, batching, scopes y diagnósticos. La semántica, la cobertura de regresión y una línea base inicial de microbenchmarks están documentadas. La CI ha verificado los checks configurados para Rust 1.85 y stable; las mediciones de benchmark son una referencia inicial, no una garantía de rendimiento.
 
-### Runtime reactivo inicial
+Consulta la [implementación](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow/src/reactivity.rs), la [guía técnica del runtime](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/REACTIVITY_RUNTIME.md) y la [verificación](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/REACTIVITY_VERIFICATION.md).
 
-La fase de implementación del runtime reactivo está integrada en main. Incluye señales tipadas, efectos, grafo de dependencias, scheduler FIFO, batching, scopes y diagnósticos de uso inválido.
+### Fase 2 — Vistas y componentes
 
-Consulta la implementación en [crates/rustflow/src/reactivity.rs](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow/src/reactivity.rs) y la guía técnica [docs/REACTIVITY_RUNTIME.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/REACTIVITY_RUNTIME.md).
+El modelo nativo incluye nodos tipados, atributos y propiedades, callbacks de eventos, ciclo de vida, scopes de limpieza, registro de componentes y la macro `view!`. Esto es un modelo estructural de prototipo, no todavía una experiencia de aplicación completa en navegador. Consulta [Crear componentes](/guides/components/).
 
-## Todavía en progreso
+### Fase 3 — Navegador/WASM, parcialmente implementada
 
-- La fase 1.3 tiene cobertura de regresión ampliada para dependencias, FIFO/batching, reentrancia, disposal, ciclos, pánicos, aislamiento y un modelo determinista. La CI de Rust 1.85 y stable ha pasado para el código verificado; esto no equivale a una prueba matemática de exhaustividad.
-- La fase 1.4 ya cuenta con una línea base inicial medida en tres repeticiones de CI, con entorno y medianas documentados en `docs/REACTIVITY_VERIFICATION.md`. Los números sirven como referencia de humo, no como garantía de rendimiento ni sustituyen mediciones controladas en hardware dedicado.
-- El modelo de vistas, el runtime de navegador/WASM, SSR, routing y las herramientas full-stack pertenecen a fases posteriores del roadmap.
+El renderer inicial puede montar vistas y manejar listeners; las comprobaciones de CI compilan el adaptador para `wasm32-unknown-unknown`. Todavía faltan el bundle cargable por un navegador, actualizaciones DOM dirigidas, renderizado condicional, reconciliación keyed, ejemplos interactivos completos y pruebas E2E.
 
-No interpretes una sección futura como una API disponible. Revisa el código y el roadmap antes de depender de una función.
+### Fase 4 — Servidor HTTP, en prototipo
+
+El crate `rustflow-server` integra Axum/Tokio/Tower detrás de tipos de RustFlow. Incluye rutas y handlers asíncronos, parámetros de ruta y query, extracción básica de JSON, respuestas de texto/HTML/JSON, middleware global ordenado, rutas nombradas, request IDs, eventos/spans de `tracing`, límites de body, timeouts, límite de concurrencia y apagado graceful mediante una future proporcionada por la aplicación.
+
+El serializador `rustflow-ssr` genera fragmentos HTML escapados. Desde el servidor se pueden generar documentos HTML completos mediante `html_document` y páginas de error HTML configurables para estados 4xx/5xx. Las pruebas cubren dispatch in-memory y casos representativos por TCP local: HTML/JSON, path/query, errores 400/404/405, body 413, timeout 504, cabeceras de request ID y apagado graceful.
+
+Guía práctica: [Servidor HTTP experimental](/guides/server/). Detalles y límites: [docs/HTTP_SERVER.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/HTTP_SERVER.md) y [docs/SSR_RENDERING.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/SSR_RENDERING.md).
+
+## Qué sigue pendiente
+
+- Un bundle de navegador, actualización DOM por subárbol, condicionales/listas keyed y tests E2E.
+- Composición avanzada de layouts, serialización de datos para hidratación e hidratación de cliente; los documentos HTML completos no equivalen a hidratación.
+- Grupos de rutas, middleware por ruta, configuración de producción y más pruebas de red para TLS/reverse proxy, cabeceras de proxy confiables, abortos de cliente y carga/concurrencia.
+- CLI, scaffolding, validación de formularios, sesiones/autenticación y persistencia integrada.
+
+No interpretes el HTML estructural seguro ni el servidor experimental como garantía de seguridad para despliegue o como declaración de producción. Verifica el código, los límites documentados y el estado actual de los checks antes de depender de una capacidad.

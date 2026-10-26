@@ -53,8 +53,20 @@ Por ahora no hay un flujo de instalación recomendado para una aplicación nueva
 
 El runtime reactivo puede explorarse dentro del propio workspace. La API implementada está en [crates/rustflow/src/reactivity.rs](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow/src/reactivity.rs); sus garantías y limitaciones se explican en [Reactividad disponible](/concepts/reactivity/).
 
-## ¿Dónde están los componentes y los comandos?
+## ¿Dónde están los componentes, el servidor y los comandos?
 
-El sistema de componentes y su sintaxis están en la fase 2 del [roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md). El runtime de navegador aparece en la fase 3 y el CLI —incluidos los futuros comandos para crear proyectos y generar código— en la fase 6.
+El modelo tipado de vistas/componentes y la macro `view!` ya existen como prototipos; el renderer WASM inicial también existe, pero todavía no hay bundle de navegador ni pruebas E2E. Consulta la guía de [componentes](/guides/components/) para conocer su API y sus límites.
 
-Consulta las guías de [componentes](/guides/components/) y [CLI](/guides/cli/) para conocer el alcance previsto sin confundirlo con funcionalidades actuales.
+El workspace incluye un servidor HTTP experimental. Desde la raíz del repositorio puedes ejecutar el ejemplo:
+
+~~~sh
+cargo run -p rustflow-server --example basic
+~~~
+
+El ejemplo escucha en `127.0.0.1:3000`. Revisa la guía del [servidor HTTP](/guides/server/) para rutas disponibles, documentos HTML completos, páginas de error y límites de la cobertura de pruebas. Para ejecutar la suite de integración TCP:
+
+~~~sh
+cargo test -p rustflow-server --test http_integration
+~~~
+
+El CLI —incluidos los futuros comandos para crear proyectos y generar código— sigue planificado en la fase 6. La guía de [CLI y comandos](/guides/cli/) describe objetivos previstos, no comandos disponibles.

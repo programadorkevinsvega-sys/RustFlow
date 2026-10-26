@@ -50,4 +50,4 @@ En cada petición, `Request::request_id()` expone el identificador de correlaci�
 
 ## Lo que sigue pendiente
 
-La reconciliación keyed, el bundle del navegador, los tests E2E, middleware por ruta, tracing/logging, pruebas de red más amplias, wiring automático de señales del sistema operativo, la hidratación y la CLI corresponden a entregables posteriores. La API sigue siendo pre-1.0 y no está lista para producción.
+La reconciliación keyed, el bundle del navegador, los tests E2E, middleware por ruta y grupos de rutas, el wiring automático de señales del sistema operativo, la hidratación y la CLI siguen pendientes. Ya existe una suite representativa de integración TCP para rutas HTML/JSON, parámetros, errores, límite de body, timeout, request ID y apagado graceful; aún faltan pruebas de TLS/reverse proxy, abortos de cliente, carga y transporte malformado. La aplicación debe configurar su propio subscriber/exporter de `tracing`. La API sigue siendo pre-1.0 y no está lista para producción.

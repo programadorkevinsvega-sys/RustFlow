@@ -17,6 +17,7 @@ export default defineConfig({
         ]},
         { label: 'Construir con RustFlow', items: [
           { label: 'Crear componentes', slug: 'guides/components' },
+          { label: 'Servidor HTTP (prototipo)', slug: 'guides/server' },
           { label: 'CLI y comandos', slug: 'guides/cli' },
         ]},
         { label: 'Proyecto', items: [
