@@ -1238,7 +1238,7 @@ impl Application {
         let router = self.into_router(BindKind::Tls)?;
         // `tap_io` is required so ConnectInfo<SocketAddr> is implemented for custom listeners.
         axum::serve(
-            tls::TlsListener::new(listener, tls).tap_io(|_| {}),
+            tls::TlsListener::new(listener, tls).map_err(ServerError::Io)?.tap_io(|_| {}),
             router.into_make_service_with_connect_info::<SocketAddr>(),
         )
         .with_graceful_shutdown(shutdown)
