@@ -149,10 +149,10 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [ ] Document application state and dependency wiring.
 
 ### 4.4 Safe server rendering
-- [ ] Render supported view nodes to HTML.
-- [ ] Escape text and attribute values by default.
-- [ ] Add layout/page responses and error pages.
-- [ ] Test escaping, headers, status codes, and malformed requests.
+- [x] Add rustflow-ssr to serialize supported view nodes into HTML fragments independently of an HTTP framework.
+- [x] Escape text and attribute values by default; apply a scheme allowlist to URL attributes and reject multi-URL attributes until parsed.
+- [ ] Add layout/page responses and error pages to the future HTTP application layer.
+- [x] Test escaping, unsupported/void elements, URL policy, component cleanup, keyed order and nesting limits. HTTP headers/statuses and malformed requests remain pending until a server exists.
 
 **Exit gate:** an example server handles multiple routes, renders safe HTML, returns JSON, and passes integration tests.
 
@@ -165,7 +165,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [ ] Define deterministic rendering and non-hydratable fallbacks.
 
 ### 5.2 SSR
-- [ ] Render view trees on the server.
+- [x] Render structural view trees into HTML fragments using rustflow-ssr; request/route/document integration remains pending.
 - [ ] Integrate layouts and route handlers.
 - [ ] Support title and document metadata.
 - [ ] Test escaping, request isolation, and error states.

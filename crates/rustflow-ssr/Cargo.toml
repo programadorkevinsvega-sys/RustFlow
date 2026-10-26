@@ -1,0 +1,15 @@
+[package]
+name = "rustflow-ssr"
+version = "0.1.0"
+description = "Safe server-side HTML serialization for RustFlow view trees"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+rustflow = { path = "../rustflow" }
+rustflow-view = { path = "../rustflow-view" }
+
+[lints]
+workspace = true
