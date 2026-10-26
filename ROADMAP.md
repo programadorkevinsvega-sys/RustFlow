@@ -149,7 +149,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Create and mount text, element, and fragment nodes through comment-anchored DOM ranges.
 - [x] Apply typed attributes and properties through DOM APIs; the initial renderer uses an element allowlist and URL-scheme checks.
 - [x] Attach event callbacks and remove their listeners during cleanup.
-- [ ] Add targeted/dirty-subtree DOM updates. `DomRenderer::mount_reactive` now runs a render closure in an owned reactive effect and rerenders when tracked signals change, but it currently replaces the full mounted range; the target is to patch affected regions while preserving node/component identity.
+- [ ] Add targeted/dirty-subtree DOM updates. `DomRenderer::mount_reactive` runs a render closure in an owned reactive effect. The current branch adds in-place text/compatible-element patching and same-key compatible DOM-node reuse for keyed lists when a tree contains no dynamic evaluators or component descriptors. Trees containing those opaque nodes still use full-range replacement; component identity, dynamic-region ownership, and full subtree reconciliation remain open.
 - [x] Dispose registered component scopes and listeners on unmount.
 - [ ] Implement conditional rendering and keyed dynamic-list reconciliation (keyed snapshots render in order, but updates currently replace the full range).
 - [ ] Separate dynamic view evaluation/diff planning from DOM commit; diff compatible nodes by type and properties and reconcile keyed children by stable key, with safe replacement when node types are incompatible.
