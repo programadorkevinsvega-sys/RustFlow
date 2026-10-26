@@ -1074,7 +1074,7 @@ mod tests {
             });
         }));
         assert!(result.is_err());
-        assert_eq!(value.try_set(1), Ok(()));
+        assert_eq!(value.try_set(1), Ok(true));
         assert_eq!(runtime.flush(), Ok(()));
         let independent = runtime.signal_eq(10).unwrap();
         independent.set(11);
