@@ -44,6 +44,7 @@ pub enum RuntimeError {
     InvalidEffect,
     InvalidScope,
     DisposedScope,
+    NoActiveOwner,
     CycleDetected { limit: usize },
 }
 
@@ -58,6 +59,7 @@ impl fmt::Display for RuntimeError {
             Self::InvalidEffect => write!(f, "effect is invalid or disposed"),
             Self::InvalidScope => write!(f, "owner scope is invalid"),
             Self::DisposedScope => write!(f, "owner scope is disposed"),
+            Self::NoActiveOwner => write!(f, "this operation requires an active component owner scope"),
             Self::CycleDetected { limit } => write!(
                 f,
                 "reactive cycle detected: scheduler exceeded {limit} effect executions in one flush; pending work was cleared"
@@ -70,6 +72,7 @@ impl std::error::Error for RuntimeError {}
 
 thread_local! {
     static ACTIVE_RUNTIME_ID: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static ACTIVE_OWNER_SCOPE: RefCell<Option<Scope>> = const { RefCell::new(None) };
 }
 
 fn runtime_id(runtime: &RuntimeRef) -> usize {
@@ -85,18 +88,21 @@ fn check_runtime_context(runtime: &RuntimeRef) -> Result<(), RuntimeError> {
 }
 
 struct SignalNode {
+    owner: ScopeId,
     subscribers: BTreeSet<EffectId>,
 }
 
 struct EffectNode {
     callback: Rc<RefCell<Box<dyn FnMut()>>>,
     dependencies: BTreeSet<SignalId>,
+    cleanups: Vec<Cleanup>,
     owner: ScopeId,
 }
 
 struct ScopeNode {
     children: Vec<ScopeId>,
     effects: Vec<EffectId>,
+    signals: Vec<SignalId>,
     cleanups: Vec<Cleanup>,
     disposed: bool,
 }
@@ -176,6 +182,7 @@ impl Runtime {
             ScopeNode {
                 children: Vec::new(),
                 effects: Vec::new(),
+                signals: Vec::new(),
                 cleanups: Vec::new(),
                 disposed: false,
             },
@@ -252,27 +259,12 @@ impl Runtime {
         value: T,
         equality: Option<Equality<T>>,
     ) -> Result<Signal<T>, RuntimeError> {
-        let id = {
-            let mut inner = self.inner.borrow_mut();
-            if inner.disposed {
-                return Err(RuntimeError::RuntimeDisposed);
-            }
-            let id = inner.next_signal;
-            inner.next_signal += 1;
-            inner.signals.insert(
-                id,
-                SignalNode {
-                    subscribers: BTreeSet::new(),
-                },
-            );
-            id
-        };
-        Ok(Signal {
-            id,
-            runtime: Rc::downgrade(&self.inner),
-            value: Rc::new(RefCell::new(value)),
-            equality,
-        })
+        check_runtime_context(&self.inner)?;
+        let owner = current_owner_for_runtime(&self.inner).unwrap_or_else(|| {
+            let inner = self.inner.borrow();
+            inner.active_scope.unwrap_or(inner.root_scope)
+        });
+        create_signal_for_scope(&self.inner, owner, value, equality)
     }
 
     /// Create an eager effect owned by the active scope, or by the root scope.
@@ -528,6 +520,7 @@ fn create_scope(runtime: &RuntimeRef, parent: ScopeId) -> Result<Scope, RuntimeE
             ScopeNode {
                 children: Vec::new(),
                 effects: Vec::new(),
+                signals: Vec::new(),
                 cleanups: Vec::new(),
                 disposed: false,
             },
@@ -568,6 +561,7 @@ fn create_effect(
             EffectNode {
                 callback: Rc::new(RefCell::new(callback)),
                 dependencies: BTreeSet::new(),
+                cleanups: Vec::new(),
                 owner,
             },
         );
