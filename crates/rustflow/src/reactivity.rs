@@ -20,6 +20,7 @@ type SignalId = u64;
 type EffectId = u64;
 type ScopeId = u64;
 type Cleanup = Box<dyn FnOnce()>;
+type Equality<T> = Rc<dyn Fn(&T, &T) -> bool>;
 
 /// Deterministic failures from invalid or disposed runtime handles.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,7 +121,7 @@ pub struct Signal<T: Clone + 'static> {
     id: SignalId,
     runtime: Weak<RefCell<RuntimeInner>>,
     value: Rc<RefCell<T>>,
-    equality: Option<Rc<dyn Fn(&T, &T) -> bool>>,
+    equality: Option<Equality<T>>,
 }
 
 impl<T: Clone + 'static> Clone for Signal<T> {
@@ -236,7 +237,7 @@ impl Runtime {
     fn create_signal<T: Clone + 'static>(
         &self,
         value: T,
-        equality: Option<Rc<dyn Fn(&T, &T) -> bool>>,
+        equality: Option<Equality<T>>,
     ) -> Result<Signal<T>, RuntimeError> {
         let id = {
             let mut inner = self.inner.borrow_mut();
@@ -798,15 +799,17 @@ mod tests {
         let b_runs = Rc::new(Cell::new(0));
         let a_count = a_runs.clone();
         let b_count = b_runs.clone();
+        let a_for_effect = a.clone();
+        let b_for_effect = b.clone();
         let _a_effect = runtime
             .effect(move || {
-                let _ = a.get();
+                let _ = a_for_effect.get();
                 a_count.set(a_count.get() + 1);
             })
             .unwrap();
         let _b_effect = runtime
             .effect(move || {
-                let _ = b.get();
+                let _ = b_for_effect.get();
                 b_count.set(b_count.get() + 1);
             })
             .unwrap();
@@ -823,17 +826,19 @@ mod tests {
         let always = runtime.signal_always_changed(5).unwrap();
         let equal_runs = Rc::new(Cell::new(0));
         let always_runs = Rc::new(Cell::new(0));
+        let equal_for_effect = equal.clone();
+        let always_for_effect = always.clone();
         let count = equal_runs.clone();
         let _e = runtime
             .effect(move || {
-                let _ = equal.get();
+                let _ = equal_for_effect.get();
                 count.set(count.get() + 1);
             })
             .unwrap();
         let count = always_runs.clone();
         let _a = runtime
             .effect(move || {
-                let _ = always.get();
+                let _ = always_for_effect.get();
                 count.set(count.get() + 1);
             })
             .unwrap();
@@ -850,13 +855,16 @@ mod tests {
         let a = runtime.signal_eq(1).unwrap();
         let b = runtime.signal_eq(10).unwrap();
         let runs = Rc::new(Cell::new(0));
+        let choose_a_for_effect = choose_a.clone();
+        let a_for_effect = a.clone();
+        let b_for_effect = b.clone();
         let count = runs.clone();
         let _effect = runtime
             .effect(move || {
-                if choose_a.get() {
-                    let _ = a.get();
+                if choose_a_for_effect.get() {
+                    let _ = a_for_effect.get();
                 } else {
-                    let _ = b.get();
+                    let _ = b_for_effect.get();
                 }
                 count.set(count.get() + 1);
             })
@@ -874,10 +882,11 @@ mod tests {
         let runtime = Runtime::new();
         let value = runtime.signal_eq(0).unwrap();
         let runs = Rc::new(Cell::new(0));
+        let value_for_effect = value.clone();
         let count = runs.clone();
         let _effect = runtime
             .effect(move || {
-                let _ = value.get();
+                let _ = value_for_effect.get();
                 count.set(count.get() + 1);
             })
             .unwrap();
@@ -897,11 +906,12 @@ mod tests {
         let runtime = Runtime::new();
         let scope = runtime.root_scope().child().unwrap();
         let value = runtime.signal_eq(0).unwrap();
+        let value_for_effect = value.clone();
         let runs = Rc::new(Cell::new(0));
         let count = runs.clone();
         let _effect = scope
             .effect(move || {
-                let _ = value.get();
+                let _ = value_for_effect.get();
                 count.set(count.get() + 1);
             })
             .unwrap();
@@ -981,13 +991,15 @@ mod tests {
         let c_count = child_runs.clone();
         let created = Rc::new(Cell::new(false));
         let created_flag = created.clone();
+        let parent_value_for_effect = parent_value.clone();
+        let child_value_for_effect = child_value.clone();
         let scope_for_nested_effect = runtime.root_scope();
         let _parent = runtime
             .effect(move || {
-                let _ = parent_value.get();
+                let _ = parent_value_for_effect.get();
                 p_count.set(p_count.get() + 1);
                 if !created_flag.replace(true) {
-                    let child = child_value.clone();
+                    let child = child_value_for_effect.clone();
                     let child_count = c_count.clone();
                     scope_for_nested_effect
                         .effect(move || {
