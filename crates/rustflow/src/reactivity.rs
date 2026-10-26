@@ -304,7 +304,7 @@ impl Runtime {
         match (result, flush_result) {
             (Err(payload), _) => resume_unwind(payload),
             (Ok(_), Err(payload)) => resume_unwind(payload),
-            (Ok(value), Ok(Err(error))) => Err(error),
+            (Ok(_value), Ok(Err(error))) => Err(error),
             (Ok(value), Ok(Ok(()))) => Ok(value),
         }
     }
