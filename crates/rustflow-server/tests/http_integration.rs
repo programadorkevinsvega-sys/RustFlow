@@ -4,8 +4,7 @@ use axum::body::Body;
 use http::{Request as AxumRequest, StatusCode};
 use rustflow::view::View;
 use rustflow_server::{
-    Application, ErrorPages, HttpError, Request, Response, ServerConfig, ServerError,
-    html_document,
+    Application, ErrorPages, HttpError, Request, Response, ServerConfig, ServerError, html_document,
 };
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -33,10 +32,7 @@ async fn start_server(
     (address, shutdown_tx, task)
 }
 
-async fn stop_server(
-    shutdown: oneshot::Sender<()>,
-    task: JoinHandle<Result<(), ServerError>>,
-) {
+async fn stop_server(shutdown: oneshot::Sender<()>, task: JoinHandle<Result<(), ServerError>>) {
     shutdown.send(()).expect("signal shutdown");
     task.await.expect("server task").expect("graceful shutdown");
 }
@@ -48,7 +44,9 @@ async fn send_http(
     headers: &[(&str, &str)],
     body: &str,
 ) -> String {
-    let mut stream = TcpStream::connect(address).await.expect("connect to server");
+    let mut stream = TcpStream::connect(address)
+        .await
+        .expect("connect to server");
     let mut request = format!(
         "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: {}\r\n",
         body.len()
@@ -153,8 +151,16 @@ async fn real_tcp_routes_cover_safe_html_json_query_and_correlation_headers() {
     )
     .await;
     assert_eq!(status_code(&health), 200);
-    assert!(health.to_ascii_lowercase().contains("content-type: application/json; charset=utf-8"));
-    assert!(health.to_ascii_lowercase().contains("x-request-id: integration_health_1"));
+    assert!(
+        health
+            .to_ascii_lowercase()
+            .contains("content-type: application/json; charset=utf-8")
+    );
+    assert!(
+        health
+            .to_ascii_lowercase()
+            .contains("x-request-id: integration_health_1")
+    );
     assert!(response_body(&health).contains(r#"{"status":"ok"}"#));
 
     let user = send_http(
@@ -167,7 +173,10 @@ async fn real_tcp_routes_cover_safe_html_json_query_and_correlation_headers() {
     .await;
     assert_eq!(status_code(&user), 200);
     assert!(response_body(&user).contains(r#"{"id":"42","detailed":true}"#));
-    assert!(user.to_ascii_lowercase().contains("x-request-id: integration_user_2"));
+    assert!(
+        user.to_ascii_lowercase()
+            .contains("x-request-id: integration_user_2")
+    );
 
     let echo = send_http(
         address,
@@ -185,7 +194,10 @@ async fn real_tcp_routes_cover_safe_html_json_query_and_correlation_headers() {
     assert!(response_body(&page).starts_with("<!doctype html><html lang=\"en\">"));
     assert!(response_body(&page).contains("<title>RustFlow &lt;TCP&gt;</title>"));
     assert!(response_body(&page).contains("&lt;safe&gt; &amp; connected"));
-    assert!(page.to_ascii_lowercase().contains("content-type: text/html; charset=utf-8"));
+    assert!(
+        page.to_ascii_lowercase()
+            .contains("content-type: text/html; charset=utf-8")
+    );
     assert!(page.to_ascii_lowercase().contains("x-request-id: rf-"));
 
     stop_server(shutdown, task).await;
@@ -194,7 +206,11 @@ async fn real_tcp_routes_cover_safe_html_json_query_and_correlation_headers() {
 #[tokio::test]
 async fn real_tcp_errors_cover_custom_404_405_and_invalid_query_400() {
     let error_pages = ErrorPages::new()
-        .with_page(StatusCode::NOT_FOUND, "Not found <page>", "Missing <resource>.")
+        .with_page(
+            StatusCode::NOT_FOUND,
+            "Not found <page>",
+            "Missing <resource>.",
+        )
         .expect("404 status")
         .with_page(
             StatusCode::METHOD_NOT_ALLOWED,
@@ -205,8 +221,10 @@ async fn real_tcp_errors_cover_custom_404_405_and_invalid_query_400() {
     let config = ServerConfig::new().with_error_pages(error_pages);
     let mut app = Application::with_config(config);
 
-    app.get("/known", |_request| async { Ok(Response::text("available")) })
-        .expect("known route");
+    app.get("/known", |_request| async {
+        Ok(Response::text("available"))
+    })
+    .expect("known route");
     app.get("/users/{id}", |request: Request| async move {
         let query = request.query::<UserQuery>()?;
         Response::json(&UserResponse {
@@ -227,8 +245,16 @@ async fn real_tcp_errors_cover_custom_404_405_and_invalid_query_400() {
     )
     .await;
     assert_eq!(status_code(&missing), 404);
-    assert!(missing.to_ascii_lowercase().contains("content-type: text/html; charset=utf-8"));
-    assert!(missing.to_ascii_lowercase().contains("x-request-id: network_404"));
+    assert!(
+        missing
+            .to_ascii_lowercase()
+            .contains("content-type: text/html; charset=utf-8")
+    );
+    assert!(
+        missing
+            .to_ascii_lowercase()
+            .contains("x-request-id: network_404")
+    );
     assert!(response_body(&missing).contains("<title>Not found &lt;page&gt;</title>"));
     assert!(response_body(&missing).contains("Missing &lt;resource&gt;."));
     assert!(!response_body(&missing).contains("<resource>"));
@@ -272,7 +298,11 @@ async fn real_tcp_enforces_body_limits_and_handler_timeouts() {
     )
     .await;
     assert_eq!(status_code(&oversized), 413);
-    assert!(oversized.to_ascii_lowercase().contains("x-request-id: network_413"));
+    assert!(
+        oversized
+            .to_ascii_lowercase()
+            .contains("x-request-id: network_413")
+    );
     assert!(response_body(&oversized).contains("Request body is too large"));
 
     let timed_out = send_http(
@@ -284,7 +314,11 @@ async fn real_tcp_enforces_body_limits_and_handler_timeouts() {
     )
     .await;
     assert_eq!(status_code(&timed_out), 504);
-    assert!(timed_out.to_ascii_lowercase().contains("x-request-id: network_504"));
+    assert!(
+        timed_out
+            .to_ascii_lowercase()
+            .contains("x-request-id: network_504")
+    );
     assert!(response_body(&timed_out).contains("Request timed out"));
 
     stop_server(shutdown, task).await;
