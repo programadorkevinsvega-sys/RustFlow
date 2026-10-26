@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/rustflow"]
+members = ["crates/rustflow", "crates/rustflow-view"]
 
 [workspace.package]
 edition = "2024"
