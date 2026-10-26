@@ -1,9 +1,9 @@
 //! Component setup, rendering, and deterministic ownership lifecycle.
 
-use std::{error::Error, fmt, rc::Rc};
+use std::{collections::HashMap, error::Error, fmt, rc::Rc};
 
 use crate::reactivity::{Runtime, RuntimeError, Scope};
-use rustflow_view::{ComponentName, Property, View, ViewError};
+use rustflow_view::{ComponentName, ComponentNode, Property, View, ViewError};
 
 /// Errors produced while setting up or updating a component instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,6 +16,10 @@ pub enum ComponentError {
     Unmounted,
     /// A component callback reported an application error.
     User(String),
+    /// A registry already contains a definition with this name.
+    DuplicateDefinition(String),
+    /// A view references a component without a registered definition.
+    UnknownComponent(String),
 }
 impl fmt::Display for ComponentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -24,6 +28,8 @@ impl fmt::Display for ComponentError {
             Self::Runtime(error) => write!(f, "component runtime error: {error}"),
             Self::Unmounted => write!(f, "component instance has been unmounted"),
             Self::User(message) => write!(f, "component callback failed: {message}"),
+            Self::DuplicateDefinition(name) => write!(f, "component definition already registered: {name}"),
+            Self::UnknownComponent(name) => write!(f, "no component definition registered for: {name}"),
         }
     }
 }
@@ -91,6 +97,59 @@ impl ComponentDefinition {
     /// Return the public component type name.
     pub fn name(&self) -> &str {
         self.name.as_str()
+    }
+}
+
+/// Registry that resolves component descriptors to reusable definitions.
+///
+/// The registry can mount one descriptor into a native component instance. A
+/// renderer is responsible for recursively traversing a view tree and managing
+/// child component identity during reconciliation.
+#[derive(Clone, Default)]
+pub struct ComponentRegistry {
+    definitions: HashMap<String, ComponentDefinition>,
+}
+
+impl ComponentRegistry {
+    /// Create an empty component registry.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a reusable definition. Duplicate names are rejected.
+    pub fn register(&mut self, definition: ComponentDefinition) -> Result<(), ComponentError> {
+        let name = definition.name().to_owned();
+        if self.definitions.contains_key(&name) {
+            return Err(ComponentError::DuplicateDefinition(name));
+        }
+        self.definitions.insert(name, definition);
+        Ok(())
+    }
+
+    /// Return whether a definition is registered under this name.
+    pub fn contains(&self, name: &str) -> bool {
+        self.definitions.contains_key(name)
+    }
+
+    /// Mount a component descriptor using its registered definition.
+    pub fn mount(
+        &self,
+        node: &ComponentNode,
+        runtime: Runtime,
+        parent_scope: &Scope,
+    ) -> Result<ComponentInstance, ComponentError> {
+        let definition = self
+            .definitions
+            .get(node.name())
+            .cloned()
+            .ok_or_else(|| ComponentError::UnknownComponent(node.name().to_owned()))?;
+        ComponentInstance::mount(
+            definition,
+            runtime,
+            parent_scope,
+            node.properties().iter().cloned(),
+            node.children().iter().cloned(),
+        )
     }
 }
 
@@ -255,6 +314,66 @@ mod tests {
             Ok(render)
         })
         .expect("valid component definition")
+    }
+
+    #[test]
+    fn registry_mounts_descriptors_and_rejects_unknown_or_duplicate_names() {
+        use super::{ComponentRegistry, ComponentError};
+
+        let definition = ComponentDefinition::new("Greeting", |_context, _properties| {
+            let render: ComponentRender = Rc::new(|properties, children| {
+                let greeting = properties
+                    .iter()
+                    .find(|property| property.name() == "label")
+                    .and_then(|property| match property.value() {
+                        rustflow_view::PropertyValue::Text(value) => Some(value.clone()),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| "hello".to_owned());
+                Ok(View::fragment([
+                    View::text(greeting),
+                    View::fragment(children.to_vec()),
+                ]))
+            });
+            Ok(render)
+        }).expect("valid definition");
+
+        let mut registry = ComponentRegistry::new();
+        registry.register(definition.clone()).expect("first registration");
+        assert!(registry.contains("Greeting"));
+        assert!(matches!(
+            registry.register(definition),
+            Err(ComponentError::DuplicateDefinition(name)) if name == "Greeting"
+        ));
+
+        let descriptor = match View::component(
+            "Greeting",
+            [Property::new("label", "welcome").expect("property")],
+            [View::text("child")],
+            None,
+        ).expect("component descriptor") {
+            View::Component(node) => node,
+            _ => panic!("component descriptor expected"),
+        };
+        let runtime = Runtime::new();
+        let root = runtime.root_scope();
+        let mut instance = registry.mount(&descriptor, runtime.clone(), &root).expect("mount");
+        assert_eq!(instance.name(), "Greeting");
+        assert_eq!(
+            instance.view(),
+            &View::fragment([View::text("welcome"), View::fragment([View::text("child")])])
+        );
+        instance.unmount().expect("unmount");
+
+        let unknown = match View::component("Missing", [], [], None).expect("descriptor") {
+            View::Component(node) => node,
+            _ => panic!("component descriptor expected"),
+        };
+        assert!(matches!(
+            registry.mount(&unknown, runtime.clone(), &root),
+            Err(ComponentError::UnknownComponent(name)) if name == "Missing"
+        ));
+        runtime.dispose().expect("runtime dispose");
     }
 
     #[test]
