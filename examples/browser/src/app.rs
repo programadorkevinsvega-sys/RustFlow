@@ -118,7 +118,7 @@ fn todo_component(
             Property::new("on_unmount", PropertyValue::Callback(on_unmount))?,
         ],
         [],
-        Some(Key::from(todo.id)),
+        None,
     )
 }
 
