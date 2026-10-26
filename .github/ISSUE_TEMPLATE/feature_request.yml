@@ -1,0 +1,38 @@
+name: Feature request
+description: Propose a focused improvement to RustFlow.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the user need, not only the proposed implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and trade-offs
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List observable outcomes that can be verified.
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Architecture and compatibility impact
+      description: Consider crates, dependencies, MSRV, WASM/server boundaries, and security.
+    validations:
+      required: false
