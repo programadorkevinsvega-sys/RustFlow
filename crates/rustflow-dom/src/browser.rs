@@ -979,7 +979,7 @@ impl DomRenderer {
                 if old.name() == new.name() && old.key() == new.key() =>
             {
                 let Some(region_index) = context.take_component(old) else {
-                    return self.replacement_plan(next, owner_scope);
+                    return self.replacement_plan(previous, next, owner_scope);
                 };
                 let region = &context.component_regions[region_index];
                 let next_view = region
@@ -1025,7 +1025,7 @@ impl DomRenderer {
                     child_plan: Box::new(child_plan),
                 }
             }
-            _ => return self.replacement_plan(next, owner_scope),
+            _ => return self.replacement_plan(previous, next, owner_scope),
         };
         Ok(ReconciliationPlan {
             previous: previous.clone(),
@@ -1121,7 +1121,7 @@ impl DomRenderer {
                     owner_scope,
                 )?
             } else {
-                self.replacement_plan(next_view, owner_scope)?
+                self.replacement_plan(next_view, next_view, owner_scope)?
             };
             planned.push(PlannedChild {
                 previous_index: matched,
@@ -1157,7 +1157,7 @@ impl DomRenderer {
                     owner_scope,
                 )?
             } else {
-                self.replacement_plan(child.view(), owner_scope)?
+                self.replacement_plan(child.view(), child.view(), owner_scope)?
             };
             planned.push(PlannedChild {
                 previous_index: matched,
@@ -1169,6 +1169,7 @@ impl DomRenderer {
 
     fn replacement_plan(
         &self,
+        previous: &View,
         next: &View,
         owner_scope: &Scope,
     ) -> Result<ReconciliationPlan, DomError> {
@@ -1184,7 +1185,7 @@ impl DomRenderer {
             }
         };
         Ok(ReconciliationPlan {
-            previous: next.clone(),
+            previous: previous.clone(),
             next: next.clone(),
             action: ReconciliationAction::Replace(PreparedReplacement::new(
                 nodes,
