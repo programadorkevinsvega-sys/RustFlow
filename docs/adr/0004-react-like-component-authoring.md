@@ -22,7 +22,8 @@ Adopt the following **product acceptance contract** for the public UI experience
 5. **Typed props and callbacks:** component props have compile-time type checking and actionable diagnostics; callback props can be passed from parent to child. DOM event handlers remain typed callbacks and are removed on owner disposal.
 6. **Fine-grained rendering:** signal updates patch affected DOM nodes/regions rather than replacing the entire mounted range. Reconciliation preserves DOM/component identity when type and keys indicate the same logical child; removing/reordering keyed children follows a documented contract.
 7. **Runnable evidence:** the intended Counter and todo examples compile using the public API, run in a supported browser, and are covered by E2E tests for updates, callbacks, keyed/conditional behavior, accessibility basics, and cleanup.
-8. **Documentation accuracy:** code samples using the future contract remain prominently labeled as proposed until compile tests and browser tests prove them. Roadmap items stay open until those gates pass.
+8. **Familiar Rust API vocabulary:** use recognizable React-inspired names in idiomatic Rust `snake_case`—`use_state`, `use_effect`, `use_memo`, `use_ref`, and `use_context`—where RustFlow supports those concepts. Familiar names are a discoverability goal, not a promise of React's exact runtime semantics or signatures.
+9. **Documentation accuracy:** code samples using the future contract remain prominently labeled as proposed until compile tests and browser tests prove them. Roadmap items stay open until those gates pass.
 
 ## Illustrative design target (not current API)
 
@@ -65,11 +66,42 @@ This snippet defines intent only. It does not compile against the current reposi
 - How do child component identity, list keys, cleanup, and panic/error paths interact during partial DOM updates?
 - Which minimum browser(s) are supported for the first end-to-end vertical slice?
 
-The implementation proposal must answer these questions, include alternatives and trade-offs, and be accompanied by compile tests and browser-level evidence.
+### React-inspired vocabulary and the selected state model
+
+RustFlow will follow the **signal-first model** for state and DOM updates, while borrowing familiar React vocabulary for concepts developers recognize. It will not implement state cells indexed by hook-call order as the default model.
+
+| Familiar concept | RustFlow target name | Intended contract and current status |
+| --- | --- | --- |
+| `useState` | `use_state(initial)` | Planned, component/owner-scoped convenience backed by the signal model. It must not require positional hook-cell ordering. Whether it returns the signal handle directly or another typed wrapper must be settled before implementation. |
+| Signal primitive | `signal(initial)` | Planned lower-level reactive primitive with `get`, `set`, and `update`, bound to the current explicit owner/runtime scope. |
+| `useEffect` | `use_effect(...)` | Planned ergonomic wrapper over scope-owned, dependency-tracked effects. Dependencies are intended to be tracked from signal reads, rather than requiring a React-style dependency array by default. Cleanup on rerun and on scope disposal must be specified and tested. |
+| `useMemo` | `use_memo(...)` | Planned memoized derived computation with dependencies tracked according to RustFlow's reactive semantics, not copied hook-cell behavior. |
+| `useRef` | `use_ref(initial)` | Planned stable, component-scoped storage for non-reactive values or DOM handles; mutation alone should not trigger rendering. |
+| `useContext` | `use_context::<T>()` | Planned typed lookup from a nearest provider in the component-owner tree. Provider boundaries and missing-provider behavior must be explicit. |
+| `onClick` | `on:click` | The `view!` macro already supports this RustFlow event syntax. |
+| `className` | `class` | Use HTML naming in `view!`; do not add a JavaScript-specific alias without a demonstrated need. |
+| `key` | `key` | A stable child identity marker already exists in the view model; reconciliation remains pending. |
+
+The current reactivity implementation has `Runtime::signal`, `Scope::effect`, and owner scopes, but it does **not** yet expose the component-facing `use_state`, `use_effect`, `use_memo`, `use_ref`, or `use_context` façade. Treat all listed future names as proposed until compile tests and actual runtime tests exist.
+
+The design intentionally combines familiar naming with signal semantics:
+
+- A component is normally initialized once per mount; changing a signal invalidates the parts of the view that read it, rather than requiring the entire component function to re-execute for every state update.
+- Ordinary signal interpolation should bind directly to the reactive graph.
+- Structural changes, such as replacing an element type or inserting/removing/reordering keyed children, are handled by a view diff/reconciliation step.
+- Rendering/diff planning should be separated from the commit step that mutates browser DOM.
+- Root event delegation may be used for supported bubbling events, with direct-listener fallbacks for events whose semantics require them. The supported event contract and cleanup behavior must be tested.
+- React Fiber-style interruptible scheduling and React's positional hook-cell rules are **not** MVP requirements. Add comparable scheduling complexity only if measured use cases justify it.
+
+The exact public names, signatures, error types, and lifecycle details must be settled before implementation and shown in compiling examples. Any API that uses familiar names must document RustFlow-specific semantics rather than suggesting drop-in compatibility.
+
+The implementation proposal must answer the design questions above, include alternatives and trade-offs, and be accompanied by compile tests and browser-level evidence.
 
 ## Alternatives considered
 
 - **Keep the low-level API as the normal authoring surface:** rejected as the sole experience because it requires runtime/registry plumbing and fails the product ergonomics target.
+- **Copy React's hook cells and call-order rules:** not selected for the default model; RustFlow's signal graph already supports dependency tracking without positional state cells. Familiar names may still be used with RustFlow-defined signal/owner semantics.
+- **Copy every React helper before validating use cases:** rejected. Names such as `use_memo`, `use_ref`, and `use_context` are roadmap targets, but each helper still needs a typed contract, lifecycle semantics, and tests.
 - **Use a hidden process-global runtime singleton:** rejected because it risks unclear ownership, reentrancy, isolation, and server/request leakage.
 - **Add convenience syntax without reactive renderer behavior:** rejected because JSX-like syntax alone would still produce stale children or full-range replacement and would not satisfy the observable UI contract.
 - **Implement the entire full-stack API before testing a vertical slice:** rejected because the key browser experience should be proven with a Counter and todo before broadening scope.
