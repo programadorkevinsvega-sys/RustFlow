@@ -44,7 +44,9 @@ pub mod prelude {
         Effect, Runtime, RuntimeError, Scope, Signal, on_cleanup, signal, try_signal, use_effect,
         use_state, with_owner_scope,
     };
-    pub use crate::view::{EventHandler, EventPayload, IntoView, Key, KeyedChild, Property, PropertyValue, View};
+    pub use crate::view::{
+        EventHandler, EventPayload, IntoView, Key, KeyedChild, Property, PropertyValue, View,
+    };
     pub use rustflow_macros::{component, view};
 }
 /// Public, target-independent view-model types.
