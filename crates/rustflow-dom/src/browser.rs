@@ -1,9 +1,9 @@
-use std::{cell::RefCell, error::Error, fmt, rc::Rc};
+use std::{cell::{Cell, RefCell}, error::Error, fmt, rc::Rc};
 
 use js_sys::Reflect;
 use rustflow::{
     components::{ComponentError, ComponentInstance, ComponentRegistry},
-    reactivity::{Runtime, RuntimeError, Scope},
+    reactivity::{Runtime, RuntimeError, Scope, untrack},
 };
 use rustflow_view::{
     AttributeValue, ComponentNode, DynamicChild, Element, EventBinding, EventHandler, EventPayload,
@@ -300,6 +300,68 @@ impl DomRenderer {
         })
     }
 
+    fn activate_dynamic_regions(&self, regions: &mut [DynamicRegion]) -> Result<(), DomError> {
+        for region in regions {
+            {
+                let mut state = region.state.borrow_mut();
+                if let Some(state) = state.as_mut() {
+                    self.activate_dynamic_regions(&mut state.mounted.dynamics)?;
+                }
+            }
+
+            let dynamic = region.dynamic.clone();
+            let scope = region.scope.clone();
+            let state = region.state.clone();
+            let document = self.document.clone();
+            let runtime = self.runtime.clone();
+            let registry = self.registry.clone();
+            let error_sink = region.error_sink.clone();
+            let first_run = Rc::new(Cell::new(true));
+
+            scope.effect(move || {
+                let next_view = match dynamic.evaluate() {
+                    Ok(view) => view,
+                    Err(error) => {
+                        if let Some(sink) = &error_sink {
+                            *sink.borrow_mut() = Some(DomError::from(error));
+                        }
+                        return;
+                    }
+                };
+
+                // The synchronous builder already mounted this initial view.
+                // This first run only collects dependencies for this region.
+                if first_run.replace(false) {
+                    return;
+                }
+
+                let mut current = state.borrow_mut();
+                let Some(current) = current.as_mut() else {
+                    return;
+                };
+                let previous_view = current.view.clone();
+                let mut renderer =
+                    DomRenderer::new(document.clone(), runtime.clone(), registry.clone());
+                renderer.root_scope = scope.clone();
+                renderer.error_sink = error_sink.clone();
+                match renderer.update(&mut current.mounted, &previous_view, &next_view) {
+                    Ok(()) => {
+                        current.view = next_view;
+                        if let Some(sink) = &error_sink {
+                            *sink.borrow_mut() = None;
+                        }
+                    }
+                    Err(error) => {
+                        if let Some(sink) = &error_sink {
+                            *sink.borrow_mut() = Some(error);
+                        }
+                    }
+                }
+            })?;
+        }
+        Ok(())
+    }
+
     fn build_nodes(
         &self,
         view: &View,
@@ -418,8 +480,49 @@ impl DomRenderer {
         parent_scope: &Scope,
         resources: &mut RenderedNodes,
     ) -> Result<Vec<Node>, DomError> {
-        let view = dynamic.evaluate()?;
-        self.build_nodes(&view, parent_scope, resources)
+        let scope = parent_scope.child()?;
+        // Initial evaluation is deliberately untracked. The region's own effect,
+        // activated after the whole mount is attached, owns future dependencies.
+        let view = match untrack(|| dynamic.evaluate()) {
+            Ok(view) => view,
+            Err(error) => {
+                let _ = scope.dispose();
+                return Err(error.into());
+            }
+        };
+        let start = self.document.create_comment("rustflow:dynamic:start");
+        let end = self.document.create_comment("rustflow:dynamic:end");
+        let mut inner = RenderedNodes::default();
+        let roots = match self.build_nodes(&view, &scope, &mut inner) {
+            Ok(nodes) => nodes,
+            Err(error) => {
+                let _ = cleanup_rendered_nodes(&mut inner);
+                let _ = scope.dispose();
+                return Err(error);
+            }
+        };
+        let mounted = MountedDom {
+            start: start.clone(),
+            end: end.clone(),
+            roots: roots.clone(),
+            listeners: inner.listeners,
+            components: inner.components,
+            dynamics: inner.dynamics,
+        };
+        let state = Rc::new(RefCell::new(Some(DynamicMountState { mounted, view })));
+        resources.dynamics.push(DynamicRegion {
+            dynamic: dynamic.clone(),
+            scope,
+            state,
+            error_sink: self.error_sink.clone(),
+        });
+        let mut nodes = Vec::with_capacity(roots.len() + 2);
+        let start_node: Node = start.unchecked_into();
+        let end_node: Node = end.unchecked_into();
+        nodes.push(start_node);
+        nodes.extend(roots);
+        nodes.push(end_node);
+        Ok(nodes)
     }
 
     fn build_component(
