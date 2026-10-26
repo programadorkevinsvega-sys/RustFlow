@@ -14,24 +14,6 @@ extern crate self as rustflow;
 pub mod components;
 pub mod reactivity;
 
-/// Public, target-independent view-model types.
-///
-/// This re-export currently supports structural text, element, and fragment
-/// nodes only. It does not provide components, rendering, or DOM integration.
-///
-/// ```
-/// use rustflow::view::View;
-///
-/// fn page() -> Result<View, rustflow::view::ViewError> {
-///     View::element(
-///         "main",
-///         [View::element("h1", [View::text("Hello, RustFlow")])?],
-///     )
-/// }
-///
-/// let _page = page().expect("valid static view tree");
-/// ```
-pub use rustflow_view as view;
 #[doc = "Builds a typed view tree from constrained HTML-like syntax."]
 #[doc = ""]
 #[doc = "Text is written as a Rust literal, expressions are wrapped in braces, event handlers use on:event={closure}, DOM properties use prop:name={value}, and @dynamic { expression } defers a child evaluator. Uppercase tags create component descriptors."]
@@ -55,6 +37,24 @@ pub use rustflow_view as view;
 #[doc = "}"]
 #[doc = "```"]
 pub use rustflow_macros::view;
+/// Public, target-independent view-model types.
+///
+/// This re-export currently supports structural text, element, and fragment
+/// nodes only. It does not provide components, rendering, or DOM integration.
+///
+/// ```
+/// use rustflow::view::View;
+///
+/// fn page() -> Result<View, rustflow::view::ViewError> {
+///     View::element(
+///         "main",
+///         [View::element("h1", [View::text("Hello, RustFlow")])?],
+///     )
+/// }
+///
+/// let _page = page().expect("valid static view tree");
+/// ```
+pub use rustflow_view as view;
 
 /// Returns the framework's current pre-release version.
 ///
@@ -73,4 +73,3 @@ mod tests {
         assert_eq!(version(), "0.1.0");
     }
 }
-
