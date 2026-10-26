@@ -255,6 +255,22 @@ impl ComponentInstance {
     pub fn scope(&self) -> &Scope {
         &self.scope
     }
+    /// Preview a view rendered with updated properties/children without accepting them.
+    ///
+    /// The component setup and its owner scope are not recreated. This method is
+    /// useful for preflighting a reconciliation before committing DOM changes.
+    pub fn preview_update(
+        &self,
+        properties: &[Property],
+        children: &[View],
+    ) -> Result<View, ComponentError> {
+        if self.state == ComponentState::Unmounted {
+            return Err(ComponentError::Unmounted);
+        }
+        validate_properties(properties)?;
+        (self.render)(properties, children)
+    }
+
     /// Recompute the view with new properties/children. Setup is not repeated.
     ///
     /// On render failure, the old view and inputs remain unchanged.
@@ -267,9 +283,8 @@ impl ComponentInstance {
             return Err(ComponentError::Unmounted);
         }
         let properties = properties.into_iter().collect::<Vec<_>>();
-        validate_properties(&properties)?;
         let children = children.into_iter().collect::<Vec<_>>();
-        let next_view = (self.render)(&properties, &children)?;
+        let next_view = self.preview_update(&properties, &children)?;
         self.properties = properties;
         self.children = children;
         self.view = next_view;
