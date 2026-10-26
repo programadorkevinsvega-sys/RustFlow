@@ -177,6 +177,7 @@ pub struct DomRenderer {
     runtime: Runtime,
     root_scope: Scope,
     registry: ComponentRegistry,
+    error_sink: Option<Rc<RefCell<Option<DomError>>>>,
 }
 
 impl DomRenderer {
@@ -188,6 +189,7 @@ impl DomRenderer {
             runtime,
             root_scope,
             registry,
+            error_sink: None,
         }
     }
 
