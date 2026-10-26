@@ -32,26 +32,6 @@ pub mod reactivity;
 /// let _page = page().expect("valid static view tree");
 /// ```
 pub use rustflow_view as view;
-pub use rustflow_macros::view;
-
-/// Returns the framework's current pre-release version.
-///
-/// This small function exists only to give the initial crate a verifiable
-/// public API while the workspace and CI baseline are established.
-pub const fn version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::version;
-
-    #[test]
-    fn package_version_is_available() {
-        assert_eq!(version(), "0.1.0");
-    }
-}
-
 #[doc = "Builds a typed view tree from constrained HTML-like syntax."]
 #[doc = ""]
 #[doc = "Text is written as a Rust literal, expressions are wrapped in braces, event handlers use on:event={closure}, DOM properties use prop:name={value}, and @dynamic { expression } defers a child evaluator. Uppercase tags create component descriptors."]
@@ -74,3 +54,23 @@ mod tests {
 #[doc = "    rustflow::view! { <div>\"text\"</span> }"]
 #[doc = "}"]
 #[doc = "```"]
+pub use rustflow_macros::view;
+
+/// Returns the framework's current pre-release version.
+///
+/// This small function exists only to give the initial crate a verifiable
+/// public API while the workspace and CI baseline are established.
+pub const fn version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::version;
+
+    #[test]
+    fn package_version_is_available() {
+        assert_eq!(version(), "0.1.0");
+    }
+}
+
