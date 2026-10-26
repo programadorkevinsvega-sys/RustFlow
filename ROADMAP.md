@@ -107,7 +107,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Create and mount text, element, and fragment nodes through comment-anchored DOM ranges.
 - [x] Apply typed attributes and properties through DOM APIs; the initial renderer uses an element allowlist and URL-scheme checks.
 - [x] Attach event callbacks and remove their listeners during cleanup.
-- [ ] Connect reactive computations to targeted DOM updates (dynamic children are evaluated during a render; no automatic signal-to-DOM scheduling yet).
+- [ ] Add targeted/dirty-subtree DOM updates. `DomRenderer::mount_reactive` now runs a render closure in an owned reactive effect and rerenders when tracked signals change, but it currently replaces the full mounted range.
 - [x] Dispose registered component scopes and listeners on unmount.
 - [ ] Implement conditional rendering and keyed dynamic-list reconciliation (keyed snapshots render in order, but updates currently replace the full range).
 
