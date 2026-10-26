@@ -19,12 +19,13 @@ struct Todo {
 }
 
 #[rustflow::component]
-fn Counter(initial: i32) -> impl IntoView {
+fn Counter(initial: i32, label: String) -> impl IntoView {
     let count = signal(initial);
     let count_for_button = count.clone();
 
     rustflow::view! {
         <section data-testid="counter">
+            <p data-testid="counter-label">{label}</p>
             <p>
                 "Count: "
                 <span data-testid="counter-value">{count}</span>
@@ -36,46 +37,89 @@ fn Counter(initial: i32) -> impl IntoView {
     }
 }
 
-fn todo_row(todo: Todo, todos: Signal<Vec<Todo>>) -> Result<View, rustflow::view::ViewError> {
+#[rustflow::component]
+fn TodoRow(
+    id: i64,
+    title: String,
+    done: bool,
+    on_toggle: EventHandler,
+    on_remove: EventHandler,
+    on_unmount: EventHandler,
+) -> impl IntoView {
+    let row_touches = signal(0_i32);
+    let touch_for_button = row_touches.clone();
+    let _cleanup = on_cleanup(move || on_unmount.invoke(EventPayload::default()));
+    let shown_title = if done {
+        format!("✓ {}", title.clone())
+    } else {
+        title.clone()
+    };
+
+    rustflow::view! {
+        <li data-testid={format!("todo-{}", id)} data-todo-id={id.to_string()}>
+            <input
+                type="checkbox"
+                aria-label={format!("Mark {} complete", title)}
+                prop:checked={done}
+                on:change={move |payload: EventPayload| on_toggle.invoke(payload)}
+            />
+            <span>{shown_title}</span>
+            <button
+                data-testid={format!("todo-touch-{}", id)}
+                aria-label={format!("Touch {}", title)}
+                on:click={move |_payload| touch_for_button.update(|touches| *touches += 1)}
+            >
+                "Touch count: " {row_touches}
+            </button>
+            <button
+                aria-label={format!("Remove {}", title)}
+                on:click={move |payload| on_remove.invoke(payload)}
+            >
+                "Remove"
+            </button>
+        </li>
+    }
+}
+
+fn todo_component(
+    todo: Todo,
+    todos: Signal<Vec<Todo>>,
+    cleanup_count: Signal<i32>,
+) -> Result<View, rustflow::view::ViewError> {
     let toggle_todos = todos.clone();
     let toggle_id = todo.id;
-    let checkbox = ViewElement::new("input")?
-        .with_attribute("type", "checkbox")?
-        .with_attribute("aria-label", format!("Mark {} complete", todo.title))?
-        .with_property("checked", todo.done)?
-        .with_event("change", move |payload: EventPayload| {
-            if let Some(checked) = payload.checked {
-                toggle_todos.update(|items| {
-                    if let Some(item) = items.iter_mut().find(|item| item.id == toggle_id) {
-                        item.done = checked;
-                    }
-                });
-            }
-        })?
-        .build();
-
-    let title = if todo.done {
-        format!("✓ {}", todo.title)
-    } else {
-        todo.title.clone()
-    };
-    let title = View::element("span", [View::text(title)])?;
+    let on_toggle = EventHandler::new(move |payload: EventPayload| {
+        if let Some(checked) = payload.checked {
+            toggle_todos.update(|items| {
+                if let Some(item) = items.iter_mut().find(|item| item.id == toggle_id) {
+                    item.done = checked;
+                }
+            });
+        }
+    });
 
     let remove_todos = todos;
     let remove_id = todo.id;
-    let remove = ViewElement::new("button")?
-        .with_attribute("aria-label", format!("Remove {}", todo.title))?
-        .with_event("click", move |_payload| {
-            remove_todos.update(|items| items.retain(|item| item.id != remove_id));
-        })?
-        .with_children([View::text("Remove")])
-        .build();
+    let on_remove = EventHandler::new(move |_payload: EventPayload| {
+        remove_todos.update(|items| items.retain(|item| item.id != remove_id));
+    });
+    let on_unmount = EventHandler::new(move |_payload: EventPayload| {
+        cleanup_count.update(|count| *count += 1);
+    });
 
-    Ok(ViewElement::new("li")?
-        .with_attribute("data-testid", format!("todo-{}", todo.id))?
-        .with_attribute("data-todo-id", todo.id.to_string())?
-        .with_children([checkbox, title, remove])
-        .build())
+    View::component(
+        "TodoRow",
+        [
+            Property::new("id", todo.id)?,
+            Property::new("title", todo.title)?,
+            Property::new("done", todo.done)?,
+            Property::new("on_toggle", PropertyValue::Callback(on_toggle))?,
+            Property::new("on_remove", PropertyValue::Callback(on_remove))?,
+            Property::new("on_unmount", PropertyValue::Callback(on_unmount))?,
+        ],
+        [],
+        None,
+    )
 }
 
 #[wasm_bindgen(start)]
@@ -95,9 +139,15 @@ pub fn start() -> Result<(), JsValue> {
     let draft = runtime.signal(String::new()).map_err(display_error)?;
     let next_id = runtime.signal(1_i64).map_err(display_error)?;
     let show_help = runtime.signal(true).map_err(display_error)?;
+    let counter_label = runtime
+        .signal(String::from("Initial label"))
+        .map_err(display_error)?;
+    let cleanup_count = runtime.signal(0_i32).map_err(display_error)?;
+    let todo_identity = runtime.signal(0_i64).map_err(display_error)?;
 
     let mut registry = ComponentRegistry::new();
     register_counter(&mut registry).map_err(display_error)?;
+    register_todorow(&mut registry).map_err(display_error)?;
 
     let mut renderer = DomRenderer::new(document.clone(), runtime, registry);
     let mounted = renderer
@@ -113,13 +163,32 @@ pub fn start() -> Result<(), JsValue> {
             let show_for_region = show_help.clone();
             let show_for_button = show_help.clone();
             let document_for_add = document.clone();
+            let counter_label_for_component = counter_label.clone();
+            let counter_label_for_button = counter_label.clone();
+            let cleanup_count_for_rows = cleanup_count.clone();
+            let cleanup_count_for_display = cleanup_count.clone();
+            let todo_identity_for_region = todo_identity.clone();
+            let todo_identity_for_button = todo_identity.clone();
 
             let todo_region = View::dynamic(move || {
                 let snapshot = todos_for_region.get();
+                let identity = todo_identity_for_region.get();
                 let mut children = Vec::with_capacity(snapshot.len());
                 for todo in snapshot {
                     let id = todo.id;
-                    children.push(KeyedChild::new(id, todo_row(todo, todos_for_rows.clone())?));
+                    let key = if id == 1 {
+                        format!("todo-{id}-{identity}")
+                    } else {
+                        format!("todo-{id}")
+                    };
+                    children.push(KeyedChild::new(
+                        key,
+                        todo_component(
+                            todo,
+                            todos_for_rows.clone(),
+                            cleanup_count_for_rows.clone(),
+                        )?,
+                    ));
                 }
                 View::keyed_list(children)
             });
@@ -142,7 +211,12 @@ pub fn start() -> Result<(), JsValue> {
             rustflow::view! {
                 <main>
                     <h1>"RustFlow Phase 3 browser demo"</h1>
-                    <Counter initial={0} />
+                    <Counter initial={0} label={counter_label_for_component.get()} />
+                    <button data-testid="change-counter-label" on:click={move |_payload| {
+                        counter_label_for_button.set(String::from("Updated label"));
+                    }}>
+                        "Change counter label"
+                    </button>
                     <section aria-label="Todo editor">
                         <label for="todo-input">"New task"</label>
                         <input
@@ -177,10 +251,16 @@ pub fn start() -> Result<(), JsValue> {
                         </button>
                     </section>
                     <ul data-testid="todo-list">{todo_region}</ul>
+                    <p data-testid="todo-unmount-count">"Unmounted rows: " {cleanup_count_for_display}</p>
                     <button on:click={move |_payload| {
                         todos_for_reverse.update(|items| items.reverse());
                     }}>
                         "Reverse order"
+                    </button>
+                    <button data-testid="change-todo-key" on:click={move |_payload| {
+                        todo_identity_for_button.update(|identity| *identity += 1);
+                    }}>
+                        "Replace first todo instance"
                     </button>
                     <button on:click={move |_payload| {
                         show_for_button.update(|visible| *visible = !*visible);

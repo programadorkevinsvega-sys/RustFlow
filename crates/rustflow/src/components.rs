@@ -255,6 +255,42 @@ impl ComponentInstance {
     pub fn scope(&self) -> &Scope {
         &self.scope
     }
+    /// Preview a view rendered with updated properties/children without accepting them.
+    ///
+    /// The component setup and its owner scope are not recreated. This method is
+    /// useful for preflighting a reconciliation before committing DOM changes.
+    pub fn preview_update(
+        &self,
+        properties: &[Property],
+        children: &[View],
+    ) -> Result<View, ComponentError> {
+        if self.state == ComponentState::Unmounted {
+            return Err(ComponentError::Unmounted);
+        }
+        validate_properties(properties)?;
+        (self.render)(properties, children)
+    }
+
+    /// Accept a previously previewed view after the host has successfully reconciled it.
+    ///
+    /// This avoids rerunning a pure render callback and preserves the exact dynamic
+    /// child descriptors used by the DOM commit.
+    pub fn commit_preview_update(
+        &mut self,
+        properties: Vec<Property>,
+        children: Vec<View>,
+        view: View,
+    ) -> Result<&View, ComponentError> {
+        if self.state == ComponentState::Unmounted {
+            return Err(ComponentError::Unmounted);
+        }
+        validate_properties(&properties)?;
+        self.properties = properties;
+        self.children = children;
+        self.view = view;
+        Ok(&self.view)
+    }
+
     /// Recompute the view with new properties/children. Setup is not repeated.
     ///
     /// On render failure, the old view and inputs remain unchanged.
@@ -267,9 +303,8 @@ impl ComponentInstance {
             return Err(ComponentError::Unmounted);
         }
         let properties = properties.into_iter().collect::<Vec<_>>();
-        validate_properties(&properties)?;
         let children = children.into_iter().collect::<Vec<_>>();
-        let next_view = (self.render)(&properties, &children)?;
+        let next_view = self.preview_update(&properties, &children)?;
         self.properties = properties;
         self.children = children;
         self.view = next_view;
@@ -516,12 +551,107 @@ mod tests {
     }
 
     #[crate::component]
+    fn MacroPropCounter(initial: i32, label: String) -> impl rustflow_view::IntoView {
+        let count = crate::reactivity::signal(initial);
+        let increment = count.clone();
+        crate::view! {
+            <section>
+                <span data-testid="prop-label">{label}</span>
+                <button on:click={move |_event| increment.update(|value| *value += 1)}>
+                    "Increment"
+                </button>
+                <span data-testid="local-count">{count}</span>
+            </section>
+        }
+    }
+
+    #[crate::component]
     fn CallbackReceiver(on_increment: rustflow_view::EventHandler) -> impl rustflow_view::IntoView {
         crate::view! {
             <button on:click={move |payload| on_increment.invoke(payload)}>
                 "Forward"
             </button>
         }
+    }
+
+    #[test]
+    fn macro_component_prop_updates_preserve_owner_state_and_refresh_the_view() {
+        use super::ComponentRegistry;
+        use rustflow_view::{EventPayload, PropertyValue};
+
+        let mut registry = ComponentRegistry::new();
+        registry
+            .register(
+                __rustflow_component_definition_macropropcounter().expect("component adapter"),
+            )
+            .expect("register component");
+        let runtime = Runtime::new();
+        let root = runtime.root_scope();
+        let descriptor = match crate::view! {
+            <MacroPropCounter initial={4} label="before" />
+        }
+        .expect("component descriptor")
+        {
+            View::Component(node) => node,
+            _ => panic!("component descriptor expected"),
+        };
+        let mut instance = registry
+            .mount(&descriptor, runtime.clone(), &root)
+            .expect("mount component");
+
+        let View::Element(section) = instance.view() else {
+            panic!("component returns a section");
+        };
+        let View::Element(button) = &section.children()[1] else {
+            panic!("component includes an increment button");
+        };
+        button.events()[0].handler().invoke(EventPayload::default());
+
+        let updated = instance
+            .update(
+                [
+                    Property::new("initial", 99).expect("initial prop"),
+                    Property::new("label", "after").expect("label prop"),
+                ],
+                [],
+            )
+            .expect("update component props")
+            .clone();
+        let View::Element(section) = &updated else {
+            panic!("updated component returns a section");
+        };
+        let View::Element(label) = &section.children()[0] else {
+            panic!("updated component includes a label span");
+        };
+        assert_eq!(label.tag(), "span");
+        assert_eq!(label.children(), &[View::text("after")]);
+
+        let View::Element(counter) = &section.children()[2] else {
+            panic!("component includes the local counter");
+        };
+        assert_eq!(counter.attributes()[0].name(), "data-testid");
+        assert_eq!(
+            counter.attributes()[0].value(),
+            &rustflow_view::AttributeValue::Text("local-count".into())
+        );
+        let View::Dynamic(dynamic) = &counter.children()[0] else {
+            panic!("signal interpolation remains a dynamic region");
+        };
+        assert_eq!(
+            dynamic.evaluate().expect("current signal view"),
+            View::text("5")
+        );
+        assert_eq!(
+            instance
+                .properties()
+                .iter()
+                .find(|property| property.name() == "initial")
+                .map(|property| property.value()),
+            Some(&PropertyValue::Integer(99))
+        );
+
+        instance.unmount().expect("unmount component");
+        runtime.dispose().expect("dispose runtime");
     }
 
     #[test]

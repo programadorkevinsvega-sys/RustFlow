@@ -128,7 +128,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 
 ## Phase 3 — Browser runtime and interactive MVP
 
-**Estado: ABIERTA. No comenzar la fase siguiente hasta cerrar todos los criterios bloqueantes de esta fase.**
+**Estado: criterios técnicos implementados en la PR apilada #26 sobre #25. La CI del HEAD exacto debe estar verde y ambas PR deben revisarse/integrarse antes de declarar cerrada la Fase 3 o iniciar la siguiente.**
 
 ### 3.1 API pública de autoría
 
@@ -153,9 +153,9 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Montar texto, elementos y fragmentos mediante rangos delimitados por comentarios.
 - [x] Aplicar atributos y propiedades mediante APIs DOM tipadas con validación de elementos, atributos y esquemas URL; no tratar el árbol como HTML seguro.
 - [x] Registrar y retirar listeners; delegar los eventos que burbujean en el límite de montaje y usar listeners directos para los eventos que necesitan ese tratamiento.
-- [ ] Completar las actualizaciones DOM dirigidas para todo el modelo. Ya existen scopes/efectos por región dinámica, parcheo de texto y elementos compatibles, y reutilización de nodos compatibles con la misma clave. Los descriptores de componente y otros árboles opacos todavía pueden activar reemplazo de rango completo.
+- [x] Completar las actualizaciones DOM dirigidas para todo el modelo: el plan diff/evaluación valida los subárboles y prepara fuera del DOM los rangos nuevos o incompatibles; el commit aplica parches compatibles y modifica sólo los rangos afectados. Se reconcilian texto, elementos, fragmentos, listas keyed, componentes y regiones dinámicas.
 - [x] Reconciliar listas dinámicas con claves únicas y conservar la identidad DOM de filas compatibles al reordenarlas.
-- [ ] Separar explícitamente el plan de diff/evaluación del commit DOM y completar la reconciliación segura de todos los tipos de subárbol, incluidos cambios de props y preservación de identidad de componentes.
+- [x] Separar explícitamente diff/evaluación y commit DOM mediante `ReconciliationPlan` y `commit_plan`. Las props nuevas generan una vista previsualizada sin repetir setup; los componentes de identidad compatible mantienen su scope/estado, `KeyedChild` propaga su clave al descriptor y los rangos/scope/efectos/listeners de instancias sustituidas se limpian.
 - [x] Añadir errores recuperables a ReactiveMountedDom::take_error y diagnóstico de renderizados fallidos en la consola del navegador.
 
 ### 3.4 MVP interactivo y verificación
@@ -167,7 +167,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Medir WASM raw y gzip y aplicar un presupuesto raw de 1.5 MiB.
 - [x] Documentar configuración local, compilación release/debug, source maps de los assets JS y troubleshooting básico.
 
-**Criterios bloqueantes todavía abiertos:** el diff/commit aún no está separado en fases explícitas; los árboles que contienen componentes no siempre preservan la identidad de instancia durante actualizaciones; la reconciliación debe cubrir estos casos antes de declarar la fase al 100 %. La CI verde es necesaria, pero no sustituye estos criterios funcionales.
+**Estado de integración:** los dos criterios técnicos anteriores están implementados y tienen regresiones de props/estado/identidad, sustitución/cleanup y cambios estructurales en la PR apilada #26. La aceptación de esta rama requiere CI verde en su HEAD exacto. La Fase 3 no se considera cerrada en `main` hasta integrar #26 en #25 y revisar/cerrar #25; no empezar la Fase 4 antes.
 
 ## Phase 4 — HTTP server and routing
 

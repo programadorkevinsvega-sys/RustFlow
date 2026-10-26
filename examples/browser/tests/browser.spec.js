@@ -19,6 +19,32 @@ test("counter increments by patching its existing DOM node", async ({ page }) =>
   ).toBe(true);
 });
 
+test("component prop updates preserve local state and compatible DOM identity", async ({ page }) => {
+  const label = page.getByTestId("counter-label");
+  const value = page.getByTestId("counter-value");
+  const originalLabel = await label.elementHandle();
+  const originalValue = await value.elementHandle();
+
+  await expect(label).toHaveText("Initial label");
+  await expect(value).toHaveText("0");
+  await page.getByRole("button", { name: "Increment" }).click();
+  await expect(value).toHaveText("1");
+
+  await page.getByTestId("change-counter-label").click();
+  await expect(label).toHaveText("Updated label");
+  await expect(value).toHaveText("1");
+
+  expect(
+    await originalLabel.evaluate((node) => node === document.querySelector('[data-testid="counter-label"]')),
+  ).toBe(true);
+  expect(
+    await originalValue.evaluate((node) => node === document.querySelector('[data-testid="counter-value"]')),
+  ).toBe(true);
+
+  await page.getByRole("button", { name: "Increment" }).click();
+  await expect(value).toHaveText("2");
+});
+
 test("todo CRUD and keyed reorder preserve existing row identity", async ({ page }) => {
   const input = page.getByRole("textbox", { name: "New todo" });
   await input.fill("First task");
@@ -29,17 +55,30 @@ test("todo CRUD and keyed reorder preserve existing row identity", async ({ page
   const firstRow = page.getByTestId("todo-1");
   const originalNode = await firstRow.elementHandle();
   await expect(firstRow).toContainText("First task");
+  const touches = page.getByTestId("todo-touch-1");
+  await touches.click();
+  await expect(touches).toHaveText("Touch count: 1");
+
   await page.getByRole("button", { name: "Reverse order" }).click();
 
   await expect(page.locator('[data-testid="todo-list"] li').first()).toHaveAttribute("data-todo-id", "2");
   expect(
     await originalNode.evaluate((node) => node === document.querySelector('[data-testid="todo-1"]')),
   ).toBe(true);
+  await expect(page.getByTestId("todo-touch-1")).toHaveText("Touch count: 1");
+
+  await page.getByTestId("change-todo-key").click();
+  await expect(page.getByTestId("todo-touch-1")).toHaveText("Touch count: 0");
+  expect(
+    await originalNode.evaluate((node) => node === document.querySelector('[data-testid="todo-1"]')),
+  ).toBe(false);
+  await expect(page.getByTestId("todo-unmount-count")).toHaveText("Unmounted rows: 1");
 
   await page.getByRole("checkbox", { name: "Mark First task complete" }).check();
   await expect(firstRow).toContainText("✓ First task");
   await page.getByRole("button", { name: "Remove First task" }).click();
   await expect(page.getByTestId("todo-1")).toHaveCount(0);
+  await expect(page.getByTestId("todo-unmount-count")).toHaveText("Unmounted rows: 2");
   await expect(page.getByTestId("todo-2")).toContainText("Second task");
   await page.getByRole("checkbox", { name: "Mark Second task complete" }).check();
   await expect(page.getByTestId("todo-2")).toContainText("✓ Second task");

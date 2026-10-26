@@ -15,13 +15,13 @@ El runtime incluye señales tipadas, efectos, grafo de dependencias, scheduler, 
 
 El modelo nativo incluye nodos tipados, atributos, propiedades, callbacks de eventos, ciclo de vida, scopes de limpieza, registro de componentes y la macro view!. El contrato de autoría de componentes se implementa parcialmente en la Fase 3: #[component], un subconjunto de props tipados, callbacks y registro generado ya funcionan, pero la API no pretende ser compatible con React ni adopta hooks posicionales. Véase [Crear componentes](/guides/components/).
 
-### Fase 3 — Navegador/WASM, parcialmente implementada
+### Fase 3 — Navegador/WASM, implementación en integración
 
-El runtime WASM monta vistas, mantiene regiones dinámicas con scopes propios y reconcilia nodos compatibles cuando puede. Los eventos que burbujean se delegan en el límite del montaje y los listeners de otros eventos se registran directamente. La aplicación de ejemplo incluye Counter y una lista de tareas con alta, marcado, eliminación y reordenación keyed.
+El runtime de navegador monta y reconcilia texto, elementos, fragmentos, listas con clave, componentes y regiones dinámicas. El renderer separa el plan de diff/evaluación del commit DOM; las ramas nuevas o incompatibles se preparan fuera del DOM antes del commit. Cuando tipo y clave del componente siguen siendo compatibles, se vuelven a evaluar las props sobre el mismo scope y estado interno. Las ramas sustituidas limpian sus instancias, efectos, listeners y callbacks de cleanup.
 
-La CI del branch de implementación ha verificado Rust estable, Rust 1.85, Clippy, compilación WASM y una build de producción de Vite. En el último ciclo de verificación, el WASM de producción fue **229,158 bytes raw y 87,987 bytes gzip**, por debajo del presupuesto de **1.5 MiB raw**, y **3 pruebas E2E de Chromium pasaron** (Counter/identidad de nodo, CRUD/reordenación keyed, y renderizado condicional). La CI comprueba el bundle estático de producción, no únicamente el servidor de desarrollo.
+La suite de Chromium incluye cuatro escenarios: identidad DOM del Counter, actualización de prop visible con estado/reactividad e identidad DOM conservados, CRUD/reordenación keyed con preservación de estado local y cleanup al sustituir la clave o eliminar la fila, y montaje/desmontaje condicional sin reemplazar la aplicación. El workflow de CI compila el target WASM, ejecuta Rust estable/1.85, Clippy, tests, build de producción y el límite de 1.5 MiB raw para WASM; el criterio de aceptación es que todos pasen en el HEAD exacto.
 
-**La Fase 3 permanece abierta.** La actualización de árboles que contienen componentes todavía puede reemplazar rangos completos; falta completar el diff/commit explícito y preservar la identidad de instancia al cambiar componentes/props. Estos son bloqueos deliberados, no tareas que se puedan saltar para empezar la fase siguiente.
+**Estado de integración:** esta implementación se mantiene en la PR apilada #26, cuya base es la rama de la PR #25. Aunque se implementen los criterios técnicos en esta rama, la Fase 3 no se da por cerrada en `main` hasta que #26 se revise e integre en #25 y la PR #25 se cierre mediante la revisión/fusión autorizada. La Fase 4 sigue bloqueada hasta entonces.
 
 ### Fase 4 — Servidor HTTP, en prototipo
 

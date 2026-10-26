@@ -790,12 +790,19 @@ pub struct KeyedChild {
     view: View,
 }
 impl KeyedChild {
-    /// Create a keyed child.
+    /// Create a keyed child. When the root view is a component descriptor, the
+    /// list key is also its component identity key so local state follows the
+    /// keyed item even when the descriptor did not specify a separate key.
     pub fn new(key: impl Into<Key>, view: View) -> Self {
-        Self {
-            key: key.into(),
-            view,
-        }
+        let key = key.into();
+        let view = match view {
+            View::Component(mut component) => {
+                component.key = Some(key.clone());
+                View::Component(component)
+            }
+            other => other,
+        };
+        Self { key, view }
     }
     /// Return this child's key.
     pub fn key(&self) -> &Key {
@@ -1008,6 +1015,16 @@ mod tests {
         assert_eq!(child.evaluate().expect("evaluation"), View::text("current"));
         assert_eq!(calls.get(), 1);
     }
+    #[test]
+    fn keyed_component_inherits_the_list_identity_key() {
+        let view = View::component("Item", [], [], None).expect("component descriptor");
+        let child = KeyedChild::new("stable-item", view);
+        let View::Component(component) = child.view() else {
+            panic!("keyed component keeps its component descriptor");
+        };
+        assert_eq!(component.key(), Some(child.key()));
+    }
+
     #[test]
     fn keyed_list_preserves_order_and_rejects_duplicate_keys() {
         let list = KeyedList::new([
