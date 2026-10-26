@@ -804,28 +804,54 @@ fn detach_dependencies(inner: &mut RuntimeInner, effect_id: EffectId) {
 }
 
 fn run_effect(runtime: &RuntimeRef, effect_id: EffectId) {
-    let (callback, previous_effect, previous_scope) = {
+    let (callback, owner, previous_effect, previous_scope, cleanups) = {
         let mut inner = runtime.borrow_mut();
         if inner.disposed || !inner.effects.contains_key(&effect_id) {
             return;
         }
         detach_dependencies(&mut inner, effect_id);
-        let effect = inner.effects.get(&effect_id).expect("effect checked");
+        let effect = inner.effects.get_mut(&effect_id).expect("effect checked");
         let callback = effect.callback.clone();
         let owner = effect.owner;
+        let cleanups = std::mem::take(&mut effect.cleanups);
         let previous_effect = inner.active_effect;
         let previous_scope = inner.active_scope;
+        // Cleanup executes outside dependency collection, before the next run.
+        inner.active_effect = None;
+        inner.active_scope = Some(owner);
+        (callback, owner, previous_effect, previous_scope, cleanups)
+    };
+    let owner_guard = OwnerContextGuard::enter(runtime, owner);
+    let mut cleanup_panic = None;
+    for cleanup in cleanups.into_iter().rev() {
+        if let Err(payload) = catch_unwind(AssertUnwindSafe(cleanup)) {
+            if cleanup_panic.is_none() {
+                cleanup_panic = Some(payload);
+            }
+        }
+    }
+    if let Some(payload) = cleanup_panic {
+        let mut inner = runtime.borrow_mut();
+        inner.active_effect = previous_effect;
+        inner.active_scope = previous_scope;
+        drop(inner);
+        drop(owner_guard);
+        resume_unwind(payload);
+    }
+
+    {
+        let mut inner = runtime.borrow_mut();
+        if inner.disposed || !inner.effects.contains_key(&effect_id) {
+            inner.active_effect = previous_effect;
+            inner.active_scope = previous_scope;
+            drop(inner);
+            drop(owner_guard);
+            return;
+        }
         inner.active_effect = Some(effect_id);
         inner.active_scope = Some(owner);
-        (callback, previous_effect, previous_scope)
-    };
-    let previous_runtime_id = ACTIVE_RUNTIME_ID.with(|active| {
-        let previous = active.get();
-        active.set(runtime_id(runtime));
-        previous
-    });
+    }
     let result = catch_unwind(AssertUnwindSafe(|| (callback.borrow_mut())()));
-    ACTIVE_RUNTIME_ID.with(|active| active.set(previous_runtime_id));
     {
         let mut inner = runtime.borrow_mut();
         inner.active_effect = previous_effect;
@@ -835,8 +861,22 @@ fn run_effect(runtime: &RuntimeRef, effect_id: EffectId) {
         }
     }
     if let Err(payload) = result {
+        // A failed run must not leak cleanup resources registered before its panic.
+        let failed_cleanups = {
+            let mut inner = runtime.borrow_mut();
+            inner
+                .effects
+                .get_mut(&effect_id)
+                .map(|effect| std::mem::take(&mut effect.cleanups))
+                .unwrap_or_default()
+        };
+        for cleanup in failed_cleanups.into_iter().rev() {
+            let _ = catch_unwind(AssertUnwindSafe(cleanup));
+        }
+        drop(owner_guard);
         resume_unwind(payload);
     }
+    drop(owner_guard);
 }
 
 fn flush_runtime(runtime: &RuntimeRef) -> Result<(), RuntimeError> {
