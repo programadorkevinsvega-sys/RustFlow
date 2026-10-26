@@ -139,7 +139,9 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Implement basic path-parameter and typed query/JSON decoding helpers.
 - [x] Define an async closure-handler convention with explicit captured state.
 - [x] Map handler errors safely and provide 404/405 routing behavior.
-- [x] Add in-memory dispatch tests, unique named routes, and deterministic route introspection. Full route-group support and broader network-level integration tests remain pending.
+- [x] Add in-memory dispatch tests, unique named routes, and deterministic route introspection.
+- [x] Add representative real-TCP integration tests for HTML/JSON routes, path/query decoding, 400/404/405/413/504 responses, request-ID correlation, custom error pages, body limits/timeouts, and graceful shutdown (`crates/rustflow-server/tests/http_integration.rs`).
+- [ ] Expand network/deployment coverage for TLS, reverse-proxy trust, client aborts, malformed transport input, and concurrent/load behavior; these are not covered by the current TCP suite.
 
 ### 4.3 Middleware and lifecycle
 - [x] Implement global ordered async middleware composition with a continuation that can wrap or short-circuit handlers. Route-scoped middleware remains future work.
@@ -152,9 +154,10 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Add rustflow-ssr to serialize supported view nodes into HTML fragments independently of an HTTP framework.
 - [x] Escape text and attribute values by default; apply a scheme allowlist to URL attributes and reject multi-URL attributes until parsed.
 - [x] Add safe full-document responses from structural views (`html_document`) and configurable escaped HTML error pages for selected 4xx/5xx statuses. Layout composition remains an application-level concern.
-- [x] Test escaping, rejected/void elements, URL policy, component cleanup, keyed order, nesting limits, full-document charset/title/body escaping, configurable 404/405 pages, route dispatch, body limits, handler timeouts, middleware, named-route introspection, and a local TCP request with status, content-type, request-ID headers, and graceful shutdown. Broader network-level integration remains pending.
+- [x] Test escaping, rejected/void elements, URL policy, component cleanup, keyed order, nesting limits, full-document charset/title/body escaping, configurable 404/405 pages, route dispatch, body limits, handler timeouts, middleware, named-route introspection, and representative TCP requests covering status/content-type/request-ID headers, error cases, body limits, timeouts, and graceful shutdown.
+- [ ] Extend network coverage to TLS/reverse-proxy trust, client aborts, malformed transport input, and concurrency/load. These are deployment/reliability tasks and are not verified by the current local TCP tests.
 
-**Exit gate:** an executable example server handles multiple routes, renders safe HTML, returns JSON, and passes the in-memory handler tests. Full network-level integration tests remain a separate acceptance task.
+**Exit gate:** an executable example server handles multiple routes, renders safe HTML, and returns JSON. Automated coverage includes in-memory dispatch and representative local-TCP integration tests. Wider transport/deployment coverage remains open as listed above; this prototype is not production-ready.
 
 ## Phase 5 — SSR, hydration, and full-stack data flow
 
@@ -165,10 +168,11 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [ ] Define deterministic rendering and non-hydratable fallbacks.
 
 ### 5.2 SSR
-- [x] Render structural view trees into HTML fragments using rustflow-ssr; request/route/document integration remains pending.
-- [ ] Integrate layouts and route handlers.
-- [ ] Support title and document metadata.
-- [ ] Test escaping, request isolation, and error states.
+- [x] Render structural view trees into HTML fragments using rustflow-ssr.
+- [x] Expose complete HTML document responses and configurable escaped error pages through `rustflow-server` (Phase 4.4); route handlers can call these helpers.
+- [ ] Add advanced layout composition and route-to-component data integration; full-stack SSR composition is not complete.
+- [x] Test escaping and configured document/error-page responses.
+- [ ] Test request-isolated SSR/component state and deterministic server/client boundaries.
 
 ### 5.3 Hydration
 - [ ] Add minimal, safely serialized hydration data.
