@@ -32,7 +32,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 
 ### 0.3 Engineering baseline
 - [x] Establish workspace naming and dependency conventions in `docs/ENGINEERING_BASELINE.md` and the root Cargo manifest.
-- [ ] Add and verify CI for formatting, Clippy, unit tests, documentation tests, and dependency review (workflows added; successful PR run still required).
+- [x] Verify CI for formatting, Clippy, unit tests, documentation tests, and dependency review (successful PR runs: CI, governance, and dependency review on the Phase 0.3 baseline).
 - [x] Add issue/PR templates and review checklist.
 - [x] Align README and contributor instructions with the initial workspace and CI baseline; re-check policy consistency during review.
 
