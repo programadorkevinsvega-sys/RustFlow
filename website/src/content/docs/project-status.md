@@ -33,7 +33,7 @@ Guía práctica: [Servidor HTTP experimental](/guides/server/). Detalles y lími
 
 - La API ergonómica de componentes React-like: `signal(value)` con `get/set/update`, `#[component]`, props y callbacks tipados, e interpolación reactiva automática en `view!`.
 - El vocabulario de API familiar en Rust `snake_case`: `use_state`, `use_effect`, `use_memo`, `use_ref` y `use_context` son nombres propuestos, no APIs disponibles todavía. La intención es conservar semántica signal-first, no copiar las reglas de hooks por orden de llamada de React.
-- Un bundle de navegador, actualización DOM por subárbol, condicionales/listas keyed y tests E2E; el renderer actual reemplaza el rango montado en actualizaciones reactivas.
+- Un bundle de navegador y pruebas E2E del navegador. La rama de implementación está añadiendo parcheo de texto/elementos compatibles y reutilización de nodos compatibles con la misma clave; los árboles con componentes o evaluadores dinámicos aún se reemplazan completos, así que la reconciliación del DOM no está cerrada.
 - Composición avanzada de layouts, serialización de datos para hidratación e hidratación de cliente; los documentos HTML completos no equivalen a hidratación.
 - Grupos de rutas, middleware por ruta, configuración de producción y más pruebas de red para TLS/reverse proxy, cabeceras de proxy confiables, abortos de cliente y carga/concurrencia.
 - CLI, scaffolding, validación de formularios, sesiones/autenticación y persistencia integrada.
