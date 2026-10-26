@@ -32,11 +32,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     app.get("/", |_request: Request| async {
         let heading = View::element("h1", [View::text("RustFlow server")])
             .map_err(|_| HttpError::internal_server_error())?;
-        let note = View::element(
-            "p",
-            [View::text("HTML estructural, rutas tipadas y JSON.")],
-        )
-        .map_err(|_| HttpError::internal_server_error())?;
+        let note = View::element("p", [View::text("HTML estructural, rutas tipadas y JSON.")])
+            .map_err(|_| HttpError::internal_server_error())?;
         let page = View::element("main", [heading, note])
             .map_err(|_| HttpError::internal_server_error())?;
         html_view(&page)
