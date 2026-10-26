@@ -27,10 +27,7 @@ impl View {
     /// The element name is stored as supplied; validation is not part of this
     /// initial structural model. A future renderer must define and enforce its
     /// supported element-name contract.
-    pub fn element(
-        tag: impl Into<String>,
-        children: impl IntoIterator<Item = View>,
-    ) -> Self {
+    pub fn element(tag: impl Into<String>, children: impl IntoIterator<Item = View>) -> Self {
         Self::Element(Element::new(tag, children))
     }
 
