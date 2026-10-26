@@ -65,7 +65,7 @@ The MVP is complete only when all of the following are implemented, documented, 
 6. CI runs core unit tests, browser tests, and server integration tests on pull requests.
 7. A clean-checkout guide lets a contributor install prerequisites, run checks, and launch examples.
 
-This MVP does **not** include SSR/hydration, a complete authentication system, a custom ORM, or production deployment tooling. Those remain later roadmap milestones.
+This MVP does **not** include complete SSR/hydration composition, a complete authentication system, a custom ORM, or production deployment tooling. Prototype HTML-fragment/document rendering exists, but full-stack SSR composition and client hydration remain later roadmap milestones.
 
 ## 6. MVP user stories and acceptance criteria
 
