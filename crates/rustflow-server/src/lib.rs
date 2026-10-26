@@ -10,7 +10,7 @@ use std::{
     future::Future,
     net::SocketAddr,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, RwLock},
     time::Duration,
 };
 
@@ -36,8 +36,71 @@ pub type HandlerFuture =
     Pin<Box<dyn Future<Output = Result<Response, HttpError>> + Send + 'static>>;
 type SharedHandler = Arc<dyn Fn(Request) -> HandlerFuture + Send + Sync + 'static>;
 
+type SharedMiddleware =
+    Arc<dyn Fn(Request, Next) -> HandlerFuture + Send + Sync + 'static>;
+
+/// Middleware that wraps a request/response pair and may continue or short-circuit.
+///
+/// Middleware executes in registration order. A middleware that calls `next.run(request)`
+/// passes control to the next middleware or route handler.
+#[derive(Clone)]
+pub struct Middleware {
+    handler: SharedMiddleware,
+}
+
+impl Middleware {
+    /// Create middleware from an async closure.
+    pub fn new<F, Fut>(handler: F) -> Self
+    where
+        F: Fn(Request, Next) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Response, HttpError>> + Send + 'static,
+    {
+        Self {
+            handler: Arc::new(move |request, next| Box::pin(handler(request, next))),
+        }
+    }
+
+    fn call(&self, request: Request, next: Next) -> HandlerFuture {
+        (self.handler)(request, next)
+    }
+}
+
+/// Continuation passed to middleware to run the remaining pipeline and route handler.
+pub struct Next {
+    index: usize,
+    middleware: Arc<Vec<Middleware>>,
+    terminal: SharedHandler,
+}
+
+impl Next {
+    /// Run the next middleware or the terminal route handler.
+    pub fn run(self, request: Request) -> HandlerFuture {
+        if let Some(middleware) = self.middleware.get(self.index).cloned() {
+            middleware.call(
+                request,
+                Self {
+                    index: self.index + 1,
+                    middleware: self.middleware,
+                    terminal: self.terminal,
+                },
+            )
+        } else {
+            (self.terminal)(request)
+        }
+    }
+}
+
+/// Public description of a registered route.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RouteInfo {
+    pub method: HttpMethod,
+    pub path: String,
+    pub name: Option<String>,
+}
+
+
 /// A validated subset of conventional HTTP methods supported by the route builder.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum HttpMethod {
     Get,
     Post,
@@ -438,8 +501,11 @@ impl Default for ServerConfig {
 #[derive(Debug)]
 pub enum ServerError {
     InvalidRoute(String),
+    InvalidRouteName(String),
     DuplicateRoute { method: HttpMethod, path: String },
+    DuplicateRouteName(String),
     ConflictingRoutePattern { existing: String, requested: String },
+    MiddlewareRegistryPoisoned,
     Io(std::io::Error),
 }
 
@@ -447,9 +513,11 @@ impl fmt::Display for ServerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidRoute(path) => write!(f, "invalid route path: {path}"),
+            Self::InvalidRouteName(name) => write!(f, "invalid route name: {name}"),
             Self::DuplicateRoute { method, path } => {
                 write!(f, "route already registered for {method:?} {path}")
             }
+            Self::DuplicateRouteName(name) => write!(f, "route name is already registered: {name}"),
             Self::ConflictingRoutePattern {
                 existing,
                 requested,
@@ -457,6 +525,7 @@ impl fmt::Display for ServerError {
                 f,
                 "route pattern {requested} conflicts with existing pattern {existing}"
             ),
+            Self::MiddlewareRegistryPoisoned => write!(f, "middleware registry is unavailable"),
             Self::Io(error) => write!(f, "server I/O failed: {error}"),
         }
     }
@@ -478,6 +547,9 @@ pub struct Application {
     routes: HashMap<String, MethodRouter<()>>,
     registered: HashSet<(String, HttpMethod)>,
     route_shapes: HashMap<String, String>,
+    route_names: HashMap<(String, HttpMethod), String>,
+    registered_names: HashSet<String>,
+    middleware: Arc<RwLock<Vec<Middleware>>>,
     config: ServerConfig,
 }
 
@@ -493,6 +565,9 @@ impl Application {
             routes: HashMap::new(),
             registered: HashSet::new(),
             route_shapes: HashMap::new(),
+            route_names: HashMap::new(),
+            registered_names: HashSet::new(),
+            middleware: Arc::new(RwLock::new(Vec::new())),
             config,
         }
     }
@@ -500,6 +575,31 @@ impl Application {
     /// Return the server configuration.
     pub fn config(&self) -> &ServerConfig {
         &self.config
+    }
+
+    /// Add a middleware to the global pipeline. Middleware may be registered before
+    /// or after routes; the shared pipeline snapshot is taken for each request.
+    pub fn middleware(&mut self, middleware: Middleware) -> Result<&mut Self, ServerError> {
+        self.middleware
+            .write()
+            .map_err(|_| ServerError::MiddlewareRegistryPoisoned)?
+            .push(middleware);
+        Ok(self)
+    }
+
+    /// Return route metadata in deterministic method/path order.
+    pub fn routes(&self) -> Vec<RouteInfo> {
+        let mut routes = self
+            .registered
+            .iter()
+            .map(|(path, method)| RouteInfo {
+                method: *method,
+                path: path.clone(),
+                name: self.route_names.get(&(path.clone(), *method)).cloned(),
+            })
+            .collect::<Vec<_>>();
+        routes.sort();
+        routes
     }
 
     /// Register a GET handler.
@@ -604,31 +704,77 @@ impl Application {
         F: Fn(Request) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<Response, HttpError>> + Send + 'static,
     {
-        let path = path.into();
+        self.register_route(method, path.into(), None, handler)
+    }
+
+    /// Register a uniquely named route for reverse lookup and diagnostics.
+    pub fn route_named<F, Fut>(
+        &mut self,
+        name: impl Into<String>,
+        method: HttpMethod,
+        path: impl Into<String>,
+        handler: F,
+    ) -> Result<&mut Self, ServerError>
+    where
+        F: Fn(Request) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Response, HttpError>> + Send + 'static,
+    {
+        let name = name.into();
+        validate_route_name(&name)?;
+        self.register_route(method, path.into(), Some(name), handler)
+    }
+
+    fn register_route<F, Fut>(
+        &mut self,
+        method: HttpMethod,
+        path: String,
+        name: Option<String>,
+        handler: F,
+    ) -> Result<&mut Self, ServerError>
+    where
+        F: Fn(Request) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Response, HttpError>> + Send + 'static,
+    {
         validate_route_path(&path)?;
         let shape = route_shape(&path);
         if let Some(existing) = self.route_shapes.get(&shape) {
             if existing != &path {
                 return Err(ServerError::ConflictingRoutePattern {
                     existing: existing.clone(),
-                    requested: path,
+                    requested: path.clone(),
                 });
             }
         }
         if self.registered.contains(&(path.clone(), method)) {
-            return Err(ServerError::DuplicateRoute { method, path });
+            return Err(ServerError::DuplicateRoute {
+                method,
+                path: path.clone(),
+            });
+        }
+        if let Some(name) = name.as_ref() {
+            if self.registered_names.contains(name) {
+                return Err(ServerError::DuplicateRouteName(name.clone()));
+            }
         }
 
         let handler: SharedHandler = Arc::new(move |request| Box::pin(handler(request)));
         let config = self.config.clone();
+        let middleware_stack = self.middleware.clone();
         let adapter = move |Path(path_params): Path<HashMap<String, String>>,
                             request: AxumRequest| {
             let handler = handler.clone();
             let config = config.clone();
+            let middleware_stack = middleware_stack.clone();
             async move {
                 match tokio::time::timeout(
                     config.request_timeout,
-                    dispatch_request(handler, path_params, request, config.clone()),
+                    dispatch_request(
+                        handler,
+                        path_params,
+                        request,
+                        config.clone(),
+                        middleware_stack,
+                    ),
                 )
                 .await
                 {
@@ -647,7 +793,11 @@ impl Application {
             .on(method.filter(), adapter);
         self.routes.insert(path.clone(), methods);
         self.registered.insert((path.clone(), method));
-        self.route_shapes.entry(shape).or_insert(path);
+        self.route_shapes.entry(shape).or_insert(path.clone());
+        if let Some(name) = name {
+            self.registered_names.insert(name.clone());
+            self.route_names.insert((path, method), name);
+        }
         Ok(self)
     }
 
@@ -661,6 +811,35 @@ impl Application {
     pub async fn serve_listener(self, listener: TcpListener) -> Result<(), ServerError> {
         let router = self.into_router();
         axum::serve(listener, router).await.map_err(ServerError::Io)
+    }
+
+    /// Bind an address and serve until the caller-provided shutdown future resolves.
+    pub async fn serve_with_shutdown<F>(
+        self,
+        address: SocketAddr,
+        shutdown: F,
+    ) -> Result<(), ServerError>
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let listener = TcpListener::bind(address).await.map_err(ServerError::Io)?;
+        self.serve_listener_with_shutdown(listener, shutdown).await
+    }
+
+    /// Serve on an existing listener and drain active connections on shutdown.
+    pub async fn serve_listener_with_shutdown<F>(
+        self,
+        listener: TcpListener,
+        shutdown: F,
+    ) -> Result<(), ServerError>
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let router = self.into_router();
+        axum::serve(listener, router)
+            .with_graceful_shutdown(shutdown)
+            .await
+            .map_err(ServerError::Io)
     }
 
     fn into_router(self) -> Router {
@@ -686,6 +865,7 @@ async fn dispatch_request(
     path_params: HashMap<String, String>,
     request: AxumRequest,
     config: ServerConfig,
+    middleware_registry: Arc<RwLock<Vec<Middleware>>>,
 ) -> AxumResponse {
     let (parts, body) = request.into_parts();
     let body = match to_bytes(body, config.max_body_bytes).await {
@@ -701,7 +881,16 @@ async fn dispatch_request(
         }
     };
     let request = Request::new(parts.method, parts.uri, path_params, parts.headers, body);
-    match handler(request).await {
+    let middleware = match middleware_registry.read() {
+        Ok(middleware) => Arc::new(middleware.clone()),
+        Err(_) => return HttpError::internal_server_error().into_response().into_axum_response(),
+    };
+    let next = Next {
+        index: 0,
+        middleware,
+        terminal: handler,
+    };
+    match next.run(request).await {
         Ok(response) => response.into_axum_response(),
         Err(error) => error.into_response().into_axum_response(),
     }
@@ -750,6 +939,17 @@ fn validate_route_path(path: &str) -> Result<(), ServerError> {
     Ok(())
 }
 
+fn validate_route_name(name: &str) -> Result<(), ServerError> {
+    if name.is_empty()
+        || !name.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.')
+        })
+    {
+        return Err(ServerError::InvalidRouteName(name.to_owned()));
+    }
+    Ok(())
+}
+
 fn route_shape(path: &str) -> String {
     path.split('/')
         .map(|segment| {
@@ -783,13 +983,17 @@ fn is_safe_redirect_location(location: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Application, Response, ServerConfig, ServerError, View, html_view};
+    use super::{
+        Application, HttpMethod, Middleware, Response, RouteInfo, ServerConfig, ServerError, View,
+        html_view,
+    };
     use axum::{
         body::{Body, to_bytes},
         http::{Request as AxumHttpRequest, StatusCode},
     };
     use serde::Deserialize;
-    use std::time::Duration;
+    use std::{sync::{Arc, atomic::{AtomicUsize, Ordering}}, time::Duration};
+    use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, sync::oneshot};
     use tower::ServiceExt;
 
     async fn send(app: Application, request: AxumHttpRequest<Body>) -> http::Response<Body> {
@@ -925,6 +1129,103 @@ mod tests {
             .expect("request");
         let response = send(app, request).await;
         assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+    }
+
+    #[tokio::test]
+    async fn middleware_wraps_handlers_and_can_be_registered_after_routes() {
+        let mut app = Application::new();
+        app.get("/middleware", |_request| async { Ok(Response::text("wrapped")) })
+            .expect("route registration");
+
+        let visits = Arc::new(AtomicUsize::new(0));
+        let middleware_visits = visits.clone();
+        app.middleware(Middleware::new(move |request, next| {
+            let visits = middleware_visits.clone();
+            async move {
+                visits.fetch_add(1, Ordering::SeqCst);
+                let response = next.run(request).await?;
+                Ok(response.with_header(
+                    http::HeaderName::from_static("x-rustflow-middleware"),
+                    http::HeaderValue::from_static("applied"),
+                ))
+            }
+        }))
+        .expect("middleware registration");
+
+        let request = AxumHttpRequest::builder()
+            .uri("/middleware")
+            .body(Body::empty())
+            .expect("request");
+        let response = send(app, request).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["x-rustflow-middleware"], "applied");
+        assert_eq!(body_text(response).await, "wrapped");
+        assert_eq!(visits.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn named_routes_are_introspectable_and_route_names_are_unique() {
+        let mut app = Application::new();
+        app.route_named("users.show", HttpMethod::Get, "/users/{id}", |_request| async {
+            Ok(Response::text("user"))
+        })
+        .expect("named route");
+        app.get("/health", |_request| async { Ok(Response::text("ok")) })
+            .expect("unnamed route");
+
+        let routes = app.routes();
+        assert_eq!(routes.len(), 2);
+        assert!(routes.contains(&RouteInfo {
+            method: HttpMethod::Get,
+            path: "/users/{id}".to_owned(),
+            name: Some("users.show".to_owned()),
+        }));
+        assert!(routes.contains(&RouteInfo {
+            method: HttpMethod::Get,
+            path: "/health".to_owned(),
+            name: None,
+        }));
+        assert!(matches!(
+            app.route_named("users.show", HttpMethod::Get, "/other", |_request| async {
+                Ok(Response::text("other"))
+            }),
+            Err(ServerError::DuplicateRouteName(_))
+        ));
+        assert!(matches!(
+            app.route_named("invalid name", HttpMethod::Get, "/bad-name", |_request| async {
+                Ok(Response::text("bad"))
+            }),
+            Err(ServerError::InvalidRouteName(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn listener_serves_http_and_supports_graceful_shutdown() {
+        let mut app = Application::new();
+        app.get("/health", |_request| async { Ok(Response::text("ok")) })
+            .expect("route registration");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let address = listener.local_addr().expect("listener address");
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let server = tokio::spawn(app.serve_listener_with_shutdown(listener, async move {
+            let _ = shutdown_rx.await;
+        }));
+
+        let mut stream = TcpStream::connect(address).await.expect("TCP connect");
+        stream
+            .write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .await
+            .expect("write request");
+        let mut bytes = Vec::new();
+        stream.read_to_end(&mut bytes).await.expect("read response");
+        let response = String::from_utf8(bytes).expect("HTTP response is UTF-8");
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        assert!(response.ends_with("ok"));
+
+        shutdown_tx.send(()).expect("shutdown signal");
+        server.await.expect("server task").expect("graceful server stop");
     }
 
     #[tokio::test]
