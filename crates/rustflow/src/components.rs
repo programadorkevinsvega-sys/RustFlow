@@ -2,7 +2,6 @@
 
 use std::{error::Error, fmt, rc::Rc};
 
-
 use crate::reactivity::{Runtime, RuntimeError, Scope};
 use rustflow_view::{ComponentName, Property, View, ViewError};
 
