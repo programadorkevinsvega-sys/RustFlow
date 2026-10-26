@@ -7,9 +7,13 @@ The view model is target-independent. It represents UI intent; it is not rendere
 - Text stores its content verbatim.
 - Element stores a syntax-validated element name, attributes, DOM properties, event callbacks, children, and an optional stable key.
 - Fragment groups ordered children without adding an element.
-- Component stores a validated component type name, typed properties, children, and an optional key. A component host resolves the descriptor into a reusable definition.
+- Component stores a validated component type name, typed properties, children, and an optional key. `ComponentRegistry` resolves a descriptor to a reusable `ComponentDefinition`; recursive traversal and reconciliation of nested descriptors belong to a renderer.
 - Dynamic stores a deferred evaluator. Reactive adapters must evaluate it inside an effect owned by the component's reactive scope.
 - KeyedList preserves child order and rejects duplicate keys.
+
+## Keyed-list identity
+
+Keys are stable string or integer identities supplied by the caller. They must be unique among siblings in a single list snapshot. Reusing the same key across updates declares that the logical child is the same even when its position changes; removing a key means that child is removed. The current model validates each snapshot but does not diff snapshots or preserve mounted DOM/component instances. That reconciliation belongs to the Phase 3 renderer.
 
 ## Validation and error behavior
 
@@ -25,7 +29,7 @@ Attributes use AttributeValue::Text or AttributeValue::Boolean; a renderer shoul
 
 The rustflow facade exposes ComponentDefinition and ComponentInstance. Setup runs once per mount and receives a ComponentContext with a dedicated reactive Scope. Setup may create signals/effects in that scope and register cleanup callbacks. It returns a render callback that must be pure: it receives current properties and children, and returns a replacement View. Calling update computes the next view before changing stored inputs; if rendering fails, the previous view is retained. Unmount is idempotent and disposes the scope, effects, descendants, and registered cleanup callbacks. Updates after unmount return a typed error.
 
-ComponentInstance produces a replacement view tree; it does not itself mutate a DOM. A platform renderer must use the Renderer contract to mount, update, and unmount that tree. Context/provider semantics remain deferred until a concrete component use case requires them.
+ComponentInstance produces a replacement view tree; it does not itself mutate a DOM. A platform renderer must use the Renderer contract to mount, update, and unmount that tree. Recursive component traversal and keyed reconciliation are not implemented by the registry. Context/provider semantics remain deferred until a concrete component use case requires them.
 
 ## Declarative macro
 

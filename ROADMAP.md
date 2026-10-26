@@ -70,30 +70,30 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 ## Phase 2 — View and component model
 
 ### 2.1 View representation
-- [ ] Define typed nodes for text, elements, fragments, and components. The initial `rustflow-view` slice provides text, element, and fragment nodes; component nodes remain pending.
-- [ ] Define attributes, properties, boolean attributes, events, and dynamic children.
-- [ ] Define keys and identity rules for dynamic lists.
-- [ ] Define construction errors and rendering contracts.
+- [x] Define typed nodes for text, elements, fragments, and components in `crates/rustflow-view/src/lib.rs`.
+- [x] Define attributes, DOM properties, boolean attributes, typed event callbacks, and deferred children.
+- [x] Define key values and keyed-list identity rules: keys must be unique within a list snapshot and represent the same logical child across reorders; renderer reconciliation is implemented in Phase 3.
+- [x] Define typed construction errors and the target-independent `Renderer` mount/update/unmount contract.
 
 ### 2.2 Lifecycle
-- [ ] Specify create, mount, update, and unmount behavior.
-- [ ] Connect component scopes to reactive cleanup.
-- [ ] Specify event listener ownership and cleanup.
-- [ ] Define context/provider semantics if needed.
-- [ ] Document constraints on render-time side effects.
+- [x] Specify create, mount, update, and unmount behavior through `ComponentDefinition`, `ComponentRegistry`, and `ComponentInstance`.
+- [x] Connect each component instance to an owned reactive scope; unmount disposes owned effects, child scopes, and cleanup callbacks.
+- [x] Specify event-listener ownership and cleanup: platform adapters register removal callbacks with `ComponentContext::on_cleanup`; actual DOM registration/removal belongs to Phase 3.
+- [x] Evaluate context/provider semantics: defer a public provider API until a concrete use case justifies it; it is not required for this initial component contract.
+- [x] Document render-time side-effect constraints. Setup owns effects/resources; the repeatable render callback must produce a view and leave side effects to owned runtime scopes.
 
 ### 2.3 Declarative syntax
-- [ ] Prototype a small view! procedural macro.
-- [ ] Parse a constrained HTML-like grammar with expressions.
-- [ ] Support text, attributes, nested components, and events.
-- [ ] Emit actionable diagnostics with source spans.
-- [ ] Add compile-fail tests and document supported syntax.
+- [x] Prototype the dependency-free `rustflow::view!` procedural macro in `crates/rustflow-macros`.
+- [x] Parse the documented constrained HTML-like grammar with Rust expressions in braces.
+- [x] Support text, attributes, boolean attributes, DOM properties, events, nested elements, component descriptors, keys, and deferred children.
+- [x] Emit actionable parser diagnostics using source spans.
+- [x] Add compile-fail tests and document the supported syntax in rustdoc and the public component guide.
 
 ### 2.4 Tests
-- [ ] Test nested components, attributes, text, fragments, and keys.
-- [ ] Test macro diagnostics and expansion examples.
+- [x] Test text, nested elements/components, attributes, properties, fragments, event callbacks, dynamic children, and keyed-list duplicate detection.
+- [x] Test macro expansion and mismatched-closing-tag diagnostics.
 
-**Exit gate:** reusable typed components work; lifecycle is explicit; macro errors are understandable.
+**Exit gate: complete for the native view/component model.** Typed view construction, reusable component definitions and registry resolution, explicit lifecycle/cleanup, and macro diagnostics are covered by tests. Browser DOM reconciliation, actual browser event attachment, and E2E tests remain Phase 3; this does not close the SSR, hydration, server, or CLI roadmap phases.
 
 ## Phase 3 — Browser runtime and interactive MVP
 
