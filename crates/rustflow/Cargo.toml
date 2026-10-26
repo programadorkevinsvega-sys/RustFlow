@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 rustflow-view = { path = "../rustflow-view" }
+rustflow-macros = { path = "../rustflow-macros" }
 
 [lib]
 path = "src/lib.rs"

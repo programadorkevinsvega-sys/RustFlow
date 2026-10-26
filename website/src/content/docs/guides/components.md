@@ -30,13 +30,17 @@ Esta comprobación no sanitiza URL ni vuelve seguro el árbol como HTML. No inse
 
 ## Componentes y ciclo de vida
 
-Una ComponentDefinition ejecuta setup una vez por instancia y devuelve una función pura de renderizado. ComponentInstance conserva un scope reactivo, permite recalcular la vista mediante update y libera los efectos y callbacks de limpieza con unmount. Los errores de actualización conservan la vista anterior. Las callbacks de renderizado deben limitarse a producir una nueva vista; los efectos y recursos se registran durante setup mediante ComponentContext.
+Una ComponentDefinition ejecuta setup una vez por instancia y devuelve una función pura de renderizado. La macro rustflow::view! construye árboles a partir de una sintaxis HTML-like restringida. ComponentInstance conserva un scope reactivo, permite recalcular la vista mediante update y libera los efectos y callbacks de limpieza con unmount. Los errores de actualización conservan la vista anterior. Las callbacks de renderizado deben limitarse a producir una nueva vista; los efectos y recursos se registran durante setup mediante ComponentContext.
 
 La API genera una vista de reemplazo; no manipula el DOM por sí misma. La fase de navegador debe conectar su Renderer y probar el montaje, la actualización y el desmontaje reales.
 
 ## Claves e hijos dinámicos
 
 View::keyed_list conserva el orden e impide claves duplicadas. View::dynamic difiere la evaluación del hijo hasta que un adaptador lo solicita; un adaptador reactivo debe ejecutar esa evaluación dentro de un efecto que pertenezca al scope de la instancia.
+
+## Sintaxis declarativa disponible
+
+El macro acepta etiquetas anidadas, cadenas/números o expresiones entre llaves, atributos booleanos, valores de atributos, propiedades con prop:nombre={valor}, eventos con on:evento={closure}, hijos diferidos con @dynamic { expresión } y descriptores de componente con nombres en PascalCase. Cierra cada etiqueta con su nombre correspondiente. El macro devuelve Result<View, ViewError>.
 
 ## Lo que sigue pendiente
 
