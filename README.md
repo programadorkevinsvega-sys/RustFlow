@@ -26,7 +26,7 @@ RustFlow is an early-stage framework project exploring a cohesive way to build w
 
 ## Planned architecture
 
-The repository now has a minimal Cargo workspace and an initial `rustflow` crate under `crates/rustflow`. This is an engineering baseline, not the implementation of the framework runtime. The exact package split may change as implementation teaches us where boundaries belong.
+The workspace currently contains the `rustflow` crate (reactivity and public facade) and `rustflow-view` (a target-independent structural view model). The reactive runtime is a single-threaded prototype; the view model currently represents text, elements, and fragments only. Component nodes, lifecycle, rendering, DOM integration, server runtime, and CLI remain pending. These APIs are pre-1.0 and may evolve as implementation evidence clarifies crate boundaries.
 
 | Area | Planned responsibility |
 | --- | --- |
@@ -68,7 +68,7 @@ Core UI reactivity and component lifecycle behavior are RustFlow-owned. Infrastr
 
 ## Getting started
 
-The workspace is established with a minimal crate. From the repository root, run the baseline checks:
+The workspace contains the single-threaded reactive runtime and the initial structural view model. Neither is a complete application framework. From the repository root, run the baseline checks:
 
 ```bash
 cargo fmt --all -- --check
