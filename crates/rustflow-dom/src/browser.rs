@@ -1001,7 +1001,7 @@ impl DomRenderer {
             }
             (View::Dynamic(old), View::Dynamic(next_dynamic)) => {
                 let Some(region_index) = context.take_dynamic(old) else {
-                    return self.replacement_plan(next, owner_scope);
+                    return self.replacement_plan(previous, next, owner_scope);
                 };
                 let region = &context.dynamic_regions[region_index];
                 let next_view = untrack(|| next_dynamic.evaluate())?;
