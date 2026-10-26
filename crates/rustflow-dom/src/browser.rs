@@ -1475,29 +1475,109 @@ impl DomRenderer {
 
 }
 
-fn can_reconcile(view: &View) -> bool {
-    match view {
-        View::Text(_) => true,
-        View::Element(element) => element.children().iter().all(can_reconcile),
-        View::Fragment(fragment) => fragment.children().iter().all(can_reconcile),
-        View::KeyedList(list) => list
-            .children()
-            .iter()
-            .all(|child| can_reconcile(child.view())),
-        View::Dynamic(_) | View::Component(_) => false,
-    }
+fn mounted_range_nodes(mounted: &MountedDom) -> Vec<Node> {
+    let start: Node = mounted.start.clone().unchecked_into();
+    let end: Node = mounted.end.clone().unchecked_into();
+    let mut result = Vec::new();
+    result.push(start.clone());
+    result.extend(nodes_between(&start, &end));
+    result.push(end);
+    result
 }
 
-fn tree_node_count(view: &View) -> Option<usize> {
+fn range_node_count(
+    start: &Comment,
+    end: &Comment,
+    existing_nodes: &[Node],
+    cursor: usize,
+) -> Option<usize> {
+    let start_node: Node = start.clone().unchecked_into();
+    if !existing_nodes
+        .get(cursor)
+        .is_some_and(|node| node.is_same_node(Some(&start_node)))
+    {
+        return None;
+    }
+    let end_node: Node = end.clone().unchecked_into();
+    existing_nodes
+        .iter()
+        .enumerate()
+        .skip(cursor + 1)
+        .find_map(|(index, node)| {
+            node.is_same_node(Some(&end_node))
+                .then_some(index.saturating_sub(cursor).saturating_add(1))
+        })
+}
+
+fn view_node_count_at(
+    view: &View,
+    existing_nodes: &[Node],
+    cursor: usize,
+    components: &[ComponentRegion],
+    dynamics: &[DynamicRegion],
+) -> Option<usize> {
     match view {
-        View::Text(_) | View::Element(_) => Some(1),
-        View::Fragment(fragment) => fragment.children().iter().try_fold(0usize, |total, child| {
-            total.checked_add(tree_node_count(child)?)
-        }),
-        View::KeyedList(list) => list.children().iter().try_fold(0usize, |total, child| {
-            total.checked_add(tree_node_count(child.view())?)
-        }),
-        View::Dynamic(_) | View::Component(_) => None,
+        View::Text(_) | View::Element(_) => {
+            existing_nodes.get(cursor)?;
+            Some(1)
+        }
+        View::Fragment(fragment) => {
+            let mut offset = cursor;
+            for child in fragment.children() {
+                offset = offset.checked_add(view_node_count_at(
+                    child,
+                    existing_nodes,
+                    offset,
+                    components,
+                    dynamics,
+                )?)?;
+            }
+            offset.checked_sub(cursor)
+        }
+        View::KeyedList(list) => {
+            let mut offset = cursor;
+            for child in list.children() {
+                offset = offset.checked_add(view_node_count_at(
+                    child.view(),
+                    existing_nodes,
+                    offset,
+                    components,
+                    dynamics,
+                )?)?;
+            }
+            offset.checked_sub(cursor)
+        }
+        View::Component(_) => {
+            let first = existing_nodes.get(cursor)?;
+            let region = components.iter().find(|region| {
+                let start: Node = region.mounted.start.clone().unchecked_into();
+                start.is_same_node(Some(first))
+            })?;
+            range_node_count(
+                &region.mounted.start,
+                &region.mounted.end,
+                existing_nodes,
+                cursor,
+            )
+        }
+        View::Dynamic(_) => {
+            let first = existing_nodes.get(cursor)?;
+            let region = dynamics.iter().find(|region| {
+                let state = region.state.borrow();
+                state.as_ref().is_some_and(|current| {
+                    let start: Node = current.mounted.start.clone().unchecked_into();
+                    start.is_same_node(Some(first))
+                })
+            })?;
+            let state = region.state.borrow();
+            let current = state.as_ref()?;
+            range_node_count(
+                &current.mounted.start,
+                &current.mounted.end,
+                existing_nodes,
+                cursor,
+            )
+        }
     }
 }
 
@@ -1506,6 +1586,62 @@ fn view_key(view: &View) -> Option<&Key> {
         View::Element(element) => element.key(),
         View::Component(component) => component.key(),
         _ => None,
+    }
+}
+
+fn cleanup_stale_component_regions(
+    regions: &mut Vec<ComponentRegion>,
+) -> Result<(), DomError> {
+    let mut retained = Vec::new();
+    let mut error = None;
+    for mut region in regions.drain(..).rev() {
+        if region.reused {
+            region.reused = false;
+            retained.push(region);
+        } else {
+            first_error(&mut error, cleanup_component_region(&mut region));
+        }
+    }
+    retained.reverse();
+    *regions = retained;
+    match error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+fn cleanup_one_dynamic_region(region: &mut DynamicRegion) -> Result<(), DomError> {
+    let mut error = None;
+    if let Some(effect) = region.effect.take() {
+        first_error(&mut error, effect.dispose().map_err(Into::into));
+    }
+    first_error(&mut error, region.scope.dispose().map_err(Into::into));
+    if let Some(mut state) = region.state.borrow_mut().take() {
+        first_error(&mut error, detach_range(&mut state.mounted));
+        first_error(&mut error, cleanup_mounted_resources(&mut state.mounted));
+    }
+    match error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+fn cleanup_stale_dynamic_regions(regions: &mut Vec<DynamicRegion>) -> Result<(), DomError> {
+    let mut retained = Vec::new();
+    let mut error = None;
+    for mut region in regions.drain(..).rev() {
+        if region.reused {
+            region.reused = false;
+            retained.push(region);
+        } else {
+            first_error(&mut error, cleanup_one_dynamic_region(&mut region));
+        }
+    }
+    retained.reverse();
+    *regions = retained;
+    match error {
+        Some(error) => Err(error),
+        None => Ok(()),
     }
 }
 
@@ -1578,52 +1714,8 @@ impl Renderer for DomRenderer {
         previous: &View,
         next: &View,
     ) -> Result<(), Self::Error> {
-        // Opaque component descriptors currently use safe range replacement.
-        // Dynamic nodes have their own child effects/ranges and are not read by
-        // this root effect; static trees can therefore be reconciled in place.
-        if can_reconcile(previous) && can_reconcile(next) {
-            let mut validation = RenderedNodes::default();
-            if let Err(error) = self.build_nodes(next, &self.root_scope, &mut validation) {
-                let _ = cleanup_rendered_nodes(&mut validation);
-                return Err(error);
-            }
-            cleanup_rendered_nodes(&mut validation)?;
-
-            let Some(parent) = mounted.start.parent_node() else {
-                return self.replace_range(mounted, next);
-            };
-            let end: Node = mounted.end.clone().unchecked_into();
-            let mut resources = RenderedNodes::default();
-            let roots = match self.reconcile_sequence(
-                std::slice::from_ref(previous),
-                std::slice::from_ref(next),
-                &mounted.roots,
-                &parent,
-                Some(&end),
-                &self.root_scope.clone(),
-                &mut resources,
-            ) {
-                Ok(nodes) => nodes,
-                Err(error) => {
-                    let _ = cleanup_rendered_nodes(&mut resources);
-                    return Err(error);
-                }
-            };
-
-            let cleanup_error = cleanup_mounted_content(mounted).err();
-            mounted.roots = roots;
-            mounted.listeners = resources.listeners;
-            mounted.components = resources.components;
-            mounted.dynamics = resources.dynamics;
-            *mounted.delegated_bindings.borrow_mut() = resources.delegated;
-            if let Some(error) = cleanup_error {
-                return Err(error);
-            }
-            self.activate_delegated_listeners(mounted, &parent)?;
-            self.activate_dynamic_regions(&mut mounted.dynamics)
-        } else {
-            self.replace_range(mounted, next)
-        }
+        let plan = self.plan_diff(previous, next)?;
+        self.update_with_plan(mounted, plan)
     }
 
     fn unmount(&mut self, mut mounted: Self::Mounted) -> Result<(), Self::Error> {
