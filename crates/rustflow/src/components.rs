@@ -271,6 +271,26 @@ impl ComponentInstance {
         (self.render)(properties, children)
     }
 
+    /// Accept a previously previewed view after the host has successfully reconciled it.
+    ///
+    /// This avoids rerunning a pure render callback and preserves the exact dynamic
+    /// child descriptors used by the DOM commit.
+    pub fn commit_preview_update(
+        &mut self,
+        properties: Vec<Property>,
+        children: Vec<View>,
+        view: View,
+    ) -> Result<&View, ComponentError> {
+        if self.state == ComponentState::Unmounted {
+            return Err(ComponentError::Unmounted);
+        }
+        validate_properties(&properties)?;
+        self.properties = properties;
+        self.children = children;
+        self.view = view;
+        Ok(&self.view)
+    }
+
     /// Recompute the view with new properties/children. Setup is not repeated.
     ///
     /// On render failure, the old view and inputs remain unchanged.
