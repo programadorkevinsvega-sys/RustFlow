@@ -5,7 +5,7 @@
 //! paths the client does not own. The HTTP server remains authoritative: a transition is committed
 //! only after a successful same-origin HTML response and a successful reactive view update.
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::{Cell, RefCell}, rc::Rc};
 
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
@@ -26,6 +26,7 @@ struct NavigationState {
     on_navigate: RouteCallback,
     current_url: String,
     generation: u64,
+    cancelled: Rc<Cell<bool>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -54,6 +55,7 @@ pub struct ClientNavigation {
     document: Document,
     window: Window,
     _state: Rc<RefCell<NavigationState>>,
+    cancelled: Rc<Cell<bool>>,
     click_listener: Closure<dyn FnMut(Event)>,
     submit_listener: Closure<dyn FnMut(Event)>,
     popstate_listener: Closure<dyn FnMut(Event)>,
@@ -78,6 +80,7 @@ impl ClientNavigation {
         let window = web_sys::window().ok_or(DomError::WindowUnavailable)?;
         let document = window.document().ok_or(DomError::DocumentUnavailable)?;
         let current_url = window.location().href().map_err(js_error)?;
+        let cancelled = Rc::new(Cell::new(false));
         let state = Rc::new(RefCell::new(NavigationState {
             window: window.clone(),
             target,
@@ -85,6 +88,7 @@ impl ClientNavigation {
             on_navigate: Box::new(on_navigate),
             current_url,
             generation: 0,
+            cancelled: cancelled.clone(),
         }));
 
         let click_state = state.clone();
@@ -178,6 +182,7 @@ impl ClientNavigation {
             document,
             window,
             _state: state,
+            cancelled,
             click_listener,
             submit_listener,
             popstate_listener,
@@ -187,6 +192,7 @@ impl ClientNavigation {
 
 impl Drop for ClientNavigation {
     fn drop(&mut self) {
+        self.cancelled.set(true);
         let _ = self.document.remove_event_listener_with_callback(
             "click",
             self.click_listener.as_ref().unchecked_ref(),
@@ -383,7 +389,7 @@ fn spawn_navigation(
 fn is_latest_generation(state: &Rc<RefCell<NavigationState>>, generation: u64) -> bool {
     state
         .try_borrow()
-        .is_ok_and(|navigation| navigation.generation == generation)
+        .is_ok_and(|navigation| !navigation.cancelled.get() && navigation.generation == generation)
 }
 
 async fn navigate(state: Rc<RefCell<NavigationState>>, requested_url: Url, kind: NavigationKind) {
@@ -421,6 +427,9 @@ async fn navigate(state: Rc<RefCell<NavigationState>>, requested_url: Url, kind:
         (navigation.on_navigate)(&destination_path)
     };
     let render_error = state.borrow_mut().mounted.take_error();
+    if !is_latest_generation(&state, generation) {
+        return;
+    }
     match route_result {
         Err(error) => {
             web_sys::console::error_1(&JsValue::from_str(&error.to_string()));
@@ -536,7 +545,7 @@ fn restore_previous_route(
     };
     let path = relative_url(&previous);
     let mut navigation = state.borrow_mut();
-    if navigation.generation == generation {
+    if !navigation.cancelled.get() && navigation.generation == generation {
         let _ = (navigation.on_navigate)(&path);
         let _ = navigation.mounted.take_error();
     }
