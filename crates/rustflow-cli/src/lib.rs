@@ -248,7 +248,7 @@ fn is_help(arg: &OsStr) -> bool {
 
 fn argument_text<'a>(arg: &'a OsStr, label: &str) -> Result<&'a str, CliError> {
     arg.to_str()
-        .ok_or_else(|| format!("{label} must be valid UTF-8".into()))
+        .ok_or_else(|| format!("{label} must be valid UTF-8").into())
 }
 
 fn validate_project_name(name: &str) -> Result<(), CliError> {
