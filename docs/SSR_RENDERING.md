@@ -23,7 +23,7 @@ fn example() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Componentes
 
-Usa `HtmlRenderer::with_components(&registry)` o `render_with_components` para resolver descriptores. Cada llamada crea un runtime reactivo aislado. Los callbacks de limpieza del componente se ejecutan antes de retornar, incluso cuando falla la serialización de su vista.
+Para callbacks locales que deliberadamente no cumplen `Send + Sync`, puedes usar `HtmlRenderer::with_components(&registry)` o `render_with_components`. En rutas HTTP concurrentes, prefiere `HtmlRenderer::with_shared_components(&catalog)` o `render_with_shared_components` con un `SharedComponentCatalog` construido al iniciar la aplicación. Cada render crea un runtime reactivo aislado. Los callbacks de limpieza del componente se ejecutan antes de retornar, incluso cuando falla la serialización de su vista.
 
 ## Política de seguridad y salida soportada
 
