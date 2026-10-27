@@ -98,13 +98,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     app.get("/", |_request: Request| async {
         let title = View::element("h1", [View::text("Catálogo de demostración")])
             .map_err(|_| HttpError::internal_server_error())?;
-        let keyboard = View::element("p", [
-            View::text("Abre /products/keyboard para ver el teclado mecánico."),
-        ])
+        let keyboard = View::element(
+            "p",
+            [View::text(
+                "Abre /products/keyboard para ver el teclado mecánico.",
+            )],
+        )
         .map_err(|_| HttpError::internal_server_error())?;
-        let mouse = View::element("p", [
-            View::text("Abre /products/mouse para ver el ratón ergonómico."),
-        ])
+        let mouse = View::element(
+            "p",
+            [View::text(
+                "Abre /products/mouse para ver el ratón ergonómico.",
+            )],
+        )
         .map_err(|_| HttpError::internal_server_error())?;
         let body = View::element("main", [title, keyboard, mouse])
             .map_err(|_| HttpError::internal_server_error())?;
@@ -128,16 +134,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let description = Property::new("description", product.description.to_owned())
                 .map_err(|_| HttpError::internal_server_error())?;
 
-            HtmlPage::from_component(
-                "Producto",
-                "ProductPage",
-                [name, price, description],
-                [],
-            )?
-            .language("es")
-            .with_shared_components(&catalog)
-            .with_layout("StoreLayout", [])?
-            .render()
+            HtmlPage::from_component("Producto", "ProductPage", [name, price, description], [])?
+                .language("es")
+                .with_shared_components(&catalog)
+                .with_layout("StoreLayout", [])?
+                .render()
         }
     })?;
 
