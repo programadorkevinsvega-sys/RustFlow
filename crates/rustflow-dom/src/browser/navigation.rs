@@ -8,7 +8,6 @@
 use std::{cell::RefCell, rc::Rc};
 
 use js_sys::JsValue;
-use rustflow_view::View;
 use wasm_bindgen::{JsCast, closure::Closure};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{
@@ -55,7 +54,7 @@ enum NavigationKind {
 pub struct ClientNavigation {
     document: Document,
     window: Window,
-    state: Rc<RefCell<NavigationState>>,
+    _state: Rc<RefCell<NavigationState>>,
     click_listener: Closure<dyn FnMut(Event)>,
     submit_listener: Closure<dyn FnMut(Event)>,
     popstate_listener: Closure<dyn FnMut(Event)>,
@@ -188,7 +187,7 @@ impl ClientNavigation {
         Ok(Self {
             document,
             window,
-            state,
+            _state: state,
             click_listener,
             submit_listener,
             popstate_listener,
@@ -210,8 +209,6 @@ impl Drop for ClientNavigation {
             "popstate",
             self.popstate_listener.as_ref().unchecked_ref(),
         );
-        // Dropping state owns and disposes the reactive DOM mount after listeners are detached.
-        let _ = self.state.borrow().mounted.is_mounted();
     }
 }
 
