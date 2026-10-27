@@ -1,194 +1,90 @@
 ---
 title: Tutorial: página de producto SSR
-description: Construye una página de producto a partir de una ruta HTTP, props públicas, un componente registrado y un layout.
+description: Construye una página de producto con una ruta HTTP, props públicas, un componente registrado y un layout.
 ---
 
-Este tutorial reúne el modelo de páginas SSR actual de RustFlow. El objetivo es terminar con una ruta como <code>/products/keyboard</code> que devuelva un documento HTML completo, un título, detalles del producto y una envoltura de tienda compartida.
+Este tutorial reúne el modelo de páginas SSR actual de RustFlow. El ejemplo ejecutable completo vive en [crates/rustflow-server/examples/product_page.rs](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow-server/examples/product_page.rs). La guía explica las partes principales de ese archivo para que puedas entender y modificar el patrón en vez de copiarlo a ciegas.
 
-**Alcance del ejemplo:** los productos viven en una tabla en memoria para enseñar la arquitectura. No incluye base de datos, carrito persistente, checkout, pagos, cuentas, autorización ni servidor de acciones. No representa una tienda lista para producción.
+**Alcance del ejemplo:** el catálogo está en memoria para enseñar la arquitectura. No incluye base de datos, carrito persistente, checkout, pagos, cuentas, autorización ni server actions. No es una tienda lista para producción.
 
-## Qué vas a construir
+## 1. Ejecutar el ejemplo completo
 
-- Una ruta HTTP que lee el ID de producto.
-- Una definición de componente SSR para el contenido específico del producto.
-- Un layout reutilizable con una cabecera y un área de contenido.
-- Un catálogo inmutable compartido por handlers.
-- Una página HTML con props de producto explícitas.
+Desde la raíz del repositorio:
 
-Para preparar el proyecto, clona RustFlow y ejecuta el ejemplo HTTP siguiendo [Empezar con RustFlow](/getting-started/setup/). Los fragmentos siguientes usan APIs del repositorio; puedes tomar como estructura runnable el ejemplo [basic.rs](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow-server/examples/basic.rs).
-
-## 1. Definir el componente de producto
-
-Una definición compartida se crea con un setup factory y un callback de render. El callback extrae las props tipadas que el handler le pasó y produce un árbol estructural:
-
-~~~rust
-use std::rc::Rc;
-use rustflow::components::{ComponentRender, SharedComponentDefinition};
-use rustflow::view::{PropertyValue, View};
-
-let product_page = SharedComponentDefinition::new(
-    "ProductPage",
-    |_context, _initial_properties| {
-        let render: ComponentRender = Rc::new(|properties, _children| {
-            let text_prop = |name: &str| {
-                properties
-                    .iter()
-                    .find(|property| property.name() == name)
-                    .and_then(|property| match property.value() {
-                        PropertyValue::Text(value) => Some(value.clone()),
-                        _ => None,
-                    })
-                    .unwrap_or_default()
-            };
-
-            let name = text_prop("name");
-            let price = text_prop("price");
-            let description = text_prop("description");
-
-            Ok(View::element("article", [
-                View::element("h1", [View::text(name)])?,
-                View::element("p", [View::text(price)])?,
-                View::element("p", [View::text(description)])?,
-            ])?)
-        });
-        Ok(render)
-    },
-)?;
+~~~sh
+cargo run -p rustflow-server --example product_page
 ~~~
 
-Este componente no consulta una base de datos ni crea HTML mediante interpolación de strings. Recibe props de la aplicación y construye elementos/texto. SSR se encarga de escapar el texto al serializarlo.
+Abre <code>http://127.0.0.1:3000/</code>. También puedes abrir directamente <code>/products/keyboard</code> y <code>/products/mouse</code>. Una ruta de producto desconocida devuelve 404.
 
-## 2. Crear el layout de tienda
+Este programa es un ejemplo ejecutable independiente. El workspace contiene sus dependencias y Cargo compila los ejemplos de servidor; la documentación debe acompañarse de la comprobación de compilación del CI.
 
-El layout se comparte entre páginas y coloca el contenido recibido como children:
+## 2. Qué contiene la aplicación
 
-~~~rust
-let store_layout = SharedComponentDefinition::new(
-    "StoreLayout",
-    |_context, _initial_properties| {
-        let render: ComponentRender = Rc::new(|_properties, children| {
-            Ok(View::element("div", [
-                View::element("header", [
-                    View::element("a", [
-                        View::text("Mi tienda")
-                    ])?
-                ])?,
-                View::element("main", children.to_vec())?,
-                View::element("footer", [
-                    View::text("Catálogo de demostración")
-                ])?,
-            ])?)
-        });
-        Ok(render)
-    },
-)?;
-~~~
+El ejemplo está dividido en cuatro responsabilidades para que cada parte pueda cambiar de forma independiente:
 
-El layout no sabe qué producto se está mostrando. Esa separación permite reutilizar la misma estructura con distintos productos.
+| Parte | Para qué sirve |
+|---|---|
+| <code>Product</code> y <code>demo_product</code> | Fuente de datos fija de demostración. En una aplicación real se sustituiría por un servicio/repository, que RustFlow no integra automáticamente. |
+| <code>ProductPage</code> | Convierte props públicas del producto a un árbol de vistas. No recibe el objeto Request ni accede a almacenamiento. |
+| <code>StoreLayout</code> | Envuelve el contenido con cabecera, área principal y pie de página comunes. |
+| <code>SharedComponentCatalog</code> | Hace que las definiciones inmutables estén disponibles para peticiones concurrentes, sin compartir el estado local del render. |
+| Ruta <code>/products/{id}</code> | Resuelve el identificador, verifica que exista y decide qué props públicas pasan al componente. |
+| <code>HtmlPage</code> | Genera el documento HTML completo y aplica el layout SSR antes de devolver la respuesta. |
 
-## 3. Construir un catálogo compartido
+## 3. El componente de página
 
-~~~rust
-use std::sync::Arc;
-use rustflow::components::SharedComponentCatalogBuilder;
+En el código, <code>ProductPage</code> se registra como un <code>SharedComponentDefinition</code>. El callback de render localiza las props por nombre, obtiene el texto del nombre, precio y descripción, y construye los nodos con <code>View::element</code> y <code>View::text</code>.
 
-let mut builder = SharedComponentCatalogBuilder::new();
-builder.register(product_page)?;
-builder.register(store_layout)?;
-let catalog = Arc::new(builder.build());
-~~~
+La diferencia frente a concatenar HTML es importante: el componente describe estructura y texto; el renderer SSR aplica la política de escape al serializar. El árbol de vista es una representación tipada, no un string que se considere seguro por defecto.
 
-Hazlo una vez al iniciar el servidor, no en cada petición. El catálogo conserva las fábricas de las definiciones, pero cada render crea sus vistas y scopes locales. Esto es lo que permite compartir el catálogo sin compartir estado mutable de una petición.
+Las props están limitadas al subconjunto que el ejemplo necesita. Las páginas deberían pasar solo valores que sean públicos y estén destinados a mostrarse. No se deben pasar cookies, tokens, credenciales, decisiones de autorización ni estado privado del servidor.
 
-## 4. Mapear una ruta a datos públicos
+## 4. El layout y los children
 
-En una aplicación real, los datos podrían venir de un servicio o base de datos. Para un tutorial inicial basta una tabla fija:
+<code>StoreLayout</code> recibe los children que el componente de página produjo. Los coloca entre una cabecera y un pie de página dentro de una estructura común. El layout no conoce ni debe conocer la identidad del producto.
 
-~~~rust
-struct Product {
-    name: &'static str,
-    price: &'static str,
-    description: &'static str,
-}
+Este patrón sirve para tiendas, blogs, documentación y paneles con una estructura repetida. Consulta [Componer páginas con layouts](/guides/layouts/) para más detalles sobre composición anidada y orden de wrapping.
 
-fn demo_product(id: &str) -> Option<Product> {
-    match id {
-        "keyboard" => Some(Product {
-            name: "Teclado mecánico",
-            price: "$89.00",
-            description: "Teclado compacto para trabajo y programación.",
-        }),
-        "mouse" => Some(Product {
-            name: "Ratón ergonómico",
-            price: "$49.00",
-            description: "Ratón de demostración con diseño ergonómico.",
-        }),
-        _ => None,
-    }
-}
-~~~
+## 5. Por qué se construye el catálogo una sola vez
 
-Los campos usados aquí son públicos y están destinados a mostrarse en la página. No pases tokens, información privada de cuenta ni credenciales como props.
+El código construye el catálogo con <code>SharedComponentCatalogBuilder</code> durante el startup y lo comparte con <code>Arc</code>. El handler clona ese handle compartible por petición, pero el catálogo solo guarda definiciones/fábricas. El runtime, scopes, propiedades y vistas del render son locales.
 
-## 5. Conectar la ruta, el componente y el layout
+Esto permite atender requests concurrentes sin almacenar estado de usuario en un singleton compartido. Para callbacks locales que no cumplan <code>Send + Sync</code>, hay un registry local, pero la vía canónica del ejemplo HTTP concurrente es el catálogo compartido.
 
-Este handler captura el catálogo construido durante el startup, obtiene el ID de ruta, convierte solo los campos públicos en props y renderiza un documento completo:
+## 6. Cómo la ruta prepara la página
 
-~~~rust
-use std::sync::Arc;
-use rustflow::view::Property;
-use rustflow_server::{Application, HtmlPage, HttpError, Request, Response};
+La ruta sigue este flujo:
 
-let mut app = Application::new();
-let route_catalog = Arc::clone(&catalog);
+1. Lee el valor de <code>id</code> desde el patrón del path.
+2. Consulta la tabla de demostración y devuelve 404 cuando no encuentra el producto.
+3. Convierte nombre, precio y descripción en props explícitas.
+4. Llama a <code>HtmlPage::from_component</code> para elegir el componente de cuerpo.
+5. Establece idioma y catálogo, y añade <code>StoreLayout</code> con <code>with_layout</code>.
+6. Llama a <code>render()</code> para devolver el documento como respuesta HTTP.
 
-app.get("/products/{id}", move |request: Request| {
-    let catalog = Arc::clone(&route_catalog);
-    async move {
-        let id = request.path_param("id").unwrap_or_default().to_owned();
-        let Some(product) = demo_product(&id) else {
-            return Ok(Response::not_found("No se encontró el producto"));
-        };
+El handler es responsable de resolver la URL y seleccionar los datos. <code>HtmlPage</code> compone y renderiza la página; no implementa un router ni una base de datos por su cuenta.
 
-        let props = [
-            Property::new("name", product.name)
-                .map_err(|_| HttpError::internal_server_error())?,
-            Property::new("price", product.price)
-                .map_err(|_| HttpError::internal_server_error())?,
-            Property::new("description", product.description)
-                .map_err(|_| HttpError::internal_server_error())?,
-        ];
+## 7. Casos de uso y extensiones seguras
 
-        HtmlPage::from_component("Producto", "ProductPage", props, [])?
-            .language("es")
-            .with_shared_components(&catalog)
-            .with_layout("StoreLayout", [])?
-            .render()
-    }
-})?;
-~~~
+Este patrón puede adaptarse a:
 
-El código es un fragmento para integrar en el binario de servidor, junto con los imports y los pasos anteriores. El tipo de retorno y los errores están alineados con las APIs usadas por el ejemplo del workspace.
+- **Blog:** componente ArticlePage con slug, título y contenido público; layout de sitio y layout de sección.
+- **Catálogo:** componentes de producto reutilizables y props derivadas de una capa de datos.
+- **Documentación:** páginas estáticas con navegación y estructura compartida.
+- **Panel de control:** contenido específico envuelto por un layout común; autenticación/autorización deben construirse explícitamente, pues no están integradas aquí.
 
-## 6. Probar el resultado
+Para reemplazar la tabla fija por datos externos, añade una capa de aplicación que valide los datos y el acceso y que convierta solo campos públicos a props. El ejemplo no muestra permisos, persistencia ni operaciones de mutación.
 
-Ejecuta el servidor que contiene el handler y abre:
+## 8. ¿Y la interactividad del navegador?
 
-- <code>/products/keyboard</code>: página de detalle del teclado.
-- <code>/products/mouse</code>: misma estructura, distinto contenido.
-- <code>/products/unknown</code>: respuesta 404 del handler.
+Este ejemplo demuestra SSR. No convierte automáticamente el HTML en una interfaz interactiva en el navegador. RustFlow también dispone de hidratación opt-in y navegación cliente opt-in, pero necesitan configuración explícita y una vista inicial compatible. La mejora progresiva de formularios se limita a ciertos GET URL-encoded; no es un carrito ni una server action.
 
-Puedes comprobar el HTML generado con la pestaña de código fuente o con una petición HTTP. El resultado debe incluir un documento completo, el encabezado de tienda, el título y la descripción. Los valores se deben mostrar como texto escapado.
+Lee [SSR e hidratación](/guides/ssr/) y [Navegación cliente y formularios](/guides/navigation/) antes de añadir interacción.
 
-## 7. Qué falta para una tienda real
+## Referencias
 
-Este ejemplo enseña composición SSR, no todo el dominio de e-commerce. Para convertirlo en una tienda real todavía necesitarías diseñar y probar almacenamiento, inventario, precios autoritativos, validación, carrito, autenticación/autorización, protección CSRF, checkout y pagos. Esas piezas no están integradas por RustFlow actualmente.
-
-Si quieres introducir interactividad de navegador, el catálogo/producto puede inspirar componentes de una UI WASM, pero el demo de página SSR de este tutorial no se hidrata automáticamente. La hidratación y la navegación son opt-in y necesitan su propio contrato y configuración. Consulta [SSR e hidratación](/guides/ssr/) y [Navegación](/guides/navigation/).
-
-## Conceptos utilizados
-
-- [Servidor HTTP](/guides/server/) explica rutas, handlers y errores.
-- [Crear componentes](/guides/components/) explica props, eventos y vistas.
-- [Composición de layouts](/guides/layouts/) explica los children y el catálogo compartido.
-- [Disponibilidad de API](/reference/api-status/) distingue capacidades actuales y pendientes.
+- [Fuente ejecutable: product_page.rs](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow-server/examples/product_page.rs)
+- [Ejemplo base HTTP, con JSON y grupos](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow-server/examples/basic.rs)
+- [Servidor HTTP](/guides/server/)
+- [Disponibilidad de API](/reference/api-status/)
