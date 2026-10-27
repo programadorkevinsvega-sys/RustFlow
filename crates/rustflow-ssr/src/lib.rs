@@ -3,10 +3,13 @@
 //! This crate emits HTML fragments. It is not an HTTP server, does not serialize
 //! event callbacks, and does not make a View value trusted HTML.
 
+pub mod hydration;
+pub use hydration::{HydrationData, HydrationDataError};
+
 use std::{collections::HashSet, error::Error, fmt};
 
 use rustflow::{
-    components::{ComponentError, ComponentRegistry},
+    components::{ComponentCapability, ComponentError, ComponentRegistry, RenderTarget},
     reactivity::{Runtime, RuntimeError, Scope},
 };
 use rustflow_view::{
@@ -220,7 +223,11 @@ pub enum SsrError {
     UnsafeUrl(String),
     DuplicateSerializedAttribute(String),
     InvalidPropertyValue(String),
-    NestingLimitExceeded { limit: usize },
+    NestingLimitExceeded {
+        limit: usize,
+    },
+    /// A browser-only component lacks an explicit static SSR fallback.
+    NonHydratableComponent(String),
     Component(String),
     Runtime(String),
     View(ViewError),
@@ -260,6 +267,10 @@ impl fmt::Display for SsrError {
             Self::NestingLimitExceeded { limit } => {
                 write!(f, "view nesting exceeds the configured limit of {limit}")
             }
+            Self::NonHydratableComponent(name) => write!(
+                f,
+                "browser-only component {name} has no static SSR fallback"
+            ),
             Self::Component(message) => write!(f, "component rendering failed: {message}"),
             Self::Runtime(message) => write!(f, "SSR reactive runtime failed: {message}"),
             Self::View(error) => write!(f, "view construction failed: {error}"),
@@ -578,7 +589,25 @@ impl RenderContext {
             ))
         })?;
 
-        let mut instance = registry.mount(component, self.runtime.clone(), parent_scope)?;
+        let definition = registry.definition(component.name()).ok_or_else(|| {
+            SsrError::Component(format!(
+                "no component definition registered for: {}",
+                component.name()
+            ))
+        })?;
+        if definition.capability() == ComponentCapability::BrowserOnly {
+            let fallback = definition
+                .ssr_fallback()
+                .ok_or_else(|| SsrError::NonHydratableComponent(component.name().to_owned()))?;
+            return self.write_view(fallback, parent_scope, depth + 1);
+        }
+
+        let mut instance = registry.mount_for_target(
+            component,
+            self.runtime.clone(),
+            parent_scope,
+            RenderTarget::Server,
+        )?;
         let view = instance.view().clone();
         let render_result = self.write_view(&view, instance.scope(), depth + 1);
         let cleanup_result = instance.unmount().map_err(SsrError::from);
@@ -909,6 +938,67 @@ mod tests {
             "<section>body</section>"
         );
         assert_eq!(cleanups.get(), 1);
+    }
+
+    #[test]
+    fn repeated_static_view_rendering_is_byte_deterministic() {
+        let view = View::fragment([
+            View::text("stable"),
+            View::element("div", [View::text("same")]).expect("div"),
+        ]);
+
+        let first = render_to_string(&view).expect("first render");
+        let second = render_to_string(&view).expect("second render");
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn browser_only_components_use_static_ssr_fallback_without_running_setup() {
+        let setup_calls = Rc::new(Cell::new(0));
+        let setup_counter = setup_calls.clone();
+        let definition = ComponentDefinition::new("ClientIsland", move |_context, _properties| {
+            setup_counter.set(setup_counter.get() + 1);
+            let render: ComponentRender =
+                Rc::new(|_properties, _children| Ok(View::text("must not render on server")));
+            Ok(render)
+        })
+        .expect("definition")
+        .browser_only()
+        .with_ssr_fallback(
+            View::element("span", [View::text("static fallback")]).expect("fallback"),
+        );
+        let mut registry = ComponentRegistry::new();
+        registry.register(definition).expect("register");
+        let view = View::component("ClientIsland", [], [], None).expect("component");
+
+        assert_eq!(
+            render_with_components(&view, &registry).expect("fallback is rendered"),
+            "<span>static fallback</span>"
+        );
+        assert_eq!(
+            setup_calls.get(),
+            0,
+            "browser-only setup must not execute in SSR"
+        );
+    }
+
+    #[test]
+    fn browser_only_components_without_fallback_are_rejected_by_ssr() {
+        let definition = ComponentDefinition::new("ClientIsland", |_context, _properties| {
+            let render: ComponentRender =
+                Rc::new(|_properties, _children| Ok(View::text("client only")));
+            Ok(render)
+        })
+        .expect("definition")
+        .browser_only();
+        let mut registry = ComponentRegistry::new();
+        registry.register(definition).expect("register");
+        let view = View::component("ClientIsland", [], [], None).expect("component");
+
+        assert!(matches!(
+            render_with_components(&view, &registry),
+            Err(SsrError::NonHydratableComponent(name)) if name == "ClientIsland"
+        ));
     }
 
     #[test]

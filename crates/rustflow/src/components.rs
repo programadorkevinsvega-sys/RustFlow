@@ -5,6 +5,41 @@ use std::{collections::HashMap, error::Error, fmt, rc::Rc};
 use crate::reactivity::{Runtime, RuntimeError, Scope};
 use rustflow_view::{ComponentName, ComponentNode, Property, View, ViewError};
 
+/// Declares which rendering environments may execute a component's setup/render callbacks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComponentCapability {
+    /// Safe to evaluate on the server and in the browser.
+    Universal,
+    /// May execute only in server rendering, never in a browser renderer.
+    ServerOnly,
+    /// May execute only in a browser renderer. SSR requires an explicit static fallback.
+    BrowserOnly,
+}
+
+/// The execution environment selected by a renderer.
+///
+/// `Unspecified` is reserved for target-neutral mounting APIs and permits only universal
+/// components. Actual renderers must use `Server` or `Browser`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderTarget {
+    /// Execute component setup/render callbacks during server rendering.
+    Server,
+    /// Execute component setup/render callbacks in the browser runtime.
+    Browser,
+    /// No runtime environment has been selected; permits universal components only.
+    Unspecified,
+}
+
+impl ComponentCapability {
+    const fn supports(self, target: RenderTarget) -> bool {
+        match self {
+            Self::Universal => true,
+            Self::ServerOnly => matches!(target, RenderTarget::Server),
+            Self::BrowserOnly => matches!(target, RenderTarget::Browser),
+        }
+    }
+}
+
 /// Errors produced while setting up or updating a component instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ComponentError {
@@ -18,6 +53,12 @@ pub enum ComponentError {
     User(String),
     /// A registry already contains a definition with this name.
     DuplicateDefinition(String),
+    /// A component capability does not permit execution in the selected render target.
+    IncompatibleTarget {
+        name: String,
+        capability: ComponentCapability,
+        target: RenderTarget,
+    },
     /// A view references a component without a registered definition.
     UnknownComponent(String),
 }
@@ -31,6 +72,14 @@ impl fmt::Display for ComponentError {
             Self::DuplicateDefinition(name) => {
                 write!(f, "component definition already registered: {name}")
             }
+            Self::IncompatibleTarget {
+                name,
+                capability,
+                target,
+            } => write!(
+                f,
+                "component {name} with {capability:?} capability cannot execute for {target:?} target"
+            ),
             Self::UnknownComponent(name) => {
                 write!(f, "no component definition registered for: {name}")
             }
@@ -85,6 +134,8 @@ pub type ComponentSetup =
 pub struct ComponentDefinition {
     name: ComponentName,
     setup: ComponentSetup,
+    capability: ComponentCapability,
+    ssr_fallback: Option<View>,
 }
 impl ComponentDefinition {
     /// Define a component with one-time setup and repeatable rendering.
@@ -96,11 +147,55 @@ impl ComponentDefinition {
         Ok(Self {
             name: ComponentName::new(name)?,
             setup: Rc::new(setup),
+            capability: ComponentCapability::Universal,
+            ssr_fallback: None,
         })
     }
+    /// Restrict where this component's setup and render callbacks may execute.
+    ///
+    /// Components default to `Universal` for backwards compatibility. Use
+    /// `server_only` or `browser_only` when the implementation relies on environment-specific
+    /// services or APIs.
+    pub fn with_capability(mut self, capability: ComponentCapability) -> Self {
+        self.capability = capability;
+        self
+    }
+
+    /// Declare that this component may execute only during server rendering.
+    pub fn server_only(self) -> Self {
+        self.with_capability(ComponentCapability::ServerOnly)
+    }
+
+    /// Declare that this component may execute only in a browser renderer.
+    ///
+    /// SSR skips its setup. Supply `with_ssr_fallback` to produce explicit static HTML; without
+    /// a fallback, the SSR renderer returns `NonHydratableComponent`.
+    pub fn browser_only(self) -> Self {
+        self.with_capability(ComponentCapability::BrowserOnly)
+    }
+
+    /// Provide a static view to serialize when SSR encounters this browser-only component.
+    ///
+    /// The fallback is itself rendered under the normal SSR element/attribute safety policy.
+    /// It is static HTML only; this does not implement hydration or client-side activation.
+    pub fn with_ssr_fallback(mut self, fallback: View) -> Self {
+        self.ssr_fallback = Some(fallback);
+        self
+    }
+
     /// Return the public component type name.
     pub fn name(&self) -> &str {
         self.name.as_str()
+    }
+
+    /// Return the declared execution capability.
+    pub fn capability(&self) -> ComponentCapability {
+        self.capability
+    }
+
+    /// Return the optional static SSR fallback for a browser-only component.
+    pub fn ssr_fallback(&self) -> Option<&View> {
+        self.ssr_fallback.as_ref()
     }
 }
 
@@ -135,24 +230,46 @@ impl ComponentRegistry {
         self.definitions.contains_key(name)
     }
 
-    /// Mount a component descriptor using its registered definition.
+    /// Return a registered component definition by name.
+    pub fn definition(&self, name: &str) -> Option<&ComponentDefinition> {
+        self.definitions.get(name)
+    }
+
+    /// Mount a target-neutral component descriptor.
+    ///
+    /// This compatibility method permits universal components only. SSR and browser renderers
+    /// must use `mount_for_target` so environment-specific definitions are checked before setup.
     pub fn mount(
         &self,
         node: &ComponentNode,
         runtime: Runtime,
         parent_scope: &Scope,
     ) -> Result<ComponentInstance, ComponentError> {
+        self.mount_for_target(node, runtime, parent_scope, RenderTarget::Unspecified)
+    }
+
+    /// Mount a component after checking its declared environment capability.
+    ///
+    /// The target check happens before component setup is invoked.
+    pub fn mount_for_target(
+        &self,
+        node: &ComponentNode,
+        runtime: Runtime,
+        parent_scope: &Scope,
+        target: RenderTarget,
+    ) -> Result<ComponentInstance, ComponentError> {
         let definition = self
             .definitions
             .get(node.name())
             .cloned()
             .ok_or_else(|| ComponentError::UnknownComponent(node.name().to_owned()))?;
-        ComponentInstance::mount(
+        ComponentInstance::mount_for_target(
             definition,
             runtime,
             parent_scope,
             node.properties().iter().cloned(),
             node.children().iter().cloned(),
+            target,
         )
     }
 }
@@ -179,7 +296,9 @@ pub struct ComponentInstance {
     state: ComponentState,
 }
 impl ComponentInstance {
-    /// Set up and mount a component under a parent owner scope.
+    /// Set up a universal component under a parent owner scope.
+    ///
+    /// This target-neutral entry point rejects server-only and browser-only definitions.
     pub fn mount(
         definition: ComponentDefinition,
         runtime: Runtime,
@@ -187,6 +306,31 @@ impl ComponentInstance {
         properties: impl IntoIterator<Item = Property>,
         children: impl IntoIterator<Item = View>,
     ) -> Result<Self, ComponentError> {
+        Self::mount_for_target(
+            definition,
+            runtime,
+            parent_scope,
+            properties,
+            children,
+            RenderTarget::Unspecified,
+        )
+    }
+
+    fn mount_for_target(
+        definition: ComponentDefinition,
+        runtime: Runtime,
+        parent_scope: &Scope,
+        properties: impl IntoIterator<Item = Property>,
+        children: impl IntoIterator<Item = View>,
+        target: RenderTarget,
+    ) -> Result<Self, ComponentError> {
+        if !definition.capability.supports(target) {
+            return Err(ComponentError::IncompatibleTarget {
+                name: definition.name().to_owned(),
+                capability: definition.capability,
+                target,
+            });
+        }
         let properties = properties.into_iter().collect::<Vec<_>>();
         validate_properties(&properties)?;
         let children = children.into_iter().collect::<Vec<_>>();
@@ -782,6 +926,85 @@ mod tests {
         instance.unmount().expect("unmount");
         runtime.dispose().expect("runtime dispose");
     }
+    #[test]
+    fn render_target_enforces_component_capabilities_before_setup() {
+        use super::{ComponentCapability, RenderTarget};
+        use rustflow_view::View;
+
+        let server_setup_calls = Rc::new(Cell::new(0));
+        let server_calls = server_setup_calls.clone();
+        let server_only = ComponentDefinition::new("ServerPanel", move |_context, _properties| {
+            server_calls.set(server_calls.get() + 1);
+            let render: ComponentRender =
+                Rc::new(|_properties, _children| Ok(View::text("server")));
+            Ok(render)
+        })
+        .expect("server definition")
+        .server_only();
+
+        let browser_setup_calls = Rc::new(Cell::new(0));
+        let browser_calls = browser_setup_calls.clone();
+        let browser_only =
+            ComponentDefinition::new("BrowserPanel", move |_context, _properties| {
+                browser_calls.set(browser_calls.get() + 1);
+                let render: ComponentRender =
+                    Rc::new(|_properties, _children| Ok(View::text("browser")));
+                Ok(render)
+            })
+            .expect("browser definition")
+            .browser_only();
+
+        assert_eq!(server_only.capability(), ComponentCapability::ServerOnly);
+        assert_eq!(browser_only.capability(), ComponentCapability::BrowserOnly);
+
+        let mut registry = super::ComponentRegistry::new();
+        registry.register(server_only).expect("register server");
+        registry.register(browser_only).expect("register browser");
+        let server_node = View::component("ServerPanel", [], [], None).expect("server node");
+        let browser_node = View::component("BrowserPanel", [], [], None).expect("browser node");
+        let View::Component(server_node) = server_node else {
+            panic!("component expected")
+        };
+        let View::Component(browser_node) = browser_node else {
+            panic!("component expected")
+        };
+        let runtime = Runtime::new();
+        let root = runtime.root_scope();
+
+        assert!(matches!(
+            registry.mount_for_target(&server_node, runtime.clone(), &root, RenderTarget::Browser),
+            Err(super::ComponentError::IncompatibleTarget {
+                capability: ComponentCapability::ServerOnly,
+                target: RenderTarget::Browser,
+                ..
+            })
+        ));
+        assert_eq!(server_setup_calls.get(), 0);
+
+        assert!(matches!(
+            registry.mount_for_target(&browser_node, runtime.clone(), &root, RenderTarget::Server),
+            Err(super::ComponentError::IncompatibleTarget {
+                capability: ComponentCapability::BrowserOnly,
+                target: RenderTarget::Server,
+                ..
+            })
+        ));
+        assert_eq!(browser_setup_calls.get(), 0);
+
+        let mut server = registry
+            .mount_for_target(&server_node, runtime.clone(), &root, RenderTarget::Server)
+            .expect("server-only component renders on server");
+        assert_eq!(server_setup_calls.get(), 1);
+        server.unmount().expect("unmount server component");
+
+        let mut browser = registry
+            .mount_for_target(&browser_node, runtime.clone(), &root, RenderTarget::Browser)
+            .expect("browser-only component renders in browser");
+        assert_eq!(browser_setup_calls.get(), 1);
+        browser.unmount().expect("unmount browser component");
+        runtime.dispose().expect("dispose runtime");
+    }
+
     #[test]
     fn component_setup_can_create_owner_bound_state_and_effects() {
         use crate::reactivity::{on_cleanup, signal, use_effect};

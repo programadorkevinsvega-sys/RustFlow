@@ -40,6 +40,9 @@ pub use rustflow_macros::{component, view};
 
 /// Common imports for authoring RustFlow reactive views and components.
 pub mod prelude {
+    pub use crate::components::{
+        ComponentCapability, ComponentDefinition, ComponentRegistry, RenderTarget,
+    };
     pub use crate::reactivity::{
         Effect, Runtime, RuntimeError, Scope, Signal, on_cleanup, signal, try_signal, use_effect,
         use_state, with_owner_scope,
