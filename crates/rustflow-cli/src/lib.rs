@@ -394,11 +394,7 @@ fn create_project(name: &str, parent: &Path, revision: &str) -> Result<PathBuf, 
     }
 
     let staging = create_staging_dir(&parent, name)?;
-    let result = write_project_files(&staging, &scaffold_files(name, revision));
-    if let Err(error) = result {
-        let _ = fs::remove_dir_all(&staging);
-        return Err(error);
-    }
+    populate_staging_dir(&staging, &scaffold_files(name, revision))?;
 
     match path_exists(&destination) {
         Ok(false) => {}
@@ -452,6 +448,23 @@ fn create_staging_dir(parent: &Path, name: &str) -> Result<PathBuf, CliError> {
         }
     }
     Err("could not allocate a unique staging directory after 100 attempts".into())
+}
+
+fn populate_staging_dir(
+    staging: &Path,
+    files: &[(PathBuf, String)],
+) -> Result<(), CliError> {
+    if let Err(error) = write_project_files(staging, files) {
+        if let Err(cleanup_error) = fs::remove_dir_all(staging) {
+            return Err(format!(
+                "{error}; could not clean partial project directory {}: {cleanup_error}",
+                staging.display()
+            )
+            .into());
+        }
+        return Err(error);
+    }
+    Ok(())
 }
 
 fn write_project_files(root: &Path, files: &[(PathBuf, String)]) -> Result<(), CliError> {
@@ -1057,6 +1070,26 @@ mod tests {
         );
         assert!(generated_identifier("type").is_err());
         assert!(generated_identifier("bad/name").is_err());
+    }
+
+    #[test]
+    fn failed_staging_population_removes_partial_files() {
+        let parent = temporary_directory("staging-cleanup");
+        let staging = parent.join("staging");
+        fs::create_dir(&staging).unwrap();
+        fs::write(staging.join("blocked"), "not a directory").unwrap();
+        let files = vec![
+            (PathBuf::from("first.txt"), "partial content".to_owned()),
+            (
+                PathBuf::from("blocked/second.txt"),
+                "this write must fail".to_owned(),
+            ),
+        ];
+
+        let error = populate_staging_dir(&staging, &files).unwrap_err();
+        assert!(error.to_string().contains("could not create directory"));
+        assert!(!staging.exists());
+        fs::remove_dir_all(parent).unwrap();
     }
 
     #[test]

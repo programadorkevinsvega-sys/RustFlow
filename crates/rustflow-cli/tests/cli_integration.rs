@@ -348,6 +348,9 @@ fn dev_runs_cargo_and_invalid_projects_return_a_clear_error() {
     let outside = invoke(temp.path(), &["dev"]);
     assert_eq!(outside.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&outside.stderr).contains("no RustFlow application"));
+    let outside_build = invoke(temp.path(), &["build"]);
+    assert_eq!(outside_build.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&outside_build.stderr).contains("no RustFlow application"));
 
     let project = create_project(temp.path(), "dev-fixture-app");
     localize_framework_dependencies(&project);
@@ -366,6 +369,22 @@ fn dev_runs_cargo_and_invalid_projects_return_a_clear_error() {
         .expect("run rustflow dev");
     assert_success(&output);
     assert!(String::from_utf8_lossy(&output.stdout).contains("dev executed"));
+
+    fs::write(project.join("src/main.rs"), "fn main( { }\n").unwrap();
+    let build_failure = cli()
+        .current_dir(&project)
+        .args(["build", "--offline"])
+        .env("CARGO_TARGET_DIR", &target_dir)
+        .output()
+        .expect("run failing rustflow build");
+    assert_eq!(
+        build_failure.status.code(),
+        Some(101),
+        "expected Cargo's compilation failure status, got stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&build_failure.stdout),
+        String::from_utf8_lossy(&build_failure.stderr)
+    );
+    assert!(String::from_utf8_lossy(&build_failure.stderr).contains("error"));
 }
 
 #[test]
