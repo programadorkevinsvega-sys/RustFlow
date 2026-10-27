@@ -109,7 +109,7 @@ The supported Phase 3 public names, signatures, error behavior, and lifecycle de
 
 - Phase 2 remains complete only for the native structural view/component model; this ADR does not retroactively claim that the public ergonomic contract exists.
 - Phase 3 delivered and verified the ergonomic API subset, fine-grained renderer, browser bundle, Counter/todo examples, and browser E2E gates; this ADR records that completed milestone.
-- SSR/hydration, client navigation, forms integration, and server-side state isolation remain separate roadmap work; this ADR does not mark them implemented.
+- SSR/hydration, client navigation, forms integration, and server-side state isolation were separate roadmap workstreams rather than part of this ADR's Phase 3 acceptance. Phases 5.1–5.4 later implemented the documented opt-in SSR/hydration/navigation subset; see the current roadmap and corresponding ADRs for their own scope and limits.
 - Phase 3 was closed only after its acceptance evidence was integrated into `main` and the post-merge CI passed on the exact main commit, including Rust stable/1.85, WASM, bundle budget, browser E2E, documentation, and governance checks.
 
 
