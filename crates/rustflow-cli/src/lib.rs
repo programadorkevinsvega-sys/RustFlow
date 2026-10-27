@@ -1079,7 +1079,11 @@ mod tests {
         );
         fs::write(&index, &original).unwrap();
 
-        assert!(!fs::read_to_string(&index).unwrap().contains("pub mod home;"));
+        assert!(
+            !fs::read_to_string(&index)
+                .unwrap()
+                .contains("pub mod home;")
+        );
         let first = prepare_module_index(&index, "zebra").unwrap();
         write_one_file(&root.join("src/components/zebra.rs"), "pub fn zebra() {}\n").unwrap();
         apply_module_index_update(&first).unwrap();
