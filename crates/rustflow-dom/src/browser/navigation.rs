@@ -494,9 +494,7 @@ async fn navigate(
 }
 
 async fn fetch_html_route(window: &Window, requested_url: &Url) -> Result<Url, DomError> {
-    let promise = window
-        .fetch_with_str(&requested_url.href())
-        .map_err(js_error)?;
+    let promise = window.fetch_with_str(&requested_url.href());
     let response = JsFuture::from(promise)
         .await
         .map_err(js_error)?
