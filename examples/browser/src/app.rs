@@ -9,6 +9,7 @@ use web_sys::HtmlInputElement;
 
 thread_local! {
     static ACTIVE_MOUNT: RefCell<Option<ReactiveMountedDom>> = const { RefCell::new(None) };
+    static ACTIVE_HYDRATION_MOUNT: RefCell<Option<ReactiveMountedDom>> = const { RefCell::new(None) };
 }
 
 #[derive(Clone, PartialEq)]
@@ -148,6 +149,41 @@ pub fn start() -> Result<(), JsValue> {
     let mut registry = ComponentRegistry::new();
     register_counter(&mut registry).map_err(display_error)?;
     register_todorow(&mut registry).map_err(display_error)?;
+
+    // This optional fixture is injected only by the browser E2E tests. It exercises the
+    // same public hydration API against server-shaped HTML without affecting the demo page.
+    if let Some(hydration_target) = document.get_element_by_id("hydration-fixture") {
+        let hydration_count = runtime.signal(0_i32).map_err(display_error)?;
+        let count_for_render = hydration_count.clone();
+        let count_for_button = hydration_count.clone();
+        let mut hydration_renderer =
+            DomRenderer::new(document.clone(), runtime.clone(), ComponentRegistry::new());
+        let result = hydration_renderer.hydrate_reactive(
+            &hydration_target,
+            &root_scope,
+            move || {
+                let count_for_button = count_for_button.clone();
+                let count_for_render = count_for_render.clone();
+                rustflow::view! {
+                    <button data-testid="hydration-action" on:click={move |_payload| {
+                        count_for_button.update(|value| *value += 1);
+                    }}>
+                        "Count: " {count_for_render}
+                    </button>
+                }
+                .map_err(DomError::from)
+            },
+        );
+        match result {
+            Ok(mounted) => {
+                ACTIVE_HYDRATION_MOUNT.with(|slot| *slot.borrow_mut() = Some(mounted));
+            }
+            Err(error) => {
+                // A mismatch is diagnosed but the server DOM remains in place as static HTML.
+                web_sys::console::error_1(&JsValue::from_str(&error.to_string()));
+            }
+        }
+    }
 
     let mut renderer = DomRenderer::new(document.clone(), runtime, registry);
     let mounted = renderer
