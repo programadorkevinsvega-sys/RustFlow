@@ -259,6 +259,8 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [ ] Define safe mismatch recovery.
 - [ ] Test forms, conditions, lists, and navigation.
 
+**Estado de implementación:** en curso en el PR #39. Ya existe un camino opt-in para emitir límites SSR, adjuntar `HydrationData` y validar/reutilizar el DOM del navegador antes de activar eventos. Ante una discrepancia, el root permanece estático y se registra un diagnóstico; la recuperación granular por subregión, las pruebas adicionales de formularios/listas y el cierre formal todavía requieren validación. Los criterios de esta fase permanecen sin marcar hasta que todos los checks obligatorios pasen, el PR se integre y la CI posterior al merge se confirme.
+
 ### 5.4 Navigation and forms
 - [ ] Add client navigation after route semantics stabilize.
 - [ ] Implement browser history and link interception.
