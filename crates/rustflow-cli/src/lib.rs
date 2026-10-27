@@ -515,7 +515,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let port = match std::env::var("RUSTFLOW_PORT") {
         Ok(value) => value.parse::<u16>()?,
         Err(std::env::VarError::NotPresent) => 3000,
-        Err(error) => return Err(Box::new(error)),
+        Err(error) => return Err(Box::<dyn Error>::from(error)),
     };
     let address = SocketAddr::from(([127, 0, 0, 1], port));
     println!("RustFlow server listening on http://{address}");
@@ -539,7 +539,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         ),
         (
             PathBuf::from("src/controllers/mod.rs"),
-            module_index("Controladores HTTP."),
+            module_index_with_modules("Controladores HTTP.", &["home_controller"]),
         ),
         (
             PathBuf::from("src/controllers/home_controller.rs"),
@@ -557,12 +557,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn module_index(comment: &str) -> String {
+    module_index_with_modules(comment, &[])
+}
+
+fn module_index_with_modules(comment: &str, initial_modules: &[&str]) -> String {
     let header = if comment.is_empty() {
         String::new()
     } else {
         format!("//! {comment}\n")
     };
-    format!("{header}\n{MODULE_START}\n{MODULE_END}\n")
+    let declarations = initial_modules
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(|name| format!("pub mod {name};"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if declarations.is_empty() {
+        format!("{header}\n{MODULE_START}\n{MODULE_END}\n")
+    } else {
+        format!("{header}\n{MODULE_START}\n{declarations}\n{MODULE_END}\n")
+    }
 }
 
 fn find_rustflow_project(start: &Path) -> Result<PathBuf, CliError> {
@@ -1063,6 +1079,7 @@ mod tests {
         );
         fs::write(&index, &original).unwrap();
 
+        assert!(!fs::read_to_string(&index).unwrap().contains("pub mod home;"));
         let first = prepare_module_index(&index, "zebra").unwrap();
         write_one_file(&root.join("src/components/zebra.rs"), "pub fn zebra() {}\n").unwrap();
         apply_module_index_update(&first).unwrap();
