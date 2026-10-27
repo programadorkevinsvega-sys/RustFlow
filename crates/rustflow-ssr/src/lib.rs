@@ -1040,7 +1040,10 @@ mod tests {
             let cleanup_count = setup_cleanups.clone();
             context.on_cleanup(move || cleanup_count.set(cleanup_count.get() + 1))?;
             let render: ComponentRender = Rc::new(move |_properties, _children| {
-                Ok(View::element("output", [View::text(state.get().to_string())])?)
+                Ok(View::element(
+                    "output",
+                    [View::text(state.get().to_string())],
+                )?)
             });
             Ok(render)
         })
@@ -1068,8 +1071,14 @@ mod tests {
 
         assert_eq!(first, "<output>7</output>");
         assert_eq!(second, "<output>12</output>");
-        assert_eq!(repeated, first, "the same public route props render deterministically");
-        assert_eq!(cleanups.get(), 3, "every request disposes its component scope");
+        assert_eq!(
+            repeated, first,
+            "the same public route props render deterministically"
+        );
+        assert_eq!(
+            cleanups.get(),
+            3,
+            "every request disposes its component scope"
+        );
     }
-
 }
