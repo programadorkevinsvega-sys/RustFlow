@@ -78,3 +78,33 @@ let client_widget = ComponentDefinition::new("ClientWidget", |_context, _props| 
 ```
 
 El fallback se serializa mediante la misma política de seguridad de SSR y es estático: no se convierte en un límite hidratable, no adjunta eventos y no afirma que haya interactividad cliente. Las capacidades de ejecución no sustituyen la separación de dependencias por crate; el CI de WASM bloquea las dependencias de servidor conocidas. La aplicación sigue teniendo que proyectar expresamente campos públicos antes de crear `HydrationData`; RustFlow no puede saber si un valor de texto es un secreto.
+
+## Composición de páginas SSR y layouts (Phase 5.2)
+
+El adaptador HTTP expone `rustflow_server::HtmlPage` para construir una página HTML completa desde una vista o un componente de ruta registrado. Los layouts también son componentes: cada uno recibe como hijos el contenido ya compuesto, y la serialización final pasa por las mismas reglas seguras de `rustflow-ssr`.
+
+```rust
+use rustflow_server::{HtmlPage, HttpError, Request, Response};
+use rustflow::components::ComponentRegistry;
+use rustflow_view::Property;
+
+// Dentro de un handler GET /articles/:slug; registry se captura desde el exterior.
+let slug = request.path_param("slug").unwrap_or("missing").to_owned();
+let slug_prop = Property::new("slug", slug)
+    .map_err(|_| HttpError::internal_server_error())?;
+
+HtmlPage::from_component("Article", "ArticlePage", [slug_prop], [])?
+    .language("es")
+    .with_components(&registry)
+    .with_layout("ContentLayout", [])? // layout interior
+    .with_layout("AppLayout", [])?     // layout exterior
+    .render()
+```
+
+En un handler real, captura o clona el registro para la closure de la ruta. El orden importa: `with_layout` envuelve el cuerpo construido hasta ese momento, por lo que se añade primero el layout interior y al final el exterior. Los componentes de layout y de contenido deben registrarse en el mismo `ComponentRegistry`.
+
+Los datos de ruta no se inyectan de forma implícita. El handler extrae y valida parámetros/query, decide qué campos son públicos y los pasa como `Property` explícitas al componente. No pases cookies, credenciales, tokens, objetos completos de petición, decisiones de autorización ni estado privado. Esto reduce la superficie de exposición, pero no sustituye el juicio de la aplicación sobre qué valores son secretos.
+
+`HtmlPage::new(title, view)` sirve para vistas estructurales sin descriptores de componente; `from_component` crea un descriptor de componente de página. Si el cuerpo o los layouts contienen componentes, llama a `with_components`. El atributo `lang`, el título y el cuerpo se serializan mediante el renderer seguro; esta API no acepta una cadena de HTML arbitrario ni implementa todavía hidratación DOM.
+
+Cada render SSR crea un runtime reactivo y scopes de componentes nuevos. El registro contiene definiciones reutilizables, no estado de componente por solicitud. La suite comprueba que una secuencia de props de ruta `7, 12, 7` produce HTML `7, 12, 7`, que el resultado para props idénticas es determinista y que cada render dispone su scope. La detección/recuperación de discrepancias, los identificadores de hidratación y la navegación cliente siguen fuera de la Fase 5.2.
