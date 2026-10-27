@@ -2025,7 +2025,10 @@ mod tests {
                         _ => None,
                     })
                     .unwrap_or_else(|| "missing".to_owned());
-                Ok(View::element("article", [View::element("h1", [View::text(id)])?])?)
+                Ok(View::element(
+                    "article",
+                    [View::element("h1", [View::text(id)])?],
+                )?)
             });
             Ok(render)
         })
