@@ -1,6 +1,5 @@
 use std::{
-    env,
-    fs,
+    env, fs,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
@@ -87,13 +86,27 @@ fn localize_framework_dependencies(project: &Path) {
     assert!(manifest.contains(&rustflow_line));
     assert!(manifest.contains(&server_line));
     let manifest = manifest
-        .replace(&rustflow_line, &format!("rustflow = {{ path = \"{}\" }}", toml_path(&root.join("crates/rustflow"))))
-        .replace(&server_line, &format!("rustflow-server = {{ path = \"{}\" }}", toml_path(&root.join("crates/rustflow-server"))));
+        .replace(
+            &rustflow_line,
+            &format!(
+                "rustflow = {{ path = \"{}\" }}",
+                toml_path(&root.join("crates/rustflow"))
+            ),
+        )
+        .replace(
+            &server_line,
+            &format!(
+                "rustflow-server = {{ path = \"{}\" }}",
+                toml_path(&root.join("crates/rustflow-server"))
+            ),
+        );
     fs::write(manifest_path, manifest).unwrap();
 }
 
 fn toml_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"")
+    path.to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
 }
 
 fn cargo_target_dir() -> PathBuf {
@@ -134,16 +147,34 @@ fn creates_a_project_and_generates_all_five_file_types_without_overwrite() {
     }
 
     for (kind, name, target, expected) in [
-        ("component", "ProductCard", "src/components/product_card.rs", "View::element"),
+        (
+            "component",
+            "ProductCard",
+            "src/components/product_card.rs",
+            "View::element",
+        ),
         ("page", "about", "src/pages/about.rs", "pub fn render"),
-        ("controller", "health", "src/controllers/health_controller.rs", "pub async fn index"),
+        (
+            "controller",
+            "health",
+            "src/controllers/health_controller.rs",
+            "pub async fn index",
+        ),
         ("model", "User", "src/models/user.rs", "pub struct User"),
-        ("migration", "create_users", "migrations/0001_create_users.sql", "CREATE TABLE IF NOT EXISTS users"),
+        (
+            "migration",
+            "create_users",
+            "migrations/0001_create_users.sql",
+            "CREATE TABLE IF NOT EXISTS users",
+        ),
     ] {
         let output = invoke(&project, &["generate", kind, name]);
         assert_success(&output);
         let contents = fs::read_to_string(project.join(target)).unwrap();
-        assert!(contents.contains(expected), "{target} did not contain {expected}");
+        assert!(
+            contents.contains(expected),
+            "{target} did not contain {expected}"
+        );
     }
 
     let second_migration = invoke(&project, &["generate", "migration", "add_email"]);
@@ -154,7 +185,10 @@ fn creates_a_project_and_generates_all_five_file_types_without_overwrite() {
     fs::write(&component_path, "user-owned contents\n").unwrap();
     let collision = invoke(&project, &["generate", "component", "ProductCard"]);
     assert_eq!(collision.status.code(), Some(2));
-    assert_eq!(fs::read_to_string(component_path).unwrap(), "user-owned contents\n");
+    assert_eq!(
+        fs::read_to_string(component_path).unwrap(),
+        "user-owned contents\n"
+    );
     assert!(String::from_utf8_lossy(&collision.stderr).contains("refusing to overwrite"));
 }
 
@@ -171,13 +205,19 @@ fn rejects_invalid_names_and_existing_project_destinations_before_changes() {
     fs::write(temp.path().join("taken"), "existing file").unwrap();
     let collision = invoke(temp.path(), &["new", "taken"]);
     assert_eq!(collision.status.code(), Some(2));
-    assert_eq!(fs::read_to_string(temp.path().join("taken")).unwrap(), "existing file");
+    assert_eq!(
+        fs::read_to_string(temp.path().join("taken")).unwrap(),
+        "existing file"
+    );
 
     fs::create_dir(temp.path().join("taken-dir")).unwrap();
     fs::write(temp.path().join("taken-dir/user.txt"), "keep").unwrap();
     let collision = invoke(temp.path(), &["new", "taken-dir"]);
     assert_eq!(collision.status.code(), Some(2));
-    assert_eq!(fs::read_to_string(temp.path().join("taken-dir/user.txt")).unwrap(), "keep");
+    assert_eq!(
+        fs::read_to_string(temp.path().join("taken-dir/user.txt")).unwrap(),
+        "keep"
+    );
 
     let invalid_parent = temp.path().join("does-not-exist");
     let output = cli()
@@ -189,10 +229,15 @@ fn rejects_invalid_names_and_existing_project_destinations_before_changes() {
     assert_eq!(output.status.code(), Some(2));
     assert!(!temp.path().join("fresh").exists());
 
-    assert!(fs::read_dir(temp.path())
-        .unwrap()
-        .filter_map(Result::ok)
-        .all(|entry| !entry.file_name().to_string_lossy().starts_with(".rustflow-new-")));
+    assert!(
+        fs::read_dir(temp.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .all(|entry| !entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".rustflow-new-"))
+    );
 }
 
 #[test]
@@ -256,8 +301,16 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
     assert_success(&output);
 
     let binary = cargo_target_dir().join("debug").join("cli-fixture-app");
-    assert!(binary.is_file(), "expected generated executable at {}", binary.display());
-    let port = TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
+    assert!(
+        binary.is_file(),
+        "expected generated executable at {}",
+        binary.display()
+    );
+    let port = TcpListener::bind(("127.0.0.1", 0))
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
     let child = Command::new(binary)
         .current_dir(&project)
         .env("RUSTFLOW_PORT", port.to_string())

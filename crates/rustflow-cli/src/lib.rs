@@ -81,21 +81,7 @@ where
 
 fn print_help() {
     println!(
-        "RustFlow CLI {}\n\
-         \nUSAGE:\n  rustflow <COMMAND> [OPTIONS]\n\
-         \nCOMMANDS:\n\
-         \  new <name> [--path <parent>]       Create a server-side RustFlow application\n\
-         \  dev [--release] [--offline]        Run the application through Cargo\n\
-         \  build [OPTIONS]                    Build the application through Cargo\n\
-         \  generate <TYPE> <name>              Generate a component, page, controller, model, or migration\n\
-         \  help                                Show this help\n\
-         \nGENERATOR TYPES:\n\
-         \  component | page | controller | model | migration\n\
-         \nNOTES:\n\
-         \  Generators refuse file collisions. dev does not watch files or provide hot reload.\n\
-         \  Model and migration output is structural; no ORM or migration runner is included.\n\
-         \  RustFlow is pre-1.0. Generated projects pin the source revision used by this CLI."
-        ,
+        "RustFlow CLI {}\n\nUSAGE:\n  rustflow <COMMAND> [OPTIONS]\n\nCOMMANDS:\n  new <name> [--path <parent>]       Create a server-side RustFlow application\n  dev [--release] [--offline]        Run the application through Cargo\n  build [OPTIONS]                    Build the application through Cargo\n  generate <TYPE> <name>              Generate a component, page, controller, model, or migration\n  help                                Show this help\n\nGENERATOR TYPES:\n  component | page | controller | model | migration\n\nNOTES:\n  Generators refuse file collisions. dev does not watch files or provide hot reload.\n  Model and migration output is structural; no ORM or migration runner is included.\n  RustFlow is pre-1.0. Generated projects pin the source revision used by this CLI.",
         env!("CARGO_PKG_VERSION")
     );
 }
