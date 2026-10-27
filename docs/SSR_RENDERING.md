@@ -31,10 +31,10 @@ El texto y los valores de atributos se escapan. Solo se serializa un conjunto co
 
 Los callbacks de eventos nunca se serializan como atributos HTML `on*`. Un subconjunto de propiedades reflejables (como `value` y `checked` en formularios) se convierte a atributos; las propiedades exclusivas del cliente se omiten. Si un atributo y una propiedad producirían el mismo atributo HTML, se devuelve un error.
 
-El renderer de `rustflow-ssr` emite fragmentos, no documentos ni respuestas HTTP. El adaptador `rustflow-server` puede envolver una vista estructural con `html_document(title, lang, &view)`, que produce doctype, atributo `lang`, metadatos UTF-8, título y cuerpo mediante nodos seguros. También puede aplicar páginas HTML configuradas para estados 4xx/5xx. El adaptador `rustflow-server` ofrece composición de páginas y datos de hidratación; la hidratación DOM opt-in de la Fase 5.3 está implementada. La navegación cliente y la mejora progresiva de formularios siguen siendo trabajo de la Fase 5.4.
+El renderer de `rustflow-ssr` emite fragmentos, no documentos ni respuestas HTTP. El adaptador `rustflow-server` puede envolver una vista estructural con `html_document(title, lang, &view)`, que produce doctype, atributo `lang`, metadatos UTF-8, título y cuerpo mediante nodos seguros. También puede aplicar páginas HTML configuradas para estados 4xx/5xx. El adaptador `rustflow-server` ofrece composición de páginas y datos de hidratación; la hidratación DOM opt-in de la Fase 5.3 está implementada. La navegación cliente y la mejora progresiva de formularios se implementaron como APIs optativas en la Fase 5.4; consulta el contrato detallado a continuación y la guía pública de navegación.
 
 
-## Datos públicos previstos para hidratación (contrato inicial)
+## Datos públicos para hidratación (contrato actual)
 
 El tipo experimental `HydrationData` valida un valor JSON y devuelve JSON compacto con los caracteres sensibles para un contexto de script HTML escapados como secuencias Unicode. Rechaza entradas mayores de 1 MiB, representaciones resultantes mayores de 1 MiB y estructuras con más de 64 niveles de anidamiento.
 
@@ -80,9 +80,9 @@ En el navegador, `DomRenderer::read_hydration_data(&document)` analiza el payloa
 
 Si faltan o se repiten límites, el orden de nodos difiere, o el estado/atributos iniciales no coinciden, la hidratación devuelve un diagnóstico `DomError::HydrationMismatch`. No intenta reparar con un reemplazo destructivo ni activa parcialmente la interactividad del root: el HTML de servidor permanece como contenido estático. La misma raíz no puede hidratarse dos veces con éxito. Esta política conservadora evita perder contenido válido, aunque la recuperación granular de la subregión más pequeña aún no está implementada.
 
-Las listas deben presentar el mismo orden inicial y las mismas claves/vistas estructurales; las claves no se serializan como estado ejecutable. Los formularios conservan los valores ya introducidos en el DOM durante la validación inicial; los atributos/propiedades SSR representables se cotejan antes de adjuntar eventos. El contenido estático o los fallbacks de componentes no compatibles con el entorno siguen siendo estáticos. La navegación cliente, la intercepción de enlaces y el historial pertenecen a la Fase 5.4 y no se habilitan con esta API.
+Las listas deben presentar el mismo orden inicial y las mismas claves/vistas estructurales; las claves no se serializan como estado ejecutable. Los formularios conservan los valores ya introducidos en el DOM durante la validación inicial; los atributos/propiedades SSR representables se cotejan antes de adjuntar eventos. El contenido estático o los fallbacks de componentes no compatibles con el entorno siguen siendo estáticos. La navegación cliente, la intercepción de enlaces y el historial se implementan por separado mediante ClientNavigation; no se habilitan automáticamente al hidratar.
 
-El PR #39 se fusionó en `main` y los checks requeridos de Rust 1.85/stable, WASM y Browser E2E/bundle size pasaron en la CI posterior al merge; el PR también pasó documentación, gobernanza y revisión de dependencias. La hidratación sigue siendo opt-in y sus límites (en particular el fallback estático del root completo y la ausencia de navegación cliente) están documentados en el ADR 0010.
+El PR #39 se fusionó en `main` y los checks requeridos de Rust 1.85/stable, WASM y Browser E2E/bundle size pasaron en la CI posterior al merge; el PR también pasó documentación, gobernanza y revisión de dependencias. La hidratación sigue siendo opt-in y sus límites (en particular el fallback estático del root completo y la necesidad de configurar navegación cliente por separado) están documentados en el ADR 0010. La navegación se implementó después como alcance independiente de la Fase 5.4.
 
 ## Navegación cliente y formularios (Fase 5.4, mejora optativa)
 
@@ -201,4 +201,4 @@ HtmlPage::from_component("Article", "ArticlePage", [property], [])?
 
 El `ComponentRegistry` local se conserva para callbacks que deliberadamente no cumplen `Send + Sync`, especialmente en contextos locales o de navegador. No lo construyas en cada petición como patrón de servidor. Para handlers concurrentes, usa `SharedComponentDefinition`, `SharedComponentCatalogBuilder` y `HtmlPage::with_shared_components`.
 
-Los datos de ruta deben extraerse y validarse de forma explícita. Pasa como `Property` solo los campos destinados a ser públicos en el HTML; no pases cookies, credenciales, tokens, autorización ni estado privado del servidor. Esta API no implementa todavía hidratación DOM, identificadores de límites ni navegación cliente: esos requisitos pertenecen a las fases 5.3 y 5.4.
+Los datos de ruta deben extraerse y validarse de forma explícita. Pasa como `Property` solo los campos destinados a ser públicos en el HTML; no pases cookies, credenciales, tokens, autorización ni estado privado del servidor. La composición de páginas y layouts es independiente de la hidratación o la navegación. La hidratación DOM y ClientNavigation ya están implementadas como APIs optativas en fases posteriores; HtmlPage no las instala automáticamente.

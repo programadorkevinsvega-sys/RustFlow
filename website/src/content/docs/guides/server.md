@@ -1,83 +1,107 @@
 ---
-title: Servidor HTTP experimental
-description: Ejecuta el prototipo de servidor y explora rutas, JSON, documentos HTML y páginas de error.
+title: Servidor HTTP
+description: Construye rutas y handlers y comprende las capacidades actuales del adapter HTTP.
 ---
 
-> **Estado: prototipo pre-1.0.** Este crate permite experimentar con routing y respuestas HTTP, pero no es una receta de despliegue de producción ni forma todavía un framework full-stack completo.
+El crate <code>rustflow-server</code> integra Axum, Tokio y Tower detrás de tipos propios de RustFlow. Su objetivo es ofrecer un punto de composición de peticiones HTTP con rutas, middleware y respuestas controladas por la aplicación. Es un **prototipo pre-1.0**, no una plataforma de despliegue lista para producción.
 
-## Ejecutar el ejemplo
+## 1. Ejecutar el ejemplo
 
-Clona el repositorio, entra en el directorio y ejecuta desde la raíz:
+Desde la raíz del repositorio:
 
 ~~~sh
 cargo run -p rustflow-server --example basic
 ~~~
 
-El ejemplo escucha en `127.0.0.1:3000` y expone rutas para una página HTML, estado de salud JSON, parámetros de usuario y una operación de eco JSON. La dirección es local; no la interpretes como una configuración de despliegue recomendada.
+El servidor escucha en <code>127.0.0.1:3000</code>. Prueba:
 
-## Capacidades del prototipo
+| URL o ruta | Qué demuestra |
+|---|---|
+| <code>/</code> | Documento HTML generado desde una vista estructural. |
+| <code>/articles/demo</code> | Props de ruta, componente SSR, catálogo compartido y layout. |
+| <code>/api/health</code> | Ruta nombrada y respuesta JSON. |
+| <code>/users/42?detailed=true</code> | Parámetro de ruta y query tipada. |
+| <code>POST /api/echo</code> | Decodificación de JSON y respuesta JSON. |
 
-- Registro de rutas y handlers asíncronos, grupos de rutas, parámetros de ruta y decodificación tipada de query/JSON.
-- Respuestas de texto, HTML, JSON, redirección, descarga y códigos de estado.
-- Middleware global, de grupo y por ruta; rutas nombradas e introspección de rutas.
-- Límites configurables de body, timeout de lectura/handler y límite de concurrencia.
-- Correlación mediante `Request::request_id()` y `x-request-id`; el servidor emite spans/eventos `tracing`, pero el binario de la aplicación debe configurar su propio subscriber/exporter.
-- API de apagado graceful que recibe una future desde el punto de composición de la aplicación.
-- TLS local (`serve_tls`) con handshakes limitados a 64 conexiones concurrentes y timeout de 10 segundos, más política de proxies de confianza; `ServerConfig::production()` exige HTTPS vía TLS o proto reenviado por un proxy listado. Solo se acepta el esquema autoritativo del último valor reenviado; el proxy de confianza debe sanear o añadir correctamente estas cabeceras y proteger el enlace hacia el origen.
-
-Consulta la [guía técnica HTTP](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/HTTP_SERVER.md) para ejemplos de registro, configuración y límites.
-
-## HTML seguro y documentos completos
-
-El crate `rustflow-ssr` serializa árboles de vista estructurales a fragmentos HTML escapados. El servidor ofrece `html_document(title, lang, &view)` para vistas sin componentes y `html_document_with_shared_components` para catálogos compartidos. Para páginas compuestas usa `HtmlPage::with_shared_components`: crea el `SharedComponentCatalog` durante el arranque y reutilízalo en los handlers. Consulta la [guía SSR](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/SSR_RENDERING.md) y el ejemplo ejecutable para el patrón recomendado.
-
-`Response::html(String)` inserta la cadena proporcionada sin escapar. Úsala solo con contenido confiable ya escapado; para vistas estructurales, prefiere `html_document` o los helpers de fragmento.
-
-## Páginas de error HTML configurables
-
-Puedes configurar títulos y mensajes para estados 4xx/5xx. Se renderizan como texto, no como HTML sin procesar:
+## 2. Crear una ruta
 
 ~~~rust
-use http::StatusCode;
-use rustflow_server::{Application, ErrorPages, ServerConfig};
+use rustflow::view::View;
+use rustflow_server::{Application, HttpError, Request, html_document};
 
-fn configure_app() -> Result<Application, rustflow_server::ErrorPageConfigError> {
-    let error_pages = ErrorPages::new()
-        .with_page(
-            StatusCode::NOT_FOUND,
-            "No encontrado",
-            "La página no existe.",
-        )?
-        .with_page(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Error del servidor",
-            "No se pudo completar la solicitud.",
-        )?;
+let mut app = Application::new();
 
-    let config = ServerConfig::new().with_error_pages(error_pages);
-    Ok(Application::with_config(config))
-}
+app.get("/about", |_request: Request| async {
+    let heading = View::element("h1", [View::text("Acerca de")])
+        .map_err(|_| HttpError::internal_server_error())?;
+    let body = View::element("main", [heading])
+        .map_err(|_| HttpError::internal_server_error())?;
+    html_document("Acerca de", "es", &body)
+})?;
 ~~~
 
-Este es un fragmento de configuración; un binario debe registrar sus rutas y llamar a la API de servidor que corresponda. Solo se aceptan estados de error. Los estados no configurados mantienen su respuesta habitual; las páginas personalizadas conservan el status y el `x-request-id`.
+Una ruta asocia método y patrón de path con un handler asíncrono. El handler recibe un <code>Request</code> y devuelve un resultado con una <code>Response</code> o un error HTTP. Las vistas estructurales mantienen el contenido separado del documento y permiten que SSR aplique la política de escape.
 
-## Pruebas de integración por TCP local
+## 3. Recibir path, query y JSON
 
-La suite de integración puede ejecutarse con:
+- Usa <code>request.path_param("id")</code> para leer un parámetro nombrado en el patrón.
+- Usa <code>request.query::&lt;T&gt;()</code> para decodificar query string en una estructura tipada con Serde.
+- Usa <code>request.json::&lt;T&gt;()</code> para leer y decodificar un cuerpo JSON.
+- Los inputs inválidos se convierten en respuestas de error genéricas del servidor, con límites de body configurables.
+
+El ejemplo del repositorio contiene una ruta de usuario con query tipada y un endpoint que recibe un cuerpo JSON. Úsalo para verificar los nombres y tipos exactos de la API de la revisión que estás usando.
+
+## 4. Respuestas disponibles
+
+El adapter ofrece helpers para texto, HTML, JSON, redirecciones, descargas de bytes y códigos de estado, además de documentos HTML completos generados con <code>html_document</code>. <code>Response::html(String)</code> emite la cadena tal como se recibió: no la uses con entrada de usuario ni con HTML no escapado. Para contenido estructural prefiere vistas y SSR.
+
+Para páginas 4xx/5xx puedes configurar páginas de error cuyos títulos y mensajes se insertan como texto escapado. El estado HTTP original y el ID de petición se conservan.
+
+## 5. Grupos y middleware
+
+Agrupa endpoints relacionados para compartir prefijos y middleware:
+
+~~~rust
+app.group("/api", |api| {
+    api.name_prefix("api")?;
+    api.get("/health", |_request: Request| async {
+        Ok(rustflow_server::Response::text("ok"))
+    })?;
+    Ok(())
+})?;
+~~~
+
+El adapter permite middleware global, por grupo y por ruta. El orden documentado es global, grupo y ruta; un middleware puede continuar la cadena o responder antes de invocar al siguiente handler. Las rutas nombradas se pueden inspeccionar mediante <code>app.routes()</code>.
+
+## 6. Límites y manejo de recursos
+
+La configuración del servidor establece límites de body, timeouts para lectura/handler y un máximo de peticiones concurrentes. El servidor genera o valida un ID de petición, lo expone al handler y lo devuelve en <code>x-request-id</code>. Los eventos/spans de <code>tracing</code> se emiten desde el adapter, pero el binario de la aplicación configura su propio subscriber/exporter.
+
+El API de apagado graceful recibe una future desde el punto de composición de la aplicación; la integración con señales del sistema operativo corresponde al caller. TLS local está implementado con rustls. La política de proxies de confianza requiere que el proxy sanee las cabeceras reenviadas y que el enlace hacia el origen esté protegido.
+
+Estos controles son una base de ingeniería, no reemplazan rate limiting, revisión de amenazas, autenticación, autorización, CSRF, hardening del reverse proxy ni una receta de producción.
+
+## 7. SSR, páginas y layouts
+
+El servidor también integra:
+
+- <code>rustflow_ssr</code> para serializar árboles de vistas como fragmentos HTML escapados.
+- <code>html_document(title, lang, view)</code> para respuestas de documento completo.
+- <code>HtmlPage</code> para página con título/idioma, componente de cuerpo, catálogo y layouts.
+- <code>SharedComponentCatalog</code> para compartir definiciones inmutables entre peticiones concurrentes, con runtime y estado local por render.
+- <code>HydrationData</code> y marcado opt-in para páginas que se preparan para hidratación.
+- APIs de navegador separadas para hidratación y navegación cliente.
+
+La hidratación y la navegación existen como capacidades explícitas y optativas; no se activan automáticamente en cada handler. Consulta [SSR y documentos HTML](/guides/ssr/) y [Composición de layouts](/guides/layouts/) para ver ejemplos de uso y los límites de cada mecanismo.
+
+## 8. Verificar los endpoints
 
 ~~~sh
 cargo test -p rustflow-server --test http_integration
 ~~~
 
-Las pruebas usan un listener TCP local con puerto efímero y cubren rutas HTML/JSON, grupos, middleware por ruta, path/query, cabeceras de correlación, páginas personalizadas 404/405, query inválida 400, límite de body 413, timeout 504, apagado graceful, cabeceras de proxy de confianza y falsificadas, TLS local, abortos de cliente, entrada malformada y un tope de concurrencia. Las operaciones de conexión/escritura/lectura del helper tienen timeouts para evitar que una regresión deje una prueba esperando indefinidamente.
+La suite cubre rutas por TCP local, query/path/JSON, grupos, middleware, IDs de petición, error pages, límites, timeouts, apagado graceful, TLS local, proxies de confianza, abortos de cliente, entradas malformadas y concurrencia acotada. Ejecuta también la suite completa del workspace antes de depender de un cambio.
 
-Esta cobertura cierra los criterios de transporte de la Fase 4. No sustituye autenticación/CSRF, un threat model de producción ni una receta de despliegue con reverse proxy.
+## Qué no incluye todavía
 
-## Límites actuales
-
-- No hay CLI ni scaffolding de proyectos.
-- No hay sesiones, autenticación, autorización ni persistencia integradas.
-- No hay hidratación ni navegación cliente.
-- Las APIs son inestables y RustFlow no se considera listo para producción.
-
-Consulta el [estado del proyecto](/project-status/) y el [roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) antes de depender de una capacidad.
+No hay CLI/scaffolding, sesiones, autenticación/autorización integradas, CSRF, server actions, persistencia integrada ni una abstracción de aplicación lista para producción. Los forms mejorados del navegador están limitados a ciertos GET URL-encoded; no son un sistema de mutaciones server-side. El router HTTP y el callback de navegación cliente son responsabilidades separadas, no un router full-stack integrado.

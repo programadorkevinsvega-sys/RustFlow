@@ -1,103 +1,75 @@
 # RustFlow
 
-> **Build modern full-stack web applications with Rust.**
->
-> Reactive UI components, a custom reactivity engine, and a Laravel-inspired developer experience.
+> **Framework web en Rust: reactividad, componentes, renderizado HTML y servidor HTTP experimental.**
 
-RustFlow is an early-stage framework project exploring a cohesive way to build web applications in Rust. The product target is a React-like component-authoring experience—typed function components and props, owned reactive signals, automatic reactive view interpolation, typed callbacks, and efficient DOM updates—combined with a batteries-included, Laravel-inspired full-stack workflow. This is the target contract, not a claim that those APIs are all available today; see the roadmap and [ADR 0004](docs/adr/0004-react-like-component-authoring.md).
+RustFlow es un proyecto de framework pre-1.0. Combina un runtime reactivo propio, un modelo tipado de vistas y componentes, un renderer DOM para WebAssembly, serialización SSR y un adaptador HTTP basado en Axum/Tokio/Tower.
 
-**Status: early pre-1.0 prototype.** The repository includes an initial reactive runtime, typed view/component model, a preliminary WASM DOM renderer, and a prototype HTTP server with routing, JSON, safe HTML documents, and configurable error pages. APIs remain unstable; RustFlow is not production-ready.
+**Estado del producto:** prototipo activo con APIs inestables; todavía no está listo para producción ni ofrece el flujo integrado de un framework maduro. Las capacidades descritas como disponibles aquí tienen implementación en el repositorio; los objetivos del roadmap no deben interpretarse como funciones publicadas.
 
-## Project goals
+## Qué está implementado hoy
 
-- **Reactive UI:** components, signals, effects, event handling, conditional rendering, and dynamic lists.
-- **Own reactivity engine:** implement and test RustFlow's reactive graph and scheduling model rather than wrapping another UI framework.
-- **Full-stack Rust:** server-side routing, handlers/controllers, middleware, validation, sessions, database integration, and server-rendered HTML.
-- **Laravel-inspired ergonomics:** conventions, generators, migrations, configuration, and a helpful CLI.
-- **Rust-first engineering:** explicit types, predictable errors, memory safety, clear module boundaries, and strong tests.
-- **Production readiness:** security reviews, observability, compatibility policy, performance budgets, and documented operational practices.
+- **Reactividad:** señales tipadas, lecturas con seguimiento de dependencias, escrituras, efectos, scheduler, batching, scopes de propietario y limpieza.
+- **Componentes:** macro <code>#[rustflow::component]</code>, props tipados dentro del subconjunto documentado, callbacks tipados y sintaxis <code>view!</code>.
+- **DOM/WASM:** montaje y reconciliación de texto, elementos, fragmentos, componentes, regiones dinámicas y listas con claves; eventos y limpieza de recursos.
+- **Servidor HTTP:** rutas y grupos, handlers asíncronos, parámetros de ruta/query, decodificación básica de JSON, middleware, IDs de petición, límites, timeouts, apagado graceful y TLS local.
+- **SSR:** serialización de vistas con escape, documentos HTML completos, páginas de error configurables, componentes de servidor y catálogo compartido seguro para uso concurrente.
+- **Composición de páginas:** <code>HtmlPage</code>, propiedades de ruta explícitas y layouts de componentes anidados.
+- **Hidratación optativa:** límites estructurales, adjunción de eventos al DOM compatible y recuperación conservadora ante discrepancias.
+- **Navegación cliente optativa:** intercepción conservadora de enlaces del mismo origen, History API y mejora de formularios GET compatibles con fallback nativo.
 
-## Non-goals for the first MVP
+Consulta el [estado público de las capacidades](website/src/content/docs/project-status.md), la [guía de componentes](website/src/content/docs/guides/components.md), la [guía SSR](website/src/content/docs/guides/ssr.md), la [guía de layouts](website/src/content/docs/guides/layouts.md), la [guía HTTP](website/src/content/docs/guides/server.md) y el [tutorial de página de producto](website/src/content/docs/tutorials/product-page.md).
 
-- Reimplementing an entire ORM, database driver, HTTP server, cryptographic library, or async runtime.
-- Supporting every browser API or every HTML feature on day one.
-- Promising API stability before the framework has real usage and compatibility tests.
-- Claiming production readiness before the release gates in [ROADMAP.md](ROADMAP.md) are met.
+## Qué sigue pendiente o tiene alcance limitado
 
-## Planned architecture
+- <code>use_memo</code>, <code>use_ref</code> y <code>use_context</code>.
+- CLI propio, scaffolding y comandos <code>rustflow new/dev/build</code>.
+- Validación de formularios de servidor, sesiones, autenticación/autorización, CSRF, server actions y persistencia integrada.
+- Un router general integrado: el callback de navegación cliente y las rutas HTTP de servidor no son un router full-stack unificado.
+- Un flujo de desarrollo y despliegue de producción validado, una política completa de compatibilidad y la revisión de seguridad de producción.
 
-The workspace contains `rustflow` (single-threaded reactivity and component lifecycle), `rustflow-view` (target-independent typed nodes), `rustflow-macros` (the constrained `view!` syntax), `rustflow-dom` (a safe-subset WASM DOM renderer with selective reconciliation that preserves compatible DOM/component identity), `rustflow-ssr` (escaped HTML-fragment serialization), and `rustflow-server` (a bounded Axum/Tokio/Tower HTTP adapter with RustFlow-owned request/response types, global/group/route middleware, route groups, named-route introspection, injectable graceful shutdown, local rustls serving, trusted-proxy reconstruction, complete safe HTML documents, and configurable 4xx/5xx HTML error pages). The server example covers HTML, JSON, query/path parameters, JSON input, grouped `/api` routes, middleware, named-route introspection, and Ctrl+C shutdown wiring. The adapter propagates validated/generated request IDs and emits `tracing` spans/events; subscriber/export configuration remains application-owned. Representative real-TCP and local-TLS integration tests cover routes and responses, custom error pages, request-ID headers, body limits, timeouts, graceful shutdown, trusted and spoofed forwarded headers, client aborts, malformed input, and bounded concurrency. OS-signal wiring inside the framework, hydration, and CLI scaffolding remain pending. These APIs are pre-1.0 prototypes and are not production-ready.
+La hidratación y la navegación cliente existen como APIs explícitas y optativas; no activan automáticamente todas las páginas ni convierten por sí solas un proyecto en una aplicación full-stack lista para producción. Las cargas de archivo y los métodos de mutación no forman parte de la mejora progresiva de formularios actual.
 
-| Area | Planned responsibility |
-| --- | --- |
-| Public facade | Ergonomic prelude and feature flags |
-| Reactivity | Signals, effects, dependency tracking, scheduling, ownership and cleanup |
-| View layer | Typed view nodes and component composition |
-| Macros | Compile-time transformation of the declarative view syntax |
-| Browser runtime | DOM creation/patching, event delegation and client lifecycle |
-| Router | Route matching, parameters and navigation |
-| Server runtime | HTTP integration, handlers, SSR and response types |
-| CLI | Project scaffolding, dev server, build and code generators |
-| Integrations | Validation, sessions, auth, SQLx-backed data access and migrations |
+## Estructura del workspace
 
-See [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md) for mandatory design constraints and [ROADMAP.md](ROADMAP.md) for phases, deliverables and exit criteria.
+- <code>crates/rustflow</code>: facade, runtime reactivo y componentes.
+- <code>crates/rustflow-view</code>: modelo de vistas tipado, independiente del destino.
+- <code>crates/rustflow-macros</code>: macros <code>view!</code> y <code>#[component]</code>.
+- <code>crates/rustflow-dom</code>: runtime DOM/WASM, reconciliación, hidratación y navegación cliente.
+- <code>crates/rustflow-ssr</code>: serialización segura de vistas a fragmentos HTML y datos acotados para hidratación.
+- <code>crates/rustflow-server</code>: adapter HTTP, documentos HTML, páginas compuestas y servidor.
+- <code>examples/browser</code>: aplicación de navegador con Counter, lista de tareas y cobertura Playwright.
+- <code>website/</code>: documentación pública para desarrolladores.
+- <code>docs/</code>: contratos técnicos, semántica, decisiones arquitectónicas y detalles de ingeniería.
 
-## Proposed technology choices
+## Probar el código
 
-These are starting points to validate, not irrevocable commitments:
+Requisitos generales: Git, Rust 1.85 o Rust stable y Cargo. Para el ejemplo del navegador se necesita además Node.js/npm, <code>wasm-pack</code>, el target WebAssembly y Chromium para E2E.
 
-- Rust stable and Cargo workspaces
-- Axum, Tokio and Tower for server infrastructure
-- SQLx for initial database integration
-- `syn` and `quote` for procedural macros
-- `wasm32-unknown-unknown`, `wasm-bindgen` and `web-sys` for the browser target
-- Serde for data serialization
-- Clap for the CLI
+Desde la raíz del repositorio:
 
-Core UI reactivity and component lifecycle behavior are RustFlow-owned. Infrastructure should be reused when it is mature and does not undermine the project's goals.
-
-## Development principles
-
-1. Build the smallest vertical slice that proves the architecture.
-2. Write tests alongside implementation; avoid untested abstractions.
-3. Keep server-only code and secrets out of client/WASM builds.
-4. Make unsafe Rust exceptional, isolated, justified, and reviewed.
-5. Prefer stable, documented APIs over clever abstractions.
-6. Document design decisions and migration paths before breaking public APIs.
-7. Treat accessibility, security, performance, and developer experience as product requirements.
-
-## Getting started
-
-The workspace contains the single-threaded reactive runtime and the initial structural view model. Neither is a complete application framework. From the repository root, run the baseline checks:
-
-```bash
+~~~sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
-```
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
+~~~
 
-The workspace inherits edition, MSRV, license, repository metadata, and lint policy from the root manifest. CI is configured for Rust 1.85 and current stable, formatting, Clippy, workspace tests, Rust documentation, a `wasm32-unknown-unknown` compile check, governance, and dependency review. The browser example builds a production WASM/Vite bundle, runs Chromium end-to-end tests, and enforces a 1.5 MiB raw-WASM budget in CI. Check the Actions results for the exact commit you plan to use.
+Para ejecutar el servidor HTTP de ejemplo:
 
-## Contributing and governance
+~~~sh
+cargo run -p rustflow-server --example basic
+~~~
 
-Contributions are welcome under the project's dual MIT/Apache-2.0 license. Before contributing, read:
+Abre <code>http://127.0.0.1:3000/</code>. Para compilar y ejecutar el ejemplo del navegador, consulta [examples/browser/README.md](examples/browser/README.md). Para ejecutar el website, consulta [website/README.md](website/README.md).
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and quality expectations.
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community standards.
-- [MAINTAINERS.md](MAINTAINERS.md) for maintainership and decision-making.
-- [AGENTS.md](AGENTS.md) for repository-wide instructions for contributors and coding agents.
-- [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md) for DDD, Clean Architecture, Hexagonal Architecture and SOLID rules.
-- [docs/ENGINEERING_BASELINE.md](docs/ENGINEERING_BASELINE.md) for workspace and dependency conventions.
-- [ROADMAP.md](ROADMAP.md) for project scope and acceptance criteria.
-- [SECURITY.md](SECURITY.md) for responsible vulnerability reporting.
+No hay todavía un flujo recomendado de instalación de una aplicación nueva desde un paquete estable publicado en crates.io ni un CLI propio. La forma más fiable de evaluar las APIs es usar el repositorio y los ejemplos de la misma revisión.
 
-When proposing a major dependency, crate boundary, public API or architectural change, include the problem, alternatives considered, trade-offs, and migration impact in the pull request. Repository branch protection and required status checks are configured separately in GitHub settings.
+## Calidad, límites y contribuciones
 
-## License
+La CI comprueba Rust 1.85 y stable, tests, Clippy, rustdoc, la compilación WASM, la build del ejemplo de navegador, E2E Chromium, el presupuesto de bundle, documentación y gobernanza. Un check verde verifica la revisión concreta; no implica por sí mismo estabilidad de API ni preparación para producción.
 
-RustFlow is dual-licensed under either of:
+Antes de contribuir, consulta [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md), [ROADMAP.md](ROADMAP.md), [docs/PRODUCT_SCOPE.md](docs/PRODUCT_SCOPE.md) y [SECURITY.md](SECURITY.md).
 
-- [MIT License](LICENSE-MIT)
-- [Apache License, Version 2.0](LICENSE-APACHE)
+## Licencia
 
-You may choose either license when using, modifying, or distributing the project, subject to its terms.
+RustFlow se distribuye bajo licencia dual MIT o Apache-2.0. Puedes elegir cualquiera de ellas según los términos de cada licencia.

@@ -1,48 +1,66 @@
-# RustFlow browser MVP
+# Ejemplo de RustFlow en navegador
 
-This package builds a real browser-loadable WebAssembly app using the Phase 3 DOM adapter. It includes a signal-backed Counter component, a conditionally mounted help message, and a keyed todo list with add, complete, remove, and reorder interactions.
+Este paquete construye una aplicación WebAssembly que se puede cargar en un navegador con el runtime DOM de RustFlow. Incluye:
 
-The bundle is an implementation milestone, **not proof that Phase 3 is closed**. Component descriptors can still use safe range replacement when their props/trees change; complete component identity-preserving reconciliation remains an explicit blocker.
+- Un componente Counter con señal local y handler tipado.
+- Una región de ayuda que se monta/desmonta condicionalmente.
+- Una lista de tareas con alta, marcado, eliminación y reordenación mediante claves.
+- Preservación de identidad DOM/estado para componentes compatibles.
+- Un adaptador de navegación cliente optativo para las rutas de demostración.
+- Fixtures E2E específicos que ejercitan la API de hidratación sobre HTML preparado por servidor; la fixture no debe confundirse con que el demo entero se sirva desde un backend SSR.
 
-## Clean Ubuntu setup
+Este ejemplo demuestra capacidades de desarrollo y pruebas. No es una plantilla de aplicación lista para producción ni un tutorial completo por sí solo. Las guías públicas explican los conceptos paso a paso: [componentes](../../website/src/content/docs/guides/components.md), [reactividad](../../website/src/content/docs/concepts/reactivity.md), [SSR](../../website/src/content/docs/guides/ssr.md) y [navegación](../../website/src/content/docs/guides/navigation.md).
 
-Prerequisites: Ubuntu 22.04/24.04, Git, a Rust toolchain installed with rustup (1.85 or newer), Node.js 22 with npm, and network access to crates.io/npm/Playwright browser downloads.
+## Requisitos en Ubuntu
 
-Install native build tools and the WebAssembly target:
+- Ubuntu 22.04/24.04 (o un entorno equivalente).
+- Git y toolchain Rust 1.85 o posterior, con rustfmt y Clippy.
+- Target <code>wasm32-unknown-unknown</code>.
+- Node.js 22 con npm.
+- Acceso de red para descargar dependencias de Cargo/npm y Chromium de Playwright.
 
-    sudo apt-get update
-    sudo apt-get install -y build-essential curl pkg-config libssl-dev
-    rustup toolchain install stable --component rustfmt clippy
-    rustup default stable
-    rustup target add wasm32-unknown-unknown
+Instala las herramientas nativas y el target WebAssembly:
 
-## Build and run
+~~~sh
+sudo apt-get update
+sudo apt-get install -y build-essential curl pkg-config libssl-dev
+rustup toolchain install stable --component rustfmt clippy
+rustup default stable
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack --locked --version 0.13.1
+~~~
 
-From this directory:
+## Compilar y ejecutar
 
-    cargo install wasm-pack --locked --version 0.13.1
-    npm install
-    npm run build
-    npm run check:bundle
-    npm run dev
+Desde la raíz del repositorio:
 
-Open the Vite URL printed in the terminal. The Rust entry point is annotated with #[wasm_bindgen(start)]; Vite loads the generated JavaScript glue and rustflow_browser_bg.wasm. npm run build produces static files in dist/ and Vite JavaScript source maps.
+~~~sh
+cd examples/browser
+npm install
+npm run build
+npm run check:bundle
+npm run dev
+~~~
 
-For a debug-oriented WASM artifact, run npm run build:wasm:debug before npm run dev. This command replaces the generated glue/WASM under pkg/ with the debug build; rerun npm run build to restore the release build.
+Abre la URL que Vite imprime en el terminal. El punto de entrada Rust está marcado con <code>#[wasm_bindgen(start)]</code>; Vite carga el glue JavaScript y <code>rustflow_browser_bg.wasm</code>. <code>npm run build</code> produce los assets estáticos en <code>dist/</code> y source maps.
 
-## Browser E2E
+Para un artefacto WASM orientado a depuración, ejecuta <code>npm run build:wasm:debug</code> antes de <code>npm run dev</code>. Ese comando sustituye el glue/WASM generado en <code>pkg/</code>; ejecuta otra vez <code>npm run build</code> para regenerar el build release.
 
-    npx playwright install --with-deps chromium
-    npm run test:e2e
+## Tests E2E
 
-The browser tests verify that clicking a nested Counter child reaches the delegated handler and retains the existing DOM element; the todo test covers add, complete, remove, and reordering while preserving keyed row identity; a conditional help region mounts and unmounts without replacing its parent heading. CI reports raw and gzip WASM sizes and enforces a 1.5 MiB raw WASM budget.
+~~~sh
+npx playwright install --with-deps chromium
+npm run test:e2e
+~~~
 
-## Troubleshooting
+Playwright verifica el Counter, la propagación de eventos desde nodos anidados, el CRUD/reordenación de tareas con identidad keyed, el montaje/desmontaje condicional, el historial atrás/adelante, la navegación directa y recarga, los formularios GET con opt-in, el envío nativo cuando no se cumplen los criterios y los fallbacks por errores HTTP. La CI construye el bundle de producción, compila WASM, ejecuta E2E y aplica un presupuesto de 1.5 MiB al WASM raw.
 
-- **wasm32-unknown-unknown is not installed:** run rustup target add wasm32-unknown-unknown.
-- **Cargo cannot resolve web-sys features:** update the branch, then run cargo check -p rustflow-dom --target wasm32-unknown-unknown; feature names must match the published web-sys API.
-- **The bundle-size script says the WASM file is missing:** run npm run build first.
-- **Playwright cannot launch Chromium:** run npx playwright install --with-deps chromium again and inspect the failed Playwright trace.
-- **A later reactive update fails:** inspect the browser console; the retained ReactiveMountedDom also exposes take_error() so the application can examine the most recent render error.
+## Diagnóstico
 
-This is an early-stage framework example, not a production-ready application. Server-side rendering, hydration and deployment work remain outside the current browser MVP.
+- **Falta <code>wasm32-unknown-unknown</code>:** ejecuta <code>rustup target add wasm32-unknown-unknown</code>.
+- **Cargo no resuelve features de <code>web-sys</code>:** actualiza la revisión y ejecuta <code>cargo check -p rustflow-dom --target wasm32-unknown-unknown</code>.
+- **Falta el artefacto del bundle:** ejecuta <code>npm run build</code> antes de <code>npm run check:bundle</code>.
+- **Playwright no inicia Chromium:** repite <code>npx playwright install --with-deps chromium</code> e inspecciona el trace del test.
+- **Falla una actualización reactiva:** revisa la consola; el <code>ReactiveMountedDom</code> permite inspeccionar el último error con <code>take_error()</code>.
+
+El ejemplo del navegador no sustituye al ejemplo de servidor HTTP. Para documentos SSR, layouts y catálogo compartido, ejecuta también <code>cargo run -p rustflow-server --example basic</code> desde la raíz.

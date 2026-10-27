@@ -1,44 +1,67 @@
 ---
 title: Estado del proyecto
-description: Capacidades verificadas de RustFlow, estado de las fases y alcance que permanece pendiente.
+description: Capacidades implementadas, límites conocidos y estado verificable de RustFlow.
 ---
 
-RustFlow está en desarrollo y sus APIs son pre-1.0. El [roadmap del repositorio](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) es la fuente de verdad para el progreso y los criterios de aceptación. Ninguna fase se considera cerrada solo porque la CI esté verde.
+RustFlow sigue siendo un prototipo pre-1.0. El roadmap es la fuente de verdad de los criterios y estados de fase; una funcionalidad implementada no implica estabilidad de API ni preparación para producción. Este resumen es para que un usuario pueda decidir qué probar hoy sin confundir el objetivo futuro con el código disponible.
 
-### Fase 0 — Fundación del proyecto, completada
+## Estado por fases
 
-La fundación define licencia dual, gobernanza, reglas de contribución, alcance inicial, decisiones de arquitectura, MSRV Rust 1.85 y controles de ingeniería/CI. El alcance de producto documenta los objetivos y no-objetivos del prototipo; este estado no significa que RustFlow sea estable ni que el MVP full-stack completo exista.
+### Fase 0 — Fundación del proyecto: completada
 
-## Disponible como prototipo
+Licencia MIT/Apache-2.0, gobernanza, reglas de contribución, alcance del producto, límites de arquitectura, MSRV Rust 1.85 y CI. Esto establece las reglas de desarrollo; no es un hito de funcionalidad de usuario.
 
-### Fase 1 — Runtime reactivo
+### Fase 1 — Runtime reactivo: completada
 
-El runtime incluye señales tipadas, efectos, grafo de dependencias, scheduler, batching, scopes, limpieza y diagnósticos. La semántica, las pruebas de regresión y una línea base de microbenchmarks están documentadas. Estas medidas son una referencia inicial, no una garantía universal de rendimiento.
+Incluye señales tipadas, seguimiento de dependencias, efectos, scheduler, batching, scopes propietarios, limpieza y diagnósticos. Hay una API de bajo nivel con <code>Runtime</code> y una API owner-scoped de componentes con <code>signal</code>, <code>use_state</code>, <code>use_effect</code> y <code>on_cleanup</code>. El runtime es de un hilo (<code>Rc</code>/<code>RefCell</code>) y los efectos son síncronos.
 
-### Fase 2 — Vistas y componentes
+### Fase 2 — Modelo de vista y componentes estructurales: completada dentro de su alcance
 
-El modelo nativo de la Fase 2 define nodos tipados, atributos, propiedades, callbacks de eventos, ciclo de vida, scopes de limpieza, registro y la macro view!. Su cierre cubre el modelo estructural, no el producto completo de autoría ergonómica de componentes. La API #[component], el subconjunto de props tipados, los callbacks y el runtime de navegador se implementaron y verificaron como parte de la Fase 3. RustFlow no pretende ser compatible con React ni adopta hooks posicionales. Véase [Crear componentes](/guides/components/).
+Define nodos de texto/elemento/fragmento/componente/dinámicos, atributos, propiedades, callbacks, errores tipados, claves y la macro declarativa <code>view!</code>. La API funcional <code>#[rustflow::component]</code> y la integración de señales se completaron después como parte de la Fase 3. El modelo no es HTML ya sanitizado.
 
-### Fase 3 — Navegador/WASM, cerrada y verificada
+### Fase 3 — Runtime DOM/WASM: completada y verificada
 
-El runtime de navegador monta y reconcilia texto, elementos, fragmentos, listas con clave, componentes y regiones dinámicas. El renderer separa el plan de diff/evaluación del commit DOM; las ramas nuevas o incompatibles se preparan fuera del DOM antes del commit. Cuando tipo y clave del componente siguen siendo compatibles, se vuelven a evaluar las props sobre el mismo scope y estado interno. Las ramas sustituidas limpian sus instancias, efectos, listeners y callbacks de cleanup.
+El renderer monta y reconcilia texto, elementos, fragments, componentes, regiones dinámicas y listas keyed. Conserva la identidad DOM/estado de instancias compatibles, actualiza props y limpia recursos de ramas reemplazadas. El ejemplo del navegador incluye Counter y lista de tareas; los E2E Chromium verifican identidad, eventos, listas, montaje/desmontaje y el presupuesto de WASM.
 
-La suite de Chromium incluye cuatro escenarios: identidad DOM del Counter, actualización de prop visible con estado/reactividad e identidad DOM conservados, CRUD/reordenación keyed con preservación de estado local y cleanup al sustituir la clave o eliminar la fila, y montaje/desmontaje condicional sin reemplazar la aplicación. El workflow de CI compila el target WASM, ejecuta Rust estable/1.85, Clippy, tests, build de producción y el límite de 1.5 MiB raw para WASM; el criterio de aceptación es que todos pasen en el HEAD exacto.
+### Fase 4 — Servidor HTTP: completada y verificada como prototipo
 
-**Estado: cerrada en `main` el 2026-10-26.** La PR #26 se fusionó primero en la rama de la PR #25; después la PR #25 se fusionó en `main`. Los siete checks post-merge terminaron correctamente en el commit [`43f5fb9`](https://github.com/programadorkevinsvega-sys/RustFlow/commit/43f5fb9c12996ea600b47930553a9f91dc6055e9), incluidos Rust estable/1.85, compilación WASM, E2E Chromium, presupuesto del bundle, documentación, gobernanza y despliegue de Pages. El cierre se limita al runtime de navegador y los criterios de la Fase 3; SSR/hidratación y otros hitos posteriores permanecen separados.
+Incluye rutas, handlers asíncronos, parámetros de path/query, decodificación básica de JSON, respuestas, grupos, middleware global/de grupo/de ruta, rutas nombradas, request IDs, trazas estructuradas, límites de body, timeouts, concurrencia acotada, apagado graceful, TLS local con rustls y política de proxies confiables. Las pruebas incluyen peticiones TCP locales.
 
-### Fase 4 — Servidor HTTP, cerrada y verificada
+El cierre se limita a la base HTTP: no incorpora sesiones, autenticación, CSRF, rate limiting, almacenamiento ni hardening de producción. Consulta [Servidor HTTP](/guides/server/).
 
-El crate `rustflow-server` integra Axum/Tokio/Tower detrás de tipos de RustFlow. Incluye rutas y handlers asíncronos, grupos de rutas, parámetros de ruta y query, extracción básica de JSON, respuestas de texto/HTML/JSON, middleware global, de grupo y por ruta, rutas nombradas, request IDs, eventos/spans de `tracing`, límites de body, timeouts, límite de concurrencia, apagado graceful, TLS local con rustls y política de proxies de confianza.
+### Fase 5.1 — Contrato de renderizado y límites de destino: completada
 
-**Cierre formal:** la PR #31 añadió handshakes TLS concurrentes limitados a 64, un timeout de 10 segundos y una regresión TCP real para demostrar que un cliente sin ClientHello no bloquea conexiones TLS válidas. La PR #31 se fusionó en `main` el 2026-10-26 mediante el commit [`6f4123b`](https://github.com/programadorkevinsvega-sys/RustFlow/commit/6f4123b94f4273701f0336c4c982973af7bf7562). Los checks post-merge pasaron: Rust 1.85, Rust stable, WASM, E2E Chromium/presupuesto de bundle, Rustdoc, build del website, gobernanza, revisión de dependencias y Cloudflare Pages.
+Componentes pueden declarar capacidad Universal, ServerOnly o BrowserOnly; se valida el destino antes de ejecutar setup y los componentes browser-only requieren un fallback SSR estático explícito si se quieren renderizar en servidor. <code>HydrationData</code> ofrece un payload JSON acotado y escapado para contexto de script, pero no inspecciona el significado de los campos ni detecta secretos.
 
-El serializador `rustflow-ssr` genera fragmentos HTML escapados; `html_document` y las páginas configurables 4xx/5xx no implican hidratación ni SSR full-stack. La fase se cierra dentro de su alcance de servidor HTTP de prototipo, no como declaración de preparación para producción. Siguen pendientes sesiones/autenticación, CSRF, rate limiting, recetas de despliegue y threat model de producción, SSR completo e hidratación. Véase el [roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) para la evidencia y los límites.
+### Fase 5.2 — SSR y composición de página: completada
 
-Guía práctica: [Servidor HTTP experimental](/guides/server/). Detalles y límites: [docs/HTTP_SERVER.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/HTTP_SERVER.md) y [docs/SSR_RENDERING.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/SSR_RENDERING.md).
+RustFlow puede renderizar vistas estructurales a fragmentos HTML escapados, generar documentos completos con <code>html_document</code>, configurar páginas de error 4xx/5xx y componer páginas con <code>HtmlPage</code>. Soporta catálogos compartidos inmutables de componentes para rutas HTTP concurrentes, con runtime/scope y datos de render locales a cada solicitud. <code>with_layout</code> anida componentes de layout y la aplicación pasa props de ruta explícitas.
 
-## Próximos criterios bloqueantes
+### Fase 5.3 — Hidratación DOM: completada
 
-- Composición de layouts, serialización de datos para hidratación e hidratación de cliente; un documento HTML completo no equivale a hidratación.
-- CLI, scaffolding, validación de formularios, sesiones/autenticación y persistencia integrada.
+La hidratación es optativa y añade límites deterministas a la salida SSR; el cliente adjunta eventos a un DOM existente si la vista es compatible. Las pruebas cubren formularios/inputs, regiones condicionales, listas keyed, navegación de enlaces ordinaria, repetición de eventos y rechazo de una hidratación duplicada. Ante una discrepancia incompatible, la recuperación conserva el root SSR completo como contenido estático y dispone los recursos candidatos; no hace reparación granular automática.
 
+### Fase 5.4 — Navegación cliente y formularios: implementada
+
+<code>ClientNavigation</code> ofrece interceptación conservadora de enlaces same-origin, integración con History API y manejo de atrás/adelante. La mejora progresiva de formulario requiere opt-in y se limita a GET URL-encoded con controles escalares compatibles; el resto conserva el envío nativo. La aplicación debe definir las rutas del cliente; esto no es un router general ni incluye server actions. El PR #41 se fusionó y los checks de CI post-merge sobre el commit documentado en el roadmap se ejecutaron con éxito; los checks propios del PR también cubrieron documentación, gobernanza y dependencias. El ADR 0011 sigue marcado como “Proposed for review”: ese estado indica que falta la aprobación arquitectónica formal, no que la implementación o sus pruebas estén ausentes.
+
+## Matriz rápida: ¿qué puedes hacer?
+
+| Tarea | ¿Disponible hoy? | Qué leer |
+|---|---|---|
+| Crear estado local en un componente | Sí, con owner activo | [Reactividad](/concepts/reactivity/) |
+| Crear componentes con props y eventos tipados | Sí, dentro del subconjunto descrito | [Componentes](/guides/components/) |
+| Actualizar DOM con señales/listas keyed | Sí, en el runtime WASM | [README del navegador](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/examples/browser/README.md) |
+| Registrar rutas HTTP y handlers async | Sí | [Servidor HTTP](/guides/server/) |
+| Renderizar documentos HTML seguros desde vistas | Sí, APIs experimentales | [SSR](/guides/ssr/) |
+| Componer páginas con layouts y props de ruta | Sí, con componentes registrados/catálogo | [Layouts](/guides/layouts/) |
+| Hidratar HTML SSR existente | Sí, opt-in y con una vista cliente compatible | [SSR e hidratación](/guides/ssr/) |
+| Navegación cliente e historial | Sí, opt-in con callback de ruta de aplicación | [Navegación](/guides/navigation/) |
+| Forms mejorados | Solo GET elegibles con opt-in | [Navegación](/guides/navigation/) |
+| CLI y scaffolding | No | [CLI planificado](/guides/cli/) |
+| <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> | No | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
+| Auth/sesiones/CSRF/server actions/persistencia integrada | No | [Product scope](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/PRODUCT_SCOPE.md) |
+
+## Cómo interpretar las pruebas
+
+Las pruebas unitarias, de integración HTTP/TCP y E2E Chromium demuestran los casos que ejercitan. No son una garantía de que se hayan probado todas las combinaciones ni sustituyen un modelo de amenazas, la operación real de producción o una promesa de compatibilidad. Antes de tomar decisiones de adopción, consulta el HEAD actual de <code>main</code>, la CI correspondiente y las limitaciones de cada guía.

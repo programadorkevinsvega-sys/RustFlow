@@ -1,19 +1,21 @@
-# Reactivity Runtime Prototype (Phase 1.2)
+# Runtime reactivo de RustFlow
 
-This document describes the first implemented API in `rustflow::reactivity`. The API is a prototype and is not yet covered by a stability guarantee.
+Este documento distingue las dos formas de utilizar el runtime implementadas en el repositorio: la API de bajo nivel basada en <code>Runtime</code> y la API de señales asociada al scope de un componente. Ambas son prototipos pre-1.0 y no tienen garantía de estabilidad.
 
-## Quick start
+## API de bajo nivel: Runtime explícito
 
-```rust
+Utiliza <code>Runtime</code> cuando quieras controlar explícitamente el ciclo de vida de un runtime aislado, por ejemplo, en pruebas o en un consumidor que no está montando un componente:
+
+~~~rust
 use rustflow::reactivity::{Runtime, RuntimeError};
 
 fn main() -> Result<(), RuntimeError> {
     let runtime = Runtime::new();
     let count = runtime.signal(0_i32)?;
     let read_count = count.clone();
-    let doubled = count.clone();
+
     let effect = runtime.effect(move || {
-        println!("count = {}, doubled = {}", read_count.get(), doubled.get() * 2);
+        println!("count = {}", read_count.get());
     })?;
 
     count.set(1);
@@ -21,40 +23,68 @@ fn main() -> Result<(), RuntimeError> {
         count.set(2);
         count.set(3);
     })?;
+
     effect.dispose()?;
     runtime.dispose()?;
     Ok(())
 }
-```
+~~~
 
-## API and behavior
+En esta API, <code>Runtime::signal</code> crea una señal tipada, <code>Runtime::effect</code> ejecuta el efecto inicialmente y registra las señales que lee, y <code>Runtime::batch</code> agrupa las invalidaciones hasta el límite exterior del batch. El ejemplo imprime el valor inicial y reacciona a los cambios; los dos writes dentro del batch se publican juntos al terminar el batch.
 
-- `Runtime::signal(value)` creates a typed signal that suppresses writes when `old == new`, using Rust's `PartialEq` semantics, including floating-point `NaN != NaN`.
-- `Runtime::signal_eq(value)` is an explicit alias for `signal`.
-- `Runtime::signal_always_changed(value)` is the fallback for values without `PartialEq`; every write notifies subscribers.
-- `Signal::try_get` and `Signal::try_set` return `RuntimeError`; `get` and `set` panic with that diagnostic for ergonomic prototype usage.
-- Effects run eagerly on creation. Reads performed by an effect replace its prior dependency set on each successful run. Only subscribed effects are invalidated.
-- The scheduler uses FIFO invalidation order, deduplicates queued effects, drains iteratively, and does not recursively flush while an effect or batch is active.
-- `Runtime::batch` nests and flushes once at the outer boundary. It returns a cycle diagnostic if the scheduler fails to quiesce.
-- A runtime defaults to a 1,000-effect-executions-per-flush guard. `Runtime::with_cycle_limit` is available for tests and specialized use.
-- Scopes own effects, child scopes, and cleanup callbacks. Dispose a scope explicitly to cancel pending work, detach subscriptions, dispose descendants/effects, and run cleanup callbacks LIFO. Repeated scope disposal is harmless.
-- User effect panics are propagated after the active-effect state and subscriptions are restored. Cleanup panics do not prevent remaining cleanups from being attempted; the first panic is then propagated.
-- Runtime/signal/scope handles use `Rc` and `RefCell`, and therefore are not `Send` or `Sync`. Create an independent runtime for each server render/request.
+## API de componentes: signal, use_state y use_effect
 
-## Diagnostics
+Los componentes usan una API propietaria de un scope activo. La macro <code>#[rustflow::component]</code> configura ese entorno para el setup; las llamadas a <code>signal</code>, <code>use_state</code> y <code>use_effect</code> deben ocurrir dentro de ese scope. No son utilidades globales que se puedan llamar sin contexto desde cualquier <code>main</code>.
 
-`RuntimeError` distinguishes a disposed runtime, invalid signal/effect/scope handles, attempts to use disposed scopes, and scheduler cycle detection. Error text is informative but not a stable API in this prototype. The scheduler clears queued work when the cycle limit is exceeded and can be used for later independent updates.
+~~~rust
+use rustflow::prelude::*;
 
-## Planned ergonomic component API (not implemented)
+#[rustflow::component]
+fn Counter(initial: i32) -> impl IntoView {
+    let count = signal(initial);
+    let count_for_button = count.clone();
 
-RustFlow's product target is to let component authors use an API conceptually like `signal(initial)`, followed by `get()`, `set(value)`, and `update(|value| ...)`, without manually creating a `Runtime` in each component. This is a design target, not part of the current public API.
+    rustflow::view! {
+        <section>
+            <p>"Contador: " {count}</p>
+            <button on:click={move |_event| count_for_button.update(|n| *n += 1)}>
+                "Sumar"
+            </button>
+        </section>
+    }
+}
+~~~
 
-The implemented API remains `Runtime::new()`, `Runtime::signal(value)`, and `Signal::get/set`; `Signal::update` and the standalone component-facing `signal(value)` helper are not currently available. See [ADR 0004](adr/0004-react-like-component-authoring.md) for the target experience and design questions.
+Qué sucede:
 
-The proposed Rust-style vocabulary includes `use_state`, `use_effect`, `use_memo`, `use_ref`, and `use_context`. These names are **not current exports**. `use_state` is intended as a component-scoped convenience over signals, while `use_effect` is intended to use automatic dependency tracking from signal reads rather than a mandatory React-style dependency array. Exact signatures and cleanup-on-rerun behavior must be specified and tested before implementation.
+1. <code>signal(initial)</code> crea una señal ligada al scope del componente.
+2. La interpolación del identificador <code>{count}</code> crea una región reactiva que vuelve a evaluar el hijo cuando cambia la señal.
+3. El handler clona la señal para poder actualizarla desde el evento.
+4. <code>update</code> modifica el valor y notifica a los suscriptores cuando el valor cambia según la política de igualdad de la señal.
+5. La reconciliación DOM actualiza la región afectada y mantiene la identidad del DOM compatible en lugar de reconstruir necesariamente toda la página.
 
-RustFlow intentionally follows a signal-first state model, not React's positional hook-cell model. Familiar names must not imply hook-order rules or React-compatible tuple signatures. Any ergonomic façade must preserve explicit ownership and isolated runtime state. It must not be implemented as an undocumented process-global mutable runtime singleton. Reads inside view expressions must participate in documented dependency tracking once the renderer integration is implemented.
+<code>use_state(initial)</code> es un alias ergonómico que devuelve un <code>Signal&lt;T&gt;</code>; no devuelve el par de valor/función habitual de React ni utiliza hooks por posición. <code>use_effect(callback)</code> registra un efecto reactivo dentro del scope propietario. <code>on_cleanup(callback)</code> registra limpieza asociada al scope. Las funciones de la API de componentes requieren el contexto de propietario activo.
 
-## Current limitations
+## Señales y efectos: semántica
 
-This prototype does not provide async effects, tracking across `await`, cross-thread notifications, the ergonomic component-facing `signal(value)` façade, the `Signal::update` helper, `use_state`, `use_effect`, `use_memo`, `use_ref`, `use_context`, automatic reactive interpolation in `view!`, the `#[component]` API, fine-grained DOM integration, SSR hydration, or automatic scope disposal from `Drop`. The lower-level component model and an initial DOM adapter exist, but they are not yet the integrated React-like authoring experience. Cleanup callbacks and effects are synchronous. With `panic = "abort"`, Rust cannot recover from user panics.
+- Las señales son tipadas. Las lecturas realizadas dentro de un efecto determinan su conjunto de dependencias activo.
+- En una ejecución satisfactoria, el conjunto anterior de dependencias de un efecto se reemplaza por el conjunto leído en la nueva ejecución.
+- Los efectos se ejecutan al crearse. El scheduler usa orden FIFO de invalidación, evita duplicar un efecto encolado y drena iterativamente el trabajo pendiente.
+- <code>Runtime::batch</code> puede anidarse y vacía el trabajo en el límite exterior. Existe un límite de ejecuciones por vaciado para detectar ciclos.
+- Los scopes poseen efectos, scopes descendientes y callbacks de limpieza. Al disponer un scope se desconectan las dependencias, se cancela trabajo pendiente y se ejecutan los callbacks de limpieza en orden LIFO.
+- Los handles usados después de disponer su runtime/scope producen diagnósticos; los accesos ergonómicos pueden entrar en panic con un mensaje de diagnóstico. Prefiere las variantes <code>try_*</code> cuando debas gestionar el error explícitamente.
+
+## Límites y reglas de uso
+
+- El runtime reactivo utiliza <code>Rc</code> y <code>RefCell</code>: no es <code>Send</code> ni <code>Sync</code>. No compartas las señales locales de un runtime entre threads.
+- Crea un runtime y scopes locales por render de servidor; no guardes estado reactivo de una petición en un catálogo compartido.
+- Los efectos y la limpieza son síncronos. No se garantiza el seguimiento de dependencias a través de <code>await</code>.
+- Las APIs <code>use_memo</code>, <code>use_ref</code> y <code>use_context</code> siguen pendientes. No inventes equivalentes ni asumas compatibilidad semántica con React.
+- La interpolación automática se aplica al identificador de señal reconocido; expresiones arbitrarias que lean señales requieren una región dinámica explícita con <code>@dynamic</code>.
+- La actualización de la UI está cubierta por el runtime de navegador del proyecto. El runtime de bajo nivel, por sí solo, no muta el DOM.
+
+## Pruebas y referencia
+
+La implementación está en <code>crates/rustflow/src/reactivity.rs</code>; la semántica detallada y los casos borde están en [REACTIVITY_SEMANTICS.md](REACTIVITY_SEMANTICS.md) y la verificación de regresión/benchmarks en [REACTIVITY_VERIFICATION.md](REACTIVITY_VERIFICATION.md). La guía para programadores está en [Reactividad](../website/src/content/docs/concepts/reactivity.md), y el ejemplo funcional del navegador en [examples/browser](../examples/browser/).
+
+No interpretes microbenchmarks o pruebas de regresión como prueba matemática de exhaustividad ni como garantía de rendimiento en todos los entornos.

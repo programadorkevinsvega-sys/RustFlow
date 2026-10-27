@@ -1,7 +1,7 @@
 
 # ADR 0010: SSR page and layout composition
 
-- **Status:** Proposed for review
+- **Status:** Proposed for review; implementation merged in PR #37, formal architectural approval remains pending
 - **Date:** 2026-10-27
 - **Phase:** 5.2 — SSR composition and route data
 
@@ -26,7 +26,7 @@ The local ComponentRegistry remains suitable for local callbacks but cannot be c
 - Layout composition is explicit and order-dependent, and the route handler explicitly selects component properties.
 - Each request gets isolated reactive state and deterministic output for the same structural tree, shared catalog, and props, provided render callbacks are themselves deterministic and side-effect free.
 - Shared catalog definitions and fallback factories must be Send + Sync; the local ComponentRegistry remains available where callbacks cannot satisfy that contract.
-- Component props are not a hydration transport. DOM hydration, boundary IDs, client navigation, and mismatch recovery remain in Phases 5.3 and 5.4.
+- Component props are not a hydration transport. DOM hydration, boundary IDs, client navigation, and mismatch recovery were deliberately kept as separate scope and were implemented later in Phases 5.3 and 5.4. This ADR does not install hydration or client navigation by itself.
 
 ## Validation
 

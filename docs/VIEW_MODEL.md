@@ -1,62 +1,96 @@
-# Structural View and Component Contracts (Phase 2 prototype)
+# Modelo de vistas y componentes de RustFlow
 
-The view model is target-independent. It represents UI intent; it is not rendered HTML and is not a sanitization boundary.
+El modelo de vista es tipado e independiente del destino. Describe qué interfaz se quiere representar; no es HTML renderizado ni, por sí solo, una frontera de sanitización. El contrato estructural de la Fase 2 se amplió con la API de autoría, el runtime de navegador y la reconciliación de la Fase 3.
 
-## Structural nodes
+## Nodos disponibles
 
-- Text stores its content verbatim.
-- Element stores a syntax-validated element name, attributes, DOM properties, event callbacks, children, and an optional stable key.
-- Fragment groups ordered children without adding an element.
-- Component stores a validated component type name, typed properties, children, and an optional key. `ComponentRegistry` resolves a descriptor to a reusable `ComponentDefinition`; recursive traversal and reconciliation of nested descriptors belong to a renderer.
-- Dynamic stores a deferred evaluator. Reactive adapters must evaluate it inside an effect owned by the component's reactive scope.
-- KeyedList preserves child order and rejects duplicate keys.
+- **Text:** texto que un renderer escapa según su destino.
+- **Element:** elemento con nombre validado, atributos, propiedades DOM, eventos, hijos ordenados y clave opcional.
+- **Fragment:** agrupa varios hijos sin introducir un elemento HTML adicional.
+- **Component:** descriptor con nombre de componente, propiedades tipadas, hijos y clave opcional. Una definición registrada aporta setup y render.
+- **Dynamic:** evaluación diferida de un hijo. El adaptador reactivo la evalúa dentro de un efecto asociado al scope propietario.
+- **KeyedList:** lista de hijos con claves estables únicas dentro de cada snapshot.
 
-## Keyed-list identity
+La clave identifica al hijo lógico, no su posición. Al mover una fila con la misma clave, el runtime DOM puede conservar su nodo y estado; al eliminarla o sustituirla por otra clave, se limpia la instancia anterior.
 
-Keys are stable string or integer identities supplied by the caller. They must be unique among siblings in a single list snapshot. Reusing the same key across updates declares that the logical child is the same even when its position changes; removing a key means that child is removed. The current model validates each snapshot but does not diff snapshots or preserve mounted DOM/component instances. That reconciliation belongs to the Phase 3 renderer.
+## Sintaxis declarativa: view!
 
-## Validation and error behavior
+La macro <code>rustflow::view!</code> acepta un subconjunto explícito de sintaxis similar a HTML:
 
-Element names allow an ASCII letter followed by ASCII letters, digits, or hyphens. Attribute and property names are separately validated. Inline event attributes and direct raw-HTML sinks (for example, srcdoc, innerHTML, and outerHTML) are rejected. Duplicate attributes, properties, event names, and keyed-list identities return typed ViewError values.
+~~~rust
+use rustflow::prelude::*;
 
-This is syntactic validation, not an HTML allowlist or URL sanitization policy. Attribute values may still include unsafe URLs, and the tree must never be treated as safe HTML. Any HTML or DOM renderer must escape text and attribute values, apply an explicit URL policy, and avoid raw HTML insertion by default.
-
-## Attributes, properties, and events
-
-Attributes use AttributeValue::Text or AttributeValue::Boolean; a renderer should omit boolean attributes whose value is false and emit an empty boolean attribute for true. DOM properties use a separate PropertyValue enum. Events use named EventHandler values rather than on* string attributes. An event callback receives a normalized EventPayload; the concrete browser adapter is responsible for converting native events into that payload and unregistering listeners.
-
-## Component lifecycle
-
-The rustflow facade exposes ComponentDefinition and ComponentInstance. Setup runs once per mount and receives a ComponentContext with a dedicated reactive Scope. Setup may create signals/effects in that scope and register cleanup callbacks. It returns a render callback that must be pure: it receives current properties and children, and returns a replacement View. Calling update computes the next view before changing stored inputs; if rendering fails, the previous view is retained. Unmount is idempotent and disposes the scope, effects, descendants, and registered cleanup callbacks. Updates after unmount return a typed error.
-
-ComponentInstance produces a replacement view tree; it does not itself mutate a DOM. A platform renderer must use the Renderer contract to mount, update, and unmount that tree. Recursive component traversal and keyed reconciliation are not implemented by the registry. The current API does not yet provide typed context/provider functions; the React-like API target now includes `use_context` with a typed provider contract, tracked as future work in `ROADMAP.md`.
-
-## Declarative macro
-
-The rustflow-macros crate exposes rustflow::view! with a constrained HTML-like grammar. Tags must close correctly; children can be Rust literals or brace-delimited expressions; plain attributes, boolean attributes, prop:name values, on:event handlers, keyed nodes using key={value}, @dynamic { expression }, and uppercase component descriptors are supported. It returns Result<View, ViewError>. Parser errors use a source span and compile_error! diagnostic. See rustdoc examples and compile-fail checks for the supported contract.
-
-## React-like authoring target (planned, not implemented)
-
-The current model provides structural nodes and generic component descriptors; it is not yet the normal-use API RustFlow is aiming for. The target developer experience is a typed function component with owned local signals, automatic reactive interpolation, typed props/callbacks, and automatic component descriptor/registration integration.
-
-Illustrative design target only; this snippet is **not compilable against the current API**:
-
-```rust
-#[component]
-fn Counter(initial: i32) -> impl IntoView {
-    let count = signal(initial);
-
-    view! {
-        <div class="counter">
-            <p>"Count: " {count}</p>
-            <button on:click={move |_| count.update(|n| *n += 1)}>
-                "Add"
+fn static_view() -> Result<View, rustflow::view::ViewError> {
+    rustflow::view! {
+        <main class="welcome">
+            <h1>"Hola, RustFlow"</h1>
+            <button disabled on:click={move |_event| {}}>
+                "Continuar"
             </button>
-        </div>
+        </main>
     }
 }
-```
+~~~
 
-For routine signal-backed children, `{count}` is intended to track and update automatically without requiring `@dynamic`. Component props and callbacks should be typed. Normal component use should not require manually constructing a `ComponentDefinition` and registering it in a `ComponentRegistry`.
+Reglas importantes:
 
-The implementation must define how a signal is bound to the active component/owner scope without introducing an undocumented process-global mutable runtime. It must also settle error propagation from `view!`, prop-update behavior, callback event types, familiar helper naming/signatures, and cleanup guarantees. The vocabulary target is Rust-style `use_state`, `use_effect`, `use_memo`, `use_ref`, and `use_context`; these are proposed names, not current APIs. Unlike React, RustFlow will use signal dependency tracking by default rather than positional hook cells. See [ADR 0004](adr/0004-react-like-component-authoring.md) and the Phase 3/7 gates in `ROADMAP.md`.
+- El texto literal se escribe como literal Rust; las expresiones Rust van entre llaves.
+- Los atributos normales, booleanos, <code>prop:nombre</code>, <code>on:evento</code>, <code>key={...}</code> y <code>@dynamic { expresión }</code> tienen sintaxis diferenciada.
+- Los tags de componentes se escriben con nombre inicial en mayúscula y producen descriptores de componentes.
+- La macro devuelve <code>Result&lt;View, ViewError&gt;</code>. Los tags mal cerrados, atributos duplicados y otras entradas inválidas producen diagnósticos localizados.
+- Interpolar una señal mediante su identificador, por ejemplo <code>{count}</code>, crea una región reactiva automática. Las expresiones arbitrarias que lean señales deben delimitarse explícitamente con <code>@dynamic</code>.
+
+## Componentes funcionales
+
+La macro <code>#[rustflow::component]</code> genera la definición y una función de registro. El componente declara props con nombres simples y tipos explícitos:
+
+~~~rust
+use rustflow::prelude::*;
+
+#[rustflow::component]
+fn Greeting(name: String) -> impl IntoView {
+    rustflow::view! {
+        <article class="greeting">
+            <h2>"Hola, " {name}</h2>
+        </article>
+    }
+}
+~~~
+
+Para usar la definición en un host que requiera registro explícito:
+
+~~~rust
+let mut registry = ComponentRegistry::new();
+register_greeting(&mut registry)?;
+~~~
+
+Los tipos de props soportados por esta versión incluyen <code>String</code>, <code>bool</code>, <code>i32</code>, <code>i64</code>, <code>u32</code>, <code>usize</code>, <code>f64</code> y <code>EventHandler</code> (incluida la forma cualificada documentada). La macro rechaza props faltantes, desconocidos o de tipos incompatibles. Los callbacks se pasan como props tipadas con la convención <code>on:...</code>; no se serializan como atributos HTML <code>on*</code>.
+
+## Ciclo de vida y renderizado
+
+El setup de un componente se ejecuta una vez por montaje y crea señales/efectos dentro de un scope propietario. La función de render debe producir una vista y no realizar efectos secundarios no gestionados. Al reemplazar o desmontar una instancia, el runtime libera el scope, los efectos y los callbacks de limpieza.
+
+El registry resuelve descriptores, pero no hace el trabajo DOM por sí solo. El runtime de navegador se encarga del montaje y de la reconciliación: prepara la evaluación/diff y después confirma los cambios al DOM. Las actualizaciones compatibles pueden conservar el nodo DOM, el scope y el estado local de una instancia. Las ramas incompatibles se sustituyen y limpian.
+
+## Atributos, propiedades, eventos y seguridad
+
+Atributos HTML y propiedades DOM son categorías distintas: un atributo describe markup; una propiedad como <code>value</code> o <code>checked</code> puede representar el estado actual del elemento en el navegador. Usa <code>prop:value</code> o <code>prop:checked</code> cuando el ejemplo requiera una propiedad DOM.
+
+Los eventos se representan como callbacks tipados con <code>EventHandler</code> y reciben un <code>EventPayload</code> normalizado. Los listeners se eliminan al limpiar la región o componente asociado.
+
+Los nombres de tags/atributos se validan sintácticamente y el renderer DOM valida las operaciones y esquemas de URL permitidos. El SSR escapa texto/atributos y aplica una política conservadora a tags y URL. Evita crear HTML confiando únicamente en que el árbol <code>View</code> haya sido validado: no es un sanitizador universal y <code>Response::html(String)</code> emite la cadena proporcionada sin escapar.
+
+## Disponibilidad y limitaciones
+
+| API o capacidad | Estado |
+|---|---|
+| <code>view!</code>, nodos estructurales y fragments | Disponible |
+| <code>#[rustflow::component]</code> y props tipadas del subconjunto | Disponible |
+| Señales, <code>use_state</code>, <code>use_effect</code>, <code>on_cleanup</code> owner-scoped | Disponible dentro del setup de un componente |
+| Eventos y actualizaciones DOM reactivas | Disponible en el runtime WASM |
+| Reconciliación de listas keyed y limpieza de instancias | Disponible |
+| <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> | Pendiente |
+| Context/provider público, async effects y state tracking a través de <code>await</code> | Pendiente/no soportado |
+| API estable 1.0 o compatibilidad con React | No ofrecida |
+
+Guías de uso: [Crear componentes](../website/src/content/docs/guides/components.md), [Reactividad](../website/src/content/docs/concepts/reactivity.md), [SSR](../website/src/content/docs/guides/ssr.md) y el [ejemplo de navegador](../examples/browser/).

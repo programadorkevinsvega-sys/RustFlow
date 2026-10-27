@@ -1,41 +1,49 @@
 ---
-title: RustFlow para desarrolladores
-description: Evalúa las capacidades verificadas de RustFlow y descubre qué necesitas para experimentar con el runtime, las vistas y el servidor HTTP.
+title: Documentación de RustFlow
+description: Aprende RustFlow paso a paso, desde la primera vista hasta una página SSR con navegación progresiva.
 template: splash
 hero:
-  tagline: Un framework web full-stack en Rust, todavía en fase de prototipo.
+  tagline: Aprende qué está implementado, cómo utilizarlo y cuáles son sus límites.
   actions:
-    - text: Probar RustFlow hoy
+    - text: Empezar desde cero
       link: /getting-started/setup/
       icon: right-arrow
-    - text: Ver estado y fases
+    - text: Consultar capacidades actuales
       link: /project-status/
       variant: minimal
 ---
 
-RustFlow busca combinar componentes de interfaz reactivos con una experiencia full-stack en Rust, inspirada en Laravel.
+RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio incluye un runtime reactivo, componentes y vistas tipadas, un renderer DOM para WebAssembly, serialización SSR, composición de páginas y un servidor HTTP experimental. Las APIs son pre-1.0 y todavía no se recomienda RustFlow para producción.
 
-**Estado actual: prototipo pre-1.0; no está listo para producción.** El repositorio ya incluye un runtime reactivo, un modelo tipado de vistas y componentes, un renderer inicial para WASM y un servidor HTTP experimental. Las APIs siguen evolucionando y todavía no existe una experiencia full-stack integrada de extremo a extremo.
+**Esta documentación explica las APIs que existen en el código**, no una promesa de lo que el framework espera implementar. Cada guía identifica su caso de uso, muestra código, explica las decisiones, menciona los errores habituales y declara las limitaciones.
 
-## ¿Qué puedes probar hoy?
+## Una ruta de aprendizaje
 
-- **Reactividad en Rust:** señales, efectos, dependencias, batching y scopes de limpieza.
-- **Vistas y componentes:** construir árboles tipados y explorar el ciclo de vida del modelo de componentes.
-- **Servidor HTTP experimental:** ejecutar un ejemplo con rutas, grupos, JSON, middleware global/de grupo/por ruta, TLS local, proxies de confianza, límites y timeouts.
-- **HTML seguro desde vistas:** serializar fragmentos HTML o generar documentos completos con `html_document`; configurar páginas HTML escapadas para estados de error 4xx/5xx.
-- **Verificación reproducible:** consultar los tests, incluidos los que envían solicitudes por TCP local, y los checks del repositorio.
+- [1. Empezar desde cero](/getting-started/setup/): clonar el repositorio, ejecutar tests y conocer los workflows actuales.
+- [2. Aprender estado y efectos](/concepts/reactivity/): señales, dependencias, batching, scopes y limpieza.
+- [3. Crear componentes](/guides/components/): vistas, props, eventos, estado y listas keyed.
+- [4. Crear rutas HTTP](/guides/server/): HTML, JSON, parámetros y middleware.
+- [5. Renderizar HTML en servidor](/guides/ssr/): escape, documentos completos, catálogo e hidratación optativa.
+- [6. Compartir estructura con layouts](/guides/layouts/): composición de páginas y datos públicos.
+- [7. Añadir navegación progresiva](/guides/navigation/): historial, enlaces elegibles y formularios GET.
+- [8. Crear una página de producto](/tutorials/product-page/): conectar rutas, props, catálogo SSR y layouts.
 
-## ¿Qué sigue pendiente?
+## Qué puedes construir hoy
 
-- Hidratación, composición avanzada de layouts y un flujo SSR full-stack completo.
-- CLI de RustFlow, scaffolding de proyectos, sesiones, autenticación y persistencia integrada.
-- Recetas de despliegue con reverse proxy, rate limiting y el threat model de la Fase 9.
+- Sitios de contenido y prototipos SSR con vistas estructurales, documentos HTML y páginas de error.
+- Interfaces WASM interactivas con señales, efectos, componentes, eventos, listas keyed y limpieza.
+- Servicios HTTP con rutas, parámetros, query/JSON, middleware, grupos, respuestas y límites configurables.
+- Páginas compuestas con un catálogo de componentes compartido, datos de ruta explícitos y layouts anidados.
+- Navegación de cliente optativa y mejora progresiva de formularios GET compatibles, conservando el comportamiento nativo cuando la interacción no es compatible.
 
-El routing HTTP y la generación de documentos HTML existen como APIs de prototipo; eso **no** significa que exista ya un framework completo, una plataforma de autenticación/persistencia o una instalación de producción.
+## Lo que no debes asumir
 
-## Ruta recomendada
+Todavía no hay un CLI propio, scaffolding, <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code>, sesiones/autenticación integradas, CSRF, server actions, persistencia integrada ni una receta de despliegue de producción. El callback de navegación cliente no es un router general y la mejora de formularios no procesa cargas de archivos ni mutaciones. Consulta [Estado del proyecto](/project-status/) y [referencia de disponibilidad de API](/reference/api-status/).
 
-1. [Prueba RustFlow hoy](/getting-started/setup/) desde el repositorio clonado.
-2. Revisa [el modelo de componentes](/guides/components/) y sus limitaciones.
-3. Ejecuta el [servidor HTTP experimental](/guides/server/) y consulta la [guía técnica del servidor](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/HTTP_SERVER.md).
-4. Consulta [el estado y las fases](/project-status/) antes de decidir si RustFlow cubre tus necesidades.
+## Si ya conoces React
+
+Los nombres <code>use_state</code> y <code>use_effect</code> son helpers de RustFlow ligados al scope propietario, pero el modelo es signal-first: no usa celdas de estado por orden de hooks y no promete compatibilidad con React. Aprende el contrato real en [Reactividad](/concepts/reactivity/) y [Componentes](/guides/components/).
+
+## Pruebas y fuente técnica
+
+Las guías enlazan con ejemplos del repositorio y pruebas E2E. Para comprender garantías y detalles internos, utiliza también [semántica reactiva](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/REACTIVITY_SEMANTICS.md), [modelo de vistas](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/VIEW_MODEL.md), [SSR](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/SSR_RENDERING.md), [servidor HTTP](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/HTTP_SERVER.md) y [roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md).

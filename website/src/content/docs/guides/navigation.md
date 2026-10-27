@@ -1,19 +1,21 @@
 ---
 title: Navegación cliente y formularios
-description: Mejora optativa de enlaces e inputs sin perder SSR ni el envío HTML nativo.
+description: Añade navegación optativa y formularios progresivos sin perder el comportamiento HTML nativo.
 ---
 
-# Navegación cliente y formularios
+RustFlow mantiene SSR como comportamiento base. <code>rustflow_dom::ClientNavigation</code> es un adaptador opt-in que mejora ciertos enlaces y formularios después de que la aplicación haya montado el runtime y, cuando proceda, completado la hidratación. No es un router general ni una navegación automática para todas las URLs.
 
-RustFlow mantiene SSR como comportamiento base. El cliente puede mejorar solo las interacciones elegibles después de montar o hidratar correctamente la vista inicial; no reemplaza el servidor ni asume que toda URL es una ruta SPA.
+## 1. Qué problema resuelve
 
-## Contrato de navegación
+Una navegación HTML convencional pide una nueva página al servidor y reemplaza el documento. Con la navegación cliente optativa, los clics elegibles pueden actualizar la ruta reactiva y el historial sin una navegación de documento completa. Si el enlace no es elegible, falla la petición o la aplicación no reconoce la ruta, se conserva el fallback nativo o se recarga para que el servidor atienda la URL.
 
-La API experimental `rustflow_dom::ClientNavigation` se instala con el elemento raíz, un `ReactiveMountedDom` existente y un callback de rutas de la aplicación. El callback recibe ruta y query (por ejemplo, `/articles?page=2`), actualiza el estado reactivo cuando reconoce una ruta y devuelve `Ok(true)`; devuelve `Ok(false)` sin cambiar estado para rutas que el cliente no administra.
+Este modelo es apropiado cuando la aplicación controla un conjunto pequeño de rutas y puede mantener el estado de ruta explícitamente. No sustituye un router con reconocimiento automático de rutas, loaders, layouts ni server actions.
 
-La API comprueba la respuesta GET antes de actualizar vista e historial: estado HTTP satisfactorio, `text/html`, documento completo y URL final del mismo origen. Una transición aceptada usa `history.pushState`; atrás/adelante pasa por `popstate`. Si falla la red, el estado HTTP, la compatibilidad de respuesta, el resolver, el render o la History API, RustFlow hace una navegación completa o recarga para que el servidor pueda resolver la petición y emitir su respuesta normal.
+## 2. Instalar la navegación
 
-```rust
+La instalación recibe el elemento raíz, una instancia de <code>ReactiveMountedDom</code> ya montada y un callback que resuelve la ruta. La aplicación conserva la definición de rutas y actualiza su propia señal cuando acepta una ruta:
+
+~~~rust
 use rustflow_dom::{ClientNavigation, DomError};
 
 let navigation = ClientNavigation::install(target, mounted, move |path| {
@@ -25,19 +27,48 @@ let navigation = ClientNavigation::install(target, mounted, move |path| {
         _ => Ok(false),
     }
 })?;
-```
+~~~
 
-Intercepta únicamente clics primarios sin modificadores en enlaces HTTP(S) del mismo origen, dentro del root, sin fragmentos, descargas, `rel="external"`, opt-out o destino distinto de `_self`. Los enlaces externos, protocolos alternativos, clics modificados, fragmentos y descargas se dejan al navegador.
+Este fragmento muestra el contrato del callback; <code>target</code>, <code>mounted</code> y <code>route_signal</code> deben existir en la aplicación real. Devuelve <code>Ok(true)</code> solo después de actualizar el estado de una ruta soportada. Devuelve <code>Ok(false)</code> para que la navegación convencional resuelva lo que el cliente no administra. Mantén viva la instancia mientras quieras que los listeners sigan activos y deja que se cancele al salir de su ciclo de vida.
 
-## Formularios y mejora progresiva
+## 3. Qué enlaces puede interceptar
 
-Un formulario debe optar explícitamente por la mejora mediante `data-rustflow-enhance`. El subconjunto admitido es GET, origen compatible, `application/x-www-form-urlencoded`, destino vacío/`_self`, validación HTML correcta y campos escalares compatibles. El estado pendiente bloquea envíos duplicados mientras se procesa la petición.
+La API solo intercepta clics primarios sin modificadores en enlaces HTTP(S) del mismo origen, dentro del root de navegación y con destino compatible. No intercepta, entre otros:
 
-Los formularios sin opt-in y los formularios POST/PUT/PATCH/DELETE, con cargas de archivo, selectores múltiples, controles de envío con nombre, destinos alternativos o codificaciones no soportadas conservan su envío HTML nativo. Una respuesta no satisfactoria o un error de red no se muestra como éxito: la navegación cae al servidor.
+- enlaces externos o protocolos que no sean HTTP(S);
+- clics con Ctrl/Meta/Shift/Alt o botón distinto del primario;
+- fragmentos de URL;
+- descargas;
+- <code>rel="external"</code>, una exclusión explícita o targets diferentes de <code>_self</code>.
+
+Antes de cambiar el historial, valida una respuesta GET satisfactoria con tipo de contenido HTML, estructura de documento completo y URL final del mismo origen. La respuesta se valida; no se inserta su HTML como una cadena arbitraria en el DOM vivo. Las transiciones aceptadas usan History API; atrás/adelante pasa por <code>popstate</code>. Los errores de red, HTTP, ruta, render o History API producen fallback a navegación de documento o recarga.
+
+## 4. Mejorar un formulario GET
+
+El formulario debe solicitarlo de forma explícita con <code>data-rustflow-enhance</code>. Por ejemplo:
+
+~~~html
+<form method="get" action="/search" data-rustflow-enhance>
+  <label for="q">Buscar productos</label>
+  <input id="q" name="q" type="search">
+  <button type="submit">Buscar</button>
+</form>
+~~~
+
+La mejora requiere origen compatible, método GET, codificación <code>application/x-www-form-urlencoded</code>, target vacío o <code>_self</code>, validación HTML correcta y controles escalares admitidos. El estado pendiente evita envíos duplicados durante la petición.
+
+## 5. Qué conserva el envío nativo
+
+Los formularios sin el atributo de opt-in, los métodos POST/PUT/PATCH/DELETE, los uploads, los selectores múltiples, controles de envío con nombre, targets alternativos, codificaciones no admitidas y otras combinaciones incompatibles mantienen el envío normal del navegador. No hay procesamiento de server actions ni cargas de archivos dentro de esta mejora.
+
+El HTML del servidor debe seguir siendo útil con JavaScript desactivado o si la inicialización de RustFlow falla. No construyas una página que solo funciona después de la mejora cliente.
+
+## 6. Relación con hidratación
+
+La hidratación de DOM es también optativa. Debe completarse con una vista compatible antes de instalar navegación cliente. Si hay una discrepancia, la política conservadora conserva el root SSR completo como HTML estático y dispone los recursos candidatos; no intenta reparar automáticamente subregiones. No instales navegación sobre una aplicación cuyo montaje/hidratación haya fallado.
+
+Consulta [SSR y documentos HTML](/guides/ssr/) para el ciclo de vida de página y [el ejemplo del navegador](https://github.com/programadorkevinsvega-sys/RustFlow/tree/main/examples/browser) para las pruebas E2E de historial, formularios nativos, opt-in y fallbacks.
 
 ## Límites
 
-- El documento SSR debe contener HTML útil aunque JavaScript esté deshabilitado o RustFlow no se inicialice.
-- La hidratación sigue siendo optativa y validada. No instales navegación cliente si falla la hidratación; la política de ADR 0010 conserva el root SSR como contenido estático.
-- La API no es un DSL de rutas y no descarga ni inserta HTML arbitrario dentro del DOM. La aplicación mantiene un resolver explícito y actualiza la vista a través del runtime reactivo actual.
-- No implementa server actions, autenticación, sesiones, CSRF ni infraestructura de carga de archivos.
+La aplicación tiene que resolver rutas y actualizar la vista. Esta API no descarga e inserta HTML arbitrario como mecanismo de routing, no genera rutas a partir del filesystem, no aporta auth/sesiones/CSRF, no procesa mutaciones de formularios y no reemplaza el routing del servidor. La API es pre-1.0 y puede cambiar.
