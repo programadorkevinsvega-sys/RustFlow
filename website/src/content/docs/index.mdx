@@ -15,7 +15,7 @@ hero:
 
 RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio incluye un runtime reactivo, componentes y vistas tipadas, un renderer DOM para WebAssembly, serialización SSR, composición de páginas y un servidor HTTP experimental. Las APIs son pre-1.0 y todavía no se recomienda RustFlow para producción.
 
-**Esta documentación explica las APIs que existen en el código**, no una promesa de lo que el framework espera implementar. Cada guía identifica su caso de uso, muestra código, explica las decisiones, menciona los errores habituales y declara las limitaciones.
+**Esta documentación explica las APIs que existen en el código**, no una promesa de lo que el framework espera implementar. Cada guía identifica su caso de uso, muestra código o enlaza con un ejemplo ejecutable, explica las decisiones, menciona los errores habituales y declara las limitaciones.
 
 ## Una ruta de aprendizaje
 
@@ -26,7 +26,23 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 - [5. Renderizar HTML en servidor](/guides/ssr/): escape, documentos completos, catálogo e hidratación optativa.
 - [6. Compartir estructura con layouts](/guides/layouts/): composición de páginas y datos públicos.
 - [7. Añadir navegación progresiva](/guides/navigation/): historial, enlaces elegibles y formularios GET.
-- [8. Crear una página de producto](/tutorials/product-page/): conectar rutas, props, catálogo SSR y layouts.
+- [8. Construir una página de producto](/tutorials/product-page/): conectar rutas, props, catálogo SSR y layouts.
+- [9. Construir una API JSON](/tutorials/json-api/): comprobar query strings, parámetros de ruta y cuerpo JSON con `curl`.
+- [10. Crear una UI interactiva](/tutorials/reactive-todo/): estado, eventos, listas con claves y limpieza en el navegador.
+- [11. Probar el proyecto](/guides/testing/): ejecutar tests Rust, integración HTTP y Playwright E2E.
+
+## Elige un caso de uso
+
+| Lo que quieres explorar | Empieza aquí |
+|---|---|
+| Un componente o un contador reactivo | [Componentes](/guides/components/) y [reactividad](/concepts/reactivity/) |
+| Una lista de tareas interactiva en el navegador | [Tutorial browser/WASM](/tutorials/reactive-todo/) |
+| Un endpoint que recibe o devuelve JSON | [Tutorial de API JSON](/tutorials/json-api/) |
+| Una página HTML desde el servidor | [Guía SSR](/guides/ssr/) |
+| Varias páginas con encabezado y pie compartidos | [Layouts](/guides/layouts/) y [página de producto](/tutorials/product-page/) |
+| Enlaces cliente y formularios GET compatibles | [Navegación y formularios](/guides/navigation/) |
+| Errores, límites de recursos y límites de seguridad | [Errores y seguridad](/guides/errors-and-security/) |
+| Saber qué demo ejecutar | [Catálogo de ejemplos](/reference/examples/) |
 
 ## Qué puedes construir hoy
 
@@ -36,13 +52,15 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 - Páginas compuestas con un catálogo de componentes compartido, datos de ruta explícitos y layouts anidados.
 - Navegación de cliente optativa y mejora progresiva de formularios GET compatibles, conservando el comportamiento nativo cuando la interacción no es compatible.
 
+El [catálogo de ejemplos](/reference/examples/) conecta cada caso con un archivo y un comando. La [guía de pruebas](/guides/testing/) explica cómo verificar el comportamiento localmente.
+
 ## Lo que no debes asumir
 
-Todavía no hay un CLI propio, scaffolding, <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code>, sesiones/autenticación integradas, CSRF, server actions, persistencia integrada ni una receta de despliegue de producción. El callback de navegación cliente no es un router general y la mejora de formularios no procesa cargas de archivos ni mutaciones. Consulta [Estado del proyecto](/project-status/) y [referencia de disponibilidad de API](/reference/api-status/).
+Todavía no hay un CLI propio, scaffolding, `use_memo`, `use_ref`, `use_context`, sesiones/autenticación integradas, CSRF, server actions, persistencia integrada ni una receta de despliegue de producción. El callback de navegación cliente no es un router general y la mejora de formularios no procesa cargas de archivos ni mutaciones. Consulta [Estado del proyecto](/project-status/) y [referencia de disponibilidad de API](/reference/api-status/).
 
 ## Si ya conoces React
 
-Los nombres <code>use_state</code> y <code>use_effect</code> son helpers de RustFlow ligados al scope propietario, pero el modelo es signal-first: no usa celdas de estado por orden de hooks y no promete compatibilidad con React. Aprende el contrato real en [Reactividad](/concepts/reactivity/) y [Componentes](/guides/components/).
+Los nombres `use_state` y `use_effect` son helpers de RustFlow ligados al scope propietario, pero el modelo es signal-first: no usa celdas de estado por orden de hooks y no promete compatibilidad con React. Aprende el contrato real en [Reactividad](/concepts/reactivity/) y [Componentes](/guides/components/).
 
 ## Pruebas y fuente técnica
 
