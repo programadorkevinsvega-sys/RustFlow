@@ -22,8 +22,11 @@ pub enum ComponentCapability {
 /// components. Actual renderers must use `Server` or `Browser`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderTarget {
+    /// Execute component setup/render callbacks during server rendering.
     Server,
+    /// Execute component setup/render callbacks in the browser runtime.
     Browser,
+    /// No runtime environment has been selected; permits universal components only.
     Unspecified,
 }
 
@@ -69,7 +72,11 @@ impl fmt::Display for ComponentError {
             Self::DuplicateDefinition(name) => {
                 write!(f, "component definition already registered: {name}")
             }
-            Self::IncompatibleTarget { name, capability, target } => write!(
+            Self::IncompatibleTarget {
+                name,
+                capability,
+                target,
+            } => write!(
                 f,
                 "component {name} with {capability:?} capability cannot execute for {target:?} target"
             ),
@@ -300,7 +307,12 @@ impl ComponentInstance {
         children: impl IntoIterator<Item = View>,
     ) -> Result<Self, ComponentError> {
         Self::mount_for_target(
-            definition, runtime, parent_scope, properties, children, RenderTarget::Unspecified
+            definition,
+            runtime,
+            parent_scope,
+            properties,
+            children,
+            RenderTarget::Unspecified,
         )
     }
 
@@ -923,7 +935,8 @@ mod tests {
         let server_calls = server_setup_calls.clone();
         let server_only = ComponentDefinition::new("ServerPanel", move |_context, _properties| {
             server_calls.set(server_calls.get() + 1);
-            let render: ComponentRender = Rc::new(|_properties, _children| Ok(View::text("server")));
+            let render: ComponentRender =
+                Rc::new(|_properties, _children| Ok(View::text("server")));
             Ok(render)
         })
         .expect("server definition")
@@ -931,13 +944,15 @@ mod tests {
 
         let browser_setup_calls = Rc::new(Cell::new(0));
         let browser_calls = browser_setup_calls.clone();
-        let browser_only = ComponentDefinition::new("BrowserPanel", move |_context, _properties| {
-            browser_calls.set(browser_calls.get() + 1);
-            let render: ComponentRender = Rc::new(|_properties, _children| Ok(View::text("browser")));
-            Ok(render)
-        })
-        .expect("browser definition")
-        .browser_only();
+        let browser_only =
+            ComponentDefinition::new("BrowserPanel", move |_context, _properties| {
+                browser_calls.set(browser_calls.get() + 1);
+                let render: ComponentRender =
+                    Rc::new(|_properties, _children| Ok(View::text("browser")));
+                Ok(render)
+            })
+            .expect("browser definition")
+            .browser_only();
 
         assert_eq!(server_only.capability(), ComponentCapability::ServerOnly);
         assert_eq!(browser_only.capability(), ComponentCapability::BrowserOnly);
@@ -947,8 +962,12 @@ mod tests {
         registry.register(browser_only).expect("register browser");
         let server_node = View::component("ServerPanel", [], [], None).expect("server node");
         let browser_node = View::component("BrowserPanel", [], [], None).expect("browser node");
-        let View::Component(server_node) = server_node else { panic!("component expected") };
-        let View::Component(browser_node) = browser_node else { panic!("component expected") };
+        let View::Component(server_node) = server_node else {
+            panic!("component expected")
+        };
+        let View::Component(browser_node) = browser_node else {
+            panic!("component expected")
+        };
         let runtime = Runtime::new();
         let root = runtime.root_scope();
 

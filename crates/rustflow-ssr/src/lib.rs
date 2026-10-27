@@ -223,7 +223,9 @@ pub enum SsrError {
     UnsafeUrl(String),
     DuplicateSerializedAttribute(String),
     InvalidPropertyValue(String),
-    NestingLimitExceeded { limit: usize },
+    NestingLimitExceeded {
+        limit: usize,
+    },
     /// A browser-only component lacks an explicit static SSR fallback.
     NonHydratableComponent(String),
     Component(String),
@@ -973,7 +975,11 @@ mod tests {
             render_with_components(&view, &registry).expect("fallback is rendered"),
             "<span>static fallback</span>"
         );
-        assert_eq!(setup_calls.get(), 0, "browser-only setup must not execute in SSR");
+        assert_eq!(
+            setup_calls.get(),
+            0,
+            "browser-only setup must not execute in SSR"
+        );
     }
 
     #[test]
