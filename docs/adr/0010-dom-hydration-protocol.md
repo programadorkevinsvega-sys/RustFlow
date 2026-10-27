@@ -1,6 +1,6 @@
 # ADR 0010: DOM hydration boundary protocol
 
-- **Status:** Proposed for review
+- **Status:** Accepted — implemented in PR #39, merged to `main` as `d866298989821eaee64a4ea00466012f36db3ebf`
 - **Date:** 2026-10-27
 - **Phase:** 5.3 — Hydration
 - **Related:** ADR 0009, `docs/SSR_RENDERING.md`
@@ -66,9 +66,9 @@ Limitations:
 - Root marker validation detects malformed/duplicate hydration boundaries, but application code remains responsible for choosing the correct client view and initial state.
 - This implementation does not enable client navigation or server action/form submission.
 
-## Validation evidence required before closure
+## Validation
 
-- Unit tests verify marker opt-in, deterministic marker sequences, and safe JSON embedding.
-- Browser E2E tests verify that a compatible SSR element retains DOM identity and handles repeated clicks once per event, and that a mismatch reports an error while preserving static content.
-- CI must pass formatting, Clippy, workspace tests, Rustdoc, WASM compilation, browser E2E and bundle budget, documentation, governance, and dependency review on the final PR head.
-- The phase must not be marked complete until the PR is merged to `main` and post-merge CI succeeds.
+- Unit tests cover opt-in markers and the HydrationData JSON/script-context safety contract.
+- Browser E2E tests verify preserved node identity, repeated event handling without duplicate activation, static preservation and diagnostics on mismatch, rejection of repeated hydration, form input, conditional regions, keyed-list reorder, and ordinary link navigation.
+- The PR #39 head passed formatting, Clippy, workspace tests, Rustdoc, WASM compilation/dependency isolation, browser E2E and bundle budget, documentation-site build, governance, and dependency review.
+- Post-merge CI for d866298989821eaee64a4ea00466012f36db3ebf passed Rust 1.85, Rust stable, WASM compilation/dependency isolation, and Browser E2E/bundle size.
