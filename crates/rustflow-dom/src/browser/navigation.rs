@@ -266,6 +266,7 @@ fn enhanced_form_from_event(
             .enctype()
             .eq_ignore_ascii_case("application/x-www-form-urlencoded")
         || (!form.target().is_empty() && !form.target().eq_ignore_ascii_case("_self"))
+        || form.has_attribute("novalidate")
         || form.has_attribute("data-rustflow-no-nav")
     {
         return None;
@@ -276,7 +277,8 @@ fn enhanced_form_from_event(
         .query_selector(
             "input[type='file'], input[type='image'], select[multiple], \
              button[name], input[type='submit'][name], input[type='button'][name], \
-             input[type='reset'][name]",
+             input[type='reset'][name], [formaction], [formmethod], [formenctype], \
+             [formtarget], [formnovalidate], [dirname]",
         )
         .ok()?
         .is_some()
@@ -295,6 +297,10 @@ fn enhanced_form_from_event(
         let Some(element) = elements.item(index) else {
             continue;
         };
+        // Match the browser's effective disabled state, including disabled fieldsets.
+        if element.matches(":disabled").ok()? {
+            continue;
+        }
         if element.tag_name().eq_ignore_ascii_case("BUTTON") {
             continue;
         }
