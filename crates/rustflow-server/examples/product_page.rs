@@ -119,7 +119,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         async move {
             let id = request.path_param("id").unwrap_or_default().to_owned();
             let Some(product) = demo_product(&id) else {
-                return Ok(Response::not_found("No se encontró el producto"));
+                return Err(HttpError::not_found("No se encontró el producto"));
             };
 
             let name = Property::new("name", product.name.to_owned())
