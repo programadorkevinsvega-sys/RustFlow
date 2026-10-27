@@ -13,8 +13,11 @@ use rustflow_view::{Property, View};
 
 use crate::{
     HttpError, Response, html_document, html_document_with_components,
-    html_document_with_shared_components,
+    html_document_with_components_and_hydration_data,
+    html_document_with_hydration_data, html_document_with_shared_components,
+    html_document_with_shared_components_and_hydration_data,
 };
+use rustflow_ssr::HydrationData;
 
 /// A composable full HTML page.
 ///
@@ -29,6 +32,7 @@ pub struct HtmlPage {
     body: View,
     components: Option<ComponentRegistry>,
     shared_components: Option<SharedComponentCatalog>,
+    hydration_data: Option<HydrationData>,
 }
 
 impl HtmlPage {
@@ -40,6 +44,7 @@ impl HtmlPage {
             body,
             components: None,
             shared_components: None,
+            hydration_data: None,
         }
     }
 
@@ -89,6 +94,16 @@ impl HtmlPage {
         self
     }
 
+    /// Attach explicitly projected public JSON data and opt this page into hydration markup.
+    ///
+    /// This adds deterministic DOM boundary comments and an inert JSON script to the response.
+    /// It does not execute browser code or automatically infer whether application data contains
+    /// secrets; construct the payload from an explicit allow-list of public fields.
+    pub fn with_hydration_data(mut self, data: HydrationData) -> Self {
+        self.hydration_data = Some(data);
+        self
+    }
+
     /// Wrap the current body in a layout component with explicit props.
     ///
     /// Call this for the innermost layout first and the outermost layout last. The layout
@@ -110,6 +125,28 @@ impl HtmlPage {
     ///
     /// Component-backed bodies/layouts require a local registry or shared catalog.
     pub fn render(&self) -> Result<Response, HttpError> {
+        if let Some(data) = self.hydration_data.as_ref() {
+            return match (&self.components, &self.shared_components) {
+                (Some(registry), _) => html_document_with_components_and_hydration_data(
+                    &self.title,
+                    &self.language,
+                    &self.body,
+                    registry,
+                    data,
+                ),
+                (_, Some(catalog)) => html_document_with_shared_components_and_hydration_data(
+                    &self.title,
+                    &self.language,
+                    &self.body,
+                    catalog,
+                    data,
+                ),
+                (None, None) => {
+                    html_document_with_hydration_data(&self.title, &self.language, &self.body, data)
+                }
+            };
+        }
+
         match (&self.components, &self.shared_components) {
             (Some(registry), _) => {
                 html_document_with_components(&self.title, &self.language, &self.body, registry)
@@ -142,6 +179,30 @@ mod tests {
             Ok(render)
         })
         .expect("wrapper definition")
+    }
+
+    #[test]
+    fn hydratable_page_embeds_script_safe_public_data_and_boundary_markers() {
+        use rustflow_ssr::HydrationData;
+
+        let body = View::element("main", [View::text("Hello")]).expect("body");
+        let data = HydrationData::from_json(r#"{"public":"</script><svg>&"}"#)
+            .expect("valid public JSON");
+        let response = HtmlPage::new("Hydration", body)
+            .with_hydration_data(data)
+            .render()
+            .expect("render hydratable page");
+        let html = std::str::from_utf8(response.body())
+            .expect("HTML response is UTF-8");
+
+        assert!(html.contains(
+            "<!--rustflow:root:start--><main>Hello</main><!--rustflow:root:end-->"
+        ));
+        assert!(html.contains(
+            "<script type=\"application/json\" id=\"rustflow-hydration-data\">"
+        ));
+        assert!(html.contains(r#""public":"\u003c/script\u003e\u003csvg\u003e\u0026""#));
+        assert!(!html.contains("</script><svg>"));
     }
 
     #[test]
