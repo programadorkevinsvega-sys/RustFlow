@@ -3,7 +3,7 @@ title: Componer páginas con layouts
 description: Construye una página SSR con componentes de layout, props de ruta y un catálogo compartido.
 ---
 
-Un layout es un componente que envuelve el contenido de una página con estructura compartida: navegación, una cabecera, un área de contenido o un pie de página. En RustFlow, la composición SSR actual se expresa con componentes registrados y <code>HtmlPage::with_layout</code>. No hay un sistema automático de layouts basado en el filesystem.
+Un layout es un componente que envuelve el contenido de una página con estructura compartida: navegación, una cabecera, un área de contenido o un pie de página. En RustFlow, la composición SSR actual se expresa con componentes registrados y <code>HtmlPage::with_layout</code>. No hay un sistema automático de layouts basado en el filesystem. Los bloques de código siguientes son extractos conectados entre sí; la [página de producto ejecutable](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow-server/examples/product_page.rs) ofrece el programa completo.
 
 ## 1. Entender la composición
 
