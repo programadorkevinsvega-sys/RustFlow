@@ -2049,7 +2049,7 @@ mod tests {
             "text/html; charset=utf-8"
         );
         let html = body_text(response).await;
-        assert!(html.contains("<html lang=\\"es\\">"));
+        assert!(html.contains("<html lang=\"es\">"));
         assert!(html.contains("<title>Article &amp; details</title>"));
         assert!(html.contains("<main><article><h1>42</h1></article></main>"));
     }
