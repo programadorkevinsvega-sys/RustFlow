@@ -256,7 +256,7 @@ fn parse_env_file(
             )));
         }
 
-        let value = parse_env_value(raw_value).map_err(|_| {
+        let value = parse_env_value(raw_value).ok_or_else(|| {
             ConfigError(format!(
                 "invalid quoted value at {}:{}",
                 path.display(),
@@ -277,18 +277,18 @@ fn valid_env_key(key: &str) -> bool {
         && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }
 
-fn parse_env_value(raw_value: &str) -> Result<String, ()> {
+fn parse_env_value(raw_value: &str) -> Option<String> {
     let value = raw_value.trim();
     if value.is_empty() {
-        return Ok(String::new());
+        return Some(String::new());
     }
 
     let first = value.as_bytes()[0];
     if first == b'"' || first == 0x27 {
         if value.len() < 2 || value.as_bytes().last() != Some(&first) {
-            return Err(());
+            return None;
         }
-        return Ok(value[1..value.len() - 1].to_owned());
+        return Some(value[1..value.len() - 1].to_owned());
     }
 
     let value = value
@@ -296,7 +296,7 @@ fn parse_env_value(raw_value: &str) -> Result<String, ()> {
         .map(|(value, _comment)| value)
         .unwrap_or(value)
         .trim_end();
-    Ok(value.to_owned())
+    Some(value.to_owned())
 }
 
 #[cfg(test)]

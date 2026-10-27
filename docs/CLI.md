@@ -23,7 +23,7 @@ Los comandos de ejecución y build requieren estar dentro de un paquete RustFlow
 
 ## Scaffolding
 
-El scaffold contiene una ruta HTTP, una página construida con `rustflow::view::View`, un controller y los directorios de componentes/modelos/migraciones. El helper público `html_document` convierte la vista en un documento HTML. `RUSTFLOW_PORT` permite elegir el puerto; si no se define, usa 3000.
+El scaffold contiene una ruta HTTP, una página construida con `rustflow::view::View`, un controller y los directorios de componentes/modelos/migraciones. El helper público `html_document` convierte la vista en un documento HTML. La aplicación carga `rustflow_server::AppConfig` antes de escuchar: en desarrollo/test lee opcionalmente `.env` y `.env.<perfil>`, y acepta `RUSTFLOW_HOST`/`RUSTFLOW_PORT`. Consulta [Configuración por entornos](CONFIGURATION.md) para la precedencia y el comportamiento seguro de producción.
 
 Las dependencias Git del proyecto se fijan al commit usado por el CLI. La primera compilación requiere acceso a ese repositorio salvo que el checkout esté disponible en la caché de Cargo. No se promete compatibilidad de API más allá de esa revisión.
 
@@ -63,4 +63,4 @@ Las pruebas de integración usan directorios temporales. Cubren proyectos válid
 
 ## Límites explícitos
 
-No implementa configuración completa por entornos, validación de formularios, sesiones, autenticación/autorización, CSRF, server actions, base de datos, ORM ni runner de migraciones. No hay file watcher, hot reload, preservación de estado, proxy de desarrollo ni bundler integrado server/browser. `use_memo`, `use_ref` y `use_context` siguen pendientes.
+La configuración de la Fase 6.2 solo cubre perfil, host y puerto; no es un sistema general ni almacena secretos. No implementa validación de formularios, sesiones, autenticación/autorización, CSRF, server actions, base de datos, ORM ni runner de migraciones. No hay file watcher, hot reload, preservación de estado, proxy de desarrollo ni bundler integrado server/browser. `use_memo`, `use_ref` y `use_context` siguen pendientes.

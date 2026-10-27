@@ -22,8 +22,8 @@ Consulta el [estado público de las capacidades](website/src/content/docs/projec
 ## Qué sigue pendiente o tiene alcance limitado
 
 - <code>use_memo</code>, <code>use_ref</code> y <code>use_context</code> siguen pendientes.
-- La configuración completa por entornos, validación de formularios, sesiones, autenticación/autorización, CSRF, server actions y persistencia integrada siguen pendientes. El CLI de la Fase 6.1 no implementa estas capas.
-- Validación de formularios de servidor, sesiones, autenticación/autorización, CSRF, server actions y persistencia integrada.
+- La configuración de la Fase 6.2 cubre solo perfil, host y puerto; no es un sistema general ni un gestor de secretos.
+- Validación de formularios de servidor, sesiones, autenticación/autorización, CSRF, server actions y persistencia integrada siguen pendientes.
 - Un router general integrado: el callback de navegación cliente y las rutas HTTP de servidor no son un router full-stack unificado.
 - Un flujo de desarrollo y despliegue de producción validado, una política completa de compatibilidad y la revisión de seguridad de producción.
 
@@ -73,7 +73,7 @@ cd hello-rustflow
 rustflow dev
 ~~~
 
-Consulta [docs/CLI.md](docs/CLI.md) y la [guía pública del CLI](website/src/content/docs/guides/cli.md) para conocer los límites del scaffold y de los generadores.
+Consulta [docs/CLI.md](docs/CLI.md), [docs/CONFIGURATION.md](docs/CONFIGURATION.md), la [guía pública del CLI](website/src/content/docs/guides/cli.md) y la [guía pública de configuración](website/src/content/docs/guides/configuration.md) para conocer comandos, perfiles y límites de la aplicación generada.
 
 ## Calidad, límites y contribuciones
 
