@@ -3,12 +3,12 @@ use std::{cell::RefCell, string::ToString};
 use rustflow::components::ComponentRegistry;
 use rustflow::prelude::*;
 use rustflow::view::Element as ViewElement;
-use rustflow_dom::{DomError, DomRenderer, ReactiveMountedDom};
+use rustflow_dom::{ClientNavigation, DomError, DomRenderer, ReactiveMountedDom};
 use wasm_bindgen::{JsCast, prelude::*};
 use web_sys::HtmlInputElement;
 
 thread_local! {
-    static ACTIVE_MOUNT: RefCell<Option<ReactiveMountedDom>> = const { RefCell::new(None) };
+    static ACTIVE_NAVIGATION: RefCell<Option<ClientNavigation>> = const { RefCell::new(None) };
     static ACTIVE_HYDRATION_MOUNT: RefCell<Option<ReactiveMountedDom>> = const { RefCell::new(None) };
 }
 
@@ -136,6 +136,13 @@ pub fn start() -> Result<(), JsValue> {
 
     let runtime = Runtime::new();
     let root_scope = runtime.root_scope();
+    let current_route = runtime
+        .signal(format!(
+            "{}{}",
+            window.location().pathname()?,
+            window.location().search()?
+        ))
+        .map_err(display_error)?;
     let todos = runtime.signal(Vec::<Todo>::new()).map_err(display_error)?;
     let draft = runtime.signal(String::new()).map_err(display_error)?;
     let next_id = runtime.signal(1_i64).map_err(display_error)?;
@@ -309,8 +316,33 @@ pub fn start() -> Result<(), JsValue> {
     }
 
     let mut renderer = DomRenderer::new(document.clone(), runtime, registry);
+    let route_for_render = current_route.clone();
     let mounted = renderer
         .mount_reactive(&target, &root_scope, move || {
+            let route = route_for_render.get();
+            match route.split('?').next().unwrap_or("/") {
+                "/" => {}
+                "/about" => {
+                    return rustflow::view! {
+                        <main data-testid="about-page">
+                            <h1>"About RustFlow"</h1>
+                            <p>"This page was rendered by the RustFlow client navigation example."</p>
+                            <a href="/" data-testid="about-home-link">"Home"</a>
+                        </main>
+                    }
+                    .map_err(DomError::from);
+                }
+                _ => {
+                    return rustflow::view! {
+                        <main data-testid="not-found-page">
+                            <h1>"Route unavailable"</h1>
+                            <p>"The client does not own this route; the server fallback handles it."</p>
+                            <a href="/" data-testid="not-found-home-link">"Home"</a>
+                        </main>
+                    }
+                    .map_err(DomError::from);
+                }
+            }
             // Clone captures within each render pass so the render closure remains Fn.
             let todos_for_region = todos.clone();
             let todos_for_rows = todos.clone();
@@ -368,8 +400,17 @@ pub fn start() -> Result<(), JsValue> {
             });
 
             rustflow::view! {
-                <main>
+                <main data-testid="home-page">
                     <h1>"RustFlow Phase 3 browser demo"</h1>
+                    <nav aria-label="Main navigation">
+                        <a href="/" data-testid="home-link">"Home"</a>
+                        <a href="/about" data-testid="about-link">"About"</a>
+                    </nav>
+                    <form method="get" action="/" data-rustflow-enhance="true" data-testid="search-form">
+                        <label for="navigation-query">"Search query"</label>
+                        <input id="navigation-query" type="search" name="q" aria-label="Search query" />
+                        <button type="submit">"Search"</button>
+                    </form>
                     <Counter initial={0} label={counter_label_for_component.get()} />
                     <button data-testid="change-counter-label" on:click={move |_payload| {
                         counter_label_for_button.set(String::from("Updated label"));
@@ -433,7 +474,19 @@ pub fn start() -> Result<(), JsValue> {
         })
         .map_err(display_error)?;
 
-    ACTIVE_MOUNT.with(|slot| *slot.borrow_mut() = Some(mounted));
+    let route_for_navigation = current_route.clone();
+    let navigation = ClientNavigation::install(target, mounted, move |path| {
+        let pathname = path.split('?').next().unwrap_or("/");
+        match pathname {
+            "/" | "/about" => {
+                route_for_navigation.set(path.to_owned());
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    })
+    .map_err(display_error)?;
+    ACTIVE_NAVIGATION.with(|slot| *slot.borrow_mut() = Some(navigation));
     Ok(())
 }
 

@@ -84,6 +84,34 @@ Las listas deben presentar el mismo orden inicial y las mismas claves/vistas est
 
 El PR #39 se fusionó en `main` y los checks requeridos de Rust 1.85/stable, WASM y Browser E2E/bundle size pasaron en la CI posterior al merge; el PR también pasó documentación, gobernanza y revisión de dependencias. La hidratación sigue siendo opt-in y sus límites (en particular el fallback estático del root completo y la ausencia de navegación cliente) están documentados en el ADR 0010.
 
+## Navegación cliente y formularios (Fase 5.4, mejora optativa)
+
+El adaptador de navegador expone `rustflow_dom::ClientNavigation` para mejorar un montaje reactivo ya creado. Instálalo solo después de `DomRenderer::mount_reactive` o de una hidratación exitosa con `DomRenderer::hydrate_reactive`. La API no incorpora un DSL de rutas: la aplicación conserva el resolver de rutas y actualiza su señal/estado de vista en el callback.
+
+```rust
+use rustflow_dom::{ClientNavigation, DomError};
+
+// target es el elemento raíz y mounted es el ReactiveMountedDom creado previamente.
+// route_signal es una señal propiedad del runtime de la aplicación.
+let navigation = ClientNavigation::install(target, mounted, move |path| {
+    match path.split('?').next().unwrap_or("/") {
+        "/" | "/about" => {
+            route_signal.set(path.to_owned());
+            Ok(true)
+        }
+        _ => Ok(false), // La ruta no se modifica; el servidor seguirá siendo la autoridad.
+    }
+})?;
+```
+
+Solo se interceptan clics primarios sin modificadores en enlaces HTTP(S) del mismo origen, dentro del montaje, sin fragmento, descarga, `rel="external"`, opt-out ni destino distinto de `_self`. Los enlaces externos, protocolos no HTTP, fragmentos, descargas, destinos alternativos y clics modificados conservan la navegación convencional.
+
+Antes de cambiar la vista o la URL, RustFlow comprueba que la petición GET devuelve un estado satisfactorio, `text/html`, un documento HTML completo y una URL final del mismo origen. El callback debe aceptar la ruta y el montaje reactivo no debe informar un error. Después se usa la History API: las navegaciones aceptadas crean entradas nuevas; atrás/adelante procesa `popstate` con los mismos controles. Errores HTTP/red, contenido incompatible, una ruta no soportada, errores de render o fallos de History provocan navegación completa o recarga. El contenido HTML descargado no se inserta mediante `innerHTML`; el callback reconstruye la vista con el runtime existente.
+
+La mejora de formularios es deliberadamente más estrecha que HTML: añade `data-rustflow-enhance` solo a los formularios que deban probar la mejora cliente y usar GET, `application/x-www-form-urlencoded`, destino vacío/`_self`, origen compatible y controles escalares admitidos. POST, métodos de mutación, archivos, selectores múltiples, controles submit con nombre, codificaciones o destinos no soportados, formularios inválidos y formularios sin opt-in conservan el envío nativo. La mejora bloquea envíos duplicados durante la petición y, si la petición falla, vuelve al servidor con una navegación completa.
+
+El SSR sigue siendo la base funcional: antes de JavaScript, antes de inicializar RustFlow y cuando la mejora no sea elegible, los enlaces y formularios HTML siguen funcionando de forma convencional. Una discrepancia de hidratación conserva estático todo el root según ADR 0010; no instales navegación cliente después de una hidratación fallida. La API actual requiere que la aplicación mantenga sus rutas cliente alineadas con las rutas HTTP del servidor y no incluye server actions, sesiones, autenticación, CSRF ni cargas de archivos.
+
 ## Capacidades de componentes y fallback SSR
 
 Las definiciones de `rustflow::components::ComponentDefinition` son universales por compatibilidad, salvo que se indique lo contrario. Usa `.server_only()` para componentes que solo se pueden ejecutar en el servidor y `.browser_only()` para componentes que requieren APIs del navegador. Los renderizadores llaman a la variante de montaje con destino y rechazan la capacidad incompatible antes de ejecutar el setup.

@@ -14,6 +14,7 @@ rustflow-view = { path = "../rustflow-view" }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3"
 wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
     "Attr",
     "Comment",
@@ -22,12 +23,22 @@ web-sys = { version = "0.3", features = [
     "Element",
     "Event",
     "EventTarget",
+    "Headers",
+    "History",
+    "HtmlAnchorElement",
+    "HtmlFormControlsCollection",
+    "HtmlFormElement",
     "HtmlInputElement",
     "HtmlSelectElement",
     "HtmlTextAreaElement",
+    "Location",
+    "MouseEvent",
     "NamedNodeMap",
     "Node",
+    "Response",
     "Text",
+    "Url",
+    "UrlSearchParams",
     "Window",
 ] }
 

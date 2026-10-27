@@ -224,3 +224,255 @@ test("SSR hydration mismatch reports a diagnostic and preserves static content",
   ).toBe(true);
   expect(diagnostics.some((message) => message.includes("hydration mismatch"))).toBe(true);
 });
+
+
+test("client navigation pushes history and supports back and forward", async ({ page }) => {
+  const aboutRequests = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/about") {
+      aboutRequests.push(request.isNavigationRequest());
+    }
+  });
+
+  await page.getByTestId("about-link").click();
+  await expect(page).toHaveURL(/\/about$/);
+  await expect(page.getByTestId("about-page")).toBeVisible();
+  expect(aboutRequests).toContain(false);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("home-page")).toBeVisible();
+
+  await page.goForward();
+  await expect(page).toHaveURL(/\/about$/);
+  await expect(page.getByTestId("about-page")).toBeVisible();
+});
+
+test("direct routes and full reloads work without a prior client navigation", async ({ page }) => {
+  await page.goto("/about");
+  await expect(page).toHaveURL(/\/about$/);
+  await expect(page.getByTestId("about-page")).toBeVisible();
+
+  await page.reload();
+  await expect(page).toHaveURL(/\/about$/);
+  await expect(page.getByTestId("about-page")).toBeVisible();
+});
+
+test("opt-in GET forms use client navigation and suppress duplicate submissions", async ({ page }) => {
+  const requests = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/" && url.searchParams.has("q")) {
+      requests.push(request.isNavigationRequest());
+    }
+  });
+
+  await page.getByRole("searchbox", { name: "Search query" }).fill("rust flow");
+  await page.evaluate(() => {
+    const form = document.querySelector('[data-testid="search-form"]');
+    form.requestSubmit();
+    form.requestSubmit();
+  });
+
+  await expect(page).toHaveURL(/\/\?q=rust\+flow$/);
+  await expect(page.getByTestId("home-page")).toBeVisible();
+  await expect.poll(() => requests.length).toBe(1);
+  expect(requests).toEqual([false]);
+});
+
+test("forms without explicit enhancement keep native browser submission", async ({ page }) => {
+  const navigationRequests = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/about" && url.searchParams.has("native")) {
+      navigationRequests.push(request.isNavigationRequest());
+    }
+  });
+
+  await page.evaluate(() => {
+    const form = document.createElement("form");
+    form.method = "get";
+    form.action = "/about";
+    form.innerHTML =
+      '<input type="hidden" name="native" value="ok"><button type="submit">Native submit</button>';
+    document.getElementById("app").append(form);
+  });
+
+  await page.getByRole("button", { name: "Native submit" }).click();
+  await expect(page).toHaveURL(/\/about\?native=ok$/);
+  await expect(page.getByTestId("about-page")).toBeVisible();
+  expect(navigationRequests).toContain(true);
+});
+
+test("HTTP failures fall back to a full server navigation", async ({ page }) => {
+  await page.route("**/about", async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "text/html; charset=utf-8",
+      body: "<!doctype html><html><body><p>Upstream unavailable</p></body></html>",
+    });
+  });
+
+  await page.getByTestId("about-link").click();
+  await expect(page).toHaveURL(/\/about$/);
+  await expect(page.getByText("Upstream unavailable")).toBeVisible();
+});
+
+test("modified, alternate-target, download, and external links are not intercepted", async ({ page }) => {
+  const prevented = await page.evaluate(() => {
+    const root = document.getElementById("app");
+    const inspect = (attributes, modifiers = {}) => {
+      const anchor = document.createElement("a");
+      for (const [name, value] of Object.entries(attributes)) {
+        anchor.setAttribute(name, value);
+      }
+      anchor.textContent = "temporary link";
+      root.append(anchor);
+
+      let wasPrevented = null;
+      const observe = (event) => {
+        if (event.target === anchor) {
+          wasPrevented = event.defaultPrevented;
+          event.preventDefault();
+          document.removeEventListener("click", observe);
+        }
+      };
+      document.addEventListener("click", observe);
+      anchor.dispatchEvent(
+        new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          ...modifiers,
+        }),
+      );
+      anchor.remove();
+      return wasPrevented;
+    };
+
+    return [
+      inspect({ href: "/about" }, { ctrlKey: true }),
+      inspect({ href: "/about", target: "_blank" }),
+      inspect({ href: "/about", download: "about.html" }),
+      inspect({ href: "https://example.com/" }),
+    ];
+  });
+
+  expect(prevented).toEqual([false, false, false, false]);
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("home-page")).toBeVisible();
+});
+
+
+test("native HTML forms work when JavaScript is disabled", async ({ browser, page }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const noJsPage = await context.newPage();
+  const origin = new URL(page.url()).origin;
+
+  await noJsPage.route("**/native-form", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/html; charset=utf-8",
+      body:
+        '<!doctype html><html><body><form method="get" action="/native-result">' +
+        '<label for="native-query">Query</label><input id="native-query" name="q" required>' +
+        '<button type="submit">Send</button></form></body></html>',
+    }),
+  );
+  await noJsPage.route("**/native-result**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/html; charset=utf-8",
+      body: "<!doctype html><html><body><p>Native submission: bare html</p></body></html>",
+    }),
+  );
+
+  await noJsPage.goto(origin + "/native-form");
+  await noJsPage.getByRole("textbox", { name: "Query" }).fill("bare html");
+  await noJsPage.getByRole("button", { name: "Send" }).click();
+  await expect(noJsPage).toHaveURL(/\/native-result\?q=bare\+html$/);
+  await expect(noJsPage.getByText("Native submission: bare html")).toBeVisible();
+
+  await context.close();
+});
+
+
+test("SSR hydration failure keeps fixture links on native navigation", async ({ page }) => {
+  await gotoWithHydrationFixture(page, true);
+  await expect(page.getByTestId("hydration-action")).toHaveText("Corrupt: 0");
+
+  await page.evaluate(() => {
+    const link = document.createElement("a");
+    link.href = "/about";
+    link.dataset.testid = "failed-hydration-native-link";
+    link.textContent = "Open About";
+    document.getElementById("hydration-fixture").append(link);
+  });
+
+  const requests = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/about") {
+      requests.push(request.isNavigationRequest());
+    }
+  });
+
+  await page.getByTestId("failed-hydration-native-link").click();
+  await expect(page).toHaveURL(/\/about$/);
+  await expect(page.getByTestId("about-page")).toBeVisible();
+  expect(requests).toContain(true);
+});
+
+test("invalid enhanced forms retain native HTML validation", async ({ page }) => {
+  const requests = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/about") {
+      requests.push(request);
+    }
+  });
+
+  await page.evaluate(() => {
+    const form = document.createElement("form");
+    form.method = "get";
+    form.action = "/about";
+    form.dataset.rustflowEnhance = "true";
+    form.innerHTML =
+      '<label for="required-query">Required query</label>' +
+      '<input id="required-query" name="q" required>' +
+      '<button type="submit">Validate form</button>';
+    document.getElementById("app").append(form);
+  });
+
+  await page.getByRole("button", { name: "Validate form" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("home-page")).toBeVisible();
+  expect(requests).toHaveLength(0);
+});
+
+test("network failures fall back to a full server navigation", async ({ page }) => {
+  let fetchCount = 0;
+  const navigationRequests = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/about") {
+      navigationRequests.push(request.isNavigationRequest());
+    }
+  });
+
+  await page.route("**/about", async (route) => {
+    if (route.request().isNavigationRequest()) {
+      await route.continue();
+      return;
+    }
+    fetchCount += 1;
+    if (fetchCount === 1) {
+      await route.abort("failed");
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.getByTestId("about-link").click();
+  await expect(page).toHaveURL(/\/about$/);
+  await expect(page.getByTestId("about-page")).toBeVisible();
+  expect(fetchCount).toBe(1);
+  expect(navigationRequests).toContain(true);
+});

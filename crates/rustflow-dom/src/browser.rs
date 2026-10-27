@@ -1,3 +1,6 @@
+mod navigation;
+pub use navigation::ClientNavigation;
+
 use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
