@@ -2079,8 +2079,7 @@ mod tests {
         assert!(html.contains("<main><article><h1>42</h1></article></main>"));
     }
 
-    #[tokio::test]
-    async fn route_groups_prefix_paths_and_names_and_scope_middleware() {    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn shared_catalog_is_reused_across_concurrent_http_requests_and_isolates_state() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<SharedComponentCatalog>();
@@ -2168,7 +2167,8 @@ mod tests {
         );
     }
 
-
+    #[tokio::test]
+    async fn route_groups_prefix_paths_and_names_and_scope_middleware() {
         let mut app = Application::new();
         app.get("/open", |_request| async { Ok(Response::text("open")) })
             .expect("open route");
