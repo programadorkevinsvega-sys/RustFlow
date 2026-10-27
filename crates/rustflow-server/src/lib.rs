@@ -1588,8 +1588,8 @@ mod tests {
         http::{Request as AxumHttpRequest, StatusCode},
     };
     use rustflow::components::{
-        ComponentDefinition, ComponentRegistry, ComponentRender, SharedComponentCatalog,
-        SharedComponentCatalogBuilder, SharedComponentDefinition,
+        ComponentRender, SharedComponentCatalog, SharedComponentCatalogBuilder,
+        SharedComponentDefinition,
     };
     use rustflow::reactivity::signal;
     use rustflow_view::{Property, PropertyValue};
@@ -2014,52 +2014,53 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn route_renders_registered_component_with_request_props_and_layout() {
+    async fn route_renders_shared_component_catalog_with_request_props_and_layout() {
+        let article = SharedComponentDefinition::new("ArticlePage", |_context, _initial| {
+            let render: ComponentRender = Rc::new(|properties, _children| {
+                let id = properties
+                    .iter()
+                    .find(|property| property.name() == "id")
+                    .and_then(|property| match property.value() {
+                        PropertyValue::Text(value) => Some(value.clone()),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| "missing".to_owned());
+                Ok(View::element(
+                    "article",
+                    [View::element("h1", [View::text(id)])?],
+                )?)
+            });
+            Ok(render)
+        })
+        .expect("valid shared article definition")
+        .server_only();
+
+        let layout = SharedComponentDefinition::new("AppLayout", |_context, _properties| {
+            let render: ComponentRender =
+                Rc::new(|_properties, children| Ok(View::element("main", children.to_vec())?));
+            Ok(render)
+        })
+        .expect("valid shared layout definition");
+
+        let mut builder = SharedComponentCatalogBuilder::new();
+        builder.register(article).expect("register article");
+        builder.register(layout).expect("register layout");
+        let catalog = Arc::new(builder.build());
+        let route_catalog = Arc::clone(&catalog);
+
         let mut app = Application::new();
-        app.get("/articles/{id}", |request| async move {
-            // ComponentRegistry uses owner-thread-local reactive state, so create and consume it
-            // inside this handler rather than capturing it in the Send + Sync route closure.
-            let mut registry = ComponentRegistry::new();
-            let article = ComponentDefinition::new("ArticlePage", |_context, _properties| {
-                let render: ComponentRender = Rc::new(|properties, _children| {
-                    let id = properties
-                        .iter()
-                        .find(|property| property.name() == "id")
-                        .and_then(|property| match property.value() {
-                            PropertyValue::Text(value) => Some(value.clone()),
-                            _ => None,
-                        })
-                        .unwrap_or_else(|| "missing".to_owned());
-                    Ok(View::element(
-                        "article",
-                        [View::element("h1", [View::text(id)])?],
-                    )?)
-                });
-                Ok(render)
-            })
-            .map_err(|_| HttpError::internal_server_error())?;
-            registry
-                .register(article)
-                .map_err(|_| HttpError::internal_server_error())?;
-
-            let layout = ComponentDefinition::new("AppLayout", |_context, _properties| {
-                let render: ComponentRender =
-                    Rc::new(|_properties, children| Ok(View::element("main", children.to_vec())?));
-                Ok(render)
-            })
-            .map_err(|_| HttpError::internal_server_error())?;
-            registry
-                .register(layout)
-                .map_err(|_| HttpError::internal_server_error())?;
-
-            let id = request.path_param("id").unwrap_or("missing").to_owned();
-            let property =
-                Property::new("id", id).map_err(|_| HttpError::internal_server_error())?;
-            HtmlPage::from_component("Article & details", "ArticlePage", [property], [])?
-                .language("es")
-                .with_components(&registry)
-                .with_layout("AppLayout", [])?
-                .render()
+        app.get("/articles/{id}", move |request| {
+            let catalog = Arc::clone(&route_catalog);
+            async move {
+                let id = request.path_param("id").unwrap_or("missing").to_owned();
+                let property =
+                    Property::new("id", id).map_err(|_| HttpError::internal_server_error())?;
+                HtmlPage::from_component("Article & details", "ArticlePage", [property], [])?
+                    .language("es")
+                    .with_shared_components(&catalog)
+                    .with_layout("AppLayout", [])?
+                    .render()
+            }
         })
         .expect("route registration");
 

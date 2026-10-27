@@ -29,7 +29,7 @@ Consulta la [guía técnica HTTP](https://github.com/programadorkevinsvega-sys/R
 
 ## HTML seguro y documentos completos
 
-El crate `rustflow-ssr` serializa árboles de vista estructurales a fragmentos HTML escapados. El servidor ofrece `html_document(title, lang, &view)` y `html_document_with_components` para producir un documento con doctype, idioma, metadatos UTF-8, título y cuerpo.
+El crate `rustflow-ssr` serializa árboles de vista estructurales a fragmentos HTML escapados. El servidor ofrece `html_document(title, lang, &view)` para vistas sin componentes y `html_document_with_shared_components` para catálogos compartidos. Para páginas compuestas usa `HtmlPage::with_shared_components`: crea el `SharedComponentCatalog` durante el arranque y reutilízalo en los handlers. Consulta la [guía SSR](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/SSR_RENDERING.md) y el ejemplo ejecutable para el patrón recomendado.
 
 `Response::html(String)` inserta la cadena proporcionada sin escapar. Úsala solo con contenido confiable ya escapado; para vistas estructurales, prefiere `html_document` o los helpers de fragmento.
 

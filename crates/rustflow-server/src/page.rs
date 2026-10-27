@@ -18,10 +18,10 @@ use crate::{
 
 /// A composable full HTML page.
 ///
-/// Use from_component to create a page from a route-facing component, with_layout to wrap it
-/// in layout components, and with_components to supply the registry that resolves those
-/// components. Layout calls wrap the current body, so add inner layouts first and outer
-/// layouts last.
+/// Use from_component to create a page from a route-facing component and with_layout to wrap
+/// it in layout components. For concurrent HTTP routes, prefer with_shared_components with a
+/// catalog built once during application initialization. Layout calls wrap the current body,
+/// so add inner layouts first and outer layouts last.
 #[derive(Clone)]
 pub struct HtmlPage {
     title: String,
@@ -69,19 +69,20 @@ impl HtmlPage {
         self
     }
 
-    /// Use the existing local registry for this page and its layout components.
+    /// Use a local registry for callbacks that cannot satisfy `Send + Sync`.
     ///
-    /// HTTP routes that share definitions between workers should use `with_shared_components`.
+    /// For concurrent HTTP routes, prefer `with_shared_components` with a startup-built catalog.
     pub fn with_components(mut self, registry: &ComponentRegistry) -> Self {
         self.components = Some(registry.clone());
         self.shared_components = None;
         self
     }
 
-    /// Use a shareable immutable catalog for this page and its layout components.
+    /// Use the shareable immutable catalog for this page and its layout components.
     ///
-    /// Build the catalog during application initialization. Its factories are shared, while
-    /// runtimes, scopes, views and render callbacks are local to each render.
+    /// This is the recommended API for concurrent HTTP routes. Build the catalog during
+    /// application initialization. Factories are shared; runtimes, scopes, views and render
+    /// callbacks are local to each render.
     pub fn with_shared_components(mut self, catalog: &SharedComponentCatalog) -> Self {
         self.components = None;
         self.shared_components = Some(catalog.clone());
