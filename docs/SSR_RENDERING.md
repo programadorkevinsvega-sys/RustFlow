@@ -34,7 +34,7 @@ Los callbacks de eventos nunca se serializan como atributos HTML `on*`. Un subco
 El renderer de `rustflow-ssr` emite fragmentos, no documentos ni respuestas HTTP. El adaptador `rustflow-server` puede envolver una vista estructural con `html_document(title, lang, &view)`, que produce doctype, atributo `lang`, metadatos UTF-8, título y cuerpo mediante nodos seguros. También puede aplicar páginas HTML configuradas para estados 4xx/5xx. El adaptador `rustflow-server` ofrece composición de páginas y datos de hidratación; la hidratación DOM opt-in de la Fase 5.3 está implementada. La navegación cliente y la mejora progresiva de formularios se implementaron como APIs optativas en la Fase 5.4; consulta el contrato detallado a continuación y la guía pública de navegación.
 
 
-## Datos públicos previstos para hidratación (contrato inicial)
+## Datos públicos para hidratación (contrato actual)
 
 El tipo experimental `HydrationData` valida un valor JSON y devuelve JSON compacto con los caracteres sensibles para un contexto de script HTML escapados como secuencias Unicode. Rechaza entradas mayores de 1 MiB, representaciones resultantes mayores de 1 MiB y estructuras con más de 64 niveles de anidamiento.
 
