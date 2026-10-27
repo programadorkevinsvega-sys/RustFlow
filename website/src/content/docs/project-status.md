@@ -47,7 +47,7 @@ La hidratación es optativa y añade límites deterministas a la salida SSR; el 
 
 ### Fase 6.1 — CLI y generadores: implementación experimental
 
-La rama de la Fase 6.1 incorpora `crates/rustflow-cli` con `rustflow new`, `rustflow dev`, `rustflow build` y los generadores de componentes, páginas, controladores, modelos y migraciones. Este texto describe el alcance de la revisión; la fase no se declara cerrada hasta que los tests y CI pasen sobre el HEAD final de la PR.
+La Fase 6.1 se fusionó a `main` mediante la PR #45 (commit `6fb26c310359fd0e186e92696f09edcca24ed2eb`). Incluye `rustflow new`, `rustflow dev`, `rustflow build` y los generadores de componentes, páginas, controladores, modelos y migraciones. Los checks de la PR pasaron en el HEAD final antes de la fusión.
 
 - `new` crea un proyecto de servidor y fija dependencias Git a la revisión fuente del CLI.
 - `dev` y `build` delegan a Cargo; `dev` no incluye watcher ni hot reload.
@@ -55,6 +55,12 @@ La rama de la Fase 6.1 incorpora `crates/rustflow-cli` con `rustflow new`, `rust
 - Los modelos son structs Rust y las migraciones plantillas SQL; no existe ORM, conexión o runner de migraciones integrado.
 
 Sigue la [guía del CLI](/guides/cli/) y el [tutorial completo](/tutorials/first-cli-app/) para comandos y recuperación ante errores.
+
+### Fase 6.2 — Configuración por entornos: implementación experimental
+
+La configuración pública rustflow_server::AppConfig valida el perfil, la IP de bind y el puerto de la aplicación generada. En desarrollo/test aplica la precedencia variable del proceso > .env.<perfil> > .env > defaults. Producción no lee archivos dotenv y exige RUSTFLOW_ENV=production, RUSTFLOW_HOST y RUSTFLOW_PORT desde el entorno del proceso.
+
+.env.example no contiene secretos reales y el scaffold ignora los archivos de entorno privados. Esta API no es un sistema de configuración general ni un gestor de secretos; tampoco configura sesiones, base de datos, autenticación o CSRF. La fase permanece sujeta a que todas las verificaciones de la PR pasen.
 
 ## Matriz rápida: ¿qué puedes hacer?
 

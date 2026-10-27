@@ -3,6 +3,7 @@
 //! Axum, Tokio, and Tower are isolated to this adapter crate. Core reactivity and
 //! the structural view model do not depend on HTTP infrastructure.
 
+mod config;
 mod group;
 mod page;
 mod proxy;
@@ -34,6 +35,7 @@ use axum::{
 };
 
 use bytes::Bytes;
+pub use config::{AppConfig, AppEnvironment, ConfigError};
 pub use group::RouteGroup;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;

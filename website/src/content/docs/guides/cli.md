@@ -46,7 +46,7 @@ La estructura principal es:
 | `src/components/mod.rs`, `src/pages/mod.rs`, `src/controllers/mod.rs`, `src/models/mod.rs` | Índices de módulos con una sección delimitada que administra el CLI. |
 | `migrations/` | Directorio para plantillas SQL; no ejecuta migraciones. |
 
-Abre <code>http://127.0.0.1:3000/</code>. La aplicación usa opcionalmente `RUSTFLOW_PORT`; por defecto utiliza 3000. La plantilla no incluye una app browser/WASM integrada ni crea automáticamente un bundle cliente.
+Abre <code>http://127.0.0.1:3000/</code>. La aplicación carga rustflow_server::AppConfig antes de escuchar. En desarrollo/test puedes copiar .env.example a .env; RUSTFLOW_HOST y RUSTFLOW_PORT controlan el bind. Producción exige ambas variables desde el entorno del proceso y no lee archivos dotenv. Consulta [Configuración por entornos](/guides/configuration/). La plantilla no incluye una app browser/WASM integrada ni crea automáticamente un bundle cliente.
 
 ## Desarrollo: `rustflow dev`
 

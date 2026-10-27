@@ -3,7 +3,7 @@ title: Empezar con RustFlow
 description: Prepara Rust, prueba el runtime, ejecuta el servidor y compila la demo interactiva.
 ---
 
-Esta guía te ayuda a comprobar el código real de RustFlow: ejecutar tests del workspace, probar el ejemplo HTTP y levantar el ejemplo WASM del navegador. El CLI experimental de la Fase 6.1 puede crear una aplicación de servidor y generar archivos; consulta la [guía del CLI](/guides/cli/) antes de adoptarlo. RustFlow sigue siendo pre-1.0 y no es una plataforma lista para producción.
+Esta guía te ayuda a comprobar el código real de RustFlow: ejecutar tests del workspace, probar el ejemplo HTTP y levantar el ejemplo WASM del navegador. El CLI experimental de la Fase 6.1 puede crear una aplicación de servidor y generar archivos; la [guía del CLI](/guides/cli/) y la [guía de configuración](/guides/configuration/) explican sus límites y el contrato de perfiles. RustFlow sigue siendo pre-1.0 y no es una plataforma lista para producción.
 
 ## 1. Requisitos
 

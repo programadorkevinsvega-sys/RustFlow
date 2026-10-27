@@ -26,7 +26,7 @@ cd hello-rustflow
 find . -maxdepth 3 -type f | sort
 ~~~
 
-La estructura principal contiene `Cargo.toml`, `README.md`, `src/main.rs`, las carpetas `src/components`, `src/pages`, `src/controllers`, `src/models` y `migrations`. La página inicial se construye en `src/pages/home.rs`; el handler está en `src/controllers/home_controller.rs` y se registra desde `src/main.rs`.
+La estructura principal contiene `Cargo.toml`, `README.md`, `.gitignore`, `.env.example`, `src/main.rs`, las carpetas `src/components`, `src/pages`, `src/controllers`, `src/models` y `migrations`. La página inicial se construye en `src/pages/home.rs`; el handler está en `src/controllers/home_controller.rs` y se registra desde `src/main.rs`.
 
 El manifiesto depende directamente de `rustflow` y `rustflow-server` en un commit Git concreto, además de Tokio para el runtime. Esto evita que una misma aplicación siga silenciosamente una rama móvil con APIs diferentes.
 
@@ -36,7 +36,7 @@ El manifiesto depende directamente de `rustflow` y `rustflow-server` en un commi
 rustflow dev
 ~~~
 
-Abre <code>http://127.0.0.1:3000/</code>. Para usar otro puerto, detén el proceso y vuelve a arrancar con `RUSTFLOW_PORT=3100 rustflow dev`.
+Abre <code>http://127.0.0.1:3000/</code>. Para cambiar el host o el puerto en desarrollo, copia `.env.example` a `.env` y edita `RUSTFLOW_HOST`/`RUSTFLOW_PORT`, o sobreescríbelos en el entorno del proceso. Lee la [guía de configuración](/guides/configuration/) antes de definir ajustes de producción.
 
 La ruta raíz transforma la vista tipada de `src/pages/home.rs` en un documento HTML mediante `html_document`. El comando ejecuta `cargo run` una vez; no hay supervisión de archivos, reinicio automático ni hot reload. Después de editar código, detén y vuelve a ejecutar el comando.
 
@@ -117,6 +117,10 @@ Si un índice `mod.rs` perdió los marcadores gestionados o contiene código per
 - Para SSR con catálogo compartido y layouts, ejecuta `cargo run -p rustflow-server --example basic` desde la raíz del repositorio y sigue el [tutorial de página de producto](/tutorials/product-page/).
 - Para rutas HTTP y JSON, ejecuta `cargo run -p rustflow-server --example basic` y sigue el [tutorial de API JSON](/tutorials/json-api/).
 
+## Configuración por entornos
+
+El archivo .env.example contiene únicamente valores no sensibles. Los archivos .env y .env.* se ignoran mediante .gitignore. En desarrollo/test, el proceso puede sobreescribir .env.<perfil> y .env; en producción, los archivos dotenv no se leen y RUSTFLOW_HOST/RUSTFLOW_PORT deben definirse en el entorno del proceso. Consulta la [guía de configuración](/guides/configuration/) para ver errores y precedencia.
+
 ## Límites
 
-El CLI no implementa configuración por entornos, validación de formularios, sesiones, autenticación/autorización, CSRF, server actions, ORM, conexiones de base de datos ni ejecución de migraciones. Tampoco incluye watcher, hot reload, proxy de desarrollo o bundler server/browser. `use_memo`, `use_ref` y `use_context` siguen pendientes. Consulta la [referencia de API](/reference/api-status/) y el [roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md).
+La configuración de la Fase 6.2 cubre solo perfil, host y puerto; no proporciona un sistema general ni un gestor de secretos. El CLI todavía no implementa validación de formularios, sesiones, autenticación/autorización, CSRF, server actions, ORM, conexiones de base de datos ni ejecución de migraciones. Tampoco incluye watcher, hot reload, proxy de desarrollo o bundler server/browser. `use_memo`, `use_ref` y `use_context` siguen pendientes. Consulta la [referencia de API](/reference/api-status/) y el [roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md).

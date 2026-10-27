@@ -282,14 +282,16 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [x] Prevent generators from silently overwriting user files.
 - [x] Add deterministic CLI integration tests.
 
-**Verification gate:** the implementation criteria above have evidence in the CLI code, deterministic unit/integration tests, and technical/public documentation. Do not declare Phase 6.1 formally closed until every required check has a green result on the final PR HEAD, including Browser E2E and bundle-size validation.
+**Verification gate (met):** PR #45 se fusionó en `main` mediante squash en `6fb26c310359fd0e186e92696f09edcca24ed2eb`. En el HEAD final de la PR pasaron Rust 1.85/stable, CI, WASM, Browser E2E/bundle size, documentación, gobernanza y revisión de dependencias. El cierre se limita al CLI, scaffold y generadores descritos arriba.
 
 ### 6.2 Configuration
-- [ ] Define configuration precedence and validation.
-- [ ] Add a safe .env.example without real secrets.
-- [ ] Separate development, test, and production settings.
-- [ ] Fail fast on invalid production configuration.
-- [ ] Document secret management.
+- [x] Define configuration precedence and validation.
+- [x] Add a safe .env.example without real secrets.
+- [x] Separate development, test, and production settings.
+- [x] Fail fast on invalid production configuration.
+- [x] Document secret management.
+
+**Verification gate:** the implementation and technical/public documentation are included in the Phase 6.2 PR. Do not mark the phase formally closed until Rust 1.85/stable, Clippy, workspace tests, rustdoc, WASM/browser checks, bundle budget, website build, governance and dependency review pass on the final PR HEAD.
 
 ### 6.3 Validation and forms
 - [ ] Implement typed input extraction and validation.
