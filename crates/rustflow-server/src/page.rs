@@ -13,9 +13,8 @@ use rustflow_view::{Property, View};
 
 use crate::{
     HttpError, Response, html_document, html_document_with_components,
-    html_document_with_components_and_hydration_data,
-    html_document_with_hydration_data, html_document_with_shared_components,
-    html_document_with_shared_components_and_hydration_data,
+    html_document_with_components_and_hydration_data, html_document_with_hydration_data,
+    html_document_with_shared_components, html_document_with_shared_components_and_hydration_data,
 };
 use rustflow_ssr::HydrationData;
 
@@ -186,21 +185,18 @@ mod tests {
         use rustflow_ssr::HydrationData;
 
         let body = View::element("main", [View::text("Hello")]).expect("body");
-        let data = HydrationData::from_json(r#"{"public":"</script><svg>&"}"#)
-            .expect("valid public JSON");
+        let data =
+            HydrationData::from_json(r#"{"public":"</script><svg>&"}"#).expect("valid public JSON");
         let response = HtmlPage::new("Hydration", body)
             .with_hydration_data(data)
             .render()
             .expect("render hydratable page");
-        let html = std::str::from_utf8(response.body())
-            .expect("HTML response is UTF-8");
+        let html = std::str::from_utf8(response.body()).expect("HTML response is UTF-8");
 
-        assert!(html.contains(
-            "<!--rustflow:root:start--><main>Hello</main><!--rustflow:root:end-->"
-        ));
-        assert!(html.contains(
-            "<script type=\"application/json\" id=\"rustflow-hydration-data\">"
-        ));
+        assert!(
+            html.contains("<!--rustflow:root:start--><main>Hello</main><!--rustflow:root:end-->")
+        );
+        assert!(html.contains("<script type=\"application/json\" id=\"rustflow-hydration-data\">"));
         assert!(html.contains(r#""public":"\u003c/script\u003e\u003csvg\u003e\u0026""#));
         assert!(!html.contains("</script><svg>"));
     }
