@@ -109,8 +109,8 @@ fn toml_path(path: &Path) -> String {
         .replace('"', "\\\"")
 }
 
-fn cargo_target_dir() -> PathBuf {
-    workspace_root().join("target")
+fn cargo_target_dir(temp: &TempDir) -> PathBuf {
+    temp.path().join("cargo-target")
 }
 
 struct ChildGuard(Child);
@@ -291,16 +291,17 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
         assert_success(&invoke(&project, &["generate", kind, name]));
     }
     localize_framework_dependencies(&project);
+    let target_dir = cargo_target_dir(&temp);
 
     let output = cli()
         .current_dir(&project)
         .args(["build", "--offline"])
-        .env("CARGO_TARGET_DIR", cargo_target_dir())
+        .env("CARGO_TARGET_DIR", &target_dir)
         .output()
         .expect("run rustflow build");
     assert_success(&output);
 
-    let binary = cargo_target_dir().join("debug").join("cli-fixture-app");
+    let binary = target_dir.join("debug").join("cli-fixture-app");
     assert!(
         binary.is_file(),
         "expected generated executable at {}",
@@ -350,6 +351,7 @@ fn dev_runs_cargo_and_invalid_projects_return_a_clear_error() {
 
     let project = create_project(temp.path(), "dev-fixture-app");
     localize_framework_dependencies(&project);
+    let target_dir = cargo_target_dir(&temp);
     fs::write(
         project.join("src/main.rs"),
         "fn main() { println!(\"dev executed\"); }\n",
@@ -359,7 +361,7 @@ fn dev_runs_cargo_and_invalid_projects_return_a_clear_error() {
     let output = cli()
         .current_dir(&project)
         .args(["dev", "--offline"])
-        .env("CARGO_TARGET_DIR", cargo_target_dir())
+        .env("CARGO_TARGET_DIR", &target_dir)
         .output()
         .expect("run rustflow dev");
     assert_success(&output);
