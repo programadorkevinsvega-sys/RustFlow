@@ -1,13 +1,13 @@
 # ADR 0011: Client navigation and progressive form enhancement
 
-- **Status:** Proposed for review
+- **Status:** Proposed for review; implementation merged in PR #41, formal architectural approval remains pending
 - **Date:** 2026-10-27
 - **Phase:** 5.4 — Navigation and forms
 - **Related:** ADR 0009, ADR 0010, `docs/SSR_RENDERING.md`
 
 ## Context
 
-RustFlow has an HTTP server with stable route/error semantics, full-document SSR helpers, an opt-in DOM hydration protocol, and a reactive DOM mount that owns node reconciliation and listener/effect cleanup. It does not yet provide a framework-owned client route table or server actions.
+At the time this ADR was proposed, RustFlow had an HTTP server prototype, full-document SSR helpers, opt-in DOM hydration, and a reactive DOM mount but no client navigation adapter. Phase 5.4 has since implemented the adapter described below. RustFlow still does not provide a framework-owned general client route table or server actions.
 
 The browser must keep ordinary HTML navigation and form submission as the baseline. Client enhancements cannot turn a missing route, failed server request, or incompatible response into a false success, and they must not destructively replace valid SSR content during hydration.
 
@@ -71,4 +71,4 @@ This keeps the public API small and reuses existing DOM/reactivity ownership. In
 - Unit and E2E tests must prove eligible client navigation, URL/history/back/forward, direct route and reload behavior, and fallback for failed/incompatible server responses.
 - E2E tests must prove native behavior for modified/external/alternate-target/download links; opted-in supported GET forms; duplicate-submit suppression; and native submission for non-opted-in/unsupported forms.
 - Existing hydration mismatch-preservation and lifecycle-cleanup tests must remain passing.
-- The complete repository CI suite, production browser bundle, Playwright E2E tests, bundle-size budget, docs build, governance and dependency review must pass on the PR head. The phase remains open until the PR is merged and post-merge required CI is confirmed.
+- **Implementation verification:** PR #41 was merged into main as `1da8b110ed3e57abccb2c14b6236fcbbc0fbf849`. The PR-head CI passed Rust 1.85/stable, WASM, browser build, bundle budget, Playwright E2E (18 tests), docs build, governance and dependency review. The post-merge CI visible on `cc26782ef28cf14c5ad039bdcbdded93a5972a34` passed Rust 1.85/stable, WASM, browser E2E/bundle size, Cloudflare Pages and governance. The implementation/phase status is therefore complete within the documented scope. The ADR remains proposed until maintainers complete its formal decision review; proposal status must not be interpreted as code being absent.
