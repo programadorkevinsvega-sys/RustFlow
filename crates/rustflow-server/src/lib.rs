@@ -4,6 +4,7 @@
 //! the structural view model do not depend on HTTP infrastructure.
 
 mod group;
+mod page;
 mod proxy;
 mod tls;
 
@@ -36,6 +37,7 @@ use bytes::Bytes;
 pub use group::RouteGroup;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
+pub use page::HtmlPage;
 pub use proxy::{ClientAddressPolicy, IpNetwork};
 use serde::{Serialize, de::DeserializeOwned};
 pub use tls::tls_server_config_from_pem;

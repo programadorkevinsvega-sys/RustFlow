@@ -243,9 +243,9 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 ### 5.2 SSR
 - [x] Render structural view trees into HTML fragments using rustflow-ssr.
 - [x] Expose complete HTML document responses and configurable escaped error pages through `rustflow-server` (Phase 4.4); route handlers can call these helpers.
-- [ ] Add advanced layout composition and route-to-component data integration; full-stack SSR composition is not complete.
+- [x] Add advanced layout composition and explicit route-to-component data integration (rustflow-server::HtmlPage, nested layout components, and allow-listed route props). Full-stack SSR composition is improved but hydration/navigation remain incomplete.
 - [x] Test escaping and configured document/error-page responses.
-- [ ] Test request-isolated SSR/component state and deterministic server/client boundaries.
+- [x] Test request-isolated SSR/component state and deterministic boundaries: repeated renders with the same route props produce identical HTML, each render creates/disposes its own component scope, and browser-only/server-only policies remain covered by SSR target tests.
 
 ### 5.3 Hydration
 - [ ] Add minimal, safely serialized hydration data.
