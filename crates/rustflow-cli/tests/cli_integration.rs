@@ -153,7 +153,10 @@ fn creates_a_project_and_generates_all_five_file_types_without_overwrite() {
     assert!(env_example.contains("RUSTFLOW_HOST=127.0.0.1"));
     assert!(env_example.contains("RUSTFLOW_PORT=3000"));
     for forbidden in ["PASSWORD=", "TOKEN=", "SECRET_KEY=", "DATABASE_URL="] {
-        assert!(!env_example.contains(forbidden), "unsafe variable in .env.example: {forbidden}");
+        assert!(
+            !env_example.contains(forbidden),
+            "unsafe variable in .env.example: {forbidden}"
+        );
     }
     let generated_ignore = fs::read_to_string(project.join(".gitignore")).unwrap();
     assert!(generated_ignore.contains(".env.*"));
