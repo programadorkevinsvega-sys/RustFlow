@@ -311,9 +311,7 @@ fn enhanced_form_from_event(
             if matches!(kind.as_str(), "checkbox" | "radio") && !input.checked() {
                 continue;
             }
-            if params.append_with_str(&name, &input.value()).is_err() {
-                return None;
-            }
+            params.append(&name, &input.value());
             continue;
         }
         if let Ok(select) = element.clone().dyn_into::<HtmlSelectElement>() {
@@ -323,12 +321,8 @@ fn enhanced_form_from_event(
             if select.multiple() {
                 return None;
             }
-            if !select.name().is_empty()
-                && params
-                    .append_with_str(&select.name(), &select.value())
-                    .is_err()
-            {
-                return None;
+            if !select.name().is_empty() {
+                params.append(&select.name(), &select.value());
             }
             continue;
         }
@@ -336,12 +330,8 @@ fn enhanced_form_from_event(
             if textarea.disabled() {
                 continue;
             }
-            if !textarea.name().is_empty()
-                && params
-                    .append_with_str(&textarea.name(), &textarea.value())
-                    .is_err()
-            {
-                return None;
+            if !textarea.name().is_empty() {
+                params.append(&textarea.name(), &textarea.value());
             }
         }
     }
