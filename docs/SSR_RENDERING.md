@@ -55,8 +55,34 @@ fn build_public_snapshot() -> Result<(), Box<dyn std::error::Error>> {
 
 `HydrationData::from_json` valida y normaliza una cadena JSON. `as_str` devuelve datos JSON, no HTML, no genera una etiqueta `script` y no implementa hidratación. El tipo solo admite `serde_json::Value`: closures, callbacks, nodos DOM, referencias internas y objetos Rust arbitrarios no se serializan automáticamente. El framework tampoco puede inferir si un campo representa un secreto; la aplicación debe proyectar una lista explícita de datos públicos y nunca incluir tokens de sesión, credenciales, objetos de petición ni estado privado.
 
-El contrato de componentes compatibles con cada entorno, los límites de discrepancia, los identificadores de hidratación y la recuperación del DOM continúan en definición. No se debe interpretar esta utilidad como soporte de SSR full-stack ni como hidratación funcional.
+La API `HydrationData` sigue siendo solo el formato del payload; la integración SSR y la hidratación DOM se documentan por separado a continuación. No convierte por sí misma una página en interactiva: el servidor debe emitir límites compatibles y el cliente debe invocar explícitamente el hidratador.
 
+
+## Hidratación DOM (Fase 5.3, en revisión)
+
+La hidratación está opt-in. El renderizado SSR normal conserva su HTML existente; el renderizador solo emite comentarios estructurales cuando se solicita `HtmlRenderer::with_hydration_boundaries()`. Los marcadores versionan la posición del root y delimitan componentes, regiones dinámicas y subárboles estáticos. Sus identificadores son deterministas en orden de recorrido para la misma vista y el mismo catálogo.
+
+Para páginas de servidor, adjunta únicamente datos explícitamente públicos:
+
+```rust
+use rustflow_server::HtmlPage;
+use rustflow_ssr::HydrationData;
+
+let data = HydrationData::from_json(r#"{"display_name":"Ada"}"#)?;
+let response = HtmlPage::new("Inicio", body)
+    .with_hydration_data(data)
+    .render()?;
+```
+
+La página añade el fragmento SSR con límites y un elemento inerte `script[type="application/json"]` con id `rustflow-hydration-data`. La serialización existente escapa los caracteres peligrosos para el contexto HTML. Esto no serializa estado privado ni deduce automáticamente las propiedades iniciales de los componentes: la aplicación debe derivar la vista y su estado inicial a partir de una lista permitida de datos públicos.
+
+En el navegador, `DomRenderer::read_hydration_data(&document)` analiza el payload opcional como valor JavaScript y `DomRenderer::hydrate_into(&target, &view)` o `hydrate_reactive(&target, &owner_scope, render)` valida primero el DOM existente. Compara marcadores, etiquetas, atributos, texto y la estructura inicial, y solo después activa manejadores y efectos. Los nodos compatibles no se reconstruyen. Los eventos se registran a partir de las vinculaciones de la vista del cliente; los callbacks nunca vienen serializados desde el servidor.
+
+Si faltan o se repiten límites, el orden de nodos difiere, o el estado/atributos iniciales no coinciden, la hidratación devuelve un diagnóstico `DomError::HydrationMismatch`. No intenta reparar con un reemplazo destructivo ni activa parcialmente la interactividad del root: el HTML de servidor permanece como contenido estático. La misma raíz no puede hidratarse dos veces con éxito. Esta política conservadora evita perder contenido válido, aunque la recuperación granular de la subregión más pequeña aún no está implementada.
+
+Las listas deben presentar el mismo orden inicial y las mismas claves/vistas estructurales; las claves no se serializan como estado ejecutable. Los formularios conservan los valores ya introducidos en el DOM durante la validación inicial; los atributos/propiedades SSR representables se cotejan antes de adjuntar eventos. El contenido estático o los fallbacks de componentes no compatibles con el entorno siguen siendo estáticos. La navegación cliente, la intercepción de enlaces y el historial pertenecen a la Fase 5.4 y no se habilitan con esta API.
+
+El contrato continúa en revisión mientras el PR de Fase 5.3 no haya completado los checks obligatorios y la integración en `main`. Consulta el ADR 0010 para el protocolo y sus limitaciones verificables.
 
 ## Capacidades de componentes y fallback SSR
 
