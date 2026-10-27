@@ -127,7 +127,9 @@ struct RenderedNodes {
 
 fn append_rendered_nodes(target: &mut RenderedNodes, mut source: RenderedNodes) {
     target.listeners.append(&mut source.listeners);
-    target.pending_listeners.append(&mut source.pending_listeners);
+    target
+        .pending_listeners
+        .append(&mut source.pending_listeners);
     target.delegated.append(&mut source.delegated);
     target.components.append(&mut source.components);
     target
@@ -427,7 +429,10 @@ impl DomRenderer {
     ) -> Result<MountedDom, DomError> {
         let parent: Node = target.clone().unchecked_into();
         let siblings = direct_children(&parent);
-        if siblings.iter().any(|node| is_comment_value(node, "rustflow:root:hydrated:start")) {
+        if siblings
+            .iter()
+            .any(|node| is_comment_value(node, "rustflow:root:hydrated:start"))
+        {
             return Err(DomError::AlreadyHydrated);
         }
         let starts = marker_positions(&siblings, "rustflow:root:start");
@@ -441,9 +446,13 @@ impl DomRenderer {
 
         let start_index = starts[0];
         let end_index = ends[0];
-        let start_comment = siblings[start_index].clone().dyn_into::<Comment>()
+        let start_comment = siblings[start_index]
+            .clone()
+            .dyn_into::<Comment>()
             .map_err(|_| hydration_mismatch("root start comment", Some(&siblings[start_index])))?;
-        let end_comment = siblings[end_index].clone().dyn_into::<Comment>()
+        let end_comment = siblings[end_index]
+            .clone()
+            .dyn_into::<Comment>()
             .map_err(|_| hydration_mismatch("root end comment", Some(&siblings[end_index])))?;
         let root_children = siblings[start_index + 1..end_index].to_vec();
 
@@ -451,14 +460,20 @@ impl DomRenderer {
         let mut child_index = 0;
         let mut resources = RenderedNodes::default();
         let validation = self.hydrate_view(
-            view, &root_children, &mut child_index, &self.root_scope, &mut cursor, &mut resources,
+            view,
+            &root_children,
+            &mut child_index,
+            &self.root_scope,
+            &mut cursor,
+            &mut resources,
         );
         if let Err(error) = validation {
             let _ = cleanup_rendered_nodes(&mut resources);
             return Err(error);
         }
         if child_index != root_children.len() {
-            let error = hydration_mismatch("end of the SSR root range", root_children.get(child_index));
+            let error =
+                hydration_mismatch("end of the SSR root range", root_children.get(child_index));
             let _ = cleanup_rendered_nodes(&mut resources);
             return Err(error);
         }
@@ -496,7 +511,9 @@ impl DomRenderer {
             return Ok(None);
         };
         let text = element.text_content().unwrap_or_default();
-        js_sys::JSON::parse(&text).map(Some).map_err(|_| DomError::InvalidHydrationData)
+        js_sys::JSON::parse(&text)
+            .map(Some)
+            .map_err(|_| DomError::InvalidHydrationData)
     }
 
     fn hydrate_view(
@@ -510,7 +527,9 @@ impl DomRenderer {
     ) -> Result<Vec<Node>, DomError> {
         match view {
             View::Text(text) => {
-                let node = siblings.get(*index).ok_or_else(|| hydration_mismatch("matching text node", None))?;
+                let node = siblings
+                    .get(*index)
+                    .ok_or_else(|| hydration_mismatch("matching text node", None))?;
                 if node.node_type() != 3 {
                     return Err(hydration_mismatch("matching text node", Some(node)));
                 }
@@ -525,10 +544,16 @@ impl DomRenderer {
             }
             View::Element(expected) => {
                 let node = siblings.get(*index).ok_or_else(|| {
-                    hydration_mismatch(&format!("<{}> element", expected.tag().to_ascii_lowercase()), None)
+                    hydration_mismatch(
+                        &format!("<{}> element", expected.tag().to_ascii_lowercase()),
+                        None,
+                    )
                 })?;
                 let element: DomElement = node.clone().dyn_into().map_err(|_| {
-                    hydration_mismatch(&format!("<{}> element", expected.tag().to_ascii_lowercase()), Some(node))
+                    hydration_mismatch(
+                        &format!("<{}> element", expected.tag().to_ascii_lowercase()),
+                        Some(node),
+                    )
                 })?;
                 let tag = expected.tag().to_ascii_lowercase();
                 if element.tag_name().to_ascii_lowercase() != tag {
@@ -538,17 +563,30 @@ impl DomRenderer {
 
                 let child_nodes = direct_children(node);
                 let mut child_index = 0;
-                let textarea_has_value = tag == "textarea" && expected.properties().iter()
-                    .any(|property| property.name().eq_ignore_ascii_case("value"));
+                let textarea_has_value = tag == "textarea"
+                    && expected
+                        .properties()
+                        .iter()
+                        .any(|property| property.name().eq_ignore_ascii_case("value"));
                 if textarea_has_value {
                     child_index = child_nodes.len();
                 } else {
                     for child in expected.children() {
-                        self.hydrate_view(child, &child_nodes, &mut child_index, parent_scope, cursor, resources)?;
+                        self.hydrate_view(
+                            child,
+                            &child_nodes,
+                            &mut child_index,
+                            parent_scope,
+                            cursor,
+                            resources,
+                        )?;
                     }
                 }
                 if child_index != child_nodes.len() {
-                    return Err(hydration_mismatch("no additional children in the SSR element", child_nodes.get(child_index)));
+                    return Err(hydration_mismatch(
+                        "no additional children in the SSR element",
+                        child_nodes.get(child_index),
+                    ));
                 }
 
                 let target: EventTarget = element.clone().unchecked_into();
@@ -573,14 +611,28 @@ impl DomRenderer {
             View::Fragment(fragment) => {
                 let mut nodes = Vec::new();
                 for child in fragment.children() {
-                    nodes.extend(self.hydrate_view(child, siblings, index, parent_scope, cursor, resources)?);
+                    nodes.extend(self.hydrate_view(
+                        child,
+                        siblings,
+                        index,
+                        parent_scope,
+                        cursor,
+                        resources,
+                    )?);
                 }
                 Ok(nodes)
             }
             View::KeyedList(list) => {
                 let mut nodes = Vec::new();
                 for child in list.children() {
-                    nodes.extend(self.hydrate_view(child.view(), siblings, index, parent_scope, cursor, resources)?);
+                    nodes.extend(self.hydrate_view(
+                        child.view(),
+                        siblings,
+                        index,
+                        parent_scope,
+                        cursor,
+                        resources,
+                    )?);
                 }
                 Ok(nodes)
             }
@@ -589,46 +641,83 @@ impl DomRenderer {
                 cursor.next_boundary = cursor.next_boundary.saturating_add(1);
                 let start_index = *index;
                 let start_marker = format!("rustflow:dynamic:start:{boundary_id}");
-                let start_node = siblings.get(start_index).ok_or_else(|| hydration_mismatch(&format!("comment {start_marker}"), None))?;
+                let start_node = siblings
+                    .get(start_index)
+                    .ok_or_else(|| hydration_mismatch(&format!("comment {start_marker}"), None))?;
                 if !is_comment_value(start_node, &start_marker) {
-                    return Err(hydration_mismatch(&format!("comment {start_marker}"), Some(start_node)));
+                    return Err(hydration_mismatch(
+                        &format!("comment {start_marker}"),
+                        Some(start_node),
+                    ));
                 }
                 let end_index = find_boundary_end(siblings, start_index, "dynamic", boundary_id)?;
-                let start = start_node.clone().dyn_into::<Comment>().map_err(|_| hydration_mismatch(&format!("comment {start_marker}"), Some(start_node)))?;
-                let end = siblings[end_index].clone().dyn_into::<Comment>().map_err(|_| {
-                    hydration_mismatch(&format!("comment rustflow:dynamic:end:{boundary_id}"), Some(&siblings[end_index]))
+                let start = start_node.clone().dyn_into::<Comment>().map_err(|_| {
+                    hydration_mismatch(&format!("comment {start_marker}"), Some(start_node))
                 })?;
+                let end = siblings[end_index]
+                    .clone()
+                    .dyn_into::<Comment>()
+                    .map_err(|_| {
+                        hydration_mismatch(
+                            &format!("comment rustflow:dynamic:end:{boundary_id}"),
+                            Some(&siblings[end_index]),
+                        )
+                    })?;
                 let scope = parent_scope.child()?;
                 let child = match untrack(|| dynamic.evaluate()) {
                     Ok(child) => child,
-                    Err(error) => { let _ = scope.dispose(); return Err(error.into()); }
+                    Err(error) => {
+                        let _ = scope.dispose();
+                        return Err(error.into());
+                    }
                 };
                 let child_nodes = &siblings[start_index + 1..end_index];
                 let mut inner = RenderedNodes::default();
                 let mut child_index = 0;
-                if let Err(error) = self.hydrate_view(&child, child_nodes, &mut child_index, &scope, cursor, &mut inner) {
+                if let Err(error) = self.hydrate_view(
+                    &child,
+                    child_nodes,
+                    &mut child_index,
+                    &scope,
+                    cursor,
+                    &mut inner,
+                ) {
                     let _ = cleanup_rendered_nodes(&mut inner);
                     let _ = scope.dispose();
                     return Err(error);
                 }
                 if child_index != child_nodes.len() {
-                    let error = hydration_mismatch("end of the dynamic SSR boundary", child_nodes.get(child_index));
+                    let error = hydration_mismatch(
+                        "end of the dynamic SSR boundary",
+                        child_nodes.get(child_index),
+                    );
                     let _ = cleanup_rendered_nodes(&mut inner);
                     let _ = scope.dispose();
                     return Err(error);
                 }
                 let mounted_inner = MountedDom {
-                    start, end, roots: child_nodes.to_vec(),
-                    listeners: inner.listeners, pending_listeners: inner.pending_listeners,
+                    start,
+                    end,
+                    roots: child_nodes.to_vec(),
+                    listeners: inner.listeners,
+                    pending_listeners: inner.pending_listeners,
                     delegated_listeners: Vec::new(),
                     delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
-                    components: inner.components, component_regions: inner.component_regions,
-                    dynamics: inner.dynamics, preserve_on_drop: true,
+                    components: inner.components,
+                    component_regions: inner.component_regions,
+                    dynamics: inner.dynamics,
+                    preserve_on_drop: true,
                 };
                 resources.dynamics.push(DynamicRegion {
-                    dynamic: dynamic.clone(), scope,
-                    state: Rc::new(RefCell::new(Some(DynamicMountState { mounted: mounted_inner, view: child }))),
-                    error_sink: self.error_sink.clone(), effect: None, reused: false,
+                    dynamic: dynamic.clone(),
+                    scope,
+                    state: Rc::new(RefCell::new(Some(DynamicMountState {
+                        mounted: mounted_inner,
+                        view: child,
+                    }))),
+                    error_sink: self.error_sink.clone(),
+                    effect: None,
+                    reused: false,
                 });
                 *index = end_index + 1;
                 Ok(siblings[start_index..=end_index].to_vec())
@@ -643,45 +732,80 @@ impl DomRenderer {
                     hydration_mismatch(&format!("comment {start_marker} or {static_start}"), None)
                 })?;
                 if is_comment_value(start_node, &static_start) {
-                    let end_index = find_boundary_end(siblings, start_index, "static", boundary_id)?;
+                    let end_index =
+                        find_boundary_end(siblings, start_index, "static", boundary_id)?;
                     *index = end_index + 1;
                     return Ok(siblings[start_index..=end_index].to_vec());
                 }
                 if !is_comment_value(start_node, &start_marker) {
-                    return Err(hydration_mismatch(&format!("comment {start_marker} or {static_start}"), Some(start_node)));
+                    return Err(hydration_mismatch(
+                        &format!("comment {start_marker} or {static_start}"),
+                        Some(start_node),
+                    ));
                 }
                 let end_index = find_boundary_end(siblings, start_index, "component", boundary_id)?;
-                let start = start_node.clone().dyn_into::<Comment>().map_err(|_| hydration_mismatch(&format!("comment {start_marker}"), Some(start_node)))?;
-                let end = siblings[end_index].clone().dyn_into::<Comment>().map_err(|_| {
-                    hydration_mismatch(&format!("comment rustflow:component:end:{boundary_id}"), Some(&siblings[end_index]))
+                let start = start_node.clone().dyn_into::<Comment>().map_err(|_| {
+                    hydration_mismatch(&format!("comment {start_marker}"), Some(start_node))
                 })?;
-                let mut instance = self.registry.mount_for_target(component, self.runtime.clone(), parent_scope, RenderTarget::Browser)?;
+                let end = siblings[end_index]
+                    .clone()
+                    .dyn_into::<Comment>()
+                    .map_err(|_| {
+                        hydration_mismatch(
+                            &format!("comment rustflow:component:end:{boundary_id}"),
+                            Some(&siblings[end_index]),
+                        )
+                    })?;
+                let mut instance = self.registry.mount_for_target(
+                    component,
+                    self.runtime.clone(),
+                    parent_scope,
+                    RenderTarget::Browser,
+                )?;
                 let child_view = instance.view().clone();
                 let child_nodes = &siblings[start_index + 1..end_index];
                 let mut inner = RenderedNodes::default();
                 let mut child_index = 0;
-                if let Err(error) = self.hydrate_view(&child_view, child_nodes, &mut child_index, instance.scope(), cursor, &mut inner) {
+                if let Err(error) = self.hydrate_view(
+                    &child_view,
+                    child_nodes,
+                    &mut child_index,
+                    instance.scope(),
+                    cursor,
+                    &mut inner,
+                ) {
                     let _ = cleanup_rendered_nodes(&mut inner);
                     let _ = instance.unmount();
                     return Err(error);
                 }
                 if child_index != child_nodes.len() {
-                    let error = hydration_mismatch("end of the component SSR boundary", child_nodes.get(child_index));
+                    let error = hydration_mismatch(
+                        "end of the component SSR boundary",
+                        child_nodes.get(child_index),
+                    );
                     let _ = cleanup_rendered_nodes(&mut inner);
                     let _ = instance.unmount();
                     return Err(error);
                 }
                 let mounted_inner = MountedDom {
-                    start, end, roots: child_nodes.to_vec(),
-                    listeners: inner.listeners, pending_listeners: inner.pending_listeners,
+                    start,
+                    end,
+                    roots: child_nodes.to_vec(),
+                    listeners: inner.listeners,
+                    pending_listeners: inner.pending_listeners,
                     delegated_listeners: Vec::new(),
                     delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
-                    components: inner.components, component_regions: inner.component_regions,
-                    dynamics: inner.dynamics, preserve_on_drop: true,
+                    components: inner.components,
+                    component_regions: inner.component_regions,
+                    dynamics: inner.dynamics,
+                    preserve_on_drop: true,
                 };
                 resources.component_regions.push(ComponentRegion {
-                    descriptor: component.clone(), instance, mounted: mounted_inner,
-                    view: child_view, reused: false,
+                    descriptor: component.clone(),
+                    instance,
+                    mounted: mounted_inner,
+                    view: child_view,
+                    reused: false,
                 });
                 *index = end_index + 1;
                 Ok(siblings[start_index..=end_index].to_vec())
@@ -700,7 +824,11 @@ impl DomRenderer {
             }
         }
         for pending in mounted.pending_listeners.drain(..) {
-            mounted.listeners.push(create_handler_listener(&pending.target, &pending.name, pending.handler)?);
+            mounted.listeners.push(create_handler_listener(
+                &pending.target,
+                &pending.name,
+                pending.handler,
+            )?);
         }
         Ok(())
     }
@@ -2178,7 +2306,9 @@ fn is_comment_value(node: &Node, expected: &str) -> bool {
 }
 
 fn marker_positions(nodes: &[Node], marker: &str) -> Vec<usize> {
-    nodes.iter().enumerate()
+    nodes
+        .iter()
+        .enumerate()
         .filter_map(|(index, node)| is_comment_value(node, marker).then_some(index))
         .collect()
 }
@@ -2187,7 +2317,8 @@ fn node_description(node: Option<&Node>) -> String {
     match node {
         None => "end of range".to_owned(),
         Some(node) => match node.node_type() {
-            1 => node.dyn_ref::<DomElement>()
+            1 => node
+                .dyn_ref::<DomElement>()
                 .map(|element| format!("<{}> element", element.tag_name().to_ascii_lowercase()))
                 .unwrap_or_else(|| "element node".to_owned()),
             3 => "text node".to_owned(),
@@ -2211,7 +2342,10 @@ fn find_boundary_end(
     id: usize,
 ) -> Result<usize, DomError> {
     let marker = format!("rustflow:{kind}:end:{id}");
-    siblings.iter().enumerate().skip(start_index + 1)
+    siblings
+        .iter()
+        .enumerate()
+        .skip(start_index + 1)
         .find_map(|(index, node)| is_comment_value(node, &marker).then_some(index))
         .ok_or_else(|| DomError::HydrationMismatch {
             expected: format!("matching comment {marker}"),
@@ -2223,14 +2357,15 @@ fn hydration_property_attribute_name(tag: &str, name: &str) -> Option<String> {
     let name = name.to_ascii_lowercase();
     let attribute = match name.as_str() {
         "autofocus" | "allowfullscreen" | "checked" | "controls" | "disabled"
-        | "formnovalidate" | "hidden" | "inert" | "loop" | "multiple" | "muted"
-        | "novalidate" | "open" | "readonly" | "required" | "selected" => name.as_str(),
-        "accept" | "action" | "alt" | "autocomplete" | "cols" | "colspan"
-        | "contenteditable" | "dir" | "draggable" | "enctype" | "formaction"
-        | "height" | "href" | "id" | "lang" | "maxlength" | "method" | "min"
-        | "minlength" | "max" | "name" | "pattern" | "placeholder" | "poster"
-        | "rel" | "role" | "rowspan" | "rows" | "size" | "spellcheck" | "src"
-        | "step" | "tabindex" | "target" | "title" | "type" | "width" => name.as_str(),
+        | "formnovalidate" | "hidden" | "inert" | "loop" | "multiple" | "muted" | "novalidate"
+        | "open" | "readonly" | "required" | "selected" => name.as_str(),
+        "accept" | "action" | "alt" | "autocomplete" | "cols" | "colspan" | "contenteditable"
+        | "dir" | "draggable" | "enctype" | "formaction" | "height" | "href" | "id" | "lang"
+        | "maxlength" | "method" | "min" | "minlength" | "max" | "name" | "pattern"
+        | "placeholder" | "poster" | "rel" | "role" | "rowspan" | "rows" | "size"
+        | "spellcheck" | "src" | "step" | "tabindex" | "target" | "title" | "type" | "width" => {
+            name.as_str()
+        }
         "class" | "classname" => "class",
         "for" | "htmlfor" => "for",
         "value" if tag != "textarea" => "value",
@@ -2285,9 +2420,22 @@ fn validate_hydrated_element(expected: &Element, actual: &DomElement) -> Result<
         };
         let is_boolean = matches!(
             name.as_str(),
-            "autofocus" | "allowfullscreen" | "checked" | "controls" | "disabled"
-                | "formnovalidate" | "hidden" | "inert" | "loop" | "multiple" | "muted"
-                | "novalidate" | "open" | "readonly" | "required" | "selected"
+            "autofocus"
+                | "allowfullscreen"
+                | "checked"
+                | "controls"
+                | "disabled"
+                | "formnovalidate"
+                | "hidden"
+                | "inert"
+                | "loop"
+                | "multiple"
+                | "muted"
+                | "novalidate"
+                | "open"
+                | "readonly"
+                | "required"
+                | "selected"
         );
         if is_boolean {
             let PropertyValue::Boolean(value) = property.value() else {
@@ -2308,12 +2456,13 @@ fn validate_hydrated_element(expected: &Element, actual: &DomElement) -> Result<
     let actual_attributes = actual.attributes();
     let mut found_attributes = HashMap::<String, String>::new();
     for index in 0..actual_attributes.length() {
-        let attribute: Attr = actual_attributes.item(index).ok_or_else(|| {
-            DomError::HydrationMismatch {
-                expected: "complete DOM attribute list".to_owned(),
-                found: "unreadable attribute".to_owned(),
-            }
-        })?;
+        let attribute: Attr =
+            actual_attributes
+                .item(index)
+                .ok_or_else(|| DomError::HydrationMismatch {
+                    expected: "complete DOM attribute list".to_owned(),
+                    found: "unreadable attribute".to_owned(),
+                })?;
         let name = attribute.name().to_ascii_lowercase();
         let value = attribute.value();
         validate_attribute(&name, &value)?;
