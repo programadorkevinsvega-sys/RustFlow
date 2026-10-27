@@ -4,6 +4,7 @@
 //! the structural view model do not depend on HTTP infrastructure.
 
 mod group;
+mod page;
 mod proxy;
 mod tls;
 
@@ -34,6 +35,7 @@ use axum::{
 
 use bytes::Bytes;
 pub use group::RouteGroup;
+pub use page::HtmlPage;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
 pub use proxy::{ClientAddressPolicy, IpNetwork};
