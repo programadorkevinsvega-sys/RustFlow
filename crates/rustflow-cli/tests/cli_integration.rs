@@ -350,7 +350,11 @@ fn dev_runs_cargo_and_invalid_projects_return_a_clear_error() {
 
     let project = create_project(temp.path(), "dev-fixture-app");
     localize_framework_dependencies(&project);
-    fs::write(project.join("src/main.rs"), "fn main() { println!(\"dev executed\"); }\n").unwrap();
+    fs::write(
+        project.join("src/main.rs"),
+        "fn main() { println!(\"dev executed\"); }\n",
+    )
+    .unwrap();
 
     let output = cli()
         .current_dir(&project)

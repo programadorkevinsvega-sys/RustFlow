@@ -72,10 +72,9 @@ where
             println!("rustflow {}", env!("CARGO_PKG_VERSION"));
             Ok(0)
         }
-        command => Err(format!(
-            "unknown command `{command}`\n\nRun `rustflow --help` for usage."
-        )
-        .into()),
+        command => {
+            Err(format!("unknown command `{command}`\n\nRun `rustflow --help` for usage.").into())
+        },
     }
 }
 
@@ -98,9 +97,8 @@ fn new_command(args: &[OsString]) -> Result<i32, CliError> {
 
     let name = argument_text(&args[0], "project name")?;
     validate_project_name(name)?;
-    let mut parent = env::current_dir().map_err(|error| {
-        format!("could not determine the current directory: {error}")
-    })?;
+    let mut parent = env::current_dir()
+        .map_err(|error| format!("could not determine the current directory: {error}"))?;
 
     let mut index = 1;
     while index < args.len() {
@@ -125,7 +123,10 @@ fn new_command(args: &[OsString]) -> Result<i32, CliError> {
     }
 
     let destination = create_project(name, &parent, revision)?;
-    println!("Created RustFlow project `{name}` at {}", destination.display());
+    println!(
+        "Created RustFlow project `{name}` at {}",
+        destination.display()
+    );
     println!("Next steps:");
     println!("  cd {}", destination.display());
     println!("  rustflow dev");
@@ -150,8 +151,12 @@ fn dev_command(args: &[OsString]) -> Result<i32, CliError> {
             }
             "--release" | "--offline" | "--locked" => cargo_args.push(arg.clone()),
             "--help" | "-h" => {
-                println!("Usage: rustflow dev [--release] [--offline] [--locked] [-- <application-args>]");
-                println!("Runs `cargo run` in the nearest RustFlow project. No file watcher or hot reload is provided.");
+                println!(
+                    "Usage: rustflow dev [--release] [--offline] [--locked] [-- <application-args>]"
+                );
+                println!(
+                    "Runs `cargo run` in the nearest RustFlow project. No file watcher or hot reload is provided."
+                );
                 return Ok(0);
             }
             option => return Err(format!("unsupported rustflow dev option: {option}").into()),
@@ -186,8 +191,12 @@ fn build_command(args: &[OsString]) -> Result<i32, CliError> {
                 index += 2;
             }
             "--help" | "-h" => {
-                println!("Usage: rustflow build [--release] [--offline] [--locked] [--target <triple>] [--features <list>] [--all-features]");
-                println!("Delegates to `cargo build`; the project must support the selected target.");
+                println!(
+                    "Usage: rustflow build [--release] [--offline] [--locked] [--target <triple>] [--features <list>] [--all-features]"
+                );
+                println!(
+                    "Delegates to `cargo build`; the project must support the selected target."
+                );
                 return Ok(0);
             }
             option => return Err(format!("unsupported rustflow build option: {option}").into()),
@@ -217,14 +226,19 @@ fn generate_command(args: &[OsString]) -> Result<i32, CliError> {
         };
     }
     if args.len() != 2 {
-        return Err("usage: rustflow generate <component|page|controller|model|migration> <name>".into());
+        return Err(
+            "usage: rustflow generate <component|page|controller|model|migration> <name>".into(),
+        );
     }
 
     let kind = argument_text(&args[0], "generator type")?;
     let name = argument_text(&args[1], "generated name")?;
     let root = find_rustflow_project(&env::current_dir().map_err(|error| error.to_string())?)?;
     let path = generate_file(&root, kind, name)?;
-    println!("Generated {}", path.strip_prefix(&root).unwrap_or(&path).display());
+    println!(
+        "Generated {}",
+        path.strip_prefix(&root).unwrap_or(&path).display()
+    );
     Ok(0)
 }
 
@@ -233,7 +247,8 @@ fn is_help(arg: &OsStr) -> bool {
 }
 
 fn argument_text<'a>(arg: &'a OsStr, label: &str) -> Result<&'a str, CliError> {
-    arg.to_str().ok_or_else(|| format!("{label} must be valid UTF-8").into())
+    arg.to_str()
+        .ok_or_else(|| format!("{label} must be valid UTF-8".into()))
 }
 
 fn validate_project_name(name: &str) -> Result<(), CliError> {
@@ -271,7 +286,8 @@ fn generated_identifier(name: &str) -> Result<String, CliError> {
             let boundary = previous.is_some_and(|previous| {
                 previous.is_ascii_lowercase()
                     || previous.is_ascii_digit()
-                    || (previous.is_ascii_uppercase() && next.is_some_and(|character| character.is_ascii_lowercase()))
+                    || (previous.is_ascii_uppercase()
+                        && next.is_some_and(|character| character.is_ascii_lowercase()))
             });
             if boundary && !snake.ends_with('_') {
                 snake.push('_');
@@ -297,13 +313,58 @@ fn generated_identifier(name: &str) -> Result<String, CliError> {
 fn is_rust_keyword(name: &str) -> bool {
     matches!(
         name,
-        "as" | "async" | "await" | "break" | "const" | "continue" | "crate" | "dyn"
-            | "else" | "enum" | "extern" | "false" | "fn" | "for" | "if" | "impl"
-            | "in" | "let" | "loop" | "match" | "mod" | "move" | "mut" | "pub"
-            | "ref" | "return" | "self" | "Self" | "static" | "struct" | "super"
-            | "trait" | "true" | "type" | "union" | "unsafe" | "use" | "where"
-            | "while" | "gen" | "abstract" | "become" | "box" | "do" | "final" | "macro"
-            | "override" | "priv" | "typeof" | "unsized" | "virtual" | "yield" | "try"
+        "as" | "async"
+            | "await"
+            | "break"
+            | "const"
+            | "continue"
+            | "crate"
+            | "dyn"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "fn"
+            | "for"
+            | "if"
+            | "impl"
+            | "in"
+            | "let"
+            | "loop"
+            | "match"
+            | "mod"
+            | "move"
+            | "mut"
+            | "pub"
+            | "ref"
+            | "return"
+            | "self"
+            | "Self"
+            | "static"
+            | "struct"
+            | "super"
+            | "trait"
+            | "true"
+            | "type"
+            | "union"
+            | "unsafe"
+            | "use"
+            | "where"
+            | "while"
+            | "gen"
+            | "abstract"
+            | "become"
+            | "box"
+            | "do"
+            | "final"
+            | "macro"
+            | "override"
+            | "priv"
+            | "typeof"
+            | "unsized"
+            | "virtual"
+            | "yield"
+            | "try"
     )
 }
 
@@ -314,7 +375,10 @@ fn create_project(name: &str, parent: &Path, revision: &str) -> Result<PathBuf, 
     }
 
     let parent = fs::canonicalize(parent).map_err(|error| {
-        format!("project parent {} is not accessible: {error}", parent.display())
+        format!(
+            "project parent {} is not accessible: {error}",
+            parent.display()
+        )
     })?;
     if !parent.is_dir() {
         return Err(format!("project parent {} is not a directory", parent.display()).into());
@@ -379,7 +443,11 @@ fn create_staging_dir(parent: &Path, name: &str) -> Result<PathBuf, CliError> {
             Ok(()) => return Ok(path),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => {
-                return Err(format!("could not create a staging directory in {}: {error}", parent.display()).into());
+                return Err(format!(
+                    "could not create a staging directory in {}: {error}",
+                    parent.display()
+                )
+                .into());
             }
         }
     }
@@ -494,9 +562,7 @@ fn module_index(comment: &str) -> String {
     } else {
         format!("//! {comment}\n")
     };
-    format!(
-        "{header}\n{MODULE_START}\n{MODULE_END}\n"
-    )
+    format!("{header}\n{MODULE_START}\n{MODULE_END}\n")
 }
 
 fn find_rustflow_project(start: &Path) -> Result<PathBuf, CliError> {
@@ -661,12 +727,20 @@ fn prepare_module_index(path: &Path, new_module: &str) -> Result<ModuleIndexUpda
         let clean = line.trim_end_matches(['\r', '\n']);
         if clean == MODULE_START {
             if start_after.is_some() {
-                return Err(format!("module index {} contains duplicate managed-section markers", path.display()).into());
+                return Err(format!(
+                    "module index {} contains duplicate managed-section markers",
+                    path.display()
+                )
+                .into());
             }
             start_after = Some(offset + line.len());
         } else if clean == MODULE_END {
             if end_start.is_some() {
-                return Err(format!("module index {} contains duplicate managed-section markers", path.display()).into());
+                return Err(format!(
+                    "module index {} contains duplicate managed-section markers",
+                    path.display()
+                )
+                .into());
             }
             end_start = Some(offset);
         }
@@ -680,7 +754,11 @@ fn prepare_module_index(path: &Path, new_module: &str) -> Result<ModuleIndexUpda
         ).into());
     };
     if end_start < start_after {
-        return Err(format!("module index {} has reversed managed-section markers", path.display()).into());
+        return Err(format!(
+            "module index {} has reversed managed-section markers",
+            path.display()
+        )
+        .into());
     }
 
     let managed = &original[start_after..end_start];
@@ -690,7 +768,10 @@ fn prepare_module_index(path: &Path, new_module: &str) -> Result<ModuleIndexUpda
         if line.is_empty() {
             continue;
         }
-        let Some(name) = line.strip_prefix("pub mod ").and_then(|rest| rest.strip_suffix(';')) else {
+        let Some(name) = line
+            .strip_prefix("pub mod ")
+            .and_then(|rest| rest.strip_suffix(';'))
+        else {
             return Err(format!(
                 "module index {} contains user content inside its managed section; move custom lines outside the markers to let the generator update it safely",
                 path.display()
@@ -805,12 +886,18 @@ fn write_one_file(path: &Path, contents: &str) -> Result<(), CliError> {
         .open(path)
         .map_err(|error| {
             if error.kind() == std::io::ErrorKind::AlreadyExists {
-                format!("refusing to overwrite existing destination {}", path.display())
+                format!(
+                    "refusing to overwrite existing destination {}",
+                    path.display()
+                )
             } else {
                 format!("could not create {}: {error}", path.display())
             }
         })?;
-    if let Err(error) = file.write_all(contents.as_bytes()).and_then(|()| file.flush()) {
+    if let Err(error) = file
+        .write_all(contents.as_bytes())
+        .and_then(|()| file.flush())
+    {
         let _ = fs::remove_file(path);
         return Err(format!("could not finish writing {}: {error}", path.display()).into());
     }
@@ -820,7 +907,12 @@ fn write_one_file(path: &Path, contents: &str) -> Result<(), CliError> {
 fn migration_path(root: &Path, name: &str) -> Result<PathBuf, CliError> {
     let directory = root.join("migrations");
     let mut entries = fs::read_dir(&directory)
-        .map_err(|error| format!("could not inspect migrations directory {}: {error}", directory.display()))?
+        .map_err(|error| {
+            format!(
+                "could not inspect migrations directory {}: {error}",
+                directory.display()
+            )
+        })?
         .map(|entry| {
             entry
                 .map(|entry| entry.file_name().to_string_lossy().into_owned())
@@ -935,7 +1027,10 @@ mod tests {
     #[test]
     fn generated_names_are_normalized_and_keywords_rejected() {
         assert_eq!(generated_identifier("ProductCard").unwrap(), "product_card");
-        assert_eq!(generated_identifier("user-profile").unwrap(), "user_profile");
+        assert_eq!(
+            generated_identifier("user-profile").unwrap(),
+            "user_profile"
+        );
         assert!(generated_identifier("type").is_err());
         assert!(generated_identifier("bad/name").is_err());
     }
