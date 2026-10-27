@@ -6,10 +6,13 @@ test.beforeEach(async ({ page }, testInfo) => {
   }
 });
 
-async function gotoWithHydrationFixture(page, corrupt = false) {
-  const fixture = corrupt
-    ? '<div id="hydration-fixture"><!--rustflow:root:start--><button data-testid="hydration-action">Corrupt: <!--rustflow:dynamic:start:0-->0<!--rustflow:dynamic:end:0--></button><!--rustflow:root:end--></div>'
-    : '<div id="hydration-fixture"><!--rustflow:root:start--><button data-testid="hydration-action">Count: <!--rustflow:dynamic:start:0-->0<!--rustflow:dynamic:end:0--></button><!--rustflow:root:end--></div>';
+async function gotoWithHydrationFixture(page, corrupt = false, interactive = false) {
+  const interactiveFixture = '<div id="hydration-fixture" data-hydration-case="interactive"><!--rustflow:root:start--><main><form data-testid="hydration-form"><label for="hydration-input">Name</label><input id="hydration-input" aria-label="Name" value="Ada"><p data-testid="hydration-input-output"><!--rustflow:dynamic:start:0-->Ada<!--rustflow:dynamic:end:0--></p><button type="button" data-testid="hydration-toggle">Toggle help</button><button type="button" data-testid="hydration-reverse">Reverse list</button></form><ul data-testid="hydration-list"><!--rustflow:dynamic:start:1--><li data-testid="hydration-item-first">First</li><li data-testid="hydration-item-second">Second</li><!--rustflow:dynamic:end:1--></ul><!--rustflow:dynamic:start:2--><p data-testid="hydration-help" role="status">Help</p><!--rustflow:dynamic:end:2--><a href="#hydration-details" data-testid="hydration-link">Go</a><div id="hydration-details">Target</div></main><!--rustflow:root:end--></div>';
+  const fixture = interactive
+    ? interactiveFixture
+    : corrupt
+      ? '<div id="hydration-fixture"><!--rustflow:root:start--><button data-testid="hydration-action">Corrupt: <!--rustflow:dynamic:start:0-->0<!--rustflow:dynamic:end:0--></button><!--rustflow:root:end--></div>'
+      : '<div id="hydration-fixture"><!--rustflow:root:start--><button data-testid="hydration-action">Count: <!--rustflow:dynamic:start:0-->0<!--rustflow:dynamic:end:0--></button><!--rustflow:root:end--></div>';
 
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
@@ -153,6 +156,35 @@ test("SSR hydration reuses server DOM and attaches one interactive handler", asy
       window.__rustflowHydrationOriginal === document.querySelector('[data-testid="hydration-action"]'),
     ),
   ).toBe(true);
+});
+
+test("SSR hydration supports forms, conditional regions, keyed lists, and ordinary links", async ({ page }) => {
+  await gotoWithHydrationFixture(page, false, true);
+
+  const input = page.getByRole("textbox", { name: "Name" });
+  const output = page.getByTestId("hydration-input-output");
+  await expect(input).toHaveValue("Ada");
+  await expect(output).toHaveText("Ada");
+
+  await input.fill("Grace");
+  await expect(output).toHaveText("Grace");
+
+  const help = page.getByTestId("hydration-help");
+  await expect(help).toHaveText("Help");
+  await page.getByTestId("hydration-toggle").click();
+  await expect(help).toHaveCount(0);
+  await page.getByTestId("hydration-toggle").click();
+  await expect(help).toHaveText("Help");
+
+  const list = page.getByTestId("hydration-list");
+  await expect(list.locator("li").nth(0)).toHaveText("First");
+  await expect(list.locator("li").nth(1)).toHaveText("Second");
+  await page.getByTestId("hydration-reverse").click();
+  await expect(list.locator("li").nth(0)).toHaveText("Second");
+  await expect(list.locator("li").nth(1)).toHaveText("First");
+
+  await page.getByTestId("hydration-link").click();
+  await expect(page).toHaveURL(/#hydration-details$/);
 });
 
 test("SSR hydration mismatch reports a diagnostic and preserves static content", async ({ page }) => {
