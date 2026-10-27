@@ -1565,9 +1565,9 @@ mod tests {
         body::{Body, to_bytes},
         http::{Request as AxumHttpRequest, StatusCode},
     };
-    use serde::Deserialize;
     use rustflow::components::{ComponentDefinition, ComponentRegistry, ComponentRender};
     use rustflow_view::{Property, PropertyValue};
+    use serde::Deserialize;
     use std::{
         rc::Rc,
         sync::{
@@ -2017,9 +2017,8 @@ mod tests {
                 .map_err(|_| HttpError::internal_server_error())?;
 
             let layout = ComponentDefinition::new("AppLayout", |_context, _properties| {
-                let render: ComponentRender = Rc::new(|_properties, children| {
-                    Ok(View::element("main", children.to_vec())?)
-                });
+                let render: ComponentRender =
+                    Rc::new(|_properties, children| Ok(View::element("main", children.to_vec())?));
                 Ok(render)
             })
             .map_err(|_| HttpError::internal_server_error())?;
@@ -2028,8 +2027,8 @@ mod tests {
                 .map_err(|_| HttpError::internal_server_error())?;
 
             let id = request.path_param("id").unwrap_or("missing").to_owned();
-            let property = Property::new("id", id)
-                .map_err(|_| HttpError::internal_server_error())?;
+            let property =
+                Property::new("id", id).map_err(|_| HttpError::internal_server_error())?;
             HtmlPage::from_component("Article & details", "ArticlePage", [property], [])?
                 .language("es")
                 .with_components(&registry)
