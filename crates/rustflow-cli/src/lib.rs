@@ -246,7 +246,7 @@ fn is_help(arg: &OsStr) -> bool {
     matches!(arg.to_str(), Some("--help" | "-h"))
 }
 
-fn argument_text(arg: &OsStr, label: &str) -> Result<&str, CliError> {
+fn argument_text<'a>(arg: &'a OsStr, label: &str) -> Result<&'a str, CliError> {
     arg.to_str().ok_or_else(|| format!("{label} must be valid UTF-8").into())
 }
 
@@ -256,7 +256,8 @@ fn validate_project_name(name: &str) -> Result<(), CliError> {
         || !name
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-        || matches!(name.as_bytes().last(), Some(b'-' | b'_'))
+        || name.ends_with('-')
+        || name.ends_with('_')
     {
         return Err(format!(
             "invalid project name `{name}`; use an ASCII letter first, followed by letters, digits, hyphens, or underscores"
