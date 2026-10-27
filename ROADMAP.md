@@ -252,14 +252,14 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [x] Test request-isolated SSR/component state and deterministic boundaries: repeated renders with the same route props produce identical HTML, each render creates/disposes its own component scope, and browser-only/server-only policies remain covered by SSR target tests.
 
 ### 5.3 Hydration
-- [ ] Add minimal, safely serialized hydration data.
-- [ ] Map rendered nodes to client component boundaries.
-- [ ] Attach events without duplicating DOM or handlers.
-- [ ] Detect and report mismatches in development.
-- [ ] Define safe mismatch recovery.
-- [ ] Test forms, conditions, lists, and navigation.
+- [x] Add minimal, safely serialized hydration data through `HydrationData` and the opt-in HTML page helpers.
+- [x] Map rendered nodes to deterministic root, component, dynamic, and static SSR boundaries.
+- [x] Attach client events to existing compatible DOM without rebuilding nodes or duplicating handlers.
+- [x] Detect and report incompatible DOM/state as bounded hydration mismatch diagnostics.
+- [x] Define conservative mismatch recovery: preserve the entire SSR root as static HTML and dispose candidate resources rather than destructively replacing DOM.
+- [x] Test form input, conditional regions, keyed-list reorder, ordinary link navigation, repeated event handling, mismatch preservation, and duplicate-hydration rejection.
 
-**Estado de implementación:** en curso en el PR #39. Ya existe un camino opt-in para emitir límites SSR, adjuntar `HydrationData` y validar/reutilizar el DOM del navegador antes de activar eventos. Ante una discrepancia, el root permanece estático y se registra un diagnóstico; la recuperación granular por subregión, las pruebas adicionales de formularios/listas y el cierre formal todavía requieren validación. Los criterios de esta fase permanecen sin marcar hasta que todos los checks obligatorios pasen, el PR se integre y la CI posterior al merge se confirme.
+**Cierre de 5.3 (2026-10-27):** PR #39 se fusionó en `main` mediante squash en el commit `d866298989821eaee64a4ea00466012f36db3ebf`. La CI posterior al merge pasó en Rust 1.85, Rust stable, WASM y Browser E2E/bundle size; en el PR también pasaron la construcción de documentación, gobernanza y revisión de dependencias. La hidratación es opt-in y exige que la vista inicial del cliente sea compatible con el HTML SSR. La recuperación implementada conserva estático el root completo si hay discrepancia; la reparación granular de subregiones, el router cliente, el historial, la interceptación de enlaces y la mejora progresiva de envíos de formulario quedan fuera de alcance y continúan en 5.4.
 
 ### 5.4 Navigation and forms
 - [ ] Add client navigation after route semantics stabilize.

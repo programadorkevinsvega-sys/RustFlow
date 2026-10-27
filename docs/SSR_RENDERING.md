@@ -31,7 +31,7 @@ El texto y los valores de atributos se escapan. Solo se serializa un conjunto co
 
 Los callbacks de eventos nunca se serializan como atributos HTML `on*`. Un subconjunto de propiedades reflejables (como `value` y `checked` en formularios) se convierte a atributos; las propiedades exclusivas del cliente se omiten. Si un atributo y una propiedad producirían el mismo atributo HTML, se devuelve un error.
 
-El renderer de `rustflow-ssr` emite fragmentos, no documentos ni respuestas HTTP. El adaptador `rustflow-server` puede envolver una vista estructural con `html_document(title, lang, &view)`, que produce doctype, atributo `lang`, metadatos UTF-8, título y cuerpo mediante nodos seguros. También puede aplicar páginas HTML configuradas para estados 4xx/5xx. El adaptador `rustflow-server` ya ofrece rutas y helpers de respuesta/documento; la composición avanzada de layouts, los datos de hidratación y la hidratación en el cliente siguen siendo trabajo posterior.
+El renderer de `rustflow-ssr` emite fragmentos, no documentos ni respuestas HTTP. El adaptador `rustflow-server` puede envolver una vista estructural con `html_document(title, lang, &view)`, que produce doctype, atributo `lang`, metadatos UTF-8, título y cuerpo mediante nodos seguros. También puede aplicar páginas HTML configuradas para estados 4xx/5xx. El adaptador `rustflow-server` ofrece composición de páginas y datos de hidratación; la hidratación DOM opt-in de la Fase 5.3 está implementada. La navegación cliente y la mejora progresiva de formularios siguen siendo trabajo de la Fase 5.4.
 
 
 ## Datos públicos previstos para hidratación (contrato inicial)
@@ -58,7 +58,7 @@ fn build_public_snapshot() -> Result<(), Box<dyn std::error::Error>> {
 La API `HydrationData` sigue siendo solo el formato del payload; la integración SSR y la hidratación DOM se documentan por separado a continuación. No convierte por sí misma una página en interactiva: el servidor debe emitir límites compatibles y el cliente debe invocar explícitamente el hidratador.
 
 
-## Hidratación DOM (Fase 5.3, en revisión)
+## Hidratación DOM (Fase 5.3, implementada)
 
 La hidratación está opt-in. El renderizado SSR normal conserva su HTML existente; el renderizador solo emite comentarios estructurales cuando se solicita `HtmlRenderer::with_hydration_boundaries()`. Los marcadores versionan la posición del root y delimitan componentes, regiones dinámicas y subárboles estáticos. Sus identificadores son deterministas en orden de recorrido para la misma vista y el mismo catálogo.
 
@@ -82,7 +82,7 @@ Si faltan o se repiten límites, el orden de nodos difiere, o el estado/atributo
 
 Las listas deben presentar el mismo orden inicial y las mismas claves/vistas estructurales; las claves no se serializan como estado ejecutable. Los formularios conservan los valores ya introducidos en el DOM durante la validación inicial; los atributos/propiedades SSR representables se cotejan antes de adjuntar eventos. El contenido estático o los fallbacks de componentes no compatibles con el entorno siguen siendo estáticos. La navegación cliente, la intercepción de enlaces y el historial pertenecen a la Fase 5.4 y no se habilitan con esta API.
 
-El contrato continúa en revisión mientras el PR de Fase 5.3 no haya completado los checks obligatorios y la integración en `main`. Consulta el ADR 0010 para el protocolo y sus limitaciones verificables.
+El PR #39 se fusionó en `main` y los checks requeridos de Rust 1.85/stable, WASM y Browser E2E/bundle size pasaron en la CI posterior al merge; el PR también pasó documentación, gobernanza y revisión de dependencias. La hidratación sigue siendo opt-in y sus límites (en particular el fallback estático del root completo y la ausencia de navegación cliente) están documentados en el ADR 0010.
 
 ## Capacidades de componentes y fallback SSR
 
