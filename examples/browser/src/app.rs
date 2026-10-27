@@ -266,13 +266,53 @@ pub fn start() -> Result<(), JsValue> {
             )
         };
 
-        match result {
+        let hydration_succeeded = match result {
             Ok(mounted) => {
                 ACTIVE_HYDRATION_MOUNT.with(|slot| *slot.borrow_mut() = Some(mounted));
+                true
             }
             Err(error) => {
                 // A mismatch is diagnosed but the server DOM remains in place as static HTML.
                 web_sys::console::error_1(&JsValue::from_str(&error.to_string()));
+                false
+            }
+        };
+
+        if hydration_succeeded
+            && !interactive_fixture
+            && hydration_target
+                .get_attribute("data-hydration-repeat")
+                .as_deref()
+                == Some("true")
+        {
+            // Exercise the duplicate-hydration guard: a second attempt must fail before
+            // installing any additional listeners, leaving the first mount active.
+            let retry_count = runtime.signal(0_i32).map_err(display_error)?;
+            let retry_for_render = retry_count.clone();
+            let retry_for_button = retry_count.clone();
+            let repeated = hydration_renderer.hydrate_reactive(
+                &hydration_target,
+                &root_scope,
+                move || {
+                    let retry_for_render = retry_for_render.clone();
+                    let retry_for_button = retry_for_button.clone();
+                    rustflow::view! {
+                        <button data-testid="hydration-action" on:click={move |_payload| {
+                            retry_for_button.update(|value| *value += 1);
+                        }}>
+                            "Count: " {retry_for_render}
+                        </button>
+                    }
+                    .map_err(DomError::from)
+                },
+            );
+            match repeated {
+                Ok(_mounted) => web_sys::console::error_1(&JsValue::from_str(
+                    "hydration unexpectedly succeeded more than once",
+                )),
+                Err(error) => {
+                    web_sys::console::error_1(&JsValue::from_str(&error.to_string()));
+                }
             }
         }
     }
