@@ -330,6 +330,7 @@ impl HtmlRenderer {
             registry: Some(registry.clone()),
             shared_catalog: None,
             max_depth: DEFAULT_MAX_DEPTH,
+            hydration_boundaries: false,
         }
     }
 
@@ -341,6 +342,7 @@ impl HtmlRenderer {
             registry: None,
             shared_catalog: Some(catalog.clone()),
             max_depth: DEFAULT_MAX_DEPTH,
+            hydration_boundaries: false,
         }
     }
 
@@ -459,6 +461,7 @@ impl RenderContext {
                 let boundary = self.begin_boundary("dynamic");
                 let result = dynamic
                     .evaluate()
+                    .map_err(SsrError::from)
                     .and_then(|child| self.write_view(&child, owner_scope, depth + 1));
                 if let Some(id) = boundary {
                     self.end_boundary("dynamic", id);
