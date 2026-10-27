@@ -2029,7 +2029,7 @@ mod tests {
             });
             Ok(render)
         })
-        .map_err(|_| HttpError::internal_server_error())?
+        .expect("valid shared article definition")
         .server_only();
 
         let layout = SharedComponentDefinition::new("AppLayout", |_context, _properties| {
@@ -2037,15 +2037,11 @@ mod tests {
                 Rc::new(|_properties, children| Ok(View::element("main", children.to_vec())?));
             Ok(render)
         })
-        .map_err(|_| HttpError::internal_server_error())?;
+        .expect("valid shared layout definition");
 
         let mut builder = SharedComponentCatalogBuilder::new();
-        builder
-            .register(article)
-            .map_err(|_| HttpError::internal_server_error())?;
-        builder
-            .register(layout)
-            .map_err(|_| HttpError::internal_server_error())?;
+        builder.register(article).expect("register article");
+        builder.register(layout).expect("register layout");
         let catalog = Arc::new(builder.build());
         let route_catalog = Arc::clone(&catalog);
 
