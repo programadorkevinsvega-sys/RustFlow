@@ -1050,7 +1050,7 @@ mod tests {
         let mut registry = ComponentRegistry::new();
         registry.register(definition).expect("register");
         let renderer = HtmlRenderer::with_components(&registry);
-        let view_for = |value| {
+        let view_for = |value: i32| {
             View::component(
                 "RouteValue",
                 [Property::new("value", value).expect("value property")],
