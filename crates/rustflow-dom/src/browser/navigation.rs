@@ -7,8 +7,7 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use js_sys::JsValue;
-use wasm_bindgen::{JsCast, closure::Closure};
+use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{
     Document, Element, Event, HtmlAnchorElement, HtmlFormElement, HtmlInputElement,
@@ -131,12 +130,7 @@ impl ClientNavigation {
             }
 
             event.prevent_default();
-            spawn_navigation(
-                submit_state.clone(),
-                url,
-                NavigationKind::Push,
-                Some(form),
-            );
+            spawn_navigation(submit_state.clone(), url, NavigationKind::Push, Some(form));
         }) as Box<dyn FnMut(Event)>);
 
         let popstate_state = state.clone();
@@ -154,15 +148,11 @@ impl ClientNavigation {
         }) as Box<dyn FnMut(Event)>);
 
         document
-            .add_event_listener_with_callback(
-                "click",
-                click_listener.as_ref().unchecked_ref(),
-            )
+            .add_event_listener_with_callback("click", click_listener.as_ref().unchecked_ref())
             .map_err(js_error)?;
-        if let Err(error) = document.add_event_listener_with_callback(
-            "submit",
-            submit_listener.as_ref().unchecked_ref(),
-        ) {
+        if let Err(error) = document
+            .add_event_listener_with_callback("submit", submit_listener.as_ref().unchecked_ref())
+        {
             let _ = document.remove_event_listener_with_callback(
                 "click",
                 click_listener.as_ref().unchecked_ref(),
@@ -342,7 +332,7 @@ fn enhanced_form_from_event(
         }
     }
 
-    let query = params.to_string();
+    let query = params.to_string().as_string()?;
     if query.is_empty() {
         url.set_search("");
     } else {
@@ -396,11 +386,7 @@ fn is_latest_generation(state: &Rc<RefCell<NavigationState>>, generation: u64) -
         .is_ok_and(|navigation| navigation.generation == generation)
 }
 
-async fn navigate(
-    state: Rc<RefCell<NavigationState>>,
-    requested_url: Url,
-    kind: NavigationKind,
-) {
+async fn navigate(state: Rc<RefCell<NavigationState>>, requested_url: Url, kind: NavigationKind) {
     let requested_href = requested_url.href();
     let (generation, previous_url, window) = {
         let mut navigation = state.borrow_mut();
@@ -462,22 +448,18 @@ async fn navigate(
 
     let destination_href = destination.href();
     let history_result = match kind {
-        NavigationKind::Push => window
-            .history()
-            .map_err(js_error)
-            .and_then(|history| {
-                history
-                    .push_state_with_url(&JsValue::NULL, "", Some(&destination_href))
-                    .map_err(js_error)
-            }),
-        NavigationKind::Pop if destination_href != requested_href => window
-            .history()
-            .map_err(js_error)
-            .and_then(|history| {
+        NavigationKind::Push => window.history().map_err(js_error).and_then(|history| {
+            history
+                .push_state_with_url(&JsValue::NULL, "", Some(&destination_href))
+                .map_err(js_error)
+        }),
+        NavigationKind::Pop if destination_href != requested_href => {
+            window.history().map_err(js_error).and_then(|history| {
                 history
                     .replace_state_with_url(&JsValue::NULL, "", Some(&destination_href))
                     .map_err(js_error)
-            }),
+            })
+        }
         NavigationKind::Pop => Ok(()),
     };
     if let Err(error) = history_result {
