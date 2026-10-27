@@ -136,6 +136,8 @@ fn creates_a_project_and_generates_all_five_file_types_without_overwrite() {
     for path in [
         "Cargo.toml",
         "README.md",
+        ".gitignore",
+        ".env.example",
         "src/main.rs",
         "src/components/mod.rs",
         "src/pages/home.rs",
@@ -145,6 +147,19 @@ fn creates_a_project_and_generates_all_five_file_types_without_overwrite() {
     ] {
         assert!(project.join(path).is_file(), "missing {path}");
     }
+
+    let env_example = fs::read_to_string(project.join(".env.example")).unwrap();
+    assert!(env_example.contains("RUSTFLOW_ENV=development"));
+    assert!(env_example.contains("RUSTFLOW_HOST=127.0.0.1"));
+    assert!(env_example.contains("RUSTFLOW_PORT=3000"));
+    for forbidden in ["PASSWORD=", "TOKEN=", "SECRET_KEY=", "DATABASE_URL="] {
+        assert!(!env_example.contains(forbidden), "unsafe variable in .env.example: {forbidden}");
+    }
+    let generated_ignore = fs::read_to_string(project.join(".gitignore")).unwrap();
+    assert!(generated_ignore.contains(".env.*"));
+    assert!(generated_ignore.contains("!.env.example"));
+    let generated_main = fs::read_to_string(project.join("src/main.rs")).unwrap();
+    assert!(generated_main.contains("AppConfig::load()?"));
 
     for (kind, name, target, expected) in [
         (
@@ -314,6 +329,8 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
         .port();
     let child = Command::new(binary)
         .current_dir(&project)
+        .env("RUSTFLOW_ENV", "test")
+        .env("RUSTFLOW_HOST", "127.0.0.1")
         .env("RUSTFLOW_PORT", port.to_string())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

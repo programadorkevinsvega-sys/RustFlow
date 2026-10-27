@@ -503,15 +503,23 @@ fn scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
     vec![
         (PathBuf::from("Cargo.toml"), package_manifest),
         (
+            PathBuf::from(".gitignore"),
+            "/target/\n.env\n.env.*\n!.env.example\n.DS_Store\n".to_owned(),
+        ),
+        (
+            PathBuf::from(".env.example"),
+            "# Safe local defaults only; never put secrets in this file.\nRUSTFLOW_ENV=development\nRUSTFLOW_HOST=127.0.0.1\nRUSTFLOW_PORT=3000\n".to_owned(),
+        ),
+        (
             PathBuf::from("README.md"),
             format!(
-                "# {name}\n\nAplicación de servidor generada con RustFlow. Las APIs son pre-1.0 y pueden cambiar.\n\n## Desarrollo\n\n```sh\nrustflow dev\n```\n\nAbre http://127.0.0.1:3000/. Define `RUSTFLOW_PORT` para usar otro puerto. `rustflow dev` ejecuta Cargo una vez; no incluye supervisión de archivos ni hot reload.\n\n## Build\n\n```sh\nrustflow build --release\n```\n\n## Generadores\n\n```sh\nrustflow generate component ProductCard\nrustflow generate page about\nrustflow generate controller health\nrustflow generate model User\nrustflow generate migration create_users\n```\n\nLos generadores de Rust registran el módulo dentro de la sección gestionada de `src/**/mod.rs`. Si el archivo de índice no conserva sus marcadores, el comando se detiene sin reemplazarlo. Las migraciones son archivos SQL de ejemplo: RustFlow todavía no incluye ORM, conexión a base de datos ni ejecutor de migraciones.\n\nLas dependencias de RustFlow están fijadas a la revisión del repositorio desde la que se compiló este CLI. Para actualizar esa revisión, cambia deliberadamente las dependencias de Git y vuelve a probar el proyecto.\n"
+                "# {name}\n\nAplicación de servidor generada con RustFlow. Las APIs son pre-1.0 y pueden cambiar.\n\n## Desarrollo\n\n```sh\nrustflow dev\n```\n\nLa configuración inicial es `127.0.0.1:3000`. Copia `.env.example` a `.env` si deseas cambiar los ajustes locales; consulta `docs/CONFIGURATION.md` para precedencia y perfiles. `rustflow dev` ejecuta Cargo una vez; no incluye supervisión de archivos ni hot reload.\n\n## Build\n\n```sh\nrustflow build --release\n```\n\n## Generadores\n\n```sh\nrustflow generate component ProductCard\nrustflow generate page about\nrustflow generate controller health\nrustflow generate model User\nrustflow generate migration create_users\n```\n\nLos generadores de Rust registran el módulo dentro de la sección gestionada de `src/**/mod.rs`. Si el archivo de índice no conserva sus marcadores, el comando se detiene sin reemplazarlo. Las migraciones son archivos SQL de ejemplo: RustFlow todavía no incluye ORM, conexión a base de datos ni ejecutor de migraciones.\n\nLas dependencias de RustFlow están fijadas a la revisión del repositorio desde la que se compiló este CLI. Para actualizar esa revisión, cambia deliberadamente las dependencias de Git y vuelve a probar el proyecto.\n"
             ),
         ),
         (
             PathBuf::from("src/main.rs"),
-            r#"use std::{error::Error, net::SocketAddr};
-use rustflow_server::Application;
+            r#"use std::error::Error;
+use rustflow_server::{AppConfig, Application};
 
 pub mod components;
 pub mod controllers;
@@ -520,14 +528,10 @@ pub mod pages;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let config = AppConfig::load()?;
+    let address = config.socket_addr();
     let mut app = Application::new();
     app.get("/", controllers::home_controller::index)?;
-    let port = match std::env::var("RUSTFLOW_PORT") {
-        Ok(value) => value.parse::<u16>()?,
-        Err(std::env::VarError::NotPresent) => 3000,
-        Err(error) => return Err(Box::<dyn Error>::from(error)),
-    };
-    let address = SocketAddr::from(([127, 0, 0, 1], port));
     println!("RustFlow server listening on http://{address}");
     app.serve(address).await?;
     Ok(())
