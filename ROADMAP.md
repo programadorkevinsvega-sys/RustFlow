@@ -247,7 +247,7 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 
 - [x] Render structural view trees into HTML fragments using rustflow-ssr.
 - [x] Expose complete HTML document responses and configurable escaped error pages through `rustflow-server` (Phase 4.4); route handlers can call these helpers.
-- [x] Add advanced layout composition and explicit route-to-component data integration (rustflow-server::HtmlPage, nested layout components, and allow-listed route props). Full-stack SSR composition is improved but hydration/navigation remain incomplete.
+- [x] Add advanced layout composition and explicit route-to-component data integration (rustflow-server::HtmlPage, nested layout components, and allow-listed route props). At the time of this Phase 5.2 closure, hydration/navigation were still incomplete; they are tracked and closed independently in 5.3/5.4.
 - [x] Test escaping and configured document/error-page responses.
 - [x] Test request-isolated SSR/component state and deterministic boundaries: repeated renders with the same route props produce identical HTML, each render creates/disposes its own component scope, and browser-only/server-only policies remain covered by SSR target tests.
 
@@ -259,7 +259,7 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [x] Define conservative mismatch recovery: preserve the entire SSR root as static HTML and dispose candidate resources rather than destructively replacing DOM.
 - [x] Test form input, conditional regions, keyed-list reorder, ordinary link navigation, repeated event handling, mismatch preservation, and duplicate-hydration rejection.
 
-**Cierre de 5.3 (2026-10-27):** PR #39 se fusionó en `main` mediante squash en el commit `d866298989821eaee64a4ea00466012f36db3ebf`. La CI posterior al merge pasó en Rust 1.85, Rust stable, WASM y Browser E2E/bundle size; en el PR también pasaron la construcción de documentación, gobernanza y revisión de dependencias. La hidratación es opt-in y exige que la vista inicial del cliente sea compatible con el HTML SSR. La recuperación implementada conserva estático el root completo si hay discrepancia; la reparación granular de subregiones, el router cliente, el historial, la interceptación de enlaces y la mejora progresiva de envíos de formulario quedan fuera de alcance y continúan en 5.4.
+**Cierre de 5.3 (2026-10-27):** PR #39 se fusionó en `main` mediante squash en el commit `d866298989821eaee64a4ea00466012f36db3ebf`. La CI posterior al merge pasó en Rust 1.85, Rust stable, WASM y Browser E2E/bundle size; en el PR también pasaron la construcción de documentación, gobernanza y revisión de dependencias. La hidratación es opt-in y exige que la vista inicial del cliente sea compatible con el HTML SSR. La recuperación implementada conserva estático el root completo si hay discrepancia; la reparación granular de subregiones queda fuera de alcance. El router cliente, el historial, la interceptación de enlaces y la mejora progresiva de envíos de formulario se incorporaron después en la Fase 5.4.
 
 ### 5.4 Navigation and forms
 - [x] Add client navigation after route semantics stabilize.
@@ -271,7 +271,7 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 
 **Limitations:** the application owns its client route callback; this is not a general-purpose router or server-action framework. Form enhancement is limited to supported same-origin GET submissions with URL-encoded scalar controls. Unsupported methods/controls, uploads, alternate targets, and other ineligible interactions keep native browser behavior. SSR remains authoritative for direct requests and fallbacks.
 
-**Merge closure:** PR #41 was squash-merged into `main` as `1da8b110ed3e57abccb2c14b6236fcbbc0fbf849`. At the time of this update, GitHub Actions has not yet reported checks for that merge commit. Do not consider Phase 5.4 closed until the required post-merge checks are confirmed successful.
+**Merge closure:** PR #41 se fusionó en `main` mediante squash en `1da8b110ed3e57abccb2c14b6236fcbbc0fbf849`. La CI posterior al merge en el commit `cc26782ef28cf14c5ad039bdcbdded93a5972a34` terminó correctamente en los checks visibles de Rust 1.85, Rust stable, WebAssembly target, Browser E2E/bundle size, Cloudflare Pages y gobernanza. Los checks de documentación y revisión de dependencias también habían pasado en el PR. La fase está implementada y verificada dentro de este alcance; los límites descritos arriba permanecen.
 
 ## Phase 6 — Laravel-inspired developer experience
 
