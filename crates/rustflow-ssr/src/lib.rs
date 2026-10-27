@@ -1077,11 +1077,8 @@ mod tests {
         use super::HtmlRenderer;
 
         let dynamic = View::dynamic(|| Ok(View::text("ready")));
-        let view = View::element(
-            "main",
-            [View::element("p", [dynamic]).expect("paragraph")],
-        )
-        .expect("main");
+        let view = View::element("main", [View::element("p", [dynamic]).expect("paragraph")])
+            .expect("main");
 
         assert_eq!(
             render_to_string(&view).expect("ordinary SSR is unchanged"),
