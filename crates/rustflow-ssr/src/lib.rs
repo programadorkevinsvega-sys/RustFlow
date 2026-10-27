@@ -673,7 +673,14 @@ impl RenderContext {
     ) -> Result<(), SsrError> {
         let kind = self.component_boundary_kind(component);
         let boundary = self.begin_boundary(kind);
+        let previous_boundary_mode = self.hydration_boundaries;
+        if kind == "static" {
+            // Static environment-specific output owns its whole subtree. Do not emit
+            // nested markers that the browser intentionally will not traverse.
+            self.hydration_boundaries = false;
+        }
         let result = self.write_component_inner(component, parent_scope, depth);
+        self.hydration_boundaries = previous_boundary_mode;
         if let Some(id) = boundary {
             self.end_boundary(kind, id);
         }
