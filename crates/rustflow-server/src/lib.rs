@@ -593,8 +593,8 @@ fn render_hydratable_html_document(
     // Build the document shell through the normal safe serializer. Only the serializer-produced
     // body fragment and the script-context-safe HydrationData string are inserted below.
     let shell = html_document(title, lang, &View::fragment([]))?;
-    let shell_html = std::str::from_utf8(shell.body())
-        .map_err(|_| HttpError::internal_server_error())?;
+    let shell_html =
+        std::str::from_utf8(shell.body()).map_err(|_| HttpError::internal_server_error())?;
     let closing_body = shell_html
         .rfind("</body>")
         .ok_or_else(HttpError::internal_server_error)?;
