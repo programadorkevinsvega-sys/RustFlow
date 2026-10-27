@@ -154,6 +154,8 @@ La limpieza es síncrona y ocurre al volver a evaluar/limpiar efectos según su 
 - El render SSR no conecta automáticamente listeners de navegador. La hidratación es optativa y debe configurarse explícitamente.
 - El runtime es pre-1.0 y no debe considerarse API estable.
 
+Para recorrer el caso de uso de UI completo desde el navegador, sigue el [tutorial de interfaz reactiva de tareas](/tutorials/reactive-todo/). El [catálogo de ejemplos](/reference/examples/) relaciona cada guía con el ejecutable correspondiente.
+
 ## Ejemplo y pruebas de referencia
 
 El ejemplo ejecutable está en [examples/browser/src/app.rs](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/examples/browser/src/app.rs), y su [README](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/examples/browser/README.md) explica build y E2E. La documentación técnica de nodos, validación y ciclo de vida está en [VIEW_MODEL.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/VIEW_MODEL.md).

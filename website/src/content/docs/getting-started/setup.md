@@ -15,7 +15,7 @@ cargo --version
 git --version
 ~~~
 
-Para el ejemplo del navegador necesitas además Node.js 22/npm, <code>wasm-pack</code>, el target <code>wasm32-unknown-unknown</code> y Chromium si vas a ejecutar E2E. Los pasos están en [README del ejemplo de navegador](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/examples/browser/README.md).
+Para el ejemplo del navegador necesitas además Node.js 22/npm, `wasm-pack`, el target `wasm32-unknown-unknown` y Chromium si vas a ejecutar E2E. Los pasos están en [README del ejemplo de navegador](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/examples/browser/README.md).
 
 ## 2. Clonar y validar el workspace
 
@@ -39,7 +39,7 @@ Desde la raíz del repositorio:
 cargo run -p rustflow-server --example basic
 ~~~
 
-El ejemplo escucha en <code>127.0.0.1:3000</code>. Incluye una página HTML, una ruta de artículo con componentes SSR, un layout compartido, endpoints JSON, middleware y apagado por Ctrl+C. Prueba <code>http://127.0.0.1:3000/</code>, <code>/articles/demo</code>, <code>/api/health</code> y <code>/users/42?detailed=true</code>.
+El ejemplo escucha en `127.0.0.1:3000`. Incluye una página HTML, una ruta de artículo con componentes SSR, un layout compartido, endpoints JSON, middleware y apagado por Ctrl+C. Prueba `http://127.0.0.1:3000/`, `/articles/demo`, `/api/health` y `/users/42?detailed=true`.
 
 Para ejecutar las pruebas de integración HTTP/TCP:
 
@@ -47,7 +47,7 @@ Para ejecutar las pruebas de integración HTTP/TCP:
 cargo test -p rustflow-server --test http_integration
 ~~~
 
-Para ejecutar el tutorial de producto, detén el primer servidor y ejecuta `cargo run -p rustflow-server --example product_page`; abre `/products/keyboard` o `/products/mouse`. Después continúa con [Servidor HTTP](/guides/server/), [SSR](/guides/ssr/) y [Layouts](/guides/layouts/).
+Para probar la API JSON con peticiones reales, sigue [Tutorial: una API JSON](/tutorials/json-api/). Para ejecutar el tutorial de producto, detén el primer servidor y ejecuta `cargo run -p rustflow-server --example product_page`; abre `/products/keyboard` o `/products/mouse`. Después continúa con [Servidor HTTP](/guides/server/), [SSR](/guides/ssr/) y [Layouts](/guides/layouts/).
 
 ## 4. Ejecutar la interfaz interactiva WASM
 
@@ -65,17 +65,18 @@ npx playwright install --with-deps chromium
 npm run test:e2e
 ~~~
 
-Esta demo muestra Counter, estado reactivo, eventos, una lista de tareas con claves, montaje/desmontaje condicional y navegación optativa. Las fixtures E2E también prueban hidratación en HTML preparado para ese contrato; no quiere decir que el servidor de demo sea una aplicación SSR integrada.
+Esta demo muestra Counter, estado reactivo, eventos, una lista de tareas con claves, montaje/desmontaje condicional y navegación optativa. Las fixtures E2E también prueban hidratación en HTML preparado para ese contrato; no quiere decir que el servidor de demo sea una aplicación SSR integrada. El recorrido guiado está en [Tutorial: interfaz reactiva de tareas](/tutorials/reactive-todo/).
 
 ## 5. Conceptos que conviene aprender
 
 1. [Reactividad](/concepts/reactivity/): qué es una señal, cómo se registran dependencias y cuándo se ejecuta un efecto.
-2. [Crear componentes](/guides/components/): props, <code>view!</code>, eventos y actualización de UI.
+2. [Crear componentes](/guides/components/): props, `view!`, eventos y actualización de UI.
 3. [Servidor HTTP](/guides/server/): rutas, handlers, parámetros y respuestas.
 4. [SSR y documentos HTML](/guides/ssr/): escape, catálogo de componentes e hidratación optativa.
 5. [Layouts](/guides/layouts/): composición de páginas.
 6. [Página de producto](/tutorials/product-page/): tutorial integrado que conecta las piezas.
+7. [Catálogo de ejemplos](/reference/examples/): mapa de todos los ejecutables verificados del repositorio.
 
 ## ¿Puedo crear un proyecto con cargo add o rustflow new?
 
-No hay una versión estable publicada ni un CLI propio verificado para crear proyectos, ejecutar <code>rustflow dev</code> o generar componentes. No asumas que esos comandos existen. Por ahora, prueba los ejemplos dentro del workspace y consulta [Estado del proyecto](/project-status/) antes de adoptar una capacidad.
+No hay una versión estable publicada ni un CLI propio verificado para crear proyectos, ejecutar `rustflow dev` o generar componentes. No asumas que esos comandos existen. Por ahora, prueba los ejemplos dentro del workspace y consulta [Estado del proyecto](/project-status/) antes de adoptar una capacidad.
