@@ -10,8 +10,7 @@ use std::{collections::HashSet, error::Error, fmt};
 
 use rustflow::{
     components::{
-        ComponentCapability, ComponentError, ComponentInstance, ComponentRegistry, RenderTarget,
-        SharedComponentCatalog,
+        ComponentCapability, ComponentError, ComponentRegistry, RenderTarget, SharedComponentCatalog,
     },
     reactivity::{Runtime, RuntimeError, Scope},
 };
