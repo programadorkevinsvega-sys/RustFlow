@@ -5,7 +5,10 @@
 //! paths the client does not own. The HTTP server remains authoritative: a transition is committed
 //! only after a successful same-origin HTML response and a successful reactive view update.
 
-use std::{cell::{Cell, RefCell}, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
