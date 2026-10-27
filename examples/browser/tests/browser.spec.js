@@ -362,3 +362,36 @@ test("modified, alternate-target, download, and external links are not intercept
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByTestId("home-page")).toBeVisible();
 });
+
+
+test("native HTML forms work when JavaScript is disabled", async ({ browser, page }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const noJsPage = await context.newPage();
+  const origin = new URL(page.url()).origin;
+
+  await noJsPage.route("**/native-form", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/html; charset=utf-8",
+      body:
+        '<!doctype html><html><body><form method="get" action="/native-result">' +
+        '<label for="native-query">Query</label><input id="native-query" name="q" required>' +
+        '<button type="submit">Send</button></form></body></html>',
+    }),
+  );
+  await noJsPage.route("**/native-result**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/html; charset=utf-8",
+      body: "<!doctype html><html><body><p>Native submission: bare html</p></body></html>",
+    }),
+  );
+
+  await noJsPage.goto(origin + "/native-form");
+  await noJsPage.getByRole("textbox", { name: "Query" }).fill("bare html");
+  await noJsPage.getByRole("button", { name: "Send" }).click();
+  await expect(noJsPage).toHaveURL(/\\/native-result\\?q=bare\\+html$/);
+  await expect(noJsPage.getByText("Native submission: bare html")).toBeVisible();
+
+  await context.close();
+});
