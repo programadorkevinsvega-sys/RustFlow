@@ -153,24 +153,119 @@ pub fn start() -> Result<(), JsValue> {
     // This optional fixture is injected only by the browser E2E tests. It exercises the
     // same public hydration API against server-shaped HTML without affecting the demo page.
     if let Some(hydration_target) = document.get_element_by_id("hydration-fixture") {
-        let hydration_count = runtime.signal(0_i32).map_err(display_error)?;
-        let count_for_render = hydration_count.clone();
-        let count_for_button = hydration_count.clone();
         let mut hydration_renderer =
             DomRenderer::new(document.clone(), runtime.clone(), ComponentRegistry::new());
-        let result =
-            hydration_renderer.hydrate_reactive(&hydration_target, &root_scope, move || {
-                let count_for_button = count_for_button.clone();
-                let count_for_render = count_for_render.clone();
-                rustflow::view! {
-                    <button data-testid="hydration-action" on:click={move |_payload| {
-                        count_for_button.update(|value| *value += 1);
-                    }}>
-                        "Count: " {count_for_render}
-                    </button>
+        let interactive_fixture = hydration_target
+            .get_attribute("data-hydration-case")
+            .as_deref()
+            == Some("interactive");
+
+        let result = if interactive_fixture {
+            let input_value = runtime
+                .signal(String::from("Ada"))
+                .map_err(display_error)?;
+            let input_for_event = input_value.clone();
+            let value_for_output = input_value.clone();
+            let reverse_order = runtime.signal(false).map_err(display_error)?;
+            let reverse_for_list = reverse_order.clone();
+            let reverse_for_button = reverse_order.clone();
+            let show_fixture_help = runtime.signal(true).map_err(display_error)?;
+            let show_for_region = show_fixture_help.clone();
+            let show_for_button = show_fixture_help.clone();
+
+            let list_region = View::dynamic(move || {
+                let reversed = reverse_for_list.get();
+                let items = if reversed {
+                    vec![("second", "Second"), ("first", "First")]
+                } else {
+                    vec![("first", "First"), ("second", "Second")]
+                };
+                let mut children = Vec::with_capacity(items.len());
+                for (key, label) in items {
+                    let item = ViewElement::new("li")?
+                        .with_attribute("data-testid", format!("hydration-item-{key}"))?
+                        .with_children([View::text(label)])
+                        .build();
+                    children.push(KeyedChild::new(key, item));
                 }
-                .map_err(DomError::from)
+                Ok(View::keyed_list(children))
             });
+
+            let help_region = View::dynamic(move || {
+                if show_for_region.get() {
+                    Ok(ViewElement::new("p")?
+                        .with_attribute("data-testid", "hydration-help")?
+                        .with_attribute("role", "status")?
+                        .with_children([View::text("Help")])
+                        .build())
+                } else {
+                    Ok(View::fragment([]))
+                }
+            });
+
+            hydration_renderer.hydrate_reactive(
+                &hydration_target,
+                &root_scope,
+                move || {
+                    let input_for_event = input_for_event.clone();
+                    let value_for_output = value_for_output.clone();
+                    let reverse_for_button = reverse_for_button.clone();
+                    let show_for_button = show_for_button.clone();
+                    rustflow::view! {
+                        <main>
+                            <form data-testid="hydration-form">
+                                <label for="hydration-input">"Name"</label>
+                                <input
+                                    id="hydration-input"
+                                    aria-label="Name"
+                                    prop:value="Ada"
+                                    on:input={move |payload: EventPayload| {
+                                        input_for_event.set(payload.value.unwrap_or_default());
+                                    }}
+                                />
+                                <p data-testid="hydration-input-output">{value_for_output}</p>
+                                <button type="button" data-testid="hydration-toggle" on:click={move |_payload| {
+                                    show_for_button.update(|visible| *visible = !*visible);
+                                }}>
+                                    "Toggle help"
+                                </button>
+                                <button type="button" data-testid="hydration-reverse" on:click={move |_payload| {
+                                    reverse_for_button.update(|reversed| *reversed = !*reversed);
+                                }}>
+                                    "Reverse list"
+                                </button>
+                            </form>
+                            <ul data-testid="hydration-list">{list_region}</ul>
+                            {help_region}
+                            <a href="#hydration-details" data-testid="hydration-link">"Go"</a>
+                            <div id="hydration-details">"Target"</div>
+                        </main>
+                    }
+                    .map_err(DomError::from)
+                },
+            )
+        } else {
+            let hydration_count = runtime.signal(0_i32).map_err(display_error)?;
+            let count_for_render = hydration_count.clone();
+            let count_for_button = hydration_count.clone();
+            hydration_renderer.hydrate_reactive(
+                &hydration_target,
+                &root_scope,
+                move || {
+                    let count_for_button = count_for_button.clone();
+                    let count_for_render = count_for_render.clone();
+                    rustflow::view! {
+                        <button data-testid="hydration-action" on:click={move |_payload| {
+                            count_for_button.update(|value| *value += 1);
+                        }}>
+                            "Count: " {count_for_render}
+                        </button>
+                    }
+                    .map_err(DomError::from)
+                },
+            )
+        };
+
         match result {
             Ok(mounted) => {
                 ACTIVE_HYDRATION_MOUNT.with(|slot| *slot.borrow_mut() = Some(mounted));
