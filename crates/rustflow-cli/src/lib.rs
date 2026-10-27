@@ -450,10 +450,7 @@ fn create_staging_dir(parent: &Path, name: &str) -> Result<PathBuf, CliError> {
     Err("could not allocate a unique staging directory after 100 attempts".into())
 }
 
-fn populate_staging_dir(
-    staging: &Path,
-    files: &[(PathBuf, String)],
-) -> Result<(), CliError> {
+fn populate_staging_dir(staging: &Path, files: &[(PathBuf, String)]) -> Result<(), CliError> {
     if let Err(error) = write_project_files(staging, files) {
         if let Err(cleanup_error) = fs::remove_dir_all(staging) {
             return Err(format!(
