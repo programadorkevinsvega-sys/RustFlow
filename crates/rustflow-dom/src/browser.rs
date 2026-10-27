@@ -722,6 +722,35 @@ impl DomRenderer {
     where
         F: Fn() -> Result<View, DomError> + 'static,
     {
+        self.mount_reactive_inner(target, owner_scope, render, false)
+    }
+
+    /// Hydrate a reactive view from existing SSR markup, preserving compatible DOM nodes.
+    ///
+    /// Unlike mount_reactive, this method requires SSR root/component/dynamic markers and
+    /// returns an error rather than clearing or replacing the server content on a mismatch.
+    pub fn hydrate_reactive<F>(
+        &mut self,
+        target: &DomElement,
+        owner_scope: &Scope,
+        render: F,
+    ) -> Result<ReactiveMountedDom, DomError>
+    where
+        F: Fn() -> Result<View, DomError> + 'static,
+    {
+        self.mount_reactive_inner(target, owner_scope, render, true)
+    }
+
+    fn mount_reactive_inner<F>(
+        &mut self,
+        target: &DomElement,
+        owner_scope: &Scope,
+        render: F,
+        hydrate: bool,
+    ) -> Result<ReactiveMountedDom, DomError>
+    where
+        F: Fn() -> Result<View, DomError> + 'static,
+    {
         let scope = owner_scope.child()?;
         let state: Rc<RefCell<Option<ReactiveMountState>>> = Rc::new(RefCell::new(None));
         let last_error: Rc<RefCell<Option<DomError>>> = Rc::new(RefCell::new(None));
@@ -763,7 +792,12 @@ impl DomRenderer {
                     }
                 }
             } else {
-                match renderer.mount_into(&target, &next_view) {
+                let result = if hydrate {
+                    renderer.hydrate_into(&target, &next_view)
+                } else {
+                    renderer.mount_into(&target, &next_view)
+                };
+                match result {
                     Ok(mounted) => {
                         *current = Some(ReactiveMountState {
                             mounted,
@@ -2137,6 +2171,182 @@ fn direct_children(parent: &Node) -> Vec<Node> {
         result.push(node);
     }
     result
+}
+
+fn is_comment_value(node: &Node, expected: &str) -> bool {
+    node.node_type() == 8 && node.node_value().as_deref() == Some(expected)
+}
+
+fn marker_positions(nodes: &[Node], marker: &str) -> Vec<usize> {
+    nodes.iter().enumerate()
+        .filter_map(|(index, node)| is_comment_value(node, marker).then_some(index))
+        .collect()
+}
+
+fn node_description(node: Option<&Node>) -> String {
+    match node {
+        None => "end of range".to_owned(),
+        Some(node) => match node.node_type() {
+            1 => node.dyn_ref::<DomElement>()
+                .map(|element| format!("<{}> element", element.tag_name().to_ascii_lowercase()))
+                .unwrap_or_else(|| "element node".to_owned()),
+            3 => "text node".to_owned(),
+            8 => "comment node".to_owned(),
+            kind => format!("DOM node type {kind}"),
+        },
+    }
+}
+
+fn hydration_mismatch(expected: &str, found: Option<&Node>) -> DomError {
+    DomError::HydrationMismatch {
+        expected: expected.to_owned(),
+        found: node_description(found),
+    }
+}
+
+fn find_boundary_end(
+    siblings: &[Node],
+    start_index: usize,
+    kind: &str,
+    id: usize,
+) -> Result<usize, DomError> {
+    let marker = format!("rustflow:{kind}:end:{id}");
+    siblings.iter().enumerate().skip(start_index + 1)
+        .find_map(|(index, node)| is_comment_value(node, &marker).then_some(index))
+        .ok_or_else(|| DomError::HydrationMismatch {
+            expected: format!("matching comment {marker}"),
+            found: "no matching end marker".to_owned(),
+        })
+}
+
+fn hydration_property_attribute_name(tag: &str, name: &str) -> Option<String> {
+    let name = name.to_ascii_lowercase();
+    let attribute = match name.as_str() {
+        "autofocus" | "allowfullscreen" | "checked" | "controls" | "disabled"
+        | "formnovalidate" | "hidden" | "inert" | "loop" | "multiple" | "muted"
+        | "novalidate" | "open" | "readonly" | "required" | "selected" => name.as_str(),
+        "accept" | "action" | "alt" | "autocomplete" | "cols" | "colspan"
+        | "contenteditable" | "dir" | "draggable" | "enctype" | "formaction"
+        | "height" | "href" | "id" | "lang" | "maxlength" | "method" | "min"
+        | "minlength" | "max" | "name" | "pattern" | "placeholder" | "poster"
+        | "rel" | "role" | "rowspan" | "rows" | "size" | "spellcheck" | "src"
+        | "step" | "tabindex" | "target" | "title" | "type" | "width" => name.as_str(),
+        "class" | "classname" => "class",
+        "for" | "htmlfor" => "for",
+        "value" if tag != "textarea" => "value",
+        _ => return None,
+    };
+    Some(attribute.to_owned())
+}
+
+fn property_value_as_hydration_text(value: &PropertyValue) -> Result<String, DomError> {
+    match value {
+        PropertyValue::Text(value) => Ok(value.clone()),
+        PropertyValue::Boolean(value) => Ok(value.to_string()),
+        PropertyValue::Integer(value) => Ok(value.to_string()),
+        PropertyValue::Float(value) => Ok(value.to_string()),
+        PropertyValue::Callback(_) => Err(DomError::PropertyRejected("callback".to_owned())),
+    }
+}
+
+fn validate_hydrated_element(expected: &Element, actual: &DomElement) -> Result<(), DomError> {
+    let tag = expected.tag().to_ascii_lowercase();
+    let mut expected_attributes = HashMap::<String, String>::new();
+    let mut textarea_value = None;
+
+    for attribute in expected.attributes() {
+        let name = attribute.name().to_ascii_lowercase();
+        let value = match attribute.value() {
+            AttributeValue::Boolean(true) => Some(String::new()),
+            AttributeValue::Boolean(false) => None,
+            AttributeValue::Text(value) => Some(value.clone()),
+        };
+        if let Some(value) = value {
+            validate_attribute(&name, &value)?;
+            expected_attributes.insert(name, value);
+        } else {
+            expected_attributes.remove(&name);
+        }
+    }
+
+    for property in expected.properties() {
+        validate_property(property.name(), property.value())?;
+        let name = property.name().to_ascii_lowercase();
+        if name == "value" && tag == "textarea" {
+            textarea_value = Some(match property.value() {
+                PropertyValue::Text(value) => value.clone(),
+                _ => return Err(DomError::PropertyRejected(property.name().to_owned())),
+            });
+            continue;
+        }
+        let Some(attribute_name) = hydration_property_attribute_name(&tag, &name) else {
+            // Properties without an SSR attribute representation are client-only.
+            continue;
+        };
+        let is_boolean = matches!(
+            name.as_str(),
+            "autofocus" | "allowfullscreen" | "checked" | "controls" | "disabled"
+                | "formnovalidate" | "hidden" | "inert" | "loop" | "multiple" | "muted"
+                | "novalidate" | "open" | "readonly" | "required" | "selected"
+        );
+        if is_boolean {
+            let PropertyValue::Boolean(value) = property.value() else {
+                return Err(DomError::PropertyRejected(property.name().to_owned()));
+            };
+            if *value {
+                expected_attributes.insert(attribute_name, String::new());
+            } else {
+                expected_attributes.remove(&attribute_name);
+            }
+        } else {
+            let value = property_value_as_hydration_text(property.value())?;
+            validate_attribute(&attribute_name, &value)?;
+            expected_attributes.insert(attribute_name, value);
+        }
+    }
+
+    let actual_attributes = actual.attributes();
+    let mut found_attributes = HashMap::<String, String>::new();
+    for index in 0..actual_attributes.length() {
+        let attribute: Attr = actual_attributes.item(index).ok_or_else(|| {
+            DomError::HydrationMismatch {
+                expected: "complete DOM attribute list".to_owned(),
+                found: "unreadable attribute".to_owned(),
+            }
+        })?;
+        let name = attribute.name().to_ascii_lowercase();
+        let value = attribute.value();
+        validate_attribute(&name, &value)?;
+        found_attributes.insert(name, value);
+    }
+    if found_attributes != expected_attributes {
+        return Err(DomError::HydrationMismatch {
+            expected: format!("the SSR attribute set for <{tag}>"),
+            found: "different attribute names or values".to_owned(),
+        });
+    }
+    if let Some(expected_value) = textarea_value {
+        if actual.text_content().as_deref() != Some(expected_value.as_str()) {
+            return Err(DomError::HydrationMismatch {
+                expected: "matching textarea initial value".to_owned(),
+                found: "different textarea text content".to_owned(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn set_preserve_on_drop(mounted: &mut MountedDom, preserve: bool) {
+    mounted.preserve_on_drop = preserve;
+    for region in &mut mounted.component_regions {
+        set_preserve_on_drop(&mut region.mounted, preserve);
+    }
+    for region in &mut mounted.dynamics {
+        let mut state = region.state.borrow_mut();
+        if let Some(state) = state.as_mut() {
+            set_preserve_on_drop(&mut state.mounted, preserve);
+        }
+    }
 }
 
 fn remove_obsolete_nodes(parent: &Node, previous: &[Node], next: &[Node]) -> Result<(), DomError> {
