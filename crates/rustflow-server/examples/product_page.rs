@@ -31,9 +31,8 @@ fn demo_product(id: &str) -> Option<Product> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // 1. Declare the server-rendered product page as a reusable component definition.
-    let product_page = SharedComponentDefinition::new(
-        "ProductPage",
-        |_context, _initial_properties| {
+    let product_page =
+        SharedComponentDefinition::new("ProductPage", |_context, _initial_properties| {
             let render: ComponentRender = Rc::new(|properties, _children| {
                 let text_property = |name: &str| {
                     properties
@@ -60,25 +59,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 )?)
             });
             Ok(render)
-        },
-    )?
-    .server_only();
+        })?
+        .server_only();
 
     // 2. Create a reusable layout. Children contain the page-specific component.
-    let store_layout = SharedComponentDefinition::new(
-        "StoreLayout",
-        |_context, _initial_properties| {
+    let store_layout =
+        SharedComponentDefinition::new("StoreLayout", |_context, _initial_properties| {
             let render: ComponentRender = Rc::new(|_properties, children| {
                 Ok(View::element(
                     "div",
                     [
-                        View::element("header", [
-                            View::element("strong", [View::text("Mi tienda")])?,
-                        ])?,
+                        View::element(
+                            "header",
+                            [View::element("strong", [View::text("Mi tienda")])?],
+                        )?,
                         View::element("main", children.to_vec())?,
-                        View::element("footer", [
-                            View::text("Catálogo de demostración"),
-                        ])?,
+                        View::element("footer", [View::text("Catálogo de demostración")])?,
                     ],
                 )?)
             });
