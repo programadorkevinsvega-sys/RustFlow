@@ -233,12 +233,12 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 ## Phase 5 — SSR, hydration, and full-stack data flow
 
 ### 5.1 Rendering contract
-- [ ] Define server-capable and browser-only components.
+- [x] Define server-capable and browser-only components (`ComponentCapability`, target-aware mounting, browser-only SSR fallback/error, and regression tests).
 - [x] Define safe serialization for hydration data (`rustflow_ssr::HydrationData`; bounded JSON, nesting validation, HTML-script-safe escaping, and regression tests).
-- [ ] Prevent server-only types and secrets entering client bundles.
-- [ ] Define deterministic rendering and non-hydratable fallbacks.
+- [ ] Prevent server-only types and secrets entering client bundles. Known server crates/dependencies are denied in the WASM graph, and hydration input requires an explicit JSON public-data projection; full application-level secret exclusion remains a reviewed trust-boundary obligation, not something RustFlow can infer from arbitrary strings.
+- [x] Define deterministic rendering and non-hydratable fallbacks (repeatable static-tree test; browser-only components require an explicit static SSR fallback or return an error; hydration mismatch recovery remains future work).
 
-**Estado parcial de 5.1 (2026-10-27):** `HydrationData` implementa y prueba una representación JSON acotada; CI también comprueba que el grafo WASM del ejemplo de navegador no incluya los crates y dependencias de servidor actualmente identificados. La subfase sigue abierta: el modelo de capacidades de componentes aún no tiene marcadores ni validación de ejecución; el grafo no detecta secretos semánticos incluidos explícitamente por una aplicación; y las reglas de determinismo/fallback todavía necesitan integración y verificación con los límites de SSR/hidratación de las subfases 5.2–5.4. El contrato no implementa hidratación ni navegación cliente.
+**Estado parcial de 5.1 (2026-10-27):** `HydrationData` implementa y prueba JSON acotado. `ComponentCapability` declara componentes `Universal`, `ServerOnly` y `BrowserOnly`; los renderizadores SSR/browser validan el destino antes de ejecutar setup. SSR utiliza un fallback estático explícito para componentes browser-only, o devuelve un error si no hay fallback. CI bloquea crates de servidor conocidos en el grafo WASM. La subfase sigue abierta únicamente para cerrar el límite de datos privados/secretos de aplicaciones mediante una política pública verificable y revisión de seguridad; estos checks no pueden determinar si una cadena arbitraria tiene significado secreto. Los marcadores de identidad, hidratación DOM y recuperación de discrepancias siguen siendo trabajo posterior.
 
 ### 5.2 SSR
 - [x] Render structural view trees into HTML fragments using rustflow-ssr.

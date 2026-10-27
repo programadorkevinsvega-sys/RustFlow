@@ -56,3 +56,25 @@ fn build_public_snapshot() -> Result<(), Box<dyn std::error::Error>> {
 `HydrationData::from_json` valida y normaliza una cadena JSON. `as_str` devuelve datos JSON, no HTML, no genera una etiqueta `script` y no implementa hidratación. El tipo solo admite `serde_json::Value`: closures, callbacks, nodos DOM, referencias internas y objetos Rust arbitrarios no se serializan automáticamente. El framework tampoco puede inferir si un campo representa un secreto; la aplicación debe proyectar una lista explícita de datos públicos y nunca incluir tokens de sesión, credenciales, objetos de petición ni estado privado.
 
 El contrato de componentes compatibles con cada entorno, los límites de discrepancia, los identificadores de hidratación y la recuperación del DOM continúan en definición. No se debe interpretar esta utilidad como soporte de SSR full-stack ni como hidratación funcional.
+
+
+## Capacidades de componentes y fallback SSR
+
+Las definiciones de `rustflow::components::ComponentDefinition` son universales por compatibilidad, salvo que se indique lo contrario. Usa `.server_only()` para componentes que solo se pueden ejecutar en el servidor y `.browser_only()` para componentes que requieren APIs del navegador. Los renderizadores llaman a la variante de montaje con destino y rechazan la capacidad incompatible antes de ejecutar el setup.
+
+Un componente browser-only debe definir un fallback estructural para SSR o el renderizado devuelve `SsrError::NonHydratableComponent`:
+
+```rust
+use rustflow::{components::ComponentDefinition, view::View};
+use std::rc::Rc;
+
+let client_widget = ComponentDefinition::new("ClientWidget", |_context, _props| {
+    let render: rustflow::components::ComponentRender =
+        Rc::new(|_props, _children| Ok(View::text("interactive in browser")));
+    Ok(render)
+})?
+.browser_only()
+.with_ssr_fallback(View::text("Static placeholder"));
+```
+
+El fallback se serializa mediante la misma política de seguridad de SSR y es estático: no se convierte en un límite hidratable, no adjunta eventos y no afirma que haya interactividad cliente. Las capacidades de ejecución no sustituyen la separación de dependencias por crate; el CI de WASM bloquea las dependencias de servidor conocidas. La aplicación sigue teniendo que proyectar expresamente campos públicos antes de crear `HydrationData`; RustFlow no puede saber si un valor de texto es un secreto.

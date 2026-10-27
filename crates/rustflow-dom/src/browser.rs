@@ -7,7 +7,7 @@ use std::{
 
 use js_sys::Reflect;
 use rustflow::{
-    components::{ComponentError, ComponentInstance, ComponentRegistry},
+    components::{ComponentError, ComponentInstance, ComponentRegistry, RenderTarget},
     reactivity::{Effect, Runtime, RuntimeError, Scope, untrack},
 };
 use rustflow_view::{
@@ -845,9 +845,12 @@ impl DomRenderer {
         parent_scope: &Scope,
         resources: &mut RenderedNodes,
     ) -> Result<Vec<Node>, DomError> {
-        let mut instance = self
-            .registry
-            .mount(component, self.runtime.clone(), parent_scope)?;
+        let mut instance = self.registry.mount_for_target(
+            component,
+            self.runtime.clone(),
+            parent_scope,
+            RenderTarget::Browser,
+        )?;
         let view = instance.view().clone();
         let start = self.document.create_comment("rustflow:component:start");
         let end = self.document.create_comment("rustflow:component:end");

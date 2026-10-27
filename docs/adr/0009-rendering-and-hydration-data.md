@@ -20,7 +20,9 @@ Define three conceptual capabilities for the forthcoming component API:
 - **Server-only:** may access request-scoped server services and private data, but is never included in or invoked by a browser/WASM component graph.
 - **Browser-only:** may access DOM, browser events, browser storage, or browser scheduling. SSR must not evaluate it as if those APIs existed on the server; it needs an explicit static/non-hydratable fallback or a deliberate client-only boundary.
 
-These are architectural categories, not implemented public markers yet. Existing component descriptors and the registry do not carry this capability metadata. Until a follow-up introduces and tests that API, SSR callers must register only components known to be safe in the server environment. Do not disguise browser-only access as a universal component or infer universal compatibility from successful native compilation alone.
+The categories are represented by `ComponentCapability` on `ComponentDefinition`. Definitions default to `Universal` for compatibility, while `.server_only()`, `.browser_only()`, and `.with_capability(...)` allow the author to narrow execution. `ComponentRegistry::mount_for_target` checks the declared target before setup; target-neutral mount APIs accept universal components only. The SSR renderer skips browser-only setup and serializes the explicitly configured fallback under the normal HTML safety policy, or returns `SsrError::NonHydratableComponent` if no fallback exists. The browser DOM renderer rejects server-only components before setup. Do not disguise browser-only access as a universal component or infer universal compatibility from successful native compilation alone.
+
+These are runtime execution guards, not compile-time proof that an application has omitted server-only code from a WASM binary. Crate boundaries and the WASM dependency-graph check remain required; applications must not register private server components in browser registries.
 
 Components and render functions must use explicit props/context and owner-scoped runtime state. Server rendering creates isolated runtime state per render/request; no process-global mutable runtime, hidden request singleton, or cross-request component state is allowed. Render evaluation must be repeatable and must not install persistent effects or perform externally visible side effects.
 
@@ -80,14 +82,16 @@ Positive:
 - Component and mismatch semantics are documented before SSR/hydration integration.
 
 Costs and limitations:
-- Component capabilities are defined conceptually but not encoded or enforced in the current descriptor/registry API.
+- Component capabilities are runtime metadata enforced by target-aware mount/render paths; they are not a proof that user-authored server-only code is absent from every possible binary.
 - Secret exclusion depends on explicit public-data projection at the application boundary; the framework cannot semantically detect arbitrary secrets in JSON.
 - Determinism is guaranteed only for constrained static inputs; arbitrary component render closures remain outside that guarantee.
+- The fallback is static markup, not a hydration boundary. Mismatch detection, partial DOM recovery, and listener attachment are not implemented.
 - Full SSR composition, route data, hydration IDs, event attachment, mismatch detection/recovery, navigation, and forms remain future phases.
 
 ## Validation
 
 - Unit tests cover script-context escaping, JSON round-tripping, malformed/oversized input, excessive nesting, output-size limits, and repeatable compact encoding.
 - A static-tree SSR test checks identical HTML bytes for repeated renders.
+- Target-aware component tests verify server-only definitions are rejected in browser rendering and browser-only definitions are rejected in server mounting before setup; SSR tests cover both static fallback and missing-fallback errors.
 - CI checks the known server-only dependency list is absent from the browser/WASM graph.
 - The Rust toolchain, Clippy, full workspace tests, Rustdoc, WASM build, browser E2E/bundle budget, documentation-site build, governance, and dependency review must pass on the PR before this ADR/subphase is treated as verified.
