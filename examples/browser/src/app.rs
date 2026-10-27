@@ -139,8 +139,8 @@ pub fn start() -> Result<(), JsValue> {
     let current_route = runtime
         .signal(format!(
             "{}{}",
-            window.location().pathname().map_err(display_error)?,
-            window.location().search().map_err(display_error)?
+            window.location().pathname()?,
+            window.location().search()?
         ))
         .map_err(display_error)?;
     let todos = runtime.signal(Vec::<Todo>::new()).map_err(display_error)?;
