@@ -16,7 +16,7 @@ use rustflow_view::{
 };
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use web_sys::{
-    Comment, Document, Element as DomElement, Event, EventTarget, HtmlInputElement,
+    Attr, Comment, Document, Element as DomElement, Event, EventTarget, HtmlInputElement,
     HtmlSelectElement, HtmlTextAreaElement, Node,
 };
 
@@ -33,6 +33,9 @@ pub enum DomError {
     Component(String),
     Runtime(String),
     PropertyRejected(String),
+    HydrationMismatch { expected: String, found: String },
+    AlreadyHydrated,
+    InvalidHydrationData,
 }
 
 impl fmt::Display for DomError {
@@ -48,6 +51,11 @@ impl fmt::Display for DomError {
             Self::PropertyRejected(name) => {
                 write!(f, "browser rejected DOM property: {name}")
             }
+            Self::HydrationMismatch { expected, found } => {
+                write!(f, "hydration mismatch: expected {expected}, found {found}")
+            }
+            Self::AlreadyHydrated => write!(f, "this SSR boundary has already been hydrated"),
+            Self::InvalidHydrationData => write!(f, "invalid JSON in #rustflow-hydration-data"),
         }
     }
 }
@@ -88,6 +96,17 @@ struct EventListener {
     callback: Closure<dyn FnMut(Event)>,
 }
 
+struct PendingEventListener {
+    target: EventTarget,
+    name: String,
+    handler: EventHandler,
+}
+
+#[derive(Default)]
+struct HydrationCursor {
+    next_boundary: usize,
+}
+
 #[derive(Clone)]
 struct DelegatedBinding {
     element: DomElement,
@@ -98,6 +117,7 @@ struct DelegatedBinding {
 #[derive(Default)]
 struct RenderedNodes {
     listeners: Vec<EventListener>,
+    pending_listeners: Vec<PendingEventListener>,
     delegated: Vec<DelegatedBinding>,
     components: Vec<ComponentInstance>,
     component_regions: Vec<ComponentRegion>,
@@ -106,6 +126,7 @@ struct RenderedNodes {
 
 fn append_rendered_nodes(target: &mut RenderedNodes, mut source: RenderedNodes) {
     target.listeners.append(&mut source.listeners);
+    target.pending_listeners.append(&mut source.pending_listeners);
     target.delegated.append(&mut source.delegated);
     target.components.append(&mut source.components);
     target
@@ -248,11 +269,15 @@ pub struct MountedDom {
     end: Comment,
     roots: Vec<Node>,
     listeners: Vec<EventListener>,
+    pending_listeners: Vec<PendingEventListener>,
     delegated_listeners: Vec<EventListener>,
     delegated_bindings: Rc<RefCell<Vec<DelegatedBinding>>>,
     components: Vec<ComponentInstance>,
     component_regions: Vec<ComponentRegion>,
     dynamics: Vec<DynamicRegion>,
+    // While a hydration candidate is being validated, dropping it must clean up
+    // temporary Rust resources without detaching or mutating the server DOM.
+    preserve_on_drop: bool,
 }
 
 impl MountedDom {
@@ -815,11 +840,13 @@ impl DomRenderer {
             end: end.clone(),
             roots: roots.clone(),
             listeners: inner.listeners,
+            pending_listeners: inner.pending_listeners,
             delegated_listeners: Vec::new(),
             delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
             components: inner.components,
             component_regions: inner.component_regions,
             dynamics: inner.dynamics,
+            preserve_on_drop: false,
         };
         let state = Rc::new(RefCell::new(Some(DynamicMountState { mounted, view })));
         resources.dynamics.push(DynamicRegion {
@@ -868,11 +895,13 @@ impl DomRenderer {
             end: end.clone(),
             roots: roots.clone(),
             listeners: inner.listeners,
+            pending_listeners: inner.pending_listeners,
             delegated_listeners: Vec::new(),
             delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
             components: inner.components,
             component_regions: inner.component_regions,
             dynamics: inner.dynamics,
+            preserve_on_drop: false,
         };
         resources.component_regions.push(ComponentRegion {
             descriptor: component.clone(),
@@ -929,6 +958,7 @@ impl DomRenderer {
         cleanup_mounted_content(mounted)?;
         mounted.roots = next_roots;
         mounted.listeners = resources.listeners;
+        mounted.pending_listeners = resources.pending_listeners;
         mounted.components = resources.components;
         mounted.component_regions = resources.component_regions;
         mounted.dynamics = resources.dynamics;
@@ -1608,6 +1638,7 @@ impl DomRenderer {
 
         mounted.roots = roots;
         mounted.listeners = resources.listeners;
+        mounted.pending_listeners = resources.pending_listeners;
         mounted.components = resources.components;
         mounted
             .component_regions
@@ -1778,7 +1809,9 @@ fn cleanup_one_dynamic_region(region: &mut DynamicRegion) -> Result<(), DomError
     }
     first_error(&mut error, region.scope.dispose().map_err(Into::into));
     if let Some(mut state) = region.state.borrow_mut().take() {
-        first_error(&mut error, detach_range(&mut state.mounted));
+        if !state.mounted.preserve_on_drop {
+            first_error(&mut error, detach_range(&mut state.mounted));
+        }
         first_error(&mut error, cleanup_mounted_resources(&mut state.mounted));
     }
     match error {
@@ -1861,11 +1894,13 @@ impl Renderer for DomRenderer {
             end,
             roots,
             listeners: resources.listeners,
+            pending_listeners: resources.pending_listeners,
             delegated_listeners: Vec::new(),
             delegated_bindings: Rc::new(RefCell::new(resources.delegated)),
             components: resources.components,
             component_regions: resources.component_regions,
             dynamics: resources.dynamics,
+            preserve_on_drop: false,
         })
     }
 
@@ -1906,7 +1941,9 @@ impl Renderer for DomRenderer {
 
 impl Drop for MountedDom {
     fn drop(&mut self) {
-        let _ = detach_range(self);
+        if !self.preserve_on_drop {
+            let _ = detach_range(self);
+        }
         let _ = cleanup_mounted_resources(self);
     }
 }
@@ -1949,6 +1986,7 @@ fn cleanup_rendered_nodes(resources: &mut RenderedNodes) -> Result<(), DomError>
         &mut error,
         cleanup_component_regions(&mut resources.component_regions),
     );
+    resources.pending_listeners.clear();
     resources.delegated.clear();
     match error {
         Some(error) => Err(error),
@@ -1974,6 +2012,7 @@ fn cleanup_mounted_non_component_content(mounted: &mut MountedDom) -> Result<(),
         cleanup_resources(&mut mounted.listeners, &mut mounted.components),
     );
     first_error(&mut error, cleanup_dynamic_regions(&mut mounted.dynamics));
+    mounted.pending_listeners.clear();
     mounted.delegated_bindings.borrow_mut().clear();
     match error {
         Some(error) => Err(error),
@@ -2007,7 +2046,9 @@ fn cleanup_component_regions(regions: &mut Vec<ComponentRegion>) -> Result<(), D
 fn cleanup_component_region(region: &mut ComponentRegion) -> Result<(), DomError> {
     let mut error = None;
     first_error(&mut error, region.instance.unmount().map_err(Into::into));
-    first_error(&mut error, detach_range(&mut region.mounted));
+    if !region.mounted.preserve_on_drop {
+        first_error(&mut error, detach_range(&mut region.mounted));
+    }
     first_error(&mut error, cleanup_mounted_resources(&mut region.mounted));
     match error {
         Some(error) => Err(error),
@@ -2152,16 +2193,23 @@ fn create_event_listener(
     target: &EventTarget,
     binding: &EventBinding,
 ) -> Result<EventListener, DomError> {
-    let handler: EventHandler = binding.handler();
+    create_handler_listener(target, binding.name(), binding.handler())
+}
+
+fn create_handler_listener(
+    target: &EventTarget,
+    name: &str,
+    handler: EventHandler,
+) -> Result<EventListener, DomError> {
     let callback = Closure::<dyn FnMut(Event)>::new(move |event| {
         handler.invoke(event_payload(&event));
     });
     target
-        .add_event_listener_with_callback(binding.name(), callback.as_ref().unchecked_ref())
+        .add_event_listener_with_callback(name, callback.as_ref().unchecked_ref())
         .map_err(js_error)?;
     Ok(EventListener {
         target: target.clone(),
-        name: binding.name().to_owned(),
+        name: name.to_owned(),
         callback,
     })
 }
