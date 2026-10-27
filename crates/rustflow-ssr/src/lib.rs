@@ -1138,6 +1138,42 @@ mod shared_catalog_tests {
     use std::rc::Rc;
 
     #[test]
+    fn shared_component_scope_is_disposed_when_serialization_fails() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+
+        let cleanup_count = Arc::new(AtomicUsize::new(0));
+        let setup_cleanup_count = Arc::clone(&cleanup_count);
+        let definition = SharedComponentDefinition::new(
+            "BrokenComponent",
+            move |context, _properties| {
+                let cleanup_count = Arc::clone(&setup_cleanup_count);
+                context.on_cleanup(move || {
+                    cleanup_count.fetch_add(1, Ordering::SeqCst);
+                })?;
+                let render: ComponentRender = Rc::new(|_properties, _children| {
+                    Ok(View::element("script", [View::text("not allowed")])?)
+                });
+                Ok(render)
+            },
+        )
+        .expect("definition");
+        let mut builder = SharedComponentCatalogBuilder::new();
+        builder.register(definition).expect("register");
+        let catalog = builder.build();
+        let view = View::component("BrokenComponent", [], [], None).expect("component");
+
+        assert!(render_with_shared_components(&view, &catalog).is_err());
+        assert_eq!(
+            cleanup_count.load(Ordering::SeqCst),
+            1,
+            "component cleanup must run even when HTML serialization fails"
+        );
+    }
+
+    #[test]
     fn shared_browser_only_component_uses_generated_safe_fallback() {
         let definition = SharedComponentDefinition::new("ClientIsland", |_context, _props| {
             let render: ComponentRender =
