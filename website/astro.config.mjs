@@ -32,18 +32,23 @@ export default defineConfig({
             { label: 'SSR e hidratación', slug: 'guides/ssr' },
             { label: 'Layouts y páginas', slug: 'guides/layouts' },
             { label: 'Navegación y formularios', slug: 'guides/navigation' },
+            { label: 'Errores, límites y seguridad', slug: 'guides/errors-and-security' },
+            { label: 'Probar y depurar', slug: 'guides/testing' },
           ],
         },
         {
           label: 'Tutoriales',
           items: [
             { label: 'Página de producto SSR', slug: 'tutorials/product-page' },
+            { label: 'API JSON', slug: 'tutorials/json-api' },
+            { label: 'Interfaz reactiva de tareas', slug: 'tutorials/reactive-todo' },
           ],
         },
         {
           label: 'Referencia',
           items: [
             { label: 'Disponibilidad de API', slug: 'reference/api-status' },
+            { label: 'Catálogo de ejemplos', slug: 'reference/examples' },
           ],
         },
         {
