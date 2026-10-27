@@ -80,6 +80,36 @@ let client_widget = ComponentDefinition::new("ClientWidget", |_context, _props| 
 El fallback se serializa mediante la misma política de seguridad de SSR y es estático: no se convierte en un límite hidratable, no adjunta eventos y no afirma que haya interactividad cliente. Las capacidades de ejecución no sustituyen la separación de dependencias por crate; el CI de WASM bloquea las dependencias de servidor conocidas. La aplicación sigue teniendo que proyectar expresamente campos públicos antes de crear `HydrationData`; RustFlow no puede saber si un valor de texto es un secreto.
 
 ## Composición de páginas SSR y layouts (Phase 5.2)
+## Catálogo compartido de componentes SSR
+
+Registra las definiciones compartibles una sola vez durante el arranque:
+
+```rust
+use std::sync::Arc;
+use std::rc::Rc;
+use rustflow::components::{
+    ComponentRender, SharedComponentCatalogBuilder, SharedComponentDefinition,
+};
+use rustflow_view::View;
+
+let mut builder = SharedComponentCatalogBuilder::new();
+builder.register(
+    SharedComponentDefinition::new("ArticlePage", |_context, _props| {
+        let render: ComponentRender =
+            Rc::new(|_props, _children| Ok(View::text("article")));
+        Ok(render)
+    })?
+    .server_only(),
+)?;
+let catalog = Arc::new(builder.build());
+
+// Captura `catalog` desde la closure de ruta y usa
+// HtmlPage::with_shared_components(&catalog) en cada petición.
+```
+
+La factoría compartida puede ejecutarse concurrentemente y debe ser `Send + Sync`. El callback de renderizado que produce puede usar `Rc` y señales, porque es local al render actual. Configura fallbacks browser-only mediante `with_ssr_fallback_factory(|| ...)` para construir una vista local al renderizar.
+
+
 
 El adaptador HTTP expone `rustflow_server::HtmlPage` para construir una página HTML completa desde una vista o un componente de ruta registrado. Los layouts también son componentes: cada uno recibe como hijos el contenido ya compuesto, y la serialización final pasa por las mismas reglas seguras de `rustflow-ssr`.
 
@@ -106,7 +136,9 @@ HtmlPage::from_component("Article", "ArticlePage", [slug_prop], [])?
     .render()
 ```
 
-**Limitación actual del prototipo:** `ComponentRegistry` y el runtime reactivo usan estado basado en `Rc`, por lo que no son `Send + Sync`. Los handlers HTTP de `Application` sí exigen closures/futuros compatibles con esos límites. Por eso no captures un registro preconstruido en la closure de ruta: constrúyelo dentro de la invocación del handler (como en la prueba `route_renders_registered_component_with_request_props_and_layout`) y úsalo de forma síncrona para renderizar la respuesta. Esta solución funcional reconstruye las definiciones por petición; compartir un catálogo de componentes entre workers de servidor de forma segura es una mejora arquitectónica pendiente, no algo que deba asumirse resuelto.
+**Catálogo compartido SSR:** registra definiciones con `SharedComponentDefinition` en un `SharedComponentCatalogBuilder` durante el arranque y llama a `build()`. El catálogo resultante es inmutable, implementa `Send + Sync` y puede capturarse desde closures HTTP, normalmente mediante `Arc<SharedComponentCatalog>`. El registro local `ComponentRegistry` sigue disponible para callbacks que solo son válidos en un contexto local.
+
+Las factorías del catálogo compartido deben cumplir `Send + Sync`, pero producen un `ComponentRender` local por montaje. El runtime reactivo, señales, scopes, vistas de trabajo, instancias y callbacks de render permanecen locales a cada render. Los fallbacks de componentes browser-only se generan bajo demanda mediante `with_ssr_fallback_factory`; el catálogo no conserva un `View` local potencialmente no compartible. No guardes datos mutables específicos de una petición en una factoría compartida.
 
 El orden importa: `with_layout` envuelve el cuerpo construido hasta ese momento, por lo que se añade primero el layout interior y al final el exterior. Los componentes de layout y de contenido deben registrarse en el mismo `ComponentRegistry`.
 

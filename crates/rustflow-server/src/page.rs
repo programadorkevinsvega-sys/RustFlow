@@ -4,15 +4,17 @@
 //! properties, then render the page. Each SSR render creates a fresh reactive runtime; the
 //! registry stores definitions, not per-request component state.
 //!
-//! ComponentRegistry is not Send + Sync in the current prototype. When used from an
-//! Application route, construct and consume it inside the handler invocation; do not capture
-//! a prebuilt registry in the route closure. Rebuilding definitions per request is a known
-//! limitation until component definitions can be shared safely across server workers.
+//! The local ComponentRegistry remains available for component callbacks that are not shareable.
+//! HTTP routes can instead capture a SharedComponentCatalog with Send + Sync factories.
+//! Each request still creates a fresh local reactive runtime, scopes, and render callbacks.
 
-use rustflow::components::ComponentRegistry;
+use rustflow::components::{ComponentRegistry, SharedComponentCatalog};
 use rustflow_view::{Property, View};
 
-use crate::{HttpError, Response, html_document, html_document_with_components};
+use crate::{
+    HttpError, Response, html_document, html_document_with_components,
+    html_document_with_shared_components,
+};
 
 /// A composable full HTML page.
 ///
@@ -26,6 +28,7 @@ pub struct HtmlPage {
     language: String,
     body: View,
     components: Option<ComponentRegistry>,
+    shared_components: Option<SharedComponentCatalog>,
 }
 
 impl HtmlPage {
@@ -36,6 +39,7 @@ impl HtmlPage {
             language: "en".to_owned(),
             body,
             components: None,
+            shared_components: None,
         }
     }
 
@@ -65,13 +69,22 @@ impl HtmlPage {
         self
     }
 
-    /// Use a local registry to resolve the page component and any layout components.
+    /// Use the existing local registry for this page and its layout components.
     ///
-    /// When called from an Application handler, the registry must be local to that handler
-    /// invocation; capturing a ComponentRegistry in the Send + Sync route closure is not
-    /// supported by the current single-threaded component runtime.
+    /// HTTP routes that share definitions between workers should use `with_shared_components`.
     pub fn with_components(mut self, registry: &ComponentRegistry) -> Self {
         self.components = Some(registry.clone());
+        self.shared_components = None;
+        self
+    }
+
+    /// Use a shareable immutable catalog for this page and its layout components.
+    ///
+    /// Build the catalog during application initialization. Its factories are shared, while
+    /// runtimes, scopes, views and render callbacks are local to each render.
+    pub fn with_shared_components(mut self, catalog: &SharedComponentCatalog) -> Self {
+        self.components = None;
+        self.shared_components = Some(catalog.clone());
         self
     }
 
@@ -94,13 +107,19 @@ impl HtmlPage {
 
     /// Render a complete safe HTML document as an HTTP response.
     ///
-    /// A component-backed body or layout requires a registry supplied by with_components.
+    /// Component-backed bodies/layouts require a local registry or shared catalog.
     pub fn render(&self) -> Result<Response, HttpError> {
-        match &self.components {
-            Some(registry) => {
+        match (&self.components, &self.shared_components) {
+            (Some(registry), _) => {
                 html_document_with_components(&self.title, &self.language, &self.body, registry)
             }
-            None => html_document(&self.title, &self.language, &self.body),
+            (_, Some(catalog)) => html_document_with_shared_components(
+                &self.title,
+                &self.language,
+                &self.body,
+                catalog,
+            ),
+            (None, None) => html_document(&self.title, &self.language, &self.body),
         }
     }
 }

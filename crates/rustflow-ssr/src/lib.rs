@@ -9,7 +9,10 @@ pub use hydration::{HydrationData, HydrationDataError};
 use std::{collections::HashSet, error::Error, fmt};
 
 use rustflow::{
-    components::{ComponentCapability, ComponentError, ComponentRegistry, RenderTarget},
+    components::{
+        ComponentCapability, ComponentError, ComponentInstance, ComponentRegistry, RenderTarget,
+        SharedComponentCatalog,
+    },
     reactivity::{Runtime, RuntimeError, Scope},
 };
 use rustflow_view::{
@@ -305,6 +308,7 @@ impl From<ComponentError> for SsrError {
 #[derive(Clone)]
 pub struct HtmlRenderer {
     registry: Option<ComponentRegistry>,
+    shared_catalog: Option<SharedComponentCatalog>,
     max_depth: usize,
 }
 
@@ -313,14 +317,27 @@ impl HtmlRenderer {
     pub fn new() -> Self {
         Self {
             registry: None,
+            shared_catalog: None,
             max_depth: DEFAULT_MAX_DEPTH,
         }
     }
 
-    /// Create a renderer that resolves component descriptors using this registry.
+    /// Create a renderer that resolves component descriptors through a local registry.
     pub fn with_components(registry: &ComponentRegistry) -> Self {
         Self {
             registry: Some(registry.clone()),
+            shared_catalog: None,
+            max_depth: DEFAULT_MAX_DEPTH,
+        }
+    }
+
+    /// Create a renderer that resolves components from a shared immutable catalog.
+    ///
+    /// The catalog may be shared across workers; each render still gets a fresh runtime.
+    pub fn with_shared_components(catalog: &SharedComponentCatalog) -> Self {
+        Self {
+            registry: None,
+            shared_catalog: Some(catalog.clone()),
             max_depth: DEFAULT_MAX_DEPTH,
         }
     }
@@ -341,6 +358,7 @@ impl HtmlRenderer {
         let root_scope = runtime.root_scope();
         let mut context = RenderContext {
             registry: self.registry.clone(),
+            shared_catalog: self.shared_catalog.clone(),
             runtime: runtime.clone(),
             output: String::new(),
             max_depth: self.max_depth,
@@ -373,8 +391,17 @@ pub fn render_with_components(
     HtmlRenderer::with_components(registry).render(view)
 }
 
+/// Render a tree with component descriptors resolved through a shared immutable catalog.
+pub fn render_with_shared_components(
+    view: &View,
+    catalog: &SharedComponentCatalog,
+) -> Result<String, SsrError> {
+    HtmlRenderer::with_shared_components(catalog).render(view)
+}
+
 struct RenderContext {
     registry: Option<ComponentRegistry>,
+    shared_catalog: Option<SharedComponentCatalog>,
     runtime: Runtime,
     output: String,
     max_depth: usize,
@@ -582,32 +609,51 @@ impl RenderContext {
         parent_scope: &Scope,
         depth: usize,
     ) -> Result<(), SsrError> {
-        let registry = self.registry.clone().ok_or_else(|| {
-            SsrError::Component(format!(
-                "component {} requires a ComponentRegistry",
+        let mut instance = if let Some(registry) = self.registry.clone() {
+            let definition = registry.definition(component.name()).ok_or_else(|| {
+                SsrError::Component(format!(
+                    "no component definition registered for: {}",
+                    component.name()
+                ))
+            })?;
+            if definition.capability() == ComponentCapability::BrowserOnly {
+                let fallback = definition
+                    .ssr_fallback()
+                    .ok_or_else(|| SsrError::NonHydratableComponent(component.name().to_owned()))?;
+                return self.write_view(fallback, parent_scope, depth + 1);
+            }
+            registry.mount_for_target(
+                component,
+                self.runtime.clone(),
+                parent_scope,
+                RenderTarget::Server,
+            )?
+        } else if let Some(catalog) = self.shared_catalog.clone() {
+            let capability = catalog.capability(component.name()).ok_or_else(|| {
+                SsrError::Component(format!(
+                    "no component definition registered for: {}",
+                    component.name()
+                ))
+            })?;
+            if capability == ComponentCapability::BrowserOnly {
+                let fallback = catalog
+                    .ssr_fallback(component.name())?
+                    .ok_or_else(|| SsrError::NonHydratableComponent(component.name().to_owned()))?;
+                return self.write_view(&fallback, parent_scope, depth + 1);
+            }
+            catalog.mount_for_target(
+                component,
+                self.runtime.clone(),
+                parent_scope,
+                RenderTarget::Server,
+            )?
+        } else {
+            return Err(SsrError::Component(format!(
+                "component {} requires a ComponentRegistry or SharedComponentCatalog",
                 component.name()
-            ))
-        })?;
+            )));
+        };
 
-        let definition = registry.definition(component.name()).ok_or_else(|| {
-            SsrError::Component(format!(
-                "no component definition registered for: {}",
-                component.name()
-            ))
-        })?;
-        if definition.capability() == ComponentCapability::BrowserOnly {
-            let fallback = definition
-                .ssr_fallback()
-                .ok_or_else(|| SsrError::NonHydratableComponent(component.name().to_owned()))?;
-            return self.write_view(fallback, parent_scope, depth + 1);
-        }
-
-        let mut instance = registry.mount_for_target(
-            component,
-            self.runtime.clone(),
-            parent_scope,
-            RenderTarget::Server,
-        )?;
         let view = instance.view().clone();
         let render_result = self.write_view(&view, instance.scope(), depth + 1);
         let cleanup_result = instance.unmount().map_err(SsrError::from);
@@ -1079,6 +1125,39 @@ mod tests {
             cleanups.get(),
             3,
             "every request disposes its component scope"
+        );
+    }
+}
+
+#[cfg(test)]
+mod shared_catalog_tests {
+    use super::render_with_shared_components;
+    use rustflow::components::{
+        ComponentRender, SharedComponentCatalogBuilder, SharedComponentDefinition,
+    };
+    use rustflow_view::View;
+    use std::rc::Rc;
+
+    #[test]
+    fn shared_browser_only_component_uses_generated_safe_fallback() {
+        let definition = SharedComponentDefinition::new("ClientIsland", |_context, _props| {
+            let render: ComponentRender =
+                Rc::new(|_properties, _children| Ok(View::text("client")));
+            Ok(render)
+        })
+        .expect("definition")
+        .browser_only()
+        .with_ssr_fallback_factory(|| {
+            Ok(View::element("span", [View::text("static fallback")])?)
+        });
+        let mut builder = SharedComponentCatalogBuilder::new();
+        builder.register(definition).expect("register");
+        let catalog = builder.build();
+        let view = View::component("ClientIsland", [], [], None).expect("component");
+
+        assert_eq!(
+            render_with_shared_components(&view, &catalog).expect("safe fallback"),
+            "<span>static fallback</span>"
         );
     }
 }
