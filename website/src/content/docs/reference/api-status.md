@@ -28,7 +28,7 @@ Esta página es un índice de disponibilidad, no una promesa de compatibilidad e
 | Middleware global/grupo/ruta y grupos | Disponible | Composición ordenada con posibilidad de short-circuit. |
 | Request ID, eventos/spans tracing, límites y timeouts | Disponible | Subscriber/exporter configurado por la app. |
 | TLS local y política de proxies confiables | Disponible | No sustituye al hardening del despliegue. |
-| CLI y scaffolding | No disponible | No existen comandos propios <code>rustflow new/dev/build</code>. |
+| CLI <code>rustflow new/dev/build</code> y generadores | Experimental disponible | Scaffold de servidor nativo; delega a Cargo y no incluye file watcher/hot reload. Modelos y migraciones son plantillas estructurales, sin persistencia integrada. |
 | Sesiones, auth, autorización, CSRF, server actions | No disponible | No forma parte del servidor actual. |
 | Persistencia SQL/migraciones integradas | No disponible | No hay un modelo de base de datos integrado. |
 
@@ -49,6 +49,8 @@ Esta página es un índice de disponibilidad, no una promesa de compatibilidad e
 
 ## Dónde aprender
 
+- [Primera aplicación con el CLI](/tutorials/first-cli-app/)
+- [Guía del CLI y generadores](/guides/cli/)
 - [Empezar con RustFlow](/getting-started/setup/)
 - [Estado y reactividad](/concepts/reactivity/)
 - [Crear componentes](/guides/components/)

@@ -5,6 +5,8 @@ description: Aprende el runtime DOM de RustFlow con estado, eventos, listas con 
 
 Este tutorial te guía por la demo ejecutable del navegador. El código completo está en [`examples/browser/src/app.rs`](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/examples/browser/src/app.rs), y las herramientas necesarias y los escenarios E2E están en su [README](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/examples/browser/README.md).
 
+**Relación con el CLI:** `rustflow new` crea una aplicación de servidor nativa, no un proyecto browser/WASM. Esta demo conserva su flujo independiente de wasm-pack, Vite y Playwright.
+
 **Alcance:** las tareas existen en la memoria de la pestaña durante la ejecución de la demo. Este ejemplo no las guarda en un servidor ni en una base de datos y no implementa usuarios ni permisos.
 
 ## 1. Ejecutar la demo

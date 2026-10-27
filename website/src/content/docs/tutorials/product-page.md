@@ -5,6 +5,8 @@ description: Construye una página de producto con una ruta HTTP, props pública
 
 Este tutorial reúne el modelo de páginas SSR actual de RustFlow. El ejemplo ejecutable completo vive en [crates/rustflow-server/examples/product_page.rs](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow-server/examples/product_page.rs). La guía explica las partes principales de ese archivo para que puedas entender y modificar el patrón en vez de copiarlo a ciegas.
 
+Si todavía no tienes una aplicación, empieza con el [tutorial del CLI](/tutorials/first-cli-app/). Este ejemplo es independiente del scaffold y muestra explícitamente un catálogo de componentes, props públicas y layouts.
+
 **Alcance del ejemplo:** el catálogo está en memoria para enseñar la arquitectura. No incluye base de datos, carrito persistente, checkout, pagos, cuentas, autorización ni server actions. No es una tienda lista para producción.
 
 ## 1. Ejecutar el ejemplo completo
