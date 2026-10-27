@@ -60,7 +60,11 @@ impl HtmlPage {
         self
     }
 
-    /// Use a registry to resolve the page component and any layout components.
+    /// Use a local registry to resolve the page component and any layout components.
+    ///
+    /// When called from an Application handler, the registry must be local to that handler
+    /// invocation; capturing a ComponentRegistry in the Send + Sync route closure is not
+    /// supported by the current single-threaded component runtime.
     pub fn with_components(mut self, registry: &ComponentRegistry) -> Self {
         self.components = Some(registry.clone());
         self
