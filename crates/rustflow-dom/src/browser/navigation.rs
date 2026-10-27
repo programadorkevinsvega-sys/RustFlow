@@ -276,7 +276,7 @@ fn enhanced_form_from_event(
         return None;
     }
 
-    let mut url = Url::new(&form.action()).ok()?;
+    let url = Url::new(&form.action()).ok()?;
     if !is_same_origin_http(&url, &navigation.window) || !url.hash().is_empty() {
         return None;
     }
