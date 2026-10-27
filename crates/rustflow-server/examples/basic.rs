@@ -1,8 +1,11 @@
-use std::{error::Error, net::SocketAddr};
+use std::{error::Error, net::SocketAddr, rc::Rc, sync::Arc};
 
-use rustflow::view::View;
+use rustflow::components::{
+    ComponentRender, SharedComponentCatalogBuilder, SharedComponentDefinition,
+};
+use rustflow::view::{Property, PropertyValue, View};
 use rustflow_server::{
-    Application, HttpError, HttpMethod, Middleware, Request, Response, html_document,
+    Application, HtmlPage, HttpError, HttpMethod, Middleware, Request, Response, html_document,
 };
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +32,32 @@ struct EchoPayload {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    // Build the immutable component catalog once during application startup.
+    let article = SharedComponentDefinition::new("ArticlePage", |_context, _initial| {
+        let render: ComponentRender = Rc::new(|properties, _children| {
+            let id = properties
+                .iter()
+                .find(|property| property.name() == "id")
+                .and_then(|property| match property.value() {
+                    PropertyValue::Text(value) => Some(value.clone()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| "unknown".to_owned());
+            Ok(View::element("article", [View::element("h1", [View::text(id)])?])?)
+        });
+        Ok(render)
+    })?
+    .server_only();
+    let layout = SharedComponentDefinition::new("AppLayout", |_context, _properties| {
+        let render: ComponentRender =
+            Rc::new(|_properties, children| Ok(View::element("main", children.to_vec())?));
+        Ok(render)
+    })?;
+    let mut catalog_builder = SharedComponentCatalogBuilder::new();
+    catalog_builder.register(article)?;
+    catalog_builder.register(layout)?;
+    let catalog = Arc::new(catalog_builder.build());
+
     let mut app = Application::new();
 
     app.middleware(Middleware::new(|request, next| async move {
@@ -47,6 +76,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let page = View::element("main", [heading, note])
             .map_err(|_| HttpError::internal_server_error())?;
         html_document("RustFlow server", "es", &page)
+    })?;
+
+    // This handler captures the shared catalog; definitions are not rebuilt per request.
+    let article_catalog = Arc::clone(&catalog);
+    app.get("/articles/{id}", move |request: Request| {
+        let catalog = Arc::clone(&article_catalog);
+        async move {
+            let id = request.path_param("id").unwrap_or("unknown").to_owned();
+            let property =
+                Property::new("id", id).map_err(|_| HttpError::internal_server_error())?;
+            HtmlPage::from_component("Article", "ArticlePage", [property], [])?
+                .language("es")
+                .with_shared_components(&catalog)
+                .with_layout("AppLayout", [])?
+                .render()
+        }
     })?;
 
     app.group("/api", |api| {

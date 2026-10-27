@@ -42,7 +42,7 @@ Handlers are async closures that return `Result<Response, HttpError>`. Route han
 
 ## Responses
 
-Use `Response::text`, `Response::html`, `Response::json`, `Response::redirect`, `Response::file_download`, or `Response::status`. `Response::html` emits the supplied string as-is, so it must only receive trusted/escaped content. Prefer `html_view` or `html_view_with_components` for safe structural fragments, or `html_document(title, lang, &view)` for a complete document with doctype, UTF-8 metadata, title, and body. The component-aware document helper is `html_document_with_components`.
+Use `Response::text`, `Response::html`, `Response::json`, `Response::redirect`, `Response::file_download`, or `Response::status`. `Response::html` emits the supplied string as-is, so it must only receive trusted/escaped content. Prefer `html_view` for structural fragments without components. For a complete document use `html_document(title, lang, &view)`; for local callbacks the helper is `html_document_with_components`, while concurrent HTTP handlers should use `html_document_with_shared_components` with a startup-built `SharedComponentCatalog`.
 
 ## Resource limits
 
@@ -74,7 +74,7 @@ The adapter emits a `tracing` span named `http.request` with the request ID, HTT
 
 ## Complete documents and configurable error pages
 
-Use `html_document(title, lang, &view)` when a handler should return a complete HTML document rather than a fragment. It builds the document shell, UTF-8 charset metadata, title, and body structurally. The title, language attribute, and view text are escaped/validated by `rustflow-ssr`. `html_document_with_components` also resolves registered components in the body.
+Use `html_document(title, lang, &view)` when a handler should return a complete HTML document rather than a fragment. It builds the document shell, UTF-8 charset metadata, title, and body structurally. The title, language attribute, and view text are escaped/validated by `rustflow-ssr`. For concurrent routes, build a `SharedComponentCatalog` at application startup and use `html_document_with_shared_components` or `HtmlPage::with_shared_components`. The local `html_document_with_components` remains available for non-shareable callbacks. See `docs/SSR_RENDERING.md` and the runnable server example for the preferred pattern.
 
 Configure pages for selected error statuses through `ErrorPages`:
 

@@ -79,71 +79,72 @@ let client_widget = ComponentDefinition::new("ClientWidget", |_context, _props| 
 
 El fallback se serializa mediante la misma política de seguridad de SSR y es estático: no se convierte en un límite hidratable, no adjunta eventos y no afirma que haya interactividad cliente. Las capacidades de ejecución no sustituyen la separación de dependencias por crate; el CI de WASM bloquea las dependencias de servidor conocidas. La aplicación sigue teniendo que proyectar expresamente campos públicos antes de crear `HydrationData`; RustFlow no puede saber si un valor de texto es un secreto.
 
-## Composición de páginas SSR y layouts (Phase 5.2)
-## Catálogo compartido de componentes SSR
+## Catálogo compartido y páginas SSR (Phase 5.2)
 
-Registra las definiciones compartibles una sola vez durante el arranque:
+Para componentes que se usan desde handlers HTTP, utiliza `SharedComponentCatalog`. Construye el catálogo una sola vez al arrancar la aplicación y captura un `Arc<SharedComponentCatalog>` desde las rutas. El ejemplo ejecutable `crates/rustflow-server/examples/basic.rs` muestra el flujo completo.
 
 ```rust
-use std::sync::Arc;
-use std::rc::Rc;
+use std::{rc::Rc, sync::Arc};
 use rustflow::components::{
     ComponentRender, SharedComponentCatalogBuilder, SharedComponentDefinition,
 };
-use rustflow_view::View;
+use rustflow::view::{Property, PropertyValue, View};
+use rustflow_server::{Application, HtmlPage, HttpError, Request};
 
 let mut builder = SharedComponentCatalogBuilder::new();
 builder.register(
-    SharedComponentDefinition::new("ArticlePage", |_context, _props| {
-        let render: ComponentRender =
-            Rc::new(|_props, _children| Ok(View::text("article")));
+    SharedComponentDefinition::new("ArticlePage", |_context, _initial| {
+        let render: ComponentRender = Rc::new(|properties, _children| {
+            let id = properties
+                .iter()
+                .find(|property| property.name() == "id")
+                .and_then(|property| match property.value() {
+                    PropertyValue::Text(value) => Some(value.clone()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| "missing".to_owned());
+            Ok(View::element("article", [View::element("h1", [View::text(id)])?])?)
+        });
         Ok(render)
     })?
     .server_only(),
 )?;
 let catalog = Arc::new(builder.build());
 
-// Captura `catalog` desde la closure de ruta y usa
-// HtmlPage::with_shared_components(&catalog) en cada petición.
+let mut app = Application::new();
+let route_catalog = Arc::clone(&catalog);
+app.get("/articles/{id}", move |request: Request| {
+    let catalog = Arc::clone(&route_catalog);
+    async move {
+        let id = request.path_param("id").unwrap_or("missing").to_owned();
+        let property = Property::new("id", id)
+            .map_err(|_| HttpError::internal_server_error())?;
+        HtmlPage::from_component("Article", "ArticlePage", [property], [])?
+            .with_shared_components(&catalog)
+            .render()
+    }
+})?;
 ```
 
-La factoría compartida puede ejecutarse concurrentemente y debe ser `Send + Sync`. El callback de renderizado que produce puede usar `Rc` y señales, porque es local al render actual. Configura fallbacks browser-only mediante `with_ssr_fallback_factory(|| ...)` para construir una vista local al renderizar.
+El setup compartido y la factoría de fallback deben cumplir `Send + Sync`. Pueden producir un `ComponentRender` basado en `Rc`, señales y callbacks locales porque ese render se crea para la petición actual. El runtime, las señales, los scopes, las instancias y las vistas de trabajo no se comparten entre peticiones.
 
+Para componentes browser-only, define `with_ssr_fallback_factory(|| ...)`. El catálogo conserva la factoría compartible y construye una `View` local por render, serializada con las mismas reglas seguras de SSR.
 
+### Composición de layouts
 
-El adaptador HTTP expone `rustflow_server::HtmlPage` para construir una página HTML completa desde una vista o un componente de ruta registrado. Los layouts también son componentes: cada uno recibe como hijos el contenido ya compuesto, y la serialización final pasa por las mismas reglas seguras de `rustflow-ssr`.
+Los layouts son componentes registrados en el mismo catálogo compartido. Las llamadas `with_layout` envuelven el contenido actual: añade primero el layout interior y luego el exterior.
 
 ```rust
-use rustflow_server::{HtmlPage, HttpError, Request, Response};
-use rustflow::components::ComponentRegistry;
-use rustflow_view::Property;
-
-// Dentro de un handler GET /articles/{slug}. Construye el registro dentro
-// de esta invocación: ComponentRegistry aún no es Send + Sync.
-let mut registry = ComponentRegistry::new();
-register_article_and_layouts(&mut registry)
-    .map_err(|_| HttpError::internal_server_error())?;
-
-let slug = request.path_param("slug").unwrap_or("missing").to_owned();
-let slug_prop = Property::new("slug", slug)
-    .map_err(|_| HttpError::internal_server_error())?;
-
-HtmlPage::from_component("Article", "ArticlePage", [slug_prop], [])?
+HtmlPage::from_component("Article", "ArticlePage", [property], [])?
     .language("es")
-    .with_components(&registry)
-    .with_layout("ContentLayout", [])? // layout interior
-    .with_layout("AppLayout", [])?     // layout exterior
+    .with_shared_components(&catalog)
+    .with_layout("ContentLayout", [])?
+    .with_layout("AppLayout", [])?
     .render()
 ```
 
-**Catálogo compartido SSR:** registra definiciones con `SharedComponentDefinition` en un `SharedComponentCatalogBuilder` durante el arranque y llama a `build()`. El catálogo resultante es inmutable, implementa `Send + Sync` y puede capturarse desde closures HTTP, normalmente mediante `Arc<SharedComponentCatalog>`. El registro local `ComponentRegistry` sigue disponible para callbacks que solo son válidos en un contexto local.
+### ¿Cuándo usar ComponentRegistry?
 
-Las factorías del catálogo compartido deben cumplir `Send + Sync`, pero producen un `ComponentRender` local por montaje. El runtime reactivo, señales, scopes, vistas de trabajo, instancias y callbacks de render permanecen locales a cada render. Los fallbacks de componentes browser-only se generan bajo demanda mediante `with_ssr_fallback_factory`; el catálogo no conserva un `View` local potencialmente no compartible. No guardes datos mutables específicos de una petición en una factoría compartida.
+El `ComponentRegistry` local se conserva para callbacks que deliberadamente no cumplen `Send + Sync`, especialmente en contextos locales o de navegador. No lo construyas en cada petición como patrón de servidor. Para handlers concurrentes, usa `SharedComponentDefinition`, `SharedComponentCatalogBuilder` y `HtmlPage::with_shared_components`.
 
-El orden importa: `with_layout` envuelve el cuerpo construido hasta ese momento, por lo que se añade primero el layout interior y al final el exterior. Los componentes de layout y de contenido deben registrarse en el mismo `ComponentRegistry`.
-
-Los datos de ruta no se inyectan de forma implícita. El handler extrae y valida parámetros/query, decide qué campos son públicos y los pasa como `Property` explícitas al componente. No pases cookies, credenciales, tokens, objetos completos de petición, decisiones de autorización ni estado privado. Esto reduce la superficie de exposición, pero no sustituye el juicio de la aplicación sobre qué valores son secretos.
-
-`HtmlPage::new(title, view)` sirve para vistas estructurales sin descriptores de componente; `from_component` crea un descriptor de componente de página. Si el cuerpo o los layouts contienen componentes, llama a `with_components`. El atributo `lang`, el título y el cuerpo se serializan mediante el renderer seguro; esta API no acepta una cadena de HTML arbitrario ni implementa todavía hidratación DOM.
-
-Cada render SSR crea un runtime reactivo y scopes de componentes nuevos; el registro no almacena estado reactivo por petición. En un handler HTTP, el registro se reconstruye por la limitación `Send + Sync` descrita arriba. Las pruebas comprueban que una secuencia de props de ruta `7, 12, 7` produce HTML `7, 12, 7`, que el resultado para props idénticas es determinista, que cada render dispone su scope y que el router HTTP puede obtener un parámetro de ruta, pasarlo como prop y devolver una página compuesta con layout. La detección/recuperación de discrepancias, los identificadores de hidratación y la navegación cliente siguen fuera de la Fase 5.2.
+Los datos de ruta deben extraerse y validarse de forma explícita. Pasa como `Property` solo los campos destinados a ser públicos en el HTML; no pases cookies, credenciales, tokens, autorización ni estado privado del servidor. Esta API no implementa todavía hidratación DOM, identificadores de límites ni navegación cliente: esos requisitos pertenecen a las fases 5.3 y 5.4.
