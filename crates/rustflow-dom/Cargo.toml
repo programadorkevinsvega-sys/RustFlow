@@ -15,6 +15,7 @@ rustflow-view = { path = "../rustflow-view" }
 js-sys = "0.3"
 wasm-bindgen = "0.2"
 web-sys = { version = "0.3", features = [
+    "Attr",
     "Comment",
     "console",
     "Document",
@@ -24,6 +25,7 @@ web-sys = { version = "0.3", features = [
     "HtmlInputElement",
     "HtmlSelectElement",
     "HtmlTextAreaElement",
+    "NamedNodeMap",
     "Node",
     "Text",
     "Window",

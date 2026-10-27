@@ -533,6 +533,82 @@ pub fn html_document_with_shared_components(
     render_html_document(title, lang, body, None, Some(catalog))
 }
 
+/// Render a complete HTML document with opt-in hydration boundaries and a safe JSON payload.
+///
+/// The body HTML is still produced by the SSR serializer. The payload is a validated
+/// `HydrationData` value and is emitted as inert `application/json` script text; this function
+/// does not load a client bundle or claim that the page has been hydrated.
+pub fn html_document_with_hydration_data(
+    title: &str,
+    lang: &str,
+    body: &View,
+    data: &rustflow_ssr::HydrationData,
+) -> Result<Response, HttpError> {
+    render_hydratable_html_document(title, lang, body, None, None, data)
+}
+
+/// Hydratable HTML document with component descriptors resolved through a local registry.
+pub fn html_document_with_components_and_hydration_data(
+    title: &str,
+    lang: &str,
+    body: &View,
+    registry: &ComponentRegistry,
+    data: &rustflow_ssr::HydrationData,
+) -> Result<Response, HttpError> {
+    render_hydratable_html_document(title, lang, body, Some(registry), None, data)
+}
+
+/// Hydratable HTML document using a shareable immutable component catalog.
+pub fn html_document_with_shared_components_and_hydration_data(
+    title: &str,
+    lang: &str,
+    body: &View,
+    catalog: &SharedComponentCatalog,
+    data: &rustflow_ssr::HydrationData,
+) -> Result<Response, HttpError> {
+    render_hydratable_html_document(title, lang, body, None, Some(catalog), data)
+}
+
+fn render_hydratable_html_document(
+    title: &str,
+    lang: &str,
+    body: &View,
+    registry: Option<&ComponentRegistry>,
+    shared_catalog: Option<&SharedComponentCatalog>,
+    data: &rustflow_ssr::HydrationData,
+) -> Result<Response, HttpError> {
+    let rendered_body = match (registry, shared_catalog) {
+        (Some(registry), _) => rustflow_ssr::HtmlRenderer::with_components(registry)
+            .with_hydration_boundaries()
+            .render(body),
+        (_, Some(catalog)) => rustflow_ssr::HtmlRenderer::with_shared_components(catalog)
+            .with_hydration_boundaries()
+            .render(body),
+        (None, None) => rustflow_ssr::HtmlRenderer::new()
+            .with_hydration_boundaries()
+            .render(body),
+    }
+    .map_err(|_| HttpError::internal_server_error())?;
+
+    // Build the document shell through the normal safe serializer. Only the serializer-produced
+    // body fragment and the script-context-safe HydrationData string are inserted below.
+    let shell = html_document(title, lang, &View::fragment([]))?;
+    let shell_html =
+        std::str::from_utf8(shell.body()).map_err(|_| HttpError::internal_server_error())?;
+    let closing_body = shell_html
+        .rfind("</body>")
+        .ok_or_else(HttpError::internal_server_error)?;
+    let mut document = shell_html.to_owned();
+    document.insert_str(
+        closing_body,
+        &format!(
+            "{rendered_body}<script type=\"application/json\" id=\"rustflow-hydration-data\">{}</script>",
+            data.as_str()
+        ),
+    );
+    Ok(Response::html(document))
+}
+
 fn render_html_document(
     title: &str,
     lang: &str,

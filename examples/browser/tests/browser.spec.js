@@ -1,8 +1,41 @@
 import { expect, test } from "@playwright/test";
 
-test.beforeEach(async ({ page }) => {
-  await page.goto("/");
+test.beforeEach(async ({ page }, testInfo) => {
+  if (!testInfo.title.startsWith("SSR hydration")) {
+    await page.goto("/");
+  }
 });
+
+async function gotoWithHydrationFixture(page, corrupt = false, interactive = false, repeat = false) {
+  const interactiveFixture = '<div id="hydration-fixture" data-hydration-case="interactive"><!--rustflow:root:start--><main><form data-testid="hydration-form"><label for="hydration-input">Name</label><input id="hydration-input" aria-label="Name" value="Ada"><p data-testid="hydration-input-output"><!--rustflow:dynamic:start:0-->Ada<!--rustflow:dynamic:end:0--></p><button type="button" data-testid="hydration-toggle">Toggle help</button><button type="button" data-testid="hydration-reverse">Reverse list</button></form><ul data-testid="hydration-list"><!--rustflow:dynamic:start:1--><li data-testid="hydration-item-first">First</li><li data-testid="hydration-item-second">Second</li><!--rustflow:dynamic:end:1--></ul><!--rustflow:dynamic:start:2--><p data-testid="hydration-help" role="status">Help</p><!--rustflow:dynamic:end:2--><a href="#hydration-details" data-testid="hydration-link">Go</a><div id="hydration-details">Target</div></main><!--rustflow:root:end--></div>';
+  const fixture = interactive
+    ? interactiveFixture
+    : corrupt
+      ? '<div id="hydration-fixture"><!--rustflow:root:start--><button data-testid="hydration-action">Corrupt: <!--rustflow:dynamic:start:0-->0<!--rustflow:dynamic:end:0--></button><!--rustflow:root:end--></div>'
+      : repeat
+        ? '<div id="hydration-fixture" data-hydration-repeat="true"><!--rustflow:root:start--><button data-testid="hydration-action">Count: <!--rustflow:dynamic:start:0-->0<!--rustflow:dynamic:end:0--></button><!--rustflow:root:end--></div>'
+        : '<div id="hydration-fixture"><!--rustflow:root:start--><button data-testid="hydration-action">Count: <!--rustflow:dynamic:start:0-->0<!--rustflow:dynamic:end:0--></button><!--rustflow:root:end--></div>';
+
+  await page.route("**/*", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/") {
+      await route.continue();
+      return;
+    }
+
+    const response = await route.fetch();
+    const html = await response.text();
+    const appMount = '<div id="app" aria-live="polite"></div>';
+    if (!html.includes(appMount)) {
+      throw new Error("could not inject SSR fixture into the browser example");
+    }
+    await route.fulfill({
+      response,
+      body: html.replace(appMount, appMount + fixture),
+    });
+  });
+  await page.goto("/");
+}
 
 test("counter increments by patching its existing DOM node", async ({ page }) => {
   const counterValue = page.getByTestId("counter-value");
@@ -97,4 +130,97 @@ test("conditional child mounts and unmounts without replacing the application", 
   expect(
     await headingNode.evaluate((node) => node === document.querySelector("main > h1")),
   ).toBe(true);
+});
+
+
+test("SSR hydration reuses server DOM and attaches one interactive handler", async ({ page }) => {
+  await gotoWithHydrationFixture(page);
+  const button = page.getByTestId("hydration-action");
+  const originalNode = await button.elementHandle();
+
+  await expect(button).toHaveText("Count: 0");
+  await originalNode.evaluate((node) => {
+    window.__rustflowHydrationOriginal = node;
+  });
+
+  await button.click();
+  await expect(button).toHaveText("Count: 1");
+  expect(
+    await page.evaluate(() =>
+      window.__rustflowHydrationOriginal === document.querySelector('[data-testid="hydration-action"]'),
+    ),
+  ).toBe(true);
+
+  await button.click();
+  await expect(button).toHaveText("Count: 2");
+  expect(
+    await page.evaluate(() =>
+      window.__rustflowHydrationOriginal === document.querySelector('[data-testid="hydration-action"]'),
+    ),
+  ).toBe(true);
+});
+
+test("SSR hydration supports forms, conditional regions, keyed lists, and ordinary links", async ({ page }) => {
+  await gotoWithHydrationFixture(page, false, true);
+
+  const input = page.getByRole("textbox", { name: "Name" });
+  const output = page.getByTestId("hydration-input-output");
+  await expect(input).toHaveValue("Ada");
+  await expect(output).toHaveText("Ada");
+
+  await input.fill("Grace");
+  await expect(output).toHaveText("Grace");
+
+  const help = page.getByTestId("hydration-help");
+  await expect(help).toHaveText("Help");
+  await page.getByTestId("hydration-toggle").click();
+  await expect(help).toHaveCount(0);
+  await page.getByTestId("hydration-toggle").click();
+  await expect(help).toHaveText("Help");
+
+  const list = page.getByTestId("hydration-list");
+  await expect(list.locator("li").nth(0)).toHaveText("First");
+  await expect(list.locator("li").nth(1)).toHaveText("Second");
+  await page.getByTestId("hydration-reverse").click();
+  await expect(list.locator("li").nth(0)).toHaveText("Second");
+  await expect(list.locator("li").nth(1)).toHaveText("First");
+
+  await page.getByTestId("hydration-link").click();
+  await expect(page).toHaveURL(/#hydration-details$/);
+});
+
+test("SSR hydration rejects a repeated mount without duplicating events", async ({ page }) => {
+  const diagnostics = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") diagnostics.push(message.text());
+  });
+
+  await gotoWithHydrationFixture(page, false, false, true);
+  const button = page.getByTestId("hydration-action");
+  await expect(button).toHaveText("Count: 0");
+  await expect.poll(() => diagnostics.some((message) => message.includes("already been hydrated"))).toBe(true);
+
+  await button.click();
+  await expect(button).toHaveText("Count: 1");
+  await button.click();
+  await expect(button).toHaveText("Count: 2");
+});
+
+test("SSR hydration mismatch reports a diagnostic and preserves static content", async ({ page }) => {
+  const diagnostics = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") diagnostics.push(message.text());
+  });
+
+  await gotoWithHydrationFixture(page, true);
+  const button = page.getByTestId("hydration-action");
+  const originalNode = await button.elementHandle();
+
+  await expect(button).toHaveText("Corrupt: 0");
+  await button.click();
+  await expect(button).toHaveText("Corrupt: 0");
+  expect(
+    await originalNode.evaluate((node) => node === document.querySelector('[data-testid="hydration-action"]')),
+  ).toBe(true);
+  expect(diagnostics.some((message) => message.includes("hydration mismatch"))).toBe(true);
 });

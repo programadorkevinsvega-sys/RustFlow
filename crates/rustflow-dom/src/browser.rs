@@ -1,5 +1,6 @@
 use std::{
     cell::{Cell, RefCell},
+    collections::HashMap,
     error::Error,
     fmt,
     rc::Rc,
@@ -16,7 +17,7 @@ use rustflow_view::{
 };
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use web_sys::{
-    Comment, Document, Element as DomElement, Event, EventTarget, HtmlInputElement,
+    Attr, Comment, Document, Element as DomElement, Event, EventTarget, HtmlInputElement,
     HtmlSelectElement, HtmlTextAreaElement, Node,
 };
 
@@ -33,6 +34,9 @@ pub enum DomError {
     Component(String),
     Runtime(String),
     PropertyRejected(String),
+    HydrationMismatch { expected: String, found: String },
+    AlreadyHydrated,
+    InvalidHydrationData,
 }
 
 impl fmt::Display for DomError {
@@ -48,6 +52,11 @@ impl fmt::Display for DomError {
             Self::PropertyRejected(name) => {
                 write!(f, "browser rejected DOM property: {name}")
             }
+            Self::HydrationMismatch { expected, found } => {
+                write!(f, "hydration mismatch: expected {expected}, found {found}")
+            }
+            Self::AlreadyHydrated => write!(f, "this SSR boundary has already been hydrated"),
+            Self::InvalidHydrationData => write!(f, "invalid JSON in #rustflow-hydration-data"),
         }
     }
 }
@@ -88,6 +97,17 @@ struct EventListener {
     callback: Closure<dyn FnMut(Event)>,
 }
 
+struct PendingEventListener {
+    target: EventTarget,
+    name: String,
+    handler: EventHandler,
+}
+
+#[derive(Default)]
+struct HydrationCursor {
+    next_boundary: usize,
+}
+
 #[derive(Clone)]
 struct DelegatedBinding {
     element: DomElement,
@@ -98,6 +118,7 @@ struct DelegatedBinding {
 #[derive(Default)]
 struct RenderedNodes {
     listeners: Vec<EventListener>,
+    pending_listeners: Vec<PendingEventListener>,
     delegated: Vec<DelegatedBinding>,
     components: Vec<ComponentInstance>,
     component_regions: Vec<ComponentRegion>,
@@ -106,6 +127,9 @@ struct RenderedNodes {
 
 fn append_rendered_nodes(target: &mut RenderedNodes, mut source: RenderedNodes) {
     target.listeners.append(&mut source.listeners);
+    target
+        .pending_listeners
+        .append(&mut source.pending_listeners);
     target.delegated.append(&mut source.delegated);
     target.components.append(&mut source.components);
     target
@@ -248,11 +272,15 @@ pub struct MountedDom {
     end: Comment,
     roots: Vec<Node>,
     listeners: Vec<EventListener>,
+    pending_listeners: Vec<PendingEventListener>,
     delegated_listeners: Vec<EventListener>,
     delegated_bindings: Rc<RefCell<Vec<DelegatedBinding>>>,
     components: Vec<ComponentInstance>,
     component_regions: Vec<ComponentRegion>,
     dynamics: Vec<DynamicRegion>,
+    // While a hydration candidate is being validated, dropping it must clean up
+    // temporary Rust resources without detaching or mutating the server DOM.
+    preserve_on_drop: bool,
 }
 
 impl MountedDom {
@@ -390,6 +418,421 @@ impl DomRenderer {
         Ok(mounted)
     }
 
+    /// Validate an SSR DOM range and attach client behavior without rebuilding it.
+    ///
+    /// The input must have been rendered with hydration boundaries. Validation completes before
+    /// event listeners/effects activate. A mismatch reports an error and preserves server HTML.
+    pub fn hydrate_into(
+        &mut self,
+        target: &DomElement,
+        view: &View,
+    ) -> Result<MountedDom, DomError> {
+        let parent: Node = target.clone().unchecked_into();
+        let siblings = direct_children(&parent);
+        if siblings
+            .iter()
+            .any(|node| is_comment_value(node, "rustflow:root:hydrated:start"))
+        {
+            return Err(DomError::AlreadyHydrated);
+        }
+        let starts = marker_positions(&siblings, "rustflow:root:start");
+        let ends = marker_positions(&siblings, "rustflow:root:end");
+        if starts.len() != 1 || ends.len() != 1 || starts[0] >= ends[0] {
+            return Err(DomError::HydrationMismatch {
+                expected: "one ordered rustflow root boundary".to_owned(),
+                found: "missing, duplicated, or reversed root comments".to_owned(),
+            });
+        }
+
+        let start_index = starts[0];
+        let end_index = ends[0];
+        let start_comment = siblings[start_index]
+            .clone()
+            .dyn_into::<Comment>()
+            .map_err(|_| hydration_mismatch("root start comment", Some(&siblings[start_index])))?;
+        let end_comment = siblings[end_index]
+            .clone()
+            .dyn_into::<Comment>()
+            .map_err(|_| hydration_mismatch("root end comment", Some(&siblings[end_index])))?;
+        let root_children = siblings[start_index + 1..end_index].to_vec();
+
+        let mut cursor = HydrationCursor::default();
+        let mut child_index = 0;
+        let mut resources = RenderedNodes::default();
+        let validation = self.hydrate_view(
+            view,
+            &root_children,
+            &mut child_index,
+            &self.root_scope,
+            &mut cursor,
+            &mut resources,
+        );
+        if let Err(error) = validation {
+            let _ = cleanup_rendered_nodes(&mut resources);
+            return Err(error);
+        }
+        if child_index != root_children.len() {
+            let error =
+                hydration_mismatch("end of the SSR root range", root_children.get(child_index));
+            let _ = cleanup_rendered_nodes(&mut resources);
+            return Err(error);
+        }
+
+        let mut mounted = MountedDom {
+            start: start_comment,
+            end: end_comment,
+            roots: root_children,
+            listeners: resources.listeners,
+            pending_listeners: resources.pending_listeners,
+            delegated_listeners: Vec::new(),
+            delegated_bindings: Rc::new(RefCell::new(resources.delegated)),
+            components: resources.components,
+            component_regions: resources.component_regions,
+            dynamics: resources.dynamics,
+            preserve_on_drop: true,
+        };
+
+        // If activation fails, Drop cleans up temporary resources but preserves the SSR DOM.
+        self.activate_pending_listeners(&mut mounted)?;
+        self.activate_delegated_listeners(&mut mounted, &parent)?;
+        self.activate_component_regions(&mut mounted.component_regions)?;
+        self.activate_dynamic_regions(&mut mounted.dynamics)?;
+
+        let start_node: Node = mounted.start.clone().unchecked_into();
+        start_node.set_node_value(Some("rustflow:root:hydrated:start"));
+        set_preserve_on_drop(&mut mounted, false);
+        Ok(mounted)
+    }
+
+    /// Parse the optional inert JSON payload emitted by the server page helpers.
+    /// Callers choose how to project this public value into the initial client state.
+    pub fn read_hydration_data(document: &Document) -> Result<Option<JsValue>, DomError> {
+        let Some(element) = document.get_element_by_id("rustflow-hydration-data") else {
+            return Ok(None);
+        };
+        let text = element.text_content().unwrap_or_default();
+        js_sys::JSON::parse(&text)
+            .map(Some)
+            .map_err(|_| DomError::InvalidHydrationData)
+    }
+
+    fn hydrate_view(
+        &self,
+        view: &View,
+        siblings: &[Node],
+        index: &mut usize,
+        parent_scope: &Scope,
+        cursor: &mut HydrationCursor,
+        resources: &mut RenderedNodes,
+    ) -> Result<Vec<Node>, DomError> {
+        match view {
+            View::Text(text) => {
+                let node = siblings
+                    .get(*index)
+                    .ok_or_else(|| hydration_mismatch("matching text node", None))?;
+                if node.node_type() != 3 {
+                    return Err(hydration_mismatch("matching text node", Some(node)));
+                }
+                if node.node_value().as_deref() != Some(text.as_str()) {
+                    return Err(DomError::HydrationMismatch {
+                        expected: "matching initial text".to_owned(),
+                        found: "different text content".to_owned(),
+                    });
+                }
+                *index += 1;
+                Ok(vec![node.clone()])
+            }
+            View::Element(expected) => {
+                let node = siblings.get(*index).ok_or_else(|| {
+                    hydration_mismatch(
+                        &format!("<{}> element", expected.tag().to_ascii_lowercase()),
+                        None,
+                    )
+                })?;
+                let element: DomElement = node.clone().dyn_into().map_err(|_| {
+                    hydration_mismatch(
+                        &format!("<{}> element", expected.tag().to_ascii_lowercase()),
+                        Some(node),
+                    )
+                })?;
+                let tag = expected.tag().to_ascii_lowercase();
+                if element.tag_name().to_ascii_lowercase() != tag {
+                    return Err(hydration_mismatch(&format!("<{tag}> element"), Some(node)));
+                }
+                validate_hydrated_element(expected, &element)?;
+
+                let child_nodes = direct_children(node);
+                let mut child_index = 0;
+                let textarea_has_value = tag == "textarea"
+                    && expected
+                        .properties()
+                        .iter()
+                        .any(|property| property.name().eq_ignore_ascii_case("value"));
+                if textarea_has_value {
+                    child_index = child_nodes.len();
+                } else {
+                    for child in expected.children() {
+                        self.hydrate_view(
+                            child,
+                            &child_nodes,
+                            &mut child_index,
+                            parent_scope,
+                            cursor,
+                            resources,
+                        )?;
+                    }
+                }
+                if child_index != child_nodes.len() {
+                    return Err(hydration_mismatch(
+                        "no additional children in the SSR element",
+                        child_nodes.get(child_index),
+                    ));
+                }
+
+                let target: EventTarget = element.clone().unchecked_into();
+                for binding in expected.events() {
+                    if event_uses_delegation(binding.name()) {
+                        resources.delegated.push(DelegatedBinding {
+                            element: element.clone(),
+                            name: binding.name().to_owned(),
+                            handler: binding.handler(),
+                        });
+                    } else {
+                        resources.pending_listeners.push(PendingEventListener {
+                            target: target.clone(),
+                            name: binding.name().to_owned(),
+                            handler: binding.handler(),
+                        });
+                    }
+                }
+                *index += 1;
+                Ok(vec![node.clone()])
+            }
+            View::Fragment(fragment) => {
+                let mut nodes = Vec::new();
+                for child in fragment.children() {
+                    nodes.extend(self.hydrate_view(
+                        child,
+                        siblings,
+                        index,
+                        parent_scope,
+                        cursor,
+                        resources,
+                    )?);
+                }
+                Ok(nodes)
+            }
+            View::KeyedList(list) => {
+                let mut nodes = Vec::new();
+                for child in list.children() {
+                    nodes.extend(self.hydrate_view(
+                        child.view(),
+                        siblings,
+                        index,
+                        parent_scope,
+                        cursor,
+                        resources,
+                    )?);
+                }
+                Ok(nodes)
+            }
+            View::Dynamic(dynamic) => {
+                let boundary_id = cursor.next_boundary;
+                cursor.next_boundary = cursor.next_boundary.saturating_add(1);
+                let start_index = *index;
+                let start_marker = format!("rustflow:dynamic:start:{boundary_id}");
+                let start_node = siblings
+                    .get(start_index)
+                    .ok_or_else(|| hydration_mismatch(&format!("comment {start_marker}"), None))?;
+                if !is_comment_value(start_node, &start_marker) {
+                    return Err(hydration_mismatch(
+                        &format!("comment {start_marker}"),
+                        Some(start_node),
+                    ));
+                }
+                let end_index = find_boundary_end(siblings, start_index, "dynamic", boundary_id)?;
+                let start = start_node.clone().dyn_into::<Comment>().map_err(|_| {
+                    hydration_mismatch(&format!("comment {start_marker}"), Some(start_node))
+                })?;
+                let end = siblings[end_index]
+                    .clone()
+                    .dyn_into::<Comment>()
+                    .map_err(|_| {
+                        hydration_mismatch(
+                            &format!("comment rustflow:dynamic:end:{boundary_id}"),
+                            Some(&siblings[end_index]),
+                        )
+                    })?;
+                let scope = parent_scope.child()?;
+                let child = match untrack(|| dynamic.evaluate()) {
+                    Ok(child) => child,
+                    Err(error) => {
+                        let _ = scope.dispose();
+                        return Err(error.into());
+                    }
+                };
+                let child_nodes = &siblings[start_index + 1..end_index];
+                let mut inner = RenderedNodes::default();
+                let mut child_index = 0;
+                if let Err(error) = self.hydrate_view(
+                    &child,
+                    child_nodes,
+                    &mut child_index,
+                    &scope,
+                    cursor,
+                    &mut inner,
+                ) {
+                    let _ = cleanup_rendered_nodes(&mut inner);
+                    let _ = scope.dispose();
+                    return Err(error);
+                }
+                if child_index != child_nodes.len() {
+                    let error = hydration_mismatch(
+                        "end of the dynamic SSR boundary",
+                        child_nodes.get(child_index),
+                    );
+                    let _ = cleanup_rendered_nodes(&mut inner);
+                    let _ = scope.dispose();
+                    return Err(error);
+                }
+                let mounted_inner = MountedDom {
+                    start,
+                    end,
+                    roots: child_nodes.to_vec(),
+                    listeners: inner.listeners,
+                    pending_listeners: inner.pending_listeners,
+                    delegated_listeners: Vec::new(),
+                    delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
+                    components: inner.components,
+                    component_regions: inner.component_regions,
+                    dynamics: inner.dynamics,
+                    preserve_on_drop: true,
+                };
+                resources.dynamics.push(DynamicRegion {
+                    dynamic: dynamic.clone(),
+                    scope,
+                    state: Rc::new(RefCell::new(Some(DynamicMountState {
+                        mounted: mounted_inner,
+                        view: child,
+                    }))),
+                    error_sink: self.error_sink.clone(),
+                    effect: None,
+                    reused: false,
+                });
+                *index = end_index + 1;
+                Ok(siblings[start_index..=end_index].to_vec())
+            }
+            View::Component(component) => {
+                let boundary_id = cursor.next_boundary;
+                cursor.next_boundary = cursor.next_boundary.saturating_add(1);
+                let start_index = *index;
+                let start_marker = format!("rustflow:component:start:{boundary_id}");
+                let static_start = format!("rustflow:static:start:{boundary_id}");
+                let start_node = siblings.get(start_index).ok_or_else(|| {
+                    hydration_mismatch(&format!("comment {start_marker} or {static_start}"), None)
+                })?;
+                if is_comment_value(start_node, &static_start) {
+                    let end_index =
+                        find_boundary_end(siblings, start_index, "static", boundary_id)?;
+                    *index = end_index + 1;
+                    return Ok(siblings[start_index..=end_index].to_vec());
+                }
+                if !is_comment_value(start_node, &start_marker) {
+                    return Err(hydration_mismatch(
+                        &format!("comment {start_marker} or {static_start}"),
+                        Some(start_node),
+                    ));
+                }
+                let end_index = find_boundary_end(siblings, start_index, "component", boundary_id)?;
+                let start = start_node.clone().dyn_into::<Comment>().map_err(|_| {
+                    hydration_mismatch(&format!("comment {start_marker}"), Some(start_node))
+                })?;
+                let end = siblings[end_index]
+                    .clone()
+                    .dyn_into::<Comment>()
+                    .map_err(|_| {
+                        hydration_mismatch(
+                            &format!("comment rustflow:component:end:{boundary_id}"),
+                            Some(&siblings[end_index]),
+                        )
+                    })?;
+                let mut instance = self.registry.mount_for_target(
+                    component,
+                    self.runtime.clone(),
+                    parent_scope,
+                    RenderTarget::Browser,
+                )?;
+                let child_view = instance.view().clone();
+                let child_nodes = &siblings[start_index + 1..end_index];
+                let mut inner = RenderedNodes::default();
+                let mut child_index = 0;
+                if let Err(error) = self.hydrate_view(
+                    &child_view,
+                    child_nodes,
+                    &mut child_index,
+                    instance.scope(),
+                    cursor,
+                    &mut inner,
+                ) {
+                    let _ = cleanup_rendered_nodes(&mut inner);
+                    let _ = instance.unmount();
+                    return Err(error);
+                }
+                if child_index != child_nodes.len() {
+                    let error = hydration_mismatch(
+                        "end of the component SSR boundary",
+                        child_nodes.get(child_index),
+                    );
+                    let _ = cleanup_rendered_nodes(&mut inner);
+                    let _ = instance.unmount();
+                    return Err(error);
+                }
+                let mounted_inner = MountedDom {
+                    start,
+                    end,
+                    roots: child_nodes.to_vec(),
+                    listeners: inner.listeners,
+                    pending_listeners: inner.pending_listeners,
+                    delegated_listeners: Vec::new(),
+                    delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
+                    components: inner.components,
+                    component_regions: inner.component_regions,
+                    dynamics: inner.dynamics,
+                    preserve_on_drop: true,
+                };
+                resources.component_regions.push(ComponentRegion {
+                    descriptor: component.clone(),
+                    instance,
+                    mounted: mounted_inner,
+                    view: child_view,
+                    reused: false,
+                });
+                *index = end_index + 1;
+                Ok(siblings[start_index..=end_index].to_vec())
+            }
+        }
+    }
+
+    fn activate_pending_listeners(&self, mounted: &mut MountedDom) -> Result<(), DomError> {
+        for region in &mut mounted.component_regions {
+            self.activate_pending_listeners(&mut region.mounted)?;
+        }
+        for region in &mut mounted.dynamics {
+            let mut state = region.state.borrow_mut();
+            if let Some(state) = state.as_mut() {
+                self.activate_pending_listeners(&mut state.mounted)?;
+            }
+        }
+        for pending in mounted.pending_listeners.drain(..) {
+            mounted.listeners.push(create_handler_listener(
+                &pending.target,
+                &pending.name,
+                pending.handler,
+            )?);
+        }
+        Ok(())
+    }
+
     /// Mount a view produced by a reactive closure and rerender it whenever
     /// tracked signals change. Compatible text/element nodes are patched in place
     /// and keyed lists retain same-key compatible DOM nodes. Trees containing
@@ -403,6 +846,35 @@ impl DomRenderer {
         target: &DomElement,
         owner_scope: &Scope,
         render: F,
+    ) -> Result<ReactiveMountedDom, DomError>
+    where
+        F: Fn() -> Result<View, DomError> + 'static,
+    {
+        self.mount_reactive_inner(target, owner_scope, render, false)
+    }
+
+    /// Hydrate a reactive view from existing SSR markup, preserving compatible DOM nodes.
+    ///
+    /// Unlike mount_reactive, this method requires SSR root/component/dynamic markers and
+    /// returns an error rather than clearing or replacing the server content on a mismatch.
+    pub fn hydrate_reactive<F>(
+        &mut self,
+        target: &DomElement,
+        owner_scope: &Scope,
+        render: F,
+    ) -> Result<ReactiveMountedDom, DomError>
+    where
+        F: Fn() -> Result<View, DomError> + 'static,
+    {
+        self.mount_reactive_inner(target, owner_scope, render, true)
+    }
+
+    fn mount_reactive_inner<F>(
+        &mut self,
+        target: &DomElement,
+        owner_scope: &Scope,
+        render: F,
+        hydrate: bool,
     ) -> Result<ReactiveMountedDom, DomError>
     where
         F: Fn() -> Result<View, DomError> + 'static,
@@ -448,7 +920,12 @@ impl DomRenderer {
                     }
                 }
             } else {
-                match renderer.mount_into(&target, &next_view) {
+                let result = if hydrate {
+                    renderer.hydrate_into(&target, &next_view)
+                } else {
+                    renderer.mount_into(&target, &next_view)
+                };
+                match result {
                     Ok(mounted) => {
                         *current = Some(ReactiveMountState {
                             mounted,
@@ -815,11 +1292,13 @@ impl DomRenderer {
             end: end.clone(),
             roots: roots.clone(),
             listeners: inner.listeners,
+            pending_listeners: inner.pending_listeners,
             delegated_listeners: Vec::new(),
             delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
             components: inner.components,
             component_regions: inner.component_regions,
             dynamics: inner.dynamics,
+            preserve_on_drop: false,
         };
         let state = Rc::new(RefCell::new(Some(DynamicMountState { mounted, view })));
         resources.dynamics.push(DynamicRegion {
@@ -868,11 +1347,13 @@ impl DomRenderer {
             end: end.clone(),
             roots: roots.clone(),
             listeners: inner.listeners,
+            pending_listeners: inner.pending_listeners,
             delegated_listeners: Vec::new(),
             delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
             components: inner.components,
             component_regions: inner.component_regions,
             dynamics: inner.dynamics,
+            preserve_on_drop: false,
         };
         resources.component_regions.push(ComponentRegion {
             descriptor: component.clone(),
@@ -929,6 +1410,7 @@ impl DomRenderer {
         cleanup_mounted_content(mounted)?;
         mounted.roots = next_roots;
         mounted.listeners = resources.listeners;
+        mounted.pending_listeners = resources.pending_listeners;
         mounted.components = resources.components;
         mounted.component_regions = resources.component_regions;
         mounted.dynamics = resources.dynamics;
@@ -1608,6 +2090,7 @@ impl DomRenderer {
 
         mounted.roots = roots;
         mounted.listeners = resources.listeners;
+        mounted.pending_listeners = resources.pending_listeners;
         mounted.components = resources.components;
         mounted
             .component_regions
@@ -1778,7 +2261,9 @@ fn cleanup_one_dynamic_region(region: &mut DynamicRegion) -> Result<(), DomError
     }
     first_error(&mut error, region.scope.dispose().map_err(Into::into));
     if let Some(mut state) = region.state.borrow_mut().take() {
-        first_error(&mut error, detach_range(&mut state.mounted));
+        if !state.mounted.preserve_on_drop {
+            first_error(&mut error, detach_range(&mut state.mounted));
+        }
         first_error(&mut error, cleanup_mounted_resources(&mut state.mounted));
     }
     match error {
@@ -1814,6 +2299,203 @@ fn direct_children(parent: &Node) -> Vec<Node> {
         result.push(node);
     }
     result
+}
+
+fn is_comment_value(node: &Node, expected: &str) -> bool {
+    node.node_type() == 8 && node.node_value().as_deref() == Some(expected)
+}
+
+fn marker_positions(nodes: &[Node], marker: &str) -> Vec<usize> {
+    nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, node)| is_comment_value(node, marker).then_some(index))
+        .collect()
+}
+
+fn node_description(node: Option<&Node>) -> String {
+    match node {
+        None => "end of range".to_owned(),
+        Some(node) => match node.node_type() {
+            1 => node
+                .dyn_ref::<DomElement>()
+                .map(|element| format!("<{}> element", element.tag_name().to_ascii_lowercase()))
+                .unwrap_or_else(|| "element node".to_owned()),
+            3 => "text node".to_owned(),
+            8 => "comment node".to_owned(),
+            kind => format!("DOM node type {kind}"),
+        },
+    }
+}
+
+fn hydration_mismatch(expected: &str, found: Option<&Node>) -> DomError {
+    DomError::HydrationMismatch {
+        expected: expected.to_owned(),
+        found: node_description(found),
+    }
+}
+
+fn find_boundary_end(
+    siblings: &[Node],
+    start_index: usize,
+    kind: &str,
+    id: usize,
+) -> Result<usize, DomError> {
+    let marker = format!("rustflow:{kind}:end:{id}");
+    siblings
+        .iter()
+        .enumerate()
+        .skip(start_index + 1)
+        .find_map(|(index, node)| is_comment_value(node, &marker).then_some(index))
+        .ok_or_else(|| DomError::HydrationMismatch {
+            expected: format!("matching comment {marker}"),
+            found: "no matching end marker".to_owned(),
+        })
+}
+
+fn hydration_property_attribute_name(tag: &str, name: &str) -> Option<String> {
+    let name = name.to_ascii_lowercase();
+    let attribute = match name.as_str() {
+        "autofocus" | "allowfullscreen" | "checked" | "controls" | "disabled"
+        | "formnovalidate" | "hidden" | "inert" | "loop" | "multiple" | "muted" | "novalidate"
+        | "open" | "readonly" | "required" | "selected" => name.as_str(),
+        "accept" | "action" | "alt" | "autocomplete" | "cols" | "colspan" | "contenteditable"
+        | "dir" | "draggable" | "enctype" | "formaction" | "height" | "href" | "id" | "lang"
+        | "maxlength" | "method" | "min" | "minlength" | "max" | "name" | "pattern"
+        | "placeholder" | "poster" | "rel" | "role" | "rowspan" | "rows" | "size"
+        | "spellcheck" | "src" | "step" | "tabindex" | "target" | "title" | "type" | "width" => {
+            name.as_str()
+        }
+        "class" | "classname" => "class",
+        "for" | "htmlfor" => "for",
+        "value" if tag != "textarea" => "value",
+        _ => return None,
+    };
+    Some(attribute.to_owned())
+}
+
+fn property_value_as_hydration_text(value: &PropertyValue) -> Result<String, DomError> {
+    match value {
+        PropertyValue::Text(value) => Ok(value.clone()),
+        PropertyValue::Boolean(value) => Ok(value.to_string()),
+        PropertyValue::Integer(value) => Ok(value.to_string()),
+        PropertyValue::Float(value) => Ok(value.to_string()),
+        PropertyValue::Callback(_) => Err(DomError::PropertyRejected("callback".to_owned())),
+    }
+}
+
+fn validate_hydrated_element(expected: &Element, actual: &DomElement) -> Result<(), DomError> {
+    let tag = expected.tag().to_ascii_lowercase();
+    let mut expected_attributes = HashMap::<String, String>::new();
+    let mut textarea_value = None;
+
+    for attribute in expected.attributes() {
+        let name = attribute.name().to_ascii_lowercase();
+        let value = match attribute.value() {
+            AttributeValue::Boolean(true) => Some(String::new()),
+            AttributeValue::Boolean(false) => None,
+            AttributeValue::Text(value) => Some(value.clone()),
+        };
+        if let Some(value) = value {
+            validate_attribute(&name, &value)?;
+            expected_attributes.insert(name, value);
+        } else {
+            expected_attributes.remove(&name);
+        }
+    }
+
+    for property in expected.properties() {
+        validate_property(property.name(), property.value())?;
+        let name = property.name().to_ascii_lowercase();
+        if name == "value" && tag == "textarea" {
+            textarea_value = Some(match property.value() {
+                PropertyValue::Text(value) => value.clone(),
+                _ => return Err(DomError::PropertyRejected(property.name().to_owned())),
+            });
+            continue;
+        }
+        let Some(attribute_name) = hydration_property_attribute_name(&tag, &name) else {
+            // Properties without an SSR attribute representation are client-only.
+            continue;
+        };
+        let is_boolean = matches!(
+            name.as_str(),
+            "autofocus"
+                | "allowfullscreen"
+                | "checked"
+                | "controls"
+                | "disabled"
+                | "formnovalidate"
+                | "hidden"
+                | "inert"
+                | "loop"
+                | "multiple"
+                | "muted"
+                | "novalidate"
+                | "open"
+                | "readonly"
+                | "required"
+                | "selected"
+        );
+        if is_boolean {
+            let PropertyValue::Boolean(value) = property.value() else {
+                return Err(DomError::PropertyRejected(property.name().to_owned()));
+            };
+            if *value {
+                expected_attributes.insert(attribute_name, String::new());
+            } else {
+                expected_attributes.remove(&attribute_name);
+            }
+        } else {
+            let value = property_value_as_hydration_text(property.value())?;
+            validate_attribute(&attribute_name, &value)?;
+            expected_attributes.insert(attribute_name, value);
+        }
+    }
+
+    let actual_attributes = actual.attributes();
+    let mut found_attributes = HashMap::<String, String>::new();
+    for index in 0..actual_attributes.length() {
+        let attribute: Attr =
+            actual_attributes
+                .item(index)
+                .ok_or_else(|| DomError::HydrationMismatch {
+                    expected: "complete DOM attribute list".to_owned(),
+                    found: "unreadable attribute".to_owned(),
+                })?;
+        let name = attribute.name().to_ascii_lowercase();
+        let value = attribute.value();
+        validate_attribute(&name, &value)?;
+        found_attributes.insert(name, value);
+    }
+    if found_attributes != expected_attributes {
+        return Err(DomError::HydrationMismatch {
+            expected: format!("the SSR attribute set for <{tag}>"),
+            found: "different attribute names or values".to_owned(),
+        });
+    }
+    if let Some(expected_value) = textarea_value {
+        if actual.text_content().as_deref() != Some(expected_value.as_str()) {
+            return Err(DomError::HydrationMismatch {
+                expected: "matching textarea initial value".to_owned(),
+                found: "different textarea text content".to_owned(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn set_preserve_on_drop(mounted: &mut MountedDom, preserve: bool) {
+    mounted.preserve_on_drop = preserve;
+    for region in &mut mounted.component_regions {
+        set_preserve_on_drop(&mut region.mounted, preserve);
+    }
+    for region in &mut mounted.dynamics {
+        let mut state = region.state.borrow_mut();
+        if let Some(state) = state.as_mut() {
+            set_preserve_on_drop(&mut state.mounted, preserve);
+        }
+    }
 }
 
 fn remove_obsolete_nodes(parent: &Node, previous: &[Node], next: &[Node]) -> Result<(), DomError> {
@@ -1861,11 +2543,13 @@ impl Renderer for DomRenderer {
             end,
             roots,
             listeners: resources.listeners,
+            pending_listeners: resources.pending_listeners,
             delegated_listeners: Vec::new(),
             delegated_bindings: Rc::new(RefCell::new(resources.delegated)),
             components: resources.components,
             component_regions: resources.component_regions,
             dynamics: resources.dynamics,
+            preserve_on_drop: false,
         })
     }
 
@@ -1906,7 +2590,9 @@ impl Renderer for DomRenderer {
 
 impl Drop for MountedDom {
     fn drop(&mut self) {
-        let _ = detach_range(self);
+        if !self.preserve_on_drop {
+            let _ = detach_range(self);
+        }
         let _ = cleanup_mounted_resources(self);
     }
 }
@@ -1949,6 +2635,7 @@ fn cleanup_rendered_nodes(resources: &mut RenderedNodes) -> Result<(), DomError>
         &mut error,
         cleanup_component_regions(&mut resources.component_regions),
     );
+    resources.pending_listeners.clear();
     resources.delegated.clear();
     match error {
         Some(error) => Err(error),
@@ -1974,6 +2661,7 @@ fn cleanup_mounted_non_component_content(mounted: &mut MountedDom) -> Result<(),
         cleanup_resources(&mut mounted.listeners, &mut mounted.components),
     );
     first_error(&mut error, cleanup_dynamic_regions(&mut mounted.dynamics));
+    mounted.pending_listeners.clear();
     mounted.delegated_bindings.borrow_mut().clear();
     match error {
         Some(error) => Err(error),
@@ -2007,7 +2695,9 @@ fn cleanup_component_regions(regions: &mut Vec<ComponentRegion>) -> Result<(), D
 fn cleanup_component_region(region: &mut ComponentRegion) -> Result<(), DomError> {
     let mut error = None;
     first_error(&mut error, region.instance.unmount().map_err(Into::into));
-    first_error(&mut error, detach_range(&mut region.mounted));
+    if !region.mounted.preserve_on_drop {
+        first_error(&mut error, detach_range(&mut region.mounted));
+    }
     first_error(&mut error, cleanup_mounted_resources(&mut region.mounted));
     match error {
         Some(error) => Err(error),
@@ -2152,16 +2842,23 @@ fn create_event_listener(
     target: &EventTarget,
     binding: &EventBinding,
 ) -> Result<EventListener, DomError> {
-    let handler: EventHandler = binding.handler();
+    create_handler_listener(target, binding.name(), binding.handler())
+}
+
+fn create_handler_listener(
+    target: &EventTarget,
+    name: &str,
+    handler: EventHandler,
+) -> Result<EventListener, DomError> {
     let callback = Closure::<dyn FnMut(Event)>::new(move |event| {
         handler.invoke(event_payload(&event));
     });
     target
-        .add_event_listener_with_callback(binding.name(), callback.as_ref().unchecked_ref())
+        .add_event_listener_with_callback(name, callback.as_ref().unchecked_ref())
         .map_err(js_error)?;
     Ok(EventListener {
         target: target.clone(),
-        name: binding.name().to_owned(),
+        name: name.to_owned(),
         callback,
     })
 }
