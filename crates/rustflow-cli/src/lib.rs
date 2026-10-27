@@ -937,8 +937,16 @@ fn migration_path(root: &Path, name: &str) -> Result<PathBuf, CliError> {
         .collect::<Result<Vec<_>, _>>()?;
     entries.sort();
 
-    let suffix = format!("_{name}.sql");
-    if entries.iter().any(|entry| entry.ends_with(&suffix)) {
+    let expected_name = format!("{name}.sql");
+    let duplicate_exists = entries.iter().any(|entry| {
+        let Some((sequence, migration_name)) = entry.split_once('_') else {
+            return false;
+        };
+        sequence.len() == 4
+            && sequence.bytes().all(|byte| byte.is_ascii_digit())
+            && migration_name == expected_name
+    });
+    if duplicate_exists {
         return Err(format!(
             "a migration named `{name}` already exists; choose a different migration name"
         )
@@ -1058,10 +1066,15 @@ mod tests {
         fs::write(root.join("migrations/.gitkeep"), "").unwrap();
         fs::write(root.join("migrations/0004_existing.sql"), "-- existing").unwrap();
         fs::write(root.join("migrations/0002_old.sql"), "-- existing").unwrap();
+        fs::write(root.join("migrations/0003_my_user.sql"), "-- existing").unwrap();
 
         assert_eq!(
             migration_path(&root, "create_users").unwrap(),
             PathBuf::from("migrations/0005_create_users.sql")
+        );
+        assert_eq!(
+            migration_path(&root, "user").unwrap(),
+            PathBuf::from("migrations/0005_user.sql")
         );
         assert!(migration_path(&root, "old").is_err());
         assert!(migration_path(&root, "existing").is_err());
