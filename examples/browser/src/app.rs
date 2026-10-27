@@ -158,10 +158,8 @@ pub fn start() -> Result<(), JsValue> {
         let count_for_button = hydration_count.clone();
         let mut hydration_renderer =
             DomRenderer::new(document.clone(), runtime.clone(), ComponentRegistry::new());
-        let result = hydration_renderer.hydrate_reactive(
-            &hydration_target,
-            &root_scope,
-            move || {
+        let result =
+            hydration_renderer.hydrate_reactive(&hydration_target, &root_scope, move || {
                 let count_for_button = count_for_button.clone();
                 let count_for_render = count_for_render.clone();
                 rustflow::view! {
@@ -172,8 +170,7 @@ pub fn start() -> Result<(), JsValue> {
                     </button>
                 }
                 .map_err(DomError::from)
-            },
-        );
+            });
         match result {
             Ok(mounted) => {
                 ACTIVE_HYDRATION_MOUNT.with(|slot| *slot.borrow_mut() = Some(mounted));
