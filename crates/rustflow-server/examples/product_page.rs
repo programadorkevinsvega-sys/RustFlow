@@ -4,7 +4,7 @@ use rustflow::components::{
     ComponentRender, SharedComponentCatalogBuilder, SharedComponentDefinition,
 };
 use rustflow::view::{Property, PropertyValue, View};
-use rustflow_server::{Application, HtmlPage, HttpError, Request, Response, html_document};
+use rustflow_server::{Application, HtmlPage, HttpError, Request, html_document};
 
 struct Product {
     name: &'static str,
