@@ -1047,7 +1047,7 @@ mod tests {
             migration_path(&root, "create_users").unwrap(),
             PathBuf::from("migrations/0005_create_users.sql")
         );
-        assert!(migration_path(&root, "old").is_ok());
+        assert!(migration_path(&root, "old").is_err());
         assert!(migration_path(&root, "existing").is_err());
 
         fs::remove_dir_all(root).unwrap();
