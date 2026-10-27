@@ -164,8 +164,6 @@ mod tests {
         let html = std::str::from_utf8(response.body.as_ref()).expect("UTF-8 HTML");
         assert!(html.starts_with("<!doctype html><html lang=\"es\">"));
         assert!(html.contains("<title>Article &amp; details</title>"));
-        assert!(html.contains(
-            "<div><main><article><h1>first-post</h1></article></main></div>"
-        ));
+        assert!(html.contains("<div><main><article><h1>first-post</h1></article></main></div>"));
     }
 }
