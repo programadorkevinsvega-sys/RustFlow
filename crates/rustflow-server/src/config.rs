@@ -8,8 +8,7 @@ use std::{
     collections::BTreeMap,
     env,
     error::Error,
-    fmt,
-    fs,
+    fmt, fs,
     net::{IpAddr, SocketAddr},
     path::Path,
 };
@@ -112,12 +111,7 @@ impl AppConfig {
             ));
         }
 
-        Self::from_nonproduction_sources(
-            environment,
-            base,
-            process_environment,
-            working_directory,
-        )
+        Self::from_nonproduction_sources(environment, base, process_environment, working_directory)
     }
 
     fn from_production_environment(
@@ -138,19 +132,15 @@ impl AppConfig {
         process_environment: &BTreeMap<String, String>,
         working_directory: &Path,
     ) -> Result<Self, ConfigError> {
-        let profile_values = read_env_file(
-            &working_directory.join(format!(".env.{}", environment.as_str())),
-        )?;
+        let profile_values =
+            read_env_file(&working_directory.join(format!(".env.{}", environment.as_str())))?;
         values.extend(profile_values);
         values.extend(
             process_environment
                 .iter()
                 .map(|(key, value)| (key.clone(), value.clone())),
         );
-        values.insert(
-            "RUSTFLOW_ENV".to_owned(),
-            environment.as_str().to_owned(),
-        );
+        values.insert("RUSTFLOW_ENV".to_owned(), environment.as_str().to_owned());
 
         Ok(Self {
             environment,
@@ -183,16 +173,16 @@ fn parse_host(value: Option<&String>, required: bool) -> Result<IpAddr, ConfigEr
         None => return Ok(IpAddr::from([127, 0, 0, 1])),
     };
 
-    value.parse::<IpAddr>().map_err(|_| {
-        ConfigError("RUSTFLOW_HOST must be a numeric IPv4 or IPv6 address".to_owned())
-    })
+    value
+        .parse::<IpAddr>()
+        .map_err(|_| ConfigError("RUSTFLOW_HOST must be a numeric IPv4 or IPv6 address".to_owned()))
 }
 
 fn parse_port(value: Option<&String>, required: bool) -> Result<u16, ConfigError> {
     let port = match value {
-        Some(value) => value
-            .parse::<u16>()
-            .map_err(|_| ConfigError("RUSTFLOW_PORT must be an integer from 1 to 65535".to_owned()))?,
+        Some(value) => value.parse::<u16>().map_err(|_| {
+            ConfigError("RUSTFLOW_PORT must be an integer from 1 to 65535".to_owned())
+        })?,
         None if required => {
             return Err(ConfigError(
                 "RUSTFLOW_PORT must be set in the process environment for production".to_owned(),
@@ -226,10 +216,7 @@ fn read_env_file(path: &Path) -> Result<BTreeMap<String, String>, ConfigError> {
     parse_env_file(&contents, path)
 }
 
-fn parse_env_file(
-    contents: &str,
-    path: &Path,
-) -> Result<BTreeMap<String, String>, ConfigError> {
+fn parse_env_file(contents: &str, path: &Path) -> Result<BTreeMap<String, String>, ConfigError> {
     let mut values = BTreeMap::new();
     for (index, raw_line) in contents.lines().enumerate() {
         let mut line = raw_line.trim();
