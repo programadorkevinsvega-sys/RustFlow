@@ -1,0 +1,17 @@
+[package]
+name = "rustflow-cli"
+version = "0.1.0"
+description = "RustFlow project scaffolding, development, build, and generators CLI"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "rustflow"
+path = "src/main.rs"
+
+[dependencies]
+
+[lints]
+workspace = true

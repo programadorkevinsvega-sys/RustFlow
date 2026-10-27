@@ -1,0 +1,1009 @@
+//! Command-line tooling for creating and working with RustFlow applications.
+//!
+//! The CLI deliberately delegates compilation and execution to Cargo. It does
+//! not implement file watching, hot reload, or a browser/WASM bundler.
+
+use std::{
+    collections::BTreeSet,
+    env,
+    ffi::{OsStr, OsString},
+    fmt,
+    fs::{self, OpenOptions},
+    io::Write,
+    path::{Component, Path, PathBuf},
+    process::Command,
+    sync::atomic::{AtomicU64, Ordering},
+};
+
+const REPOSITORY_URL: &str = "https://github.com/programadorkevinsvega-sys/RustFlow.git";
+const MODULE_START: &str = "// rustflow:managed-modules:start";
+const MODULE_END: &str = "// rustflow:managed-modules:end";
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+/// A user-facing CLI error. Errors are printed by the binary with exit status 2.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CliError(String);
+
+impl fmt::Display for CliError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for CliError {}
+
+impl From<String> for CliError {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for CliError {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+/// Run the CLI arguments excluding the executable name.
+///
+/// Returns the process exit code. Cargo exit codes are preserved instead of
+/// being converted to success or hidden behind a generic CLI status.
+pub fn run<I, S>(args: I) -> Result<i32, CliError>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<OsString>,
+{
+    let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
+    if args.is_empty() || is_help(&args[0]) {
+        print_help();
+        return Ok(0);
+    }
+
+    match argument_text(&args[0], "command")? {
+        "new" => new_command(&args[1..]),
+        "dev" => dev_command(&args[1..]),
+        "build" => build_command(&args[1..]),
+        "generate" | "g" => generate_command(&args[1..]),
+        "help" => {
+            print_help();
+            Ok(0)
+        }
+        "version" | "--version" | "-V" => {
+            println!("rustflow {}", env!("CARGO_PKG_VERSION"));
+            Ok(0)
+        }
+        command => Err(format!(
+            "unknown command `{command}`\n\nRun `rustflow --help` for usage."
+        )
+        .into()),
+    }
+}
+
+fn print_help() {
+    println!(
+        "RustFlow CLI {}\n\
+         \nUSAGE:\n  rustflow <COMMAND> [OPTIONS]\n\
+         \nCOMMANDS:\n\
+         \  new <name> [--path <parent>]       Create a server-side RustFlow application\n\
+         \  dev [--release] [--offline]        Run the application through Cargo\n\
+         \  build [OPTIONS]                    Build the application through Cargo\n\
+         \  generate <TYPE> <name>              Generate a component, page, controller, model, or migration\n\
+         \  help                                Show this help\n\
+         \nGENERATOR TYPES:\n\
+         \  component | page | controller | model | migration\n\
+         \nNOTES:\n\
+         \  Generators refuse file collisions. dev does not watch files or provide hot reload.\n\
+         \  Model and migration output is structural; no ORM or migration runner is included.\n\
+         \  RustFlow is pre-1.0. Generated projects pin the source revision used by this CLI."
+        ,
+        env!("CARGO_PKG_VERSION")
+    );
+}
+
+fn new_command(args: &[OsString]) -> Result<i32, CliError> {
+    if args.is_empty() || is_help(&args[0]) {
+        println!("Usage: rustflow new <name> [--path <existing-parent-directory>]");
+        return if args.is_empty() {
+            Err("missing project name".into())
+        } else {
+            Ok(0)
+        };
+    }
+
+    let name = argument_text(&args[0], "project name")?;
+    validate_project_name(name)?;
+    let mut parent = env::current_dir().map_err(|error| {
+        format!("could not determine the current directory: {error}")
+    })?;
+
+    let mut index = 1;
+    while index < args.len() {
+        match argument_text(&args[index], "option")? {
+            "--path" => {
+                let Some(value) = args.get(index + 1) else {
+                    return Err("option --path requires an existing parent directory".into());
+                };
+                parent = PathBuf::from(value);
+                index += 2;
+            }
+            option => return Err(format!("unknown option for rustflow new: {option}").into()),
+        }
+    }
+
+    let revision = env!("RUSTFLOW_GIT_REV");
+    if !is_revision(revision) {
+        return Err(
+            "cannot determine the RustFlow source revision for this CLI build; install it from a Git checkout or set RUSTFLOW_GIT_REV to a full 40-character commit SHA"
+                .into(),
+        );
+    }
+
+    let destination = create_project(name, &parent, revision)?;
+    println!("Created RustFlow project `{name}` at {}", destination.display());
+    println!("Next steps:");
+    println!("  cd {}", destination.display());
+    println!("  rustflow dev");
+    println!("  rustflow build");
+    Ok(0)
+}
+
+fn dev_command(args: &[OsString]) -> Result<i32, CliError> {
+    let mut cargo_args = Vec::new();
+    let mut forwarded = Vec::new();
+    let mut passthrough = false;
+
+    for arg in args {
+        if passthrough {
+            forwarded.push(arg.clone());
+            continue;
+        }
+        match argument_text(arg, "dev option")? {
+            "--" => {
+                passthrough = true;
+                continue;
+            }
+            "--release" | "--offline" | "--locked" => cargo_args.push(arg.clone()),
+            "--help" | "-h" => {
+                println!("Usage: rustflow dev [--release] [--offline] [--locked] [-- <application-args>]");
+                println!("Runs `cargo run` in the nearest RustFlow project. No file watcher or hot reload is provided.");
+                return Ok(0);
+            }
+            option => return Err(format!("unsupported rustflow dev option: {option}").into()),
+        }
+    }
+
+    if passthrough {
+        cargo_args.push(OsString::from("--"));
+        cargo_args.extend(forwarded);
+    }
+
+    run_cargo("run", &cargo_args, "dev")
+}
+
+fn build_command(args: &[OsString]) -> Result<i32, CliError> {
+    let mut cargo_args = Vec::new();
+    let mut index = 0;
+
+    while index < args.len() {
+        let option = argument_text(&args[index], "build option")?;
+        match option {
+            "--release" | "--offline" | "--locked" | "--all-features" | "--no-default-features" => {
+                cargo_args.push(args[index].clone());
+                index += 1;
+            }
+            "--target" | "--features" | "-F" => {
+                let Some(value) = args.get(index + 1) else {
+                    return Err(format!("option {option} requires a value").into());
+                };
+                cargo_args.push(args[index].clone());
+                cargo_args.push(value.clone());
+                index += 2;
+            }
+            "--help" | "-h" => {
+                println!("Usage: rustflow build [--release] [--offline] [--locked] [--target <triple>] [--features <list>] [--all-features]");
+                println!("Delegates to `cargo build`; the project must support the selected target.");
+                return Ok(0);
+            }
+            option => return Err(format!("unsupported rustflow build option: {option}").into()),
+        }
+    }
+
+    let code = run_cargo("build", &cargo_args, "build")?;
+    if code == 0 {
+        let profile = if cargo_args.iter().any(|arg| arg == "--release") {
+            "release"
+        } else {
+            "debug"
+        };
+        println!("Cargo build completed successfully (profile: {profile}).");
+        println!("Inspect Cargo's output above for the selected target and artifact path.");
+    }
+    Ok(code)
+}
+
+fn generate_command(args: &[OsString]) -> Result<i32, CliError> {
+    if args.is_empty() || is_help(&args[0]) {
+        println!("Usage: rustflow generate <component|page|controller|model|migration> <name>");
+        return if args.is_empty() {
+            Err("missing generator type and name".into())
+        } else {
+            Ok(0)
+        };
+    }
+    if args.len() != 2 {
+        return Err("usage: rustflow generate <component|page|controller|model|migration> <name>".into());
+    }
+
+    let kind = argument_text(&args[0], "generator type")?;
+    let name = argument_text(&args[1], "generated name")?;
+    let root = find_rustflow_project(&env::current_dir().map_err(|error| error.to_string())?)?;
+    let path = generate_file(&root, kind, name)?;
+    println!("Generated {}", path.strip_prefix(&root).unwrap_or(&path).display());
+    Ok(0)
+}
+
+fn is_help(arg: &OsStr) -> bool {
+    matches!(arg.to_str(), Some("--help" | "-h"))
+}
+
+fn argument_text<'a>(arg: &'a OsStr, label: &str) -> Result<&'a str, CliError> {
+    arg.to_str().ok_or_else(|| format!("{label} must be valid UTF-8").into())
+}
+
+fn validate_project_name(name: &str) -> Result<(), CliError> {
+    if name.is_empty()
+        || !name.as_bytes()[0].is_ascii_alphabetic()
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        || name.ends_with(['-', '_'])
+    {
+        return Err(format!(
+            "invalid project name `{name}`; use an ASCII letter first, followed by letters, digits, hyphens, or underscores"
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn generated_identifier(name: &str) -> Result<String, CliError> {
+    validate_project_name(name)?;
+    let chars = name.chars().collect::<Vec<_>>();
+    let mut snake = String::new();
+
+    for (index, character) in chars.iter().copied().enumerate() {
+        if character == '-' {
+            if !snake.ends_with('_') {
+                snake.push('_');
+            }
+            continue;
+        }
+        if character.is_ascii_uppercase() {
+            let previous = index.checked_sub(1).and_then(|i| chars.get(i)).copied();
+            let next = chars.get(index + 1).copied();
+            let boundary = previous.is_some_and(|previous| {
+                previous.is_ascii_lowercase()
+                    || previous.is_ascii_digit()
+                    || (previous.is_ascii_uppercase() && next.is_some_and(char::is_ascii_lowercase))
+            });
+            if boundary && !snake.ends_with('_') {
+                snake.push('_');
+            }
+            snake.push(character.to_ascii_lowercase());
+        } else {
+            snake.push(character);
+        }
+    }
+
+    while snake.ends_with('_') {
+        snake.pop();
+    }
+    if is_rust_keyword(&snake) {
+        return Err(format!(
+            "`{name}` normalizes to the Rust keyword `{snake}`; choose another name"
+        )
+        .into());
+    }
+    Ok(snake)
+}
+
+fn is_rust_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        "as" | "async" | "await" | "break" | "const" | "continue" | "crate" | "dyn"
+            | "else" | "enum" | "extern" | "false" | "fn" | "for" | "if" | "impl"
+            | "in" | "let" | "loop" | "match" | "mod" | "move" | "mut" | "pub"
+            | "ref" | "return" | "self" | "Self" | "static" | "struct" | "super"
+            | "trait" | "true" | "type" | "union" | "unsafe" | "use" | "where"
+            | "while" | "abstract" | "become" | "box" | "do" | "final" | "macro"
+            | "override" | "priv" | "typeof" | "unsized" | "virtual" | "yield" | "try"
+    )
+}
+
+fn create_project(name: &str, parent: &Path, revision: &str) -> Result<PathBuf, CliError> {
+    validate_project_name(name)?;
+    if !is_revision(revision) {
+        return Err("RustFlow source revision must be a full 40-character commit SHA".into());
+    }
+
+    let parent = fs::canonicalize(parent).map_err(|error| {
+        format!("project parent {} is not accessible: {error}", parent.display())
+    })?;
+    if !parent.is_dir() {
+        return Err(format!("project parent {} is not a directory", parent.display()).into());
+    }
+
+    let destination = parent.join(name);
+    if path_exists(&destination)? {
+        return Err(format!(
+            "destination {} already exists; choose another name or move the existing file/directory yourself",
+            destination.display()
+        )
+        .into());
+    }
+
+    let staging = create_staging_dir(&parent, name)?;
+    let result = write_project_files(&staging, &scaffold_files(name, revision));
+    if let Err(error) = result {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(error);
+    }
+
+    if path_exists(&destination)? {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(format!(
+            "destination {} appeared while the project was being created; no existing files were changed",
+            destination.display()
+        )
+        .into());
+    }
+
+    if let Err(error) = fs::rename(&staging, &destination) {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(format!(
+            "could not publish the generated project at {}: {error}",
+            destination.display()
+        )
+        .into());
+    }
+    Ok(destination)
+}
+
+fn path_exists(path: &Path) -> Result<bool, CliError> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!("could not inspect {}: {error}", path.display()).into()),
+    }
+}
+
+fn create_staging_dir(parent: &Path, name: &str) -> Result<PathBuf, CliError> {
+    for _ in 0..100 {
+        let id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = parent.join(format!(".rustflow-new-{name}-{}-{id}", std::process::id()));
+        match fs::create_dir(&path) {
+            Ok(()) => return Ok(path),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(format!("could not create a staging directory in {}: {error}", parent.display()).into());
+            }
+        }
+    }
+    Err("could not allocate a unique staging directory after 100 attempts".into())
+}
+
+fn write_project_files(root: &Path, files: &[(PathBuf, String)]) -> Result<(), CliError> {
+    for (relative, contents) in files {
+        if relative.is_absolute()
+            || relative
+                .components()
+                .any(|component| !matches!(component, Component::Normal(_)))
+        {
+            return Err(format!("unsafe generated path: {}", relative.display()).into());
+        }
+        let destination = root.join(relative);
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                format!("could not create directory {}: {error}", parent.display())
+            })?;
+        }
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&destination)
+            .map_err(|error| format!("could not create {}: {error}", destination.display()))?;
+        if let Err(error) = file.write_all(contents.as_bytes()) {
+            let _ = fs::remove_file(&destination);
+            return Err(format!("could not write {}: {error}", destination.display()).into());
+        }
+        if let Err(error) = file.flush() {
+            let _ = fs::remove_file(&destination);
+            return Err(format!("could not flush {}: {error}", destination.display()).into());
+        }
+    }
+    Ok(())
+}
+
+fn scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
+    let package_manifest = format!(
+        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.85\"\n\n[package.metadata.rustflow]\ntemplate = \"server\"\n\n[dependencies]\nrustflow = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\nrustflow-server = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\", \"net\"] }}\n"
+    );
+    vec![
+        (PathBuf::from("Cargo.toml"), package_manifest),
+        (
+            PathBuf::from("README.md"),
+            format!(
+                "# {name}\n\nAplicación de servidor generada con RustFlow. Las APIs son pre-1.0 y pueden cambiar.\n\n## Desarrollo\n\n```sh\nrustflow dev\n```\n\nAbre http://127.0.0.1:3000/. Define `RUSTFLOW_PORT` para usar otro puerto. `rustflow dev` ejecuta Cargo una vez; no incluye supervisión de archivos ni hot reload.\n\n## Build\n\n```sh\nrustflow build --release\n```\n\n## Generadores\n\n```sh\nrustflow generate component ProductCard\nrustflow generate page about\nrustflow generate controller health\nrustflow generate model User\nrustflow generate migration create_users\n```\n\nLos generadores de Rust registran el módulo dentro de la sección gestionada de `src/**/mod.rs`. Si el archivo de índice no conserva sus marcadores, el comando se detiene sin reemplazarlo. Las migraciones son archivos SQL de ejemplo: RustFlow todavía no incluye ORM, conexión a base de datos ni ejecutor de migraciones.\n\nLas dependencias de RustFlow están fijadas a la revisión del repositorio desde la que se compiló este CLI. Para actualizar esa revisión, cambia deliberadamente las dependencias de Git y vuelve a probar el proyecto.\n"
+            ),
+        ),
+        (
+            PathBuf::from("src/main.rs"),
+            format!(
+                "use std::{{error::Error, net::SocketAddr}};\n\
+                 use rustflow_server::{{Application, Request}};\n\
+                 \n\
+                 pub mod components;\n\
+                 pub mod controllers;\n\
+                 pub mod models;\n\
+                 pub mod pages;\n\
+                 \n\
+                 #[tokio::main]\n\
+                 async fn main() -> Result<(), Box<dyn Error>> {{\n\
+                 \    let mut app = Application::new();\n\
+                 \    app.get(\"/\", controllers::home_controller::index)?;\n\
+                 \    let port = match std::env::var(\"RUSTFLOW_PORT\") {{\n\
+                 \        Ok(value) => value.parse::<u16>()?,\n\
+                 \        Err(std::env::VarError::NotPresent) => 3000,\n\
+                 \        Err(error) => return Err(Box::new(error)),\n\
+                 \    }};\n\
+                 \    let address = SocketAddr::from(([127, 0, 0, 1], port));\n\
+                 \    println!(\"RustFlow server listening on http://{{address}}\");\n\
+                 \    app.serve(address).await?;\n\
+                 \    Ok(())\n\
+                 }}\n"
+            ),
+        ),
+        (
+            PathBuf::from("src/components/mod.rs"),
+            module_index("Componentes reutilizables."),
+        ),
+        (
+            PathBuf::from("src/pages/mod.rs"),
+            format!("//! Páginas estructurales de la aplicación.\n{}", module_index("")),
+        ),
+        (
+            PathBuf::from("src/pages/home.rs"),
+            "use rustflow::view::{View, ViewError};\n\n/// Construye la página inicial como una vista estructural.\npub fn render() -> Result<View, ViewError> {\n    View::element(\n        \"main\",\n        [\n            View::element(\"h1\", [View::text(\"Hola, RustFlow\")])?,\n            View::element(\n                \"p\",\n                [View::text(\"Edita src/pages/home.rs para cambiar esta página.\")],\n            )?,\n        ],\n    )\n}\n".to_owned(),
+        ),
+        (
+            PathBuf::from("src/controllers/mod.rs"),
+            module_index("Controladores HTTP."),
+        ),
+        (
+            PathBuf::from("src/controllers/home_controller.rs"),
+            "use rustflow::view::View;\nuse rustflow_server::{html_document, HttpError, Request, Response};\n\n/// Responde con la página inicial renderizada en el servidor.\npub async fn index(_request: Request) -> Result<Response, HttpError> {\n    let page = crate::pages::home::render()\n        .map_err(|_| HttpError::internal_server_error())?;\n    let _ = View::text(\"\");\n    html_document(\"RustFlow\", \"es\", &page)\n}\n".to_owned(),
+        ),
+        (
+            PathBuf::from("src/models/mod.rs"),
+            module_index("Tipos de dominio de la aplicación; sin persistencia integrada."),
+        ),
+        (
+            PathBuf::from("migrations/.gitkeep"),
+            String::new(),
+        ),
+    ]
+}
+
+fn module_index(comment: &str) -> String {
+    let header = if comment.is_empty() {
+        String::new()
+    } else {
+        format!("//! {comment}\n")
+    };
+    format!(
+        "{header}\n{MODULE_START}\n{MODULE_END}\n"
+    )
+}
+
+fn find_rustflow_project(start: &Path) -> Result<PathBuf, CliError> {
+    for ancestor in start.ancestors() {
+        let manifest = ancestor.join("Cargo.toml");
+        if !manifest.is_file() {
+            continue;
+        }
+        let contents = fs::read_to_string(&manifest)
+            .map_err(|error| format!("could not read {}: {error}", manifest.display()))?;
+        if contents.contains("[package]")
+            && (contents.contains("[package.metadata.rustflow]")
+                || contents.contains("rustflow-server")
+                || contents.contains("rustflow ="))
+        {
+            return Ok(ancestor.to_path_buf());
+        }
+    }
+    Err(format!(
+        "no RustFlow application was found from {}; run this command inside a project created with `rustflow new` or one whose Cargo.toml directly depends on RustFlow",
+        start.display()
+    )
+    .into())
+}
+
+fn run_cargo(subcommand: &str, args: &[OsString], operation: &str) -> Result<i32, CliError> {
+    let current = env::current_dir()
+        .map_err(|error| format!("could not determine the current directory: {error}"))?;
+    let root = find_rustflow_project(&current)?;
+    println!("Running `cargo {subcommand}` in {}", root.display());
+
+    let cargo = env::var_os("RUSTFLOW_CARGO")
+        .or_else(|| env::var_os("CARGO"))
+        .unwrap_or_else(|| OsString::from("cargo"));
+    let status = Command::new(&cargo)
+        .current_dir(&root)
+        .arg(subcommand)
+        .args(args)
+        .status()
+        .map_err(|error| {
+            format!(
+                "could not start Cargo for `rustflow {operation}` ({}): {error}",
+                cargo.to_string_lossy()
+            )
+        })?;
+    Ok(status.code().unwrap_or(1))
+}
+
+#[derive(Debug)]
+struct ModuleIndexUpdate {
+    path: PathBuf,
+    original: String,
+    updated: String,
+}
+
+fn generate_file(root: &Path, kind: &str, raw_name: &str) -> Result<PathBuf, CliError> {
+    validate_project_root(root)?;
+    let kind = match kind {
+        "component" | "components" => "component",
+        "page" | "pages" => "page",
+        "controller" | "controllers" => "controller",
+        "model" | "models" => "model",
+        "migration" | "migrations" => "migration",
+        _ => return Err(format!("unknown generator type `{kind}`").into()),
+    };
+    let name = generated_identifier(raw_name)?;
+
+    let (relative, content, module) = match kind {
+        "component" => (
+            PathBuf::from(format!("src/components/{name}.rs")),
+            component_template(&name),
+            Some(("components", name.clone())),
+        ),
+        "page" => (
+            PathBuf::from(format!("src/pages/{name}.rs")),
+            page_template(&name),
+            Some(("pages", name.clone())),
+        ),
+        "controller" => {
+            let module = if name.ends_with("_controller") {
+                name.clone()
+            } else {
+                format!("{name}_controller")
+            };
+            (
+                PathBuf::from(format!("src/controllers/{module}.rs")),
+                controller_template(&module),
+                Some(("controllers", module)),
+            )
+        }
+        "model" => (
+            PathBuf::from(format!("src/models/{name}.rs")),
+            model_template(&name),
+            Some(("models", name.clone())),
+        ),
+        "migration" => {
+            let relative = migration_path(root, &name)?;
+            (relative, migration_template(&name), None)
+        }
+        _ => unreachable!("generator type was normalized above"),
+    };
+
+    let target = root.join(&relative);
+    if path_exists(&target)? {
+        return Err(format!(
+            "refusing to overwrite {}; move or rename the existing file/directory before retrying",
+            target.display()
+        )
+        .into());
+    }
+
+    let module_update = if let Some((directory, module_name)) = module {
+        let index_path = root.join("src").join(directory).join("mod.rs");
+        Some(prepare_module_index(&index_path, &module_name)?)
+    } else {
+        None
+    };
+
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("could not create {}: {error}", parent.display()))?;
+    }
+    write_one_file(&target, &content)?;
+
+    if let Some(update) = module_update {
+        if let Err(error) = apply_module_index_update(&update) {
+            let _ = fs::remove_file(&target);
+            return Err(error);
+        }
+    }
+
+    Ok(target)
+}
+
+fn validate_project_root(root: &Path) -> Result<(), CliError> {
+    let manifest = root.join("Cargo.toml");
+    let contents = fs::read_to_string(&manifest)
+        .map_err(|error| format!("could not read {}: {error}", manifest.display()))?;
+    if !contents.contains("[package]")
+        || !(contents.contains("[package.metadata.rustflow]")
+            || contents.contains("rustflow-server")
+            || contents.contains("rustflow ="))
+    {
+        return Err(format!(
+            "{} is not a RustFlow application manifest; run `rustflow new` first or add a direct RustFlow dependency",
+            manifest.display()
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn prepare_module_index(path: &Path, new_module: &str) -> Result<ModuleIndexUpdate, CliError> {
+    let original = fs::read_to_string(path)
+        .map_err(|error| format!("could not read module index {}: {error}", path.display()))?;
+    let lines = original.split_inclusive('\n').collect::<Vec<_>>();
+    let mut offset = 0;
+    let mut start_after = None;
+    let mut end_start = None;
+
+    for line in &lines {
+        let clean = line.trim_end_matches(['\r', '\n']);
+        if clean == MODULE_START {
+            if start_after.is_some() {
+                return Err(format!("module index {} contains duplicate managed-section markers", path.display()).into());
+            }
+            start_after = Some(offset + line.len());
+        } else if clean == MODULE_END {
+            if end_start.is_some() {
+                return Err(format!("module index {} contains duplicate managed-section markers", path.display()).into());
+            }
+            end_start = Some(offset);
+        }
+        offset += line.len();
+    }
+
+    let (Some(start_after), Some(end_start)) = (start_after, end_start) else {
+        return Err(format!(
+            "module index {} no longer contains the RustFlow managed-module markers; restore {MODULE_START} and {MODULE_END}, then retry. The file was not changed.",
+            path.display()
+        ).into());
+    };
+    if end_start < start_after {
+        return Err(format!("module index {} has reversed managed-section markers", path.display()).into());
+    }
+
+    let managed = &original[start_after..end_start];
+    let mut modules = BTreeSet::new();
+    for line in managed.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some(name) = line.strip_prefix("pub mod ").and_then(|rest| rest.strip_suffix(';')) else {
+            return Err(format!(
+                "module index {} contains user content inside its managed section; move custom lines outside the markers to let the generator update it safely",
+                path.display()
+            ).into());
+        };
+        if !is_valid_module_token(name) {
+            return Err(format!("invalid module declaration in {}", path.display()).into());
+        }
+        modules.insert(name.to_owned());
+    }
+
+    if modules.contains(new_module) {
+        return Err(format!(
+            "module index {} already declares `{new_module}` but its generated file is absent; reconcile the module manually before retrying",
+            path.display()
+        ).into());
+    }
+    let declaration_outside_managed = original
+        .split(MODULE_START)
+        .next()
+        .unwrap_or("")
+        .lines()
+        .chain(original.split(MODULE_END).nth(1).unwrap_or("").lines())
+        .any(|line| line.trim() == format!("pub mod {new_module};"));
+    if declaration_outside_managed {
+        return Err(format!(
+            "module `{new_module}` is already declared outside the managed section of {}; reconcile it manually before retrying",
+            path.display()
+        ).into());
+    }
+
+    modules.insert(new_module.to_owned());
+    let declarations = modules
+        .into_iter()
+        .map(|name| format!("pub mod {name};"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut updated = String::new();
+    updated.push_str(&original[..start_after]);
+    updated.push_str(&declarations);
+    if !declarations.is_empty() {
+        updated.push('\n');
+    }
+    updated.push_str(&original[end_start..]);
+
+    Ok(ModuleIndexUpdate {
+        path: path.to_path_buf(),
+        original,
+        updated,
+    })
+}
+
+fn is_valid_module_token(name: &str) -> bool {
+    !name.is_empty()
+        && name.as_bytes()[0].is_ascii_alphabetic()
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        && !is_rust_keyword(name)
+}
+
+fn apply_module_index_update(update: &ModuleIndexUpdate) -> Result<(), CliError> {
+    let current = fs::read_to_string(&update.path)
+        .map_err(|error| format!("could not re-read {}: {error}", update.path.display()))?;
+    if current != update.original {
+        return Err(format!(
+            "module index {} changed while generation was in progress; the generated source was removed, inspect your changes and retry",
+            update.path.display()
+        )
+        .into());
+    }
+
+    let parent = update
+        .path
+        .parent()
+        .ok_or_else(|| CliError("module index has no parent directory".to_owned()))?;
+    let file_name = update
+        .path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .unwrap_or("mod.rs");
+    let temporary = parent.join(format!(
+        ".{file_name}.rustflow-tmp-{}-{}",
+        std::process::id(),
+        TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let write_result = (|| -> std::io::Result<()> {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        file.write_all(update.updated.as_bytes())?;
+        file.flush()?;
+        fs::rename(&temporary, &update.path)?;
+        Ok(())
+    })();
+    if let Err(error) = write_result {
+        let _ = fs::remove_file(&temporary);
+        return Err(format!(
+            "could not update module index {} atomically: {error}; generated source was removed",
+            update.path.display()
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn write_one_file(path: &Path, contents: &str) -> Result<(), CliError> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                format!("refusing to overwrite existing destination {}", path.display())
+            } else {
+                format!("could not create {}: {error}", path.display())
+            }
+        })?;
+    if let Err(error) = file.write_all(contents.as_bytes()).and_then(|()| file.flush()) {
+        let _ = fs::remove_file(path);
+        return Err(format!("could not finish writing {}: {error}", path.display()).into());
+    }
+    Ok(())
+}
+
+fn migration_path(root: &Path, name: &str) -> Result<PathBuf, CliError> {
+    let directory = root.join("migrations");
+    let mut entries = fs::read_dir(&directory)
+        .map_err(|error| format!("could not inspect migrations directory {}: {error}", directory.display()))?
+        .map(|entry| {
+            entry
+                .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                .map_err(|error| CliError(format!("could not inspect migration entry: {error}")))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    entries.sort();
+
+    let suffix = format!("_{name}.sql");
+    if entries.iter().any(|entry| entry.ends_with(&suffix)) {
+        return Err(format!(
+            "a migration named `{name}` already exists; choose a different migration name"
+        )
+        .into());
+    }
+
+    let highest = entries
+        .iter()
+        .filter_map(|entry| {
+            let (prefix, _) = entry.split_once('_')?;
+            if prefix.len() != 4 || !prefix.bytes().all(|byte| byte.is_ascii_digit()) {
+                return None;
+            }
+            prefix.parse::<u32>().ok()
+        })
+        .max()
+        .unwrap_or(0);
+
+    let next = highest
+        .checked_add(1)
+        .ok_or_else(|| CliError("migration sequence number overflow".to_owned()))?;
+    Ok(PathBuf::from(format!("migrations/{next:04}_{name}.sql")))
+}
+
+fn component_template(name: &str) -> String {
+    let title = humanize(name);
+    format!(
+        "use rustflow::view::{{View, ViewError}};\n\n/// Renderiza el componente {title}.\npub fn render(title: &str) -> Result<View, ViewError> {{\n    View::element(\n        \"section\",\n        [\n            View::element(\"h2\", [View::text(title)])?,\n            View::element(\"p\", [View::text(\"Componente generado por RustFlow.\")])?,\n        ],\n    )\n}}\n"
+    )
+}
+
+fn page_template(name: &str) -> String {
+    let title = humanize(name);
+    format!(
+        "use rustflow::view::{{View, ViewError}};\n\n/// Construye la página {title} como una vista estructural.\npub fn render() -> Result<View, ViewError> {{\n    View::element(\n        \"main\",\n        [\n            View::element(\"h1\", [View::text(\"{title}\")])?,\n            View::element(\"p\", [View::text(\"Edita esta página para añadir contenido.\")])?,\n        ],\n    )\n}}\n"
+    )
+}
+
+fn controller_template(module: &str) -> String {
+    let title = humanize(module.trim_end_matches("_controller"));
+    format!(
+        "use rustflow_server::{{HttpError, Request, Response}};\n\n/// Handler HTTP de {title}.\npub async fn index(_request: Request) -> Result<Response, HttpError> {{\n    Ok(Response::text(\"Controlador {title} generado por RustFlow\"))\n}}\n"
+    )
+}
+
+fn model_template(name: &str) -> String {
+    let type_name = name
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            chars
+                .next()
+                .map(|first| first.to_ascii_uppercase().to_string() + chars.as_str())
+                .unwrap_or_default()
+        })
+        .collect::<String>();
+    format!(
+        "/// Tipo de dominio generado; no representa un modelo ORM.\n#[derive(Debug, Clone, PartialEq, Eq)]\npub struct {type_name} {{\n    pub id: i64,\n    pub name: String,\n}}\n"
+    )
+}
+
+fn migration_template(name: &str) -> String {
+    let table = name.strip_prefix("create_").unwrap_or(name);
+    format!(
+        "-- Plantilla estructural generada por RustFlow.\n-- No se ejecuta automáticamente: no hay runner de migraciones ni ORM integrado.\n-- Adapta el dialecto SQL y el esquema antes de usarla.\n\nCREATE TABLE IF NOT EXISTS {table} (\n    id INTEGER PRIMARY KEY,\n    name TEXT NOT NULL\n);\n"
+    )
+}
+
+fn humanize(value: &str) -> String {
+    value
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            chars
+                .next()
+                .map(|first| first.to_ascii_uppercase().to_string() + chars.as_str())
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn is_revision(value: &str) -> bool {
+    value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn project_names_reject_paths_and_invalid_identifiers() {
+        assert!(validate_project_name("notes-app").is_ok());
+        assert!(validate_project_name("notes_app2").is_ok());
+        assert!(validate_project_name("../notes").is_err());
+        assert!(validate_project_name("9notes").is_err());
+        assert!(validate_project_name("notes/app").is_err());
+    }
+
+    #[test]
+    fn generated_names_are_normalized_and_keywords_rejected() {
+        assert_eq!(generated_identifier("ProductCard").unwrap(), "product_card");
+        assert_eq!(generated_identifier("user-profile").unwrap(), "user_profile");
+        assert!(generated_identifier("type").is_err());
+        assert!(generated_identifier("bad/name").is_err());
+    }
+
+    #[test]
+    fn migration_sequence_is_derived_from_sorted_existing_names() {
+        let root = temporary_directory("migration-sequence");
+        fs::create_dir_all(root.join("migrations")).unwrap();
+        fs::write(root.join("migrations/.gitkeep"), "").unwrap();
+        fs::write(root.join("migrations/0004_existing.sql"), "-- existing").unwrap();
+        fs::write(root.join("migrations/0002_old.sql"), "-- existing").unwrap();
+
+        assert_eq!(
+            migration_path(&root, "create_users").unwrap(),
+            PathBuf::from("migrations/0005_create_users.sql")
+        );
+        assert!(migration_path(&root, "old").is_ok());
+        assert!(migration_path(&root, "existing").is_err());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn managed_module_entries_are_sorted_and_outside_content_is_preserved() {
+        let root = temporary_directory("module-index");
+        fs::create_dir_all(root.join("src/components")).unwrap();
+        let index = root.join("src/components/mod.rs");
+        let original = format!(
+            "//! User documentation stays above the managed section.\n{MODULE_START}\n{MODULE_END}\n// User notes stay below.\n"
+        );
+        fs::write(&index, &original).unwrap();
+
+        let first = prepare_module_index(&index, "zebra").unwrap();
+        write_one_file(&root.join("src/components/zebra.rs"), "pub fn zebra() {}\n").unwrap();
+        apply_module_index_update(&first).unwrap();
+        let second = prepare_module_index(&index, "alpha").unwrap();
+        write_one_file(&root.join("src/components/alpha.rs"), "pub fn alpha() {}\n").unwrap();
+        apply_module_index_update(&second).unwrap();
+
+        let output = fs::read_to_string(&index).unwrap();
+        assert!(output.find("pub mod alpha;").unwrap() < output.find("pub mod zebra;").unwrap());
+        assert!(output.contains("// User notes stay below."));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn changed_or_unmanaged_module_index_is_not_replaced() {
+        let root = temporary_directory("module-index-conflict");
+        fs::create_dir_all(root.join("src/components")).unwrap();
+        let index = root.join("src/components/mod.rs");
+        fs::write(&index, "pub mod custom;\n").unwrap();
+        assert!(prepare_module_index(&index, "new_module").is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn temporary_directory(label: &str) -> PathBuf {
+        let path = env::temp_dir().join(format!(
+            "rustflow-cli-unit-{label}-{}-{}",
+            std::process::id(),
+            TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&path).unwrap();
+        path
+    }
+}
