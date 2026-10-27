@@ -83,7 +83,7 @@ Positive:
 
 Costs and limitations:
 - Component capabilities are runtime metadata enforced by target-aware mount/render paths; they are not a proof that user-authored server-only code is absent from every possible binary.
-- Secret exclusion depends on explicit public-data projection at the application boundary; the framework cannot semantically detect arbitrary secrets in JSON.
+- Secret exclusion depends on explicit public-data projection at the application boundary; the framework cannot semantically detect arbitrary secrets in JSON. This is the documented trust boundary, not a promise of automatic secret detection.
 - Determinism is guaranteed only for constrained static inputs; arbitrary component render closures remain outside that guarantee.
 - The fallback is static markup, not a hydration boundary. Mismatch detection, partial DOM recovery, and listener attachment are not implemented.
 - Full SSR composition, route data, hydration IDs, event attachment, mismatch detection/recovery, navigation, and forms remain future phases.
