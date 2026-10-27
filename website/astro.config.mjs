@@ -28,6 +28,7 @@ export default defineConfig({
         {
           label: 'Construir aplicaciones',
           items: [
+            { label: 'CLI y generadores', slug: 'guides/cli' },
             { label: 'Servidor HTTP', slug: 'guides/server' },
             { label: 'SSR e hidratación', slug: 'guides/ssr' },
             { label: 'Layouts y páginas', slug: 'guides/layouts' },
@@ -57,7 +58,6 @@ export default defineConfig({
           items: [
             { label: 'Escribir documentación', slug: 'contributing/documentation' },
             { label: 'Verificación del runtime', slug: 'verification/reactivity' },
-            { label: 'CLI y generadores', slug: 'guides/cli' },
           ],
         },
       ],
