@@ -262,12 +262,16 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 **Cierre de 5.3 (2026-10-27):** PR #39 se fusionó en `main` mediante squash en el commit `d866298989821eaee64a4ea00466012f36db3ebf`. La CI posterior al merge pasó en Rust 1.85, Rust stable, WASM y Browser E2E/bundle size; en el PR también pasaron la construcción de documentación, gobernanza y revisión de dependencias. La hidratación es opt-in y exige que la vista inicial del cliente sea compatible con el HTML SSR. La recuperación implementada conserva estático el root completo si hay discrepancia; la reparación granular de subregiones, el router cliente, el historial, la interceptación de enlaces y la mejora progresiva de envíos de formulario quedan fuera de alcance y continúan en 5.4.
 
 ### 5.4 Navigation and forms
-- [ ] Add client navigation after route semantics stabilize.
-- [ ] Implement browser history and link interception.
-- [ ] Define progressive-enhancement behavior for forms.
-- [ ] Test server/client boundaries and reload fallbacks.
+- [x] Add client navigation after route semantics stabilize.
+- [x] Implement browser history and link interception.
+- [x] Define progressive-enhancement behavior for forms.
+- [x] Test server/client boundaries and reload fallbacks.
 
-**Exit gate:** pages deliver meaningful HTML before client execution and hydrate correctly in supported cases.
+**Implementation verified in PR #41 (2026-10-27; not merged):** the route-callback client adapter, History API/popstate handling, conservative link interception, opt-in GET form enhancement, and native/server fallbacks are implemented and backed by browser tests. The PR-head CI passed Rust stable, Rust 1.85, the WebAssembly target check, browser production build, raw WASM bundle-size budget, Playwright E2E (18 tests), documentation build, governance/whitespace checks, and dependency review.
+
+**Limitations:** the application owns its client route callback; this is not a general-purpose router or server-action framework. Form enhancement is limited to supported same-origin GET submissions with URL-encoded scalar controls. Unsupported methods/controls, uploads, alternate targets, and other ineligible interactions keep native browser behavior. SSR remains authoritative for direct requests and fallbacks.
+
+**Merge closure:** PR #41 remains a draft and has not been merged. Merge commit: pending. Do not consider Phase 5.4 closed until the PR is reviewed and merged and the required post-merge checks pass.
 
 ## Phase 6 — Laravel-inspired developer experience
 
