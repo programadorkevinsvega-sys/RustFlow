@@ -310,6 +310,7 @@ pub struct HtmlRenderer {
     registry: Option<ComponentRegistry>,
     shared_catalog: Option<SharedComponentCatalog>,
     max_depth: usize,
+    hydration_boundaries: bool,
 }
 
 impl HtmlRenderer {
@@ -319,6 +320,7 @@ impl HtmlRenderer {
             registry: None,
             shared_catalog: None,
             max_depth: DEFAULT_MAX_DEPTH,
+            hydration_boundaries: false,
         }
     }
 
@@ -342,6 +344,16 @@ impl HtmlRenderer {
         }
     }
 
+    /// Opt in to deterministic comment boundaries required by the browser hydrator.
+    ///
+    /// Ordinary SSR output remains unchanged unless this option is enabled. The generated
+    /// markers are structural metadata, not a substitute for validating the DOM before
+    /// hydration or for the explicit public-data boundary documented by HydrationData.
+    pub fn with_hydration_boundaries(mut self) -> Self {
+        self.hydration_boundaries = true;
+        self
+    }
+
     /// Set the maximum nested-view depth. A minimum of one is enforced.
     pub fn with_max_depth(mut self, limit: usize) -> Self {
         self.max_depth = limit.max(1);
@@ -362,9 +374,17 @@ impl HtmlRenderer {
             runtime: runtime.clone(),
             output: String::new(),
             max_depth: self.max_depth,
+            hydration_boundaries: self.hydration_boundaries,
+            next_boundary: 0,
         };
 
+        if context.hydration_boundaries {
+            context.output.push_str("<!--rustflow:root:start-->");
+        }
         let render_result = context.write_view(view, &root_scope, 0);
+        if render_result.is_ok() && context.hydration_boundaries {
+            context.output.push_str("<!--rustflow:root:end-->");
+        }
         let dispose_result = runtime.dispose();
         render_result?;
         dispose_result?;
@@ -405,6 +425,8 @@ struct RenderContext {
     runtime: Runtime,
     output: String,
     max_depth: usize,
+    hydration_boundaries: bool,
+    next_boundary: usize,
 }
 
 impl RenderContext {
@@ -434,10 +456,50 @@ impl RenderContext {
             }
             View::Component(component) => self.write_component(component, owner_scope, depth),
             View::Dynamic(dynamic) => {
-                let child = dynamic.evaluate()?;
-                self.write_view(&child, owner_scope, depth + 1)
+                let boundary = self.begin_boundary("dynamic");
+                let result = dynamic
+                    .evaluate()
+                    .and_then(|child| self.write_view(&child, owner_scope, depth + 1));
+                if let Some(id) = boundary {
+                    self.end_boundary("dynamic", id);
+                }
+                result
             }
             View::KeyedList(list) => self.write_keyed_list(list, owner_scope, depth),
+        }
+    }
+
+    fn begin_boundary(&mut self, kind: &str) -> Option<usize> {
+        if !self.hydration_boundaries {
+            return None;
+        }
+        let id = self.next_boundary;
+        self.next_boundary = self.next_boundary.saturating_add(1);
+        self.output
+            .push_str(&format!("<!--rustflow:{kind}:start:{id}-->"));
+        Some(id)
+    }
+
+    fn end_boundary(&mut self, kind: &str, id: usize) {
+        self.output
+            .push_str(&format!("<!--rustflow:{kind}:end:{id}-->"));
+    }
+
+    fn component_boundary_kind(&self, component: &ComponentNode) -> &'static str {
+        let capability = self
+            .registry
+            .as_ref()
+            .and_then(|registry| registry.definition(component.name()))
+            .map(|definition| definition.capability())
+            .or_else(|| {
+                self.shared_catalog
+                    .as_ref()
+                    .and_then(|catalog| catalog.capability(component.name()))
+            });
+        match capability {
+            Some(ComponentCapability::Universal) | None => "component",
+            // Environment-specific component output is static on the opposite target.
+            Some(ComponentCapability::ServerOnly | ComponentCapability::BrowserOnly) => "static",
         }
     }
 
@@ -604,6 +666,21 @@ impl RenderContext {
     }
 
     fn write_component(
+        &mut self,
+        component: &ComponentNode,
+        parent_scope: &Scope,
+        depth: usize,
+    ) -> Result<(), SsrError> {
+        let kind = self.component_boundary_kind(component);
+        let boundary = self.begin_boundary(kind);
+        let result = self.write_component_inner(component, parent_scope, depth);
+        if let Some(id) = boundary {
+            self.end_boundary(kind, id);
+        }
+        result
+    }
+
+    fn write_component_inner(
         &mut self,
         component: &ComponentNode,
         parent_scope: &Scope,
@@ -986,6 +1063,30 @@ mod tests {
             "<section>body</section>"
         );
         assert_eq!(cleanups.get(), 1);
+    }
+
+    #[test]
+    fn hydration_boundaries_are_opt_in_and_use_stable_depth_first_ids() {
+        use super::HtmlRenderer;
+
+        let dynamic = View::dynamic(|| Ok(View::text("ready")));
+        let view = View::element(
+            "main",
+            [View::element("p", [dynamic]).expect("paragraph")],
+        )
+        .expect("main");
+
+        assert_eq!(
+            render_to_string(&view).expect("ordinary SSR is unchanged"),
+            "<main><p>ready</p></main>"
+        );
+        assert_eq!(
+            HtmlRenderer::new()
+                .with_hydration_boundaries()
+                .render(&view)
+                .expect("hydratable SSR"),
+            "<!--rustflow:root:start--><main><p><!--rustflow:dynamic:start:0-->ready<!--rustflow:dynamic:end:0--></p></main><!--rustflow:root:end-->"
+        );
     }
 
     #[test]
