@@ -1558,15 +1558,18 @@ fn is_safe_redirect_location(location: &str) -> bool {
 mod tests {
     use super::{
         Application, BindKind, ClientAddressPolicy, DeploymentProfile, ErrorPageConfigError,
-        ErrorPages, HttpMethod, IpNetwork, Middleware, Response, RouteInfo, ServerConfig,
-        ServerError, View, html_document, html_view,
+        ErrorPages, HtmlPage, HttpError, HttpMethod, IpNetwork, Middleware, Response, RouteInfo,
+        ServerConfig, ServerError, View, html_document, html_view,
     };
     use axum::{
         body::{Body, to_bytes},
         http::{Request as AxumHttpRequest, StatusCode},
     };
+    use rustflow::components::{ComponentDefinition, ComponentRegistry, ComponentRender};
+    use rustflow_view::{Property, PropertyValue};
     use serde::Deserialize;
     use std::{
+        rc::Rc,
         sync::{
             Arc,
             atomic::{AtomicUsize, Ordering},
@@ -1982,6 +1985,72 @@ mod tests {
         let unsafe_view =
             View::element("script", [View::text("alert(1)")]).expect("structural node");
         assert!(html_view(&unsafe_view).is_err());
+    }
+
+    #[tokio::test]
+    async fn route_renders_registered_component_with_request_props_and_layout() {
+        let mut app = Application::new();
+        app.get("/articles/{id}", |request| async move {
+            // ComponentRegistry uses owner-thread-local reactive state, so create and consume it
+            // inside this handler rather than capturing it in the Send + Sync route closure.
+            let mut registry = ComponentRegistry::new();
+            let article = ComponentDefinition::new("ArticlePage", |_context, _properties| {
+                let render: ComponentRender = Rc::new(|properties, _children| {
+                    let id = properties
+                        .iter()
+                        .find(|property| property.name() == "id")
+                        .and_then(|property| match property.value() {
+                            PropertyValue::Text(value) => Some(value.clone()),
+                            _ => None,
+                        })
+                        .unwrap_or_else(|| "missing".to_owned());
+                    Ok(View::element(
+                        "article",
+                        [View::element("h1", [View::text(id)])?],
+                    )?)
+                });
+                Ok(render)
+            })
+            .map_err(|_| HttpError::internal_server_error())?;
+            registry
+                .register(article)
+                .map_err(|_| HttpError::internal_server_error())?;
+
+            let layout = ComponentDefinition::new("AppLayout", |_context, _properties| {
+                let render: ComponentRender =
+                    Rc::new(|_properties, children| Ok(View::element("main", children.to_vec())?));
+                Ok(render)
+            })
+            .map_err(|_| HttpError::internal_server_error())?;
+            registry
+                .register(layout)
+                .map_err(|_| HttpError::internal_server_error())?;
+
+            let id = request.path_param("id").unwrap_or("missing").to_owned();
+            let property =
+                Property::new("id", id).map_err(|_| HttpError::internal_server_error())?;
+            HtmlPage::from_component("Article & details", "ArticlePage", [property], [])?
+                .language("es")
+                .with_components(&registry)
+                .with_layout("AppLayout", [])?
+                .render()
+        })
+        .expect("route registration");
+
+        let request = AxumHttpRequest::builder()
+            .uri("/articles/42")
+            .body(Body::empty())
+            .expect("request");
+        let response = send(app, request).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()[http::header::CONTENT_TYPE],
+            "text/html; charset=utf-8"
+        );
+        let html = body_text(response).await;
+        assert!(html.contains("<html lang=\"es\">"));
+        assert!(html.contains("<title>Article &amp; details</title>"));
+        assert!(html.contains("<main><article><h1>42</h1></article></main>"));
     }
 
     #[tokio::test]

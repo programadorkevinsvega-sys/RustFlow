@@ -3,6 +3,11 @@
 //! Route handlers should project request values into an explicit list of public component
 //! properties, then render the page. Each SSR render creates a fresh reactive runtime; the
 //! registry stores definitions, not per-request component state.
+//!
+//! ComponentRegistry is not Send + Sync in the current prototype. When used from an
+//! Application route, construct and consume it inside the handler invocation; do not capture
+//! a prebuilt registry in the route closure. Rebuilding definitions per request is a known
+//! limitation until component definitions can be shared safely across server workers.
 
 use rustflow::components::ComponentRegistry;
 use rustflow_view::{Property, View};
@@ -60,7 +65,11 @@ impl HtmlPage {
         self
     }
 
-    /// Use a registry to resolve the page component and any layout components.
+    /// Use a local registry to resolve the page component and any layout components.
+    ///
+    /// When called from an Application handler, the registry must be local to that handler
+    /// invocation; capturing a ComponentRegistry in the Send + Sync route closure is not
+    /// supported by the current single-threaded component runtime.
     pub fn with_components(mut self, registry: &ComponentRegistry) -> Self {
         self.components = Some(registry.clone());
         self

@@ -88,7 +88,12 @@ use rustflow_server::{HtmlPage, HttpError, Request, Response};
 use rustflow::components::ComponentRegistry;
 use rustflow_view::Property;
 
-// Dentro de un handler GET /articles/:slug; registry se captura desde el exterior.
+// Dentro de un handler GET /articles/{slug}. Construye el registro dentro
+// de esta invocación: ComponentRegistry aún no es Send + Sync.
+let mut registry = ComponentRegistry::new();
+register_article_and_layouts(&mut registry)
+    .map_err(|_| HttpError::internal_server_error())?;
+
 let slug = request.path_param("slug").unwrap_or("missing").to_owned();
 let slug_prop = Property::new("slug", slug)
     .map_err(|_| HttpError::internal_server_error())?;
@@ -101,10 +106,12 @@ HtmlPage::from_component("Article", "ArticlePage", [slug_prop], [])?
     .render()
 ```
 
-En un handler real, captura o clona el registro para la closure de la ruta. El orden importa: `with_layout` envuelve el cuerpo construido hasta ese momento, por lo que se añade primero el layout interior y al final el exterior. Los componentes de layout y de contenido deben registrarse en el mismo `ComponentRegistry`.
+**Limitación actual del prototipo:** `ComponentRegistry` y el runtime reactivo usan estado basado en `Rc`, por lo que no son `Send + Sync`. Los handlers HTTP de `Application` sí exigen closures/futuros compatibles con esos límites. Por eso no captures un registro preconstruido en la closure de ruta: constrúyelo dentro de la invocación del handler (como en la prueba `route_renders_registered_component_with_request_props_and_layout`) y úsalo de forma síncrona para renderizar la respuesta. Esta solución funcional reconstruye las definiciones por petición; compartir un catálogo de componentes entre workers de servidor de forma segura es una mejora arquitectónica pendiente, no algo que deba asumirse resuelto.
+
+El orden importa: `with_layout` envuelve el cuerpo construido hasta ese momento, por lo que se añade primero el layout interior y al final el exterior. Los componentes de layout y de contenido deben registrarse en el mismo `ComponentRegistry`.
 
 Los datos de ruta no se inyectan de forma implícita. El handler extrae y valida parámetros/query, decide qué campos son públicos y los pasa como `Property` explícitas al componente. No pases cookies, credenciales, tokens, objetos completos de petición, decisiones de autorización ni estado privado. Esto reduce la superficie de exposición, pero no sustituye el juicio de la aplicación sobre qué valores son secretos.
 
 `HtmlPage::new(title, view)` sirve para vistas estructurales sin descriptores de componente; `from_component` crea un descriptor de componente de página. Si el cuerpo o los layouts contienen componentes, llama a `with_components`. El atributo `lang`, el título y el cuerpo se serializan mediante el renderer seguro; esta API no acepta una cadena de HTML arbitrario ni implementa todavía hidratación DOM.
 
-Cada render SSR crea un runtime reactivo y scopes de componentes nuevos. El registro contiene definiciones reutilizables, no estado de componente por solicitud. La suite comprueba que una secuencia de props de ruta `7, 12, 7` produce HTML `7, 12, 7`, que el resultado para props idénticas es determinista y que cada render dispone su scope. La detección/recuperación de discrepancias, los identificadores de hidratación y la navegación cliente siguen fuera de la Fase 5.2.
+Cada render SSR crea un runtime reactivo y scopes de componentes nuevos; el registro no almacena estado reactivo por petición. En un handler HTTP, el registro se reconstruye por la limitación `Send + Sync` descrita arriba. Las pruebas comprueban que una secuencia de props de ruta `7, 12, 7` produce HTML `7, 12, 7`, que el resultado para props idénticas es determinista, que cada render dispone su scope y que el router HTTP puede obtener un parámetro de ruta, pasarlo como prop y devolver una página compuesta con layout. La detección/recuperación de discrepancias, los identificadores de hidratación y la navegación cliente siguen fuera de la Fase 5.2.
