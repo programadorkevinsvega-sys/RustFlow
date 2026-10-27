@@ -74,7 +74,7 @@ where
         }
         command => {
             Err(format!("unknown command `{command}`\n\nRun `rustflow --help` for usage.").into())
-        },
+        }
     }
 }
 
