@@ -88,7 +88,12 @@ use rustflow_server::{HtmlPage, HttpError, Request, Response};
 use rustflow::components::ComponentRegistry;
 use rustflow_view::Property;
 
-// Dentro de un handler GET /articles/:slug; registry se captura desde el exterior.
+// Dentro de un handler GET /articles/{slug}. Construye el registro dentro
+// de esta invocación: ComponentRegistry aún no es Send + Sync.
+let mut registry = ComponentRegistry::new();
+register_article_and_layouts(&mut registry)
+    .map_err(|_| HttpError::internal_server_error())?;
+
 let slug = request.path_param("slug").unwrap_or("missing").to_owned();
 let slug_prop = Property::new("slug", slug)
     .map_err(|_| HttpError::internal_server_error())?;
@@ -101,7 +106,9 @@ HtmlPage::from_component("Article", "ArticlePage", [slug_prop], [])?
     .render()
 ```
 
-En un handler real, captura o clona el registro para la closure de la ruta. El orden importa: `with_layout` envuelve el cuerpo construido hasta ese momento, por lo que se añade primero el layout interior y al final el exterior. Los componentes de layout y de contenido deben registrarse en el mismo `ComponentRegistry`.
+**Limitación actual del prototipo:** `ComponentRegistry` y el runtime reactivo usan estado basado en `Rc`, por lo que no son `Send + Sync`. Los handlers HTTP de `Application` sí exigen closures/futuros compatibles con esos límites. Por eso no captures un registro preconstruido en la closure de ruta: constrúyelo dentro de la invocación del handler (como en la prueba `route_renders_registered_component_with_request_props_and_layout`) y úsalo de forma síncrona para renderizar la respuesta. Esta solución funcional reconstruye las definiciones por petición; compartir un catálogo de componentes entre workers de servidor de forma segura es una mejora arquitectónica pendiente, no algo que deba asumirse resuelto.
+
+El orden importa: `with_layout` envuelve el cuerpo construido hasta ese momento, por lo que se añade primero el layout interior y al final el exterior. Los componentes de layout y de contenido deben registrarse en el mismo `ComponentRegistry`.
 
 Los datos de ruta no se inyectan de forma implícita. El handler extrae y valida parámetros/query, decide qué campos son públicos y los pasa como `Property` explícitas al componente. No pases cookies, credenciales, tokens, objetos completos de petición, decisiones de autorización ni estado privado. Esto reduce la superficie de exposición, pero no sustituye el juicio de la aplicación sobre qué valores son secretos.
 
