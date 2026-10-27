@@ -33,6 +33,16 @@ jobs:
       - name: Compile the DOM adapter for WebAssembly
         run: cargo check -p rustflow-dom --target wasm32-unknown-unknown
 
+      - name: Reject server-only dependencies from the browser graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          dependencies="$(cargo tree --locked -p rustflow-browser --target wasm32-unknown-unknown --edges normal)"
+          if grep -E '(^|[[:space:]])(rustflow-server|rustflow-ssr|axum|tokio|tower|rustls)([[:space:]]|$)' <<<"$dependencies"; then
+            echo "::error::Browser dependency graph contains a known server-only dependency."
+            exit 1
+          fi
+
   rust:
     name: Rust checks (${{ matrix.toolchain }})
     runs-on: ubuntu-24.04

@@ -596,6 +596,7 @@ version = "0.1.0"
 dependencies = [
  "rustflow",
  "rustflow-view",
+ "serde_json",
 ]
 
 [[package]]

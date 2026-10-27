@@ -3,6 +3,9 @@
 //! This crate emits HTML fragments. It is not an HTTP server, does not serialize
 //! event callbacks, and does not make a View value trusted HTML.
 
+pub mod hydration;
+pub use hydration::{HydrationData, HydrationDataError};
+
 use std::{collections::HashSet, error::Error, fmt};
 
 use rustflow::{
@@ -909,6 +912,18 @@ mod tests {
             "<section>body</section>"
         );
         assert_eq!(cleanups.get(), 1);
+    }
+
+    #[test]
+    fn repeated_static_view_rendering_is_byte_deterministic() {
+        let view = View::fragment([
+            View::text("stable"),
+            View::element("div", [View::text("same")]).expect("div"),
+        ]);
+
+        let first = render_to_string(&view).expect("first render");
+        let second = render_to_string(&view).expect("second render");
+        assert_eq!(first, second);
     }
 
     #[test]

@@ -10,6 +10,7 @@ repository.workspace = true
 [dependencies]
 rustflow = { path = "../rustflow" }
 rustflow-view = { path = "../rustflow-view" }
+serde_json.workspace = true
 
 [lints]
 workspace = true

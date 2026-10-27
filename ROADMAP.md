@@ -53,7 +53,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Define contribution guidelines, code of conduct, maintainers, and decision process.
 - [x] Define supported Rust toolchain and MSRV policy (stable toolchain; MSRV 1.85).
 - [x] Define semantic versioning, pre-1.0 API stability, and deprecation policy.
-- [x] Configure required status checks in the active `Protect main — RustFlow` ruleset. The active ruleset requires `Rust checks (1.85)`, `Rust checks (stable)`, `Build documentation`, and `Governance files and whitespace`.
+- [x] Configure required status checks in the active `Protect main — RustFlow` ruleset. Verified through the GitHub API on 2026-10-27: the active ruleset targets the default branch and lists `Rust checks (1.85)`, `Rust checks (stable)`, `Build documentation`, `Governance files and whitespace`, `WebAssembly target check`, `Browser E2E and bundle size`, and `Review dependency changes`. The `Browser E2E and bundle size` context is duplicated in the ruleset (one entry has no integration ID); remove that duplicate administratively and re-verify the ruleset.
 
 ### 0.2 Product scope
 - [x] Define target users, product principles, supported platforms, and explicit non-goals in `docs/PRODUCT_SCOPE.md`.
@@ -228,15 +228,17 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [x] Pasar todos los checks de la PR #31 en el HEAD `8e92f31c2442988b4d7c5bdd3fc3f9f9066946f0`: Rust 1.85, Rust stable, WASM, E2E Chromium/presupuesto del bundle, Build documentation, gobernanza, revisión de dependencias y Cloudflare Pages.
 - [x] Revisar los resultados y confirmar que SSR/hidratación, autenticación y preparación para producción siguen correctamente fuera del alcance de esta fase.
 - [x] Tras el merge, comprobar todos los checks post-merge en `main` y registrar el SHA `6f4123b94f4273701f0336c4c982973af7bf7562`; todos terminaron correctamente.
-- [x] Auditar el ruleset activo: requiere Rust 1.85, Rust stable, Build documentation y Governance. WASM, Browser E2E/bundle y Review dependency changes también pasaron, pero no están configurados como checks obligatorios. Se recomienda añadirlos mediante una actualización administrativa de la configuración del repositorio; la configuración no se modificó en código.
+- [x] Auditar el ruleset activo mediante la API de GitHub el 2026-10-27: el ruleset `Protect main — RustFlow` está activo y apunta a la rama predeterminada; requiere los siete contextos distintos esperados: Rust checks (1.85), Rust checks (stable), Build documentation, Governance files and whitespace, WebAssembly target check, Browser E2E and bundle size y Review dependency changes. La entrada `Browser E2E and bundle size` está duplicada (una de las entradas no tiene `integration_id`). La limpieza de esa entrada sigue pendiente como ajuste administrativo, fuera del código de esta PR.
 
 ## Phase 5 — SSR, hydration, and full-stack data flow
 
 ### 5.1 Rendering contract
 - [ ] Define server-capable and browser-only components.
-- [ ] Define safe serialization for hydration data.
+- [x] Define safe serialization for hydration data (`rustflow_ssr::HydrationData`; bounded JSON, nesting validation, HTML-script-safe escaping, and regression tests).
 - [ ] Prevent server-only types and secrets entering client bundles.
 - [ ] Define deterministic rendering and non-hydratable fallbacks.
+
+**Estado parcial de 5.1 (2026-10-27):** `HydrationData` implementa y prueba una representación JSON acotada; CI también comprueba que el grafo WASM del ejemplo de navegador no incluya los crates y dependencias de servidor actualmente identificados. La subfase sigue abierta: el modelo de capacidades de componentes aún no tiene marcadores ni validación de ejecución; el grafo no detecta secretos semánticos incluidos explícitamente por una aplicación; y las reglas de determinismo/fallback todavía necesitan integración y verificación con los límites de SSR/hidratación de las subfases 5.2–5.4. El contrato no implementa hidratación ni navegación cliente.
 
 ### 5.2 SSR
 - [x] Render structural view trees into HTML fragments using rustflow-ssr.
