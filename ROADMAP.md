@@ -267,11 +267,11 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [x] Define progressive-enhancement behavior for forms.
 - [x] Test server/client boundaries and reload fallbacks.
 
-**Implementation verified in PR #41 (2026-10-27; not merged):** the route-callback client adapter, History API/popstate handling, conservative link interception, opt-in GET form enhancement, and native/server fallbacks are implemented and backed by browser tests. The PR-head CI passed Rust stable, Rust 1.85, the WebAssembly target check, browser production build, raw WASM bundle-size budget, Playwright E2E (18 tests), documentation build, governance/whitespace checks, and dependency review.
+**Implementation verified in PR #41 (2026-10-27; merged):** the route-callback client adapter, History API/popstate handling, conservative link interception, opt-in GET form enhancement, and native/server fallbacks are implemented and backed by browser tests. The PR-head CI passed Rust stable, Rust 1.85, the WebAssembly target check, browser production build, raw WASM bundle-size budget, Playwright E2E (18 tests), documentation build, governance/whitespace checks, and dependency review.
 
 **Limitations:** the application owns its client route callback; this is not a general-purpose router or server-action framework. Form enhancement is limited to supported same-origin GET submissions with URL-encoded scalar controls. Unsupported methods/controls, uploads, alternate targets, and other ineligible interactions keep native browser behavior. SSR remains authoritative for direct requests and fallbacks.
 
-**Merge closure:** PR #41 remains a draft and has not been merged. Merge commit: pending. Do not consider Phase 5.4 closed until the PR is reviewed and merged and the required post-merge checks pass.
+**Merge closure:** PR #41 was squash-merged into `main` as `1da8b110ed3e57abccb2c14b6236fcbbc0fbf849`. At the time of this update, GitHub Actions has not yet reported checks for that merge commit. Do not consider Phase 5.4 closed until the required post-merge checks are confirmed successful.
 
 ## Phase 6 — Laravel-inspired developer experience
 
