@@ -69,6 +69,8 @@ La hidratación de DOM es también optativa. Debe completarse con una vista comp
 
 Consulta [SSR y documentos HTML](/guides/ssr/) para el ciclo de vida de página y [el ejemplo del navegador](https://github.com/programadorkevinsvega-sys/RustFlow/tree/main/examples/browser) para las pruebas E2E de historial, formularios nativos, opt-in y fallbacks.
 
+La demo interactiva y sus tests están explicados paso a paso en el [tutorial de interfaz reactiva de tareas](/tutorials/reactive-todo/). Para verificar historial, formularios compatibles y fallbacks, sigue [Probar y depurar aplicaciones](/guides/testing/).
+
 ## Límites
 
 La aplicación tiene que resolver rutas y actualizar la vista. Esta API no descarga e inserta HTML arbitrario como mecanismo de routing, no genera rutas a partir del filesystem, no aporta auth/sesiones/CSRF, no procesa mutaciones de formularios y no reemplaza el routing del servidor. La API es pre-1.0 y puede cambiar.
