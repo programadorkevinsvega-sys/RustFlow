@@ -284,10 +284,8 @@ pub fn start() -> Result<(), JsValue> {
             let retry_count = runtime.signal(0_i32).map_err(display_error)?;
             let retry_for_render = retry_count.clone();
             let retry_for_button = retry_count.clone();
-            let repeated = hydration_renderer.hydrate_reactive(
-                &hydration_target,
-                &root_scope,
-                move || {
+            let repeated =
+                hydration_renderer.hydrate_reactive(&hydration_target, &root_scope, move || {
                     let retry_for_render = retry_for_render.clone();
                     let retry_for_button = retry_for_button.clone();
                     rustflow::view! {
@@ -298,8 +296,7 @@ pub fn start() -> Result<(), JsValue> {
                         </button>
                     }
                     .map_err(DomError::from)
-                },
-            );
+                });
             match repeated {
                 Ok(_mounted) => web_sys::console::error_1(&JsValue::from_str(
                     "hydration unexpectedly succeeded more than once",
