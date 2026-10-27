@@ -161,9 +161,7 @@ pub fn start() -> Result<(), JsValue> {
             == Some("interactive");
 
         let result = if interactive_fixture {
-            let input_value = runtime
-                .signal(String::from("Ada"))
-                .map_err(display_error)?;
+            let input_value = runtime.signal(String::from("Ada")).map_err(display_error)?;
             let input_for_event = input_value.clone();
             let value_for_output = input_value.clone();
             let reverse_order = runtime.signal(false).map_err(display_error)?;
@@ -188,7 +186,7 @@ pub fn start() -> Result<(), JsValue> {
                         .build();
                     children.push(KeyedChild::new(key, item));
                 }
-                Ok(View::keyed_list(children))
+                View::keyed_list(children)
             });
 
             let help_region = View::dynamic(move || {
@@ -248,22 +246,18 @@ pub fn start() -> Result<(), JsValue> {
             let hydration_count = runtime.signal(0_i32).map_err(display_error)?;
             let count_for_render = hydration_count.clone();
             let count_for_button = hydration_count.clone();
-            hydration_renderer.hydrate_reactive(
-                &hydration_target,
-                &root_scope,
-                move || {
-                    let count_for_button = count_for_button.clone();
-                    let count_for_render = count_for_render.clone();
-                    rustflow::view! {
-                        <button data-testid="hydration-action" on:click={move |_payload| {
-                            count_for_button.update(|value| *value += 1);
-                        }}>
-                            "Count: " {count_for_render}
-                        </button>
-                    }
-                    .map_err(DomError::from)
-                },
-            )
+            hydration_renderer.hydrate_reactive(&hydration_target, &root_scope, move || {
+                let count_for_button = count_for_button.clone();
+                let count_for_render = count_for_render.clone();
+                rustflow::view! {
+                    <button data-testid="hydration-action" on:click={move |_payload| {
+                        count_for_button.update(|value| *value += 1);
+                    }}>
+                        "Count: " {count_for_render}
+                    </button>
+                }
+                .map_err(DomError::from)
+            })
         };
 
         let hydration_succeeded = match result {
