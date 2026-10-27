@@ -224,3 +224,141 @@ test("SSR hydration mismatch reports a diagnostic and preserves static content",
   ).toBe(true);
   expect(diagnostics.some((message) => message.includes("hydration mismatch"))).toBe(true);
 });
+
+
+test("client navigation pushes history and supports back and forward", async ({ page }) => {
+  const aboutRequests = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/about") {
+      aboutRequests.push(request.isNavigationRequest());
+    }
+  });
+
+  await page.getByTestId("about-link").click();
+  await expect(page).toHaveURL(/\/about$/);
+  await expect(page.getByTestId("about-page")).toBeVisible();
+  expect(aboutRequests).toContain(false);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("home-page")).toBeVisible();
+
+  await page.goForward();
+  await expect(page).toHaveURL(/\/about$/);
+  await expect(page.getByTestId("about-page")).toBeVisible();
+});
+
+test("direct routes and full reloads work without a prior client navigation", async ({ page }) => {
+  await page.goto("/about");
+  await expect(page).toHaveURL(/\/about$/);
+  await expect(page.getByTestId("about-page")).toBeVisible();
+
+  await page.reload();
+  await expect(page).toHaveURL(/\/about$/);
+  await expect(page.getByTestId("about-page")).toBeVisible();
+});
+
+test("opt-in GET forms use client navigation and suppress duplicate submissions", async ({ page }) => {
+  const requests = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/" && url.searchParams.has("q")) {
+      requests.push(request.isNavigationRequest());
+    }
+  });
+
+  await page.getByRole("textbox", { name: "Search query" }).fill("rust flow");
+  await page.evaluate(() => {
+    const form = document.querySelector('[data-testid="search-form"]');
+    form.requestSubmit();
+    form.requestSubmit();
+  });
+
+  await expect(page).toHaveURL(/\/\?q=rust\+flow$/);
+  await expect(page.getByTestId("home-page")).toBeVisible();
+  await expect.poll(() => requests.length).toBe(1);
+  expect(requests).toEqual([false]);
+});
+
+test("forms without explicit enhancement keep native browser submission", async ({ page }) => {
+  const navigationRequests = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/about" && url.searchParams.has("native")) {
+      navigationRequests.push(request.isNavigationRequest());
+    }
+  });
+
+  await page.evaluate(() => {
+    const form = document.createElement("form");
+    form.method = "get";
+    form.action = "/about";
+    form.innerHTML =
+      '<input type="hidden" name="native" value="ok"><button type="submit">Native submit</button>';
+    document.getElementById("app").append(form);
+  });
+
+  await page.getByRole("button", { name: "Native submit" }).click();
+  await expect(page).toHaveURL(/\/about\?native=ok$/);
+  await expect(page.getByTestId("about-page")).toBeVisible();
+  expect(navigationRequests).toContain(true);
+});
+
+test("HTTP failures fall back to a full server navigation", async ({ page }) => {
+  await page.route("**/about", async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "text/html; charset=utf-8",
+      body: "<!doctype html><html><body><p>Upstream unavailable</p></body></html>",
+    });
+  });
+
+  await page.getByTestId("about-link").click();
+  await expect(page).toHaveURL(/\/about$/);
+  await expect(page.getByText("Upstream unavailable")).toBeVisible();
+});
+
+test("modified, alternate-target, download, and external links are not intercepted", async ({ page }) => {
+  const prevented = await page.evaluate(() => {
+    const root = document.getElementById("app");
+    const inspect = (attributes, modifiers = {}) => {
+      const anchor = document.createElement("a");
+      for (const [name, value] of Object.entries(attributes)) {
+        anchor.setAttribute(name, value);
+      }
+      anchor.textContent = "temporary link";
+      root.append(anchor);
+
+      let wasPrevented = null;
+      const observe = (event) => {
+        if (event.target === anchor) {
+          wasPrevented = event.defaultPrevented;
+          event.preventDefault();
+          document.removeEventListener("click", observe);
+        }
+      };
+      document.addEventListener("click", observe);
+      anchor.dispatchEvent(
+        new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          ...modifiers,
+        }),
+      );
+      anchor.remove();
+      return wasPrevented;
+    };
+
+    return [
+      inspect({ href: "/about" }, { ctrlKey: true }),
+      inspect({ href: "/about", target: "_blank" }),
+      inspect({ href: "/about", download: "about.html" }),
+      inspect({ href: "https://example.com/" }),
+    ];
+  });
+
+  expect(prevented).toEqual([false, false, false, false]);
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("home-page")).toBeVisible();
+});
