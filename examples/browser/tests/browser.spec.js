@@ -390,7 +390,7 @@ test("native HTML forms work when JavaScript is disabled", async ({ browser, pag
   await noJsPage.goto(origin + "/native-form");
   await noJsPage.getByRole("textbox", { name: "Query" }).fill("bare html");
   await noJsPage.getByRole("button", { name: "Send" }).click();
-  await expect(noJsPage).toHaveURL(/\\/native-result\\?q=bare\\+html$/);
+  await expect(noJsPage).toHaveURL(/\/native-result\?q=bare\+html$/);
   await expect(noJsPage.getByText("Native submission: bare html")).toBeVisible();
 
   await context.close();
