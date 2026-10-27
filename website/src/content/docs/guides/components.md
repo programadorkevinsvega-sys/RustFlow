@@ -9,6 +9,8 @@ El modelo es **signal-first**, no una copia de React. Los helpers con nombre <co
 
 ## 1. Crear un componente sencillo
 
+Si comienzas una aplicación de servidor con el CLI, `rustflow generate component ProductCard` crea `src/components/product_card.rs` con una función `render` basada en `View` y registra el módulo. Es una plantilla estructural, no una función reactiva `#[rustflow::component]`; para estado y eventos de navegador, sigue este contrato y el ejemplo browser/WASM.
+
 ~~~rust
 use rustflow::prelude::*;
 

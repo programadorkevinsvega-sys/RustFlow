@@ -5,6 +5,8 @@ description: Construye rutas y handlers y comprende las capacidades actuales del
 
 El crate <code>rustflow-server</code> integra Axum, Tokio y Tower detrás de tipos propios de RustFlow. Su objetivo es ofrecer un punto de composición de peticiones HTTP con rutas, middleware y respuestas controladas por la aplicación. Es un **prototipo pre-1.0**, no una plataforma de despliegue lista para producción.
 
+Si empiezas una aplicación nueva, el [CLI experimental](/guides/cli/) crea un scaffold de servidor con una ruta HTML. No configura automáticamente el catálogo compartido, los layouts ni los endpoints JSON de este ejemplo; ejecútalo para aprender esas APIs.
+
 ## 1. Ejecutar el ejemplo
 
 Desde la raíz del repositorio:
@@ -106,4 +108,4 @@ Para practicar peticiones reales, ejecuta el [tutorial de API JSON](/tutorials/j
 
 ## Qué no incluye todavía
 
-No hay CLI/scaffolding, sesiones, autenticación/autorización integradas, CSRF, server actions, persistencia integrada ni una abstracción de aplicación lista para producción. Los forms mejorados del navegador están limitados a ciertos GET URL-encoded; no son un sistema de mutaciones server-side. El router HTTP y el callback de navegación cliente son responsabilidades separadas, no un router full-stack integrado.
+El CLI experimental genera una aplicación de servidor y archivos base, pero no añade sesiones, autenticación/autorización integrada, CSRF, server actions, persistencia ni una abstracción de aplicación lista para producción. Los forms mejorados del navegador están limitados a ciertos GET URL-encoded; no son un sistema de mutaciones server-side. El router HTTP y el callback de navegación cliente son responsabilidades separadas, no un router full-stack integrado.
