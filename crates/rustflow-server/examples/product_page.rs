@@ -79,9 +79,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 )?)
             });
             Ok(render)
-        },
-    )?
-    .server_only();
+        })?
+        .server_only();
 
     // 3. Build the immutable catalog once. Do not store per-request state in it.
     let mut builder = SharedComponentCatalogBuilder::new();
