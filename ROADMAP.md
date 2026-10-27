@@ -37,7 +37,7 @@ Before Phase 3 can pass its exit gate, the public API and browser runtime must d
 - Deterministic cleanup of effects, subscriptions, event listeners, and child scopes on unmount.
 - A browser-loadable example and automated browser E2E coverage for a counter and a todo list using the intended public API.
 
-The exact public syntax and runtime ownership mechanism must be recorded in an ADR and verified with compile tests before implementation is treated as complete. Any syntax change from this illustrative target must preserve the stated developer experience or be explicitly reviewed and documented. SSR/hydration remain separate milestones and must not be implied by these client-side criteria.
+The exact public syntax and runtime ownership mechanism must be recorded in an ADR and verified with compile tests before implementation is treated as complete. Any syntax change from this illustrative target must preserve the stated developer experience or be explicitly reviewed and documented. SSR/hydration are separate milestones: completion of these client-side criteria does not imply that the SSR/hydration criteria are complete.
 
 ## Status policy
 
@@ -124,7 +124,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Test text, nested elements/components, attributes, properties, fragments, event callbacks, dynamic children, and keyed-list duplicate detection.
 - [x] Test macro expansion and mismatched-closing-tag diagnostics.
 
-**Exit gate: complete for the native structural view/component model only.** Typed view construction, reusable component definitions and registry resolution, explicit lifecycle/cleanup, and macro diagnostics are covered by tests. This does not mean the ergonomic React-like authoring contract is complete: `#[component]`, typed props/callback props, automatic reactive interpolation, browser DOM reconciliation, and E2E tests remain explicit Phase 3 requirements. It also does not close the SSR, hydration, server, or CLI roadmap phases.
+**Exit gate: complete for the native structural view/component model only.** Typed view construction, reusable component definitions and registry resolution, explicit lifecycle/cleanup, and macro diagnostics are covered by tests. This Phase 2 closure was limited to the native structural model. At that time the ergonomic authoring contract—`#[component]`, typed props/callback props, automatic reactive interpolation, browser DOM reconciliation, and E2E tests—was assigned to Phase 3 and was implemented in the Phase 3 closure recorded below. Phase 2 itself does not close the separate SSR, hydration, server, or CLI phases.
 
 ## Phase 3 — Browser runtime and interactive MVP
 
@@ -204,7 +204,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Test escaping, rejected/void elements, URL policy, component cleanup, keyed order, nesting limits, full-document charset/title/body escaping, configurable 404/405 pages, route dispatch, body limits, handler timeouts, middleware, named-route introspection, and representative TCP requests covering status/content-type/request-ID headers, error cases, body limits, timeouts, and graceful shutdown.
 Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconstruction, client abort, malformed input, and bounded concurrency. It does not replace a production threat model, reverse-proxy deployment recipe, or Phase 9 security review.
 
-**Exit gate:** an executable example server handles multiple routes, renders safe HTML, and returns JSON. Automated coverage includes in-memory dispatch, route groups, route-scoped middleware, local TLS, trusted-proxy policy, client abort, malformed input, and bounded concurrency. This prototype is not production-ready: sessions, auth, CSRF, rate limiting, and full-stack SSR/hydration remain later phases.
+**Exit gate:** an executable example server handles multiple routes, renders safe HTML, and returns JSON. Automated coverage includes in-memory dispatch, route groups, route-scoped middleware, local TLS, trusted-proxy policy, client abort, malformed input, and bounded concurrency. At the time Phase 4 closed, sessions, auth, CSRF, rate limiting, and full-stack SSR/hydration were later phases. Phases 5.2–5.4 have since added SSR page/layout composition, opt-in hydration, and opt-in navigation/forms, but this server prototype is still not production-ready.
 
 ### 4.5 Subfase A — Resiliencia del handshake TLS
 
