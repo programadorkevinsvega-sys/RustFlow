@@ -73,6 +73,14 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --all-features
 
+      - name: Install and smoke-test the CLI
+        if: matrix.toolchain == 'stable'
+        run: |
+          install_root="$RUNNER_TEMP/rustflow-cli-install"
+          cargo install --path crates/rustflow-cli --locked --root "$install_root"
+          "$install_root/bin/rustflow" --help
+          "$install_root/bin/rustflow" --version
+
       - name: Run reactivity benchmark smoke baseline
         if: matrix.toolchain == 'stable'
         run: |

@@ -174,3 +174,8 @@ Each ADR's status line records whether its architectural decision is accepted or
 - [x] No planned capability is represented as implemented.
 
 Phase 0.2 was marked complete in ROADMAP.md after its scope baseline and initial architecture/governance criteria were accepted. Keep this checklist and the roadmap synchronized if that status changes.
+
+
+### CLI Fase 6.1 (alcance experimental)
+
+El CLI de desarrollo genera un scaffold de servidor, delega `dev` y `build` a Cargo, y crea componentes/páginas/controladores/modelos/migraciones estructurales. Las dependencias Git del scaffold quedan fijadas a la revisión fuente del CLI. Los modelos no son entidades ORM y las migraciones no se ejecutan. La configuración por entornos, validación, sesiones, autenticación/autorización, CSRF y persistencia integrada permanecen explícitamente fuera de esta fase.
