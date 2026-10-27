@@ -531,7 +531,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         ),
         (
             PathBuf::from("src/pages/mod.rs"),
-            format!("//! Páginas estructurales de la aplicación.\n{}", module_index("")),
+            module_index_with_modules("Páginas estructurales de la aplicación.", &["home"]),
         ),
         (
             PathBuf::from("src/pages/home.rs"),
