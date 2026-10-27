@@ -1,5 +1,6 @@
 use std::{
     cell::{Cell, RefCell},
+    collections::HashMap,
     error::Error,
     fmt,
     rc::Rc,
@@ -413,6 +414,295 @@ impl DomRenderer {
             return Err(error);
         }
         Ok(mounted)
+    }
+
+    /// Validate an SSR DOM range and attach client behavior without rebuilding it.
+    ///
+    /// The input must have been rendered with hydration boundaries. Validation completes before
+    /// event listeners/effects activate. A mismatch reports an error and preserves server HTML.
+    pub fn hydrate_into(
+        &mut self,
+        target: &DomElement,
+        view: &View,
+    ) -> Result<MountedDom, DomError> {
+        let parent: Node = target.clone().unchecked_into();
+        let siblings = direct_children(&parent);
+        if siblings.iter().any(|node| is_comment_value(node, "rustflow:root:hydrated:start")) {
+            return Err(DomError::AlreadyHydrated);
+        }
+        let starts = marker_positions(&siblings, "rustflow:root:start");
+        let ends = marker_positions(&siblings, "rustflow:root:end");
+        if starts.len() != 1 || ends.len() != 1 || starts[0] >= ends[0] {
+            return Err(DomError::HydrationMismatch {
+                expected: "one ordered rustflow root boundary".to_owned(),
+                found: "missing, duplicated, or reversed root comments".to_owned(),
+            });
+        }
+
+        let start_index = starts[0];
+        let end_index = ends[0];
+        let start_comment = siblings[start_index].clone().dyn_into::<Comment>()
+            .map_err(|_| hydration_mismatch("root start comment", Some(&siblings[start_index])))?;
+        let end_comment = siblings[end_index].clone().dyn_into::<Comment>()
+            .map_err(|_| hydration_mismatch("root end comment", Some(&siblings[end_index])))?;
+        let root_children = siblings[start_index + 1..end_index].to_vec();
+
+        let mut cursor = HydrationCursor::default();
+        let mut child_index = 0;
+        let mut resources = RenderedNodes::default();
+        let validation = self.hydrate_view(
+            view, &root_children, &mut child_index, &self.root_scope, &mut cursor, &mut resources,
+        );
+        if let Err(error) = validation {
+            let _ = cleanup_rendered_nodes(&mut resources);
+            return Err(error);
+        }
+        if child_index != root_children.len() {
+            let error = hydration_mismatch("end of the SSR root range", root_children.get(child_index));
+            let _ = cleanup_rendered_nodes(&mut resources);
+            return Err(error);
+        }
+
+        let mut mounted = MountedDom {
+            start: start_comment,
+            end: end_comment,
+            roots: root_children,
+            listeners: resources.listeners,
+            pending_listeners: resources.pending_listeners,
+            delegated_listeners: Vec::new(),
+            delegated_bindings: Rc::new(RefCell::new(resources.delegated)),
+            components: resources.components,
+            component_regions: resources.component_regions,
+            dynamics: resources.dynamics,
+            preserve_on_drop: true,
+        };
+
+        // If activation fails, Drop cleans up temporary resources but preserves the SSR DOM.
+        self.activate_pending_listeners(&mut mounted)?;
+        self.activate_delegated_listeners(&mut mounted, &parent)?;
+        self.activate_component_regions(&mut mounted.component_regions)?;
+        self.activate_dynamic_regions(&mut mounted.dynamics)?;
+
+        let start_node: Node = mounted.start.clone().unchecked_into();
+        start_node.set_node_value(Some("rustflow:root:hydrated:start"));
+        set_preserve_on_drop(&mut mounted, false);
+        Ok(mounted)
+    }
+
+    /// Parse the optional inert JSON payload emitted by the server page helpers.
+    /// Callers choose how to project this public value into the initial client state.
+    pub fn read_hydration_data(document: &Document) -> Result<Option<JsValue>, DomError> {
+        let Some(element) = document.get_element_by_id("rustflow-hydration-data") else {
+            return Ok(None);
+        };
+        let text = element.text_content().unwrap_or_default();
+        js_sys::JSON::parse(&text).map(Some).map_err(|_| DomError::InvalidHydrationData)
+    }
+
+    fn hydrate_view(
+        &self,
+        view: &View,
+        siblings: &[Node],
+        index: &mut usize,
+        parent_scope: &Scope,
+        cursor: &mut HydrationCursor,
+        resources: &mut RenderedNodes,
+    ) -> Result<Vec<Node>, DomError> {
+        match view {
+            View::Text(text) => {
+                let node = siblings.get(*index).ok_or_else(|| hydration_mismatch("matching text node", None))?;
+                if node.node_type() != 3 {
+                    return Err(hydration_mismatch("matching text node", Some(node)));
+                }
+                if node.node_value().as_deref() != Some(text.as_str()) {
+                    return Err(DomError::HydrationMismatch {
+                        expected: "matching initial text".to_owned(),
+                        found: "different text content".to_owned(),
+                    });
+                }
+                *index += 1;
+                Ok(vec![node.clone()])
+            }
+            View::Element(expected) => {
+                let node = siblings.get(*index).ok_or_else(|| {
+                    hydration_mismatch(&format!("<{}> element", expected.tag().to_ascii_lowercase()), None)
+                })?;
+                let element: DomElement = node.clone().dyn_into().map_err(|_| {
+                    hydration_mismatch(&format!("<{}> element", expected.tag().to_ascii_lowercase()), Some(node))
+                })?;
+                let tag = expected.tag().to_ascii_lowercase();
+                if element.tag_name().to_ascii_lowercase() != tag {
+                    return Err(hydration_mismatch(&format!("<{tag}> element"), Some(node)));
+                }
+                validate_hydrated_element(expected, &element)?;
+
+                let child_nodes = direct_children(node);
+                let mut child_index = 0;
+                let textarea_has_value = tag == "textarea" && expected.properties().iter()
+                    .any(|property| property.name().eq_ignore_ascii_case("value"));
+                if textarea_has_value {
+                    child_index = child_nodes.len();
+                } else {
+                    for child in expected.children() {
+                        self.hydrate_view(child, &child_nodes, &mut child_index, parent_scope, cursor, resources)?;
+                    }
+                }
+                if child_index != child_nodes.len() {
+                    return Err(hydration_mismatch("no additional children in the SSR element", child_nodes.get(child_index)));
+                }
+
+                let target: EventTarget = element.clone().unchecked_into();
+                for binding in expected.events() {
+                    if event_uses_delegation(binding.name()) {
+                        resources.delegated.push(DelegatedBinding {
+                            element: element.clone(),
+                            name: binding.name().to_owned(),
+                            handler: binding.handler(),
+                        });
+                    } else {
+                        resources.pending_listeners.push(PendingEventListener {
+                            target: target.clone(),
+                            name: binding.name().to_owned(),
+                            handler: binding.handler(),
+                        });
+                    }
+                }
+                *index += 1;
+                Ok(vec![node.clone()])
+            }
+            View::Fragment(fragment) => {
+                let mut nodes = Vec::new();
+                for child in fragment.children() {
+                    nodes.extend(self.hydrate_view(child, siblings, index, parent_scope, cursor, resources)?);
+                }
+                Ok(nodes)
+            }
+            View::KeyedList(list) => {
+                let mut nodes = Vec::new();
+                for child in list.children() {
+                    nodes.extend(self.hydrate_view(child.view(), siblings, index, parent_scope, cursor, resources)?);
+                }
+                Ok(nodes)
+            }
+            View::Dynamic(dynamic) => {
+                let boundary_id = cursor.next_boundary;
+                cursor.next_boundary = cursor.next_boundary.saturating_add(1);
+                let start_index = *index;
+                let start_marker = format!("rustflow:dynamic:start:{boundary_id}");
+                let start_node = siblings.get(start_index).ok_or_else(|| hydration_mismatch(&format!("comment {start_marker}"), None))?;
+                if !is_comment_value(start_node, &start_marker) {
+                    return Err(hydration_mismatch(&format!("comment {start_marker}"), Some(start_node)));
+                }
+                let end_index = find_boundary_end(siblings, start_index, "dynamic", boundary_id)?;
+                let start = start_node.clone().dyn_into::<Comment>().map_err(|_| hydration_mismatch(&format!("comment {start_marker}"), Some(start_node)))?;
+                let end = siblings[end_index].clone().dyn_into::<Comment>().map_err(|_| {
+                    hydration_mismatch(&format!("comment rustflow:dynamic:end:{boundary_id}"), Some(&siblings[end_index]))
+                })?;
+                let scope = parent_scope.child()?;
+                let child = match untrack(|| dynamic.evaluate()) {
+                    Ok(child) => child,
+                    Err(error) => { let _ = scope.dispose(); return Err(error.into()); }
+                };
+                let child_nodes = &siblings[start_index + 1..end_index];
+                let mut inner = RenderedNodes::default();
+                let mut child_index = 0;
+                if let Err(error) = self.hydrate_view(&child, child_nodes, &mut child_index, &scope, cursor, &mut inner) {
+                    let _ = cleanup_rendered_nodes(&mut inner);
+                    let _ = scope.dispose();
+                    return Err(error);
+                }
+                if child_index != child_nodes.len() {
+                    let error = hydration_mismatch("end of the dynamic SSR boundary", child_nodes.get(child_index));
+                    let _ = cleanup_rendered_nodes(&mut inner);
+                    let _ = scope.dispose();
+                    return Err(error);
+                }
+                let mounted_inner = MountedDom {
+                    start, end, roots: child_nodes.to_vec(),
+                    listeners: inner.listeners, pending_listeners: inner.pending_listeners,
+                    delegated_listeners: Vec::new(),
+                    delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
+                    components: inner.components, component_regions: inner.component_regions,
+                    dynamics: inner.dynamics, preserve_on_drop: true,
+                };
+                resources.dynamics.push(DynamicRegion {
+                    dynamic: dynamic.clone(), scope,
+                    state: Rc::new(RefCell::new(Some(DynamicMountState { mounted: mounted_inner, view: child }))),
+                    error_sink: self.error_sink.clone(), effect: None, reused: false,
+                });
+                *index = end_index + 1;
+                Ok(siblings[start_index..=end_index].to_vec())
+            }
+            View::Component(component) => {
+                let boundary_id = cursor.next_boundary;
+                cursor.next_boundary = cursor.next_boundary.saturating_add(1);
+                let start_index = *index;
+                let start_marker = format!("rustflow:component:start:{boundary_id}");
+                let static_start = format!("rustflow:static:start:{boundary_id}");
+                let start_node = siblings.get(start_index).ok_or_else(|| {
+                    hydration_mismatch(&format!("comment {start_marker} or {static_start}"), None)
+                })?;
+                if is_comment_value(start_node, &static_start) {
+                    let end_index = find_boundary_end(siblings, start_index, "static", boundary_id)?;
+                    *index = end_index + 1;
+                    return Ok(siblings[start_index..=end_index].to_vec());
+                }
+                if !is_comment_value(start_node, &start_marker) {
+                    return Err(hydration_mismatch(&format!("comment {start_marker} or {static_start}"), Some(start_node)));
+                }
+                let end_index = find_boundary_end(siblings, start_index, "component", boundary_id)?;
+                let start = start_node.clone().dyn_into::<Comment>().map_err(|_| hydration_mismatch(&format!("comment {start_marker}"), Some(start_node)))?;
+                let end = siblings[end_index].clone().dyn_into::<Comment>().map_err(|_| {
+                    hydration_mismatch(&format!("comment rustflow:component:end:{boundary_id}"), Some(&siblings[end_index]))
+                })?;
+                let mut instance = self.registry.mount_for_target(component, self.runtime.clone(), parent_scope, RenderTarget::Browser)?;
+                let child_view = instance.view().clone();
+                let child_nodes = &siblings[start_index + 1..end_index];
+                let mut inner = RenderedNodes::default();
+                let mut child_index = 0;
+                if let Err(error) = self.hydrate_view(&child_view, child_nodes, &mut child_index, instance.scope(), cursor, &mut inner) {
+                    let _ = cleanup_rendered_nodes(&mut inner);
+                    let _ = instance.unmount();
+                    return Err(error);
+                }
+                if child_index != child_nodes.len() {
+                    let error = hydration_mismatch("end of the component SSR boundary", child_nodes.get(child_index));
+                    let _ = cleanup_rendered_nodes(&mut inner);
+                    let _ = instance.unmount();
+                    return Err(error);
+                }
+                let mounted_inner = MountedDom {
+                    start, end, roots: child_nodes.to_vec(),
+                    listeners: inner.listeners, pending_listeners: inner.pending_listeners,
+                    delegated_listeners: Vec::new(),
+                    delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
+                    components: inner.components, component_regions: inner.component_regions,
+                    dynamics: inner.dynamics, preserve_on_drop: true,
+                };
+                resources.component_regions.push(ComponentRegion {
+                    descriptor: component.clone(), instance, mounted: mounted_inner,
+                    view: child_view, reused: false,
+                });
+                *index = end_index + 1;
+                Ok(siblings[start_index..=end_index].to_vec())
+            }
+        }
+    }
+
+    fn activate_pending_listeners(&self, mounted: &mut MountedDom) -> Result<(), DomError> {
+        for region in &mut mounted.component_regions {
+            self.activate_pending_listeners(&mut region.mounted)?;
+        }
+        for region in &mut mounted.dynamics {
+            let mut state = region.state.borrow_mut();
+            if let Some(state) = state.as_mut() {
+                self.activate_pending_listeners(&mut state.mounted)?;
+            }
+        }
+        for pending in mounted.pending_listeners.drain(..) {
+            mounted.listeners.push(create_handler_listener(&pending.target, &pending.name, pending.handler)?);
+        }
+        Ok(())
     }
 
     /// Mount a view produced by a reactive closure and rerender it whenever
