@@ -15,7 +15,9 @@ Add `rustflow_server::HtmlPage` as an application-level composition helper. It a
 
 Route-to-component data flow is explicit. Route handlers extract, validate, and project only public fields from the `Request`; they pass those values into the page component's properties. The helper does not receive the complete request and does not automatically serialize arbitrary Rust structs, headers, cookies, sessions, authorization data, or private application state. The application remains responsible for data validation and the public/private allow-list.
 
-Component definitions and registry entries may be reused across requests, but component-owned reactive state may not. Every SSR render creates a fresh runtime, mounts each component in an owned scope, serializes the resulting view, and unmounts/disposes the scope before returning. No process-global mutable runtime or request state is introduced. A renderer can be reused as a definition/configuration holder; its per-render state is not reused.
+Every SSR render creates a fresh runtime, mounts each component in an owned scope, serializes the resulting view, and unmounts/disposes the scope before returning. No process-global mutable runtime or request state is introduced. A renderer can be reused as a definition/configuration holder in a single-threaded context; its per-render state is not reused.
+
+Current integration constraint: ComponentRegistry contains owner-thread-local state and is not Send + Sync, while Application handlers require Send + Sync. An HTTP route therefore cannot capture a prebuilt registry. The supported initial pattern is to construct/register a local ComponentRegistry inside the synchronous part of each handler invocation and immediately render the page. A regression test exercises this actual path. This rebuilds definitions per request and is a known performance/developer-experience limitation; safe shared registries across async server workers require a separate architectural change and must not be implied by this phase.
 
 ## Consequences
 
