@@ -1987,7 +1987,6 @@ mod tests {
         assert!(html_view(&unsafe_view).is_err());
     }
 
-
     #[tokio::test]
     async fn route_renders_registered_component_with_request_props_and_layout() {
         let mut app = Application::new();
