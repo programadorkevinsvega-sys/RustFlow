@@ -2095,7 +2095,7 @@ mod tests {
                     _ => None,
                 })
                 .unwrap_or_else(|| "missing".to_owned());
-            let state = signal(id)?;
+            let state = signal(id);
             let cleanup_count = Arc::clone(&setup_cleanup_count);
             context.on_cleanup(move || {
                 cleanup_count.fetch_add(1, Ordering::SeqCst);
