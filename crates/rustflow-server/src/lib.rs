@@ -45,7 +45,7 @@ use tokio::net::TcpListener;
 use tower::limit::GlobalConcurrencyLimitLayer;
 use tracing::Instrument;
 
-use rustflow::components::ComponentRegistry;
+use rustflow::components::{ComponentRegistry, SharedComponentCatalog};
 use rustflow_view::{Element, View};
 
 /// Future returned by a RustFlow route handler.
@@ -494,23 +494,43 @@ pub fn html_view_with_components(
     Ok(Response::html(html))
 }
 
+/// Render a structural view using a shareable immutable component catalog.
+pub fn html_view_with_shared_components(
+    view: &View,
+    catalog: &SharedComponentCatalog,
+) -> Result<Response, HttpError> {
+    let html = rustflow_ssr::render_with_shared_components(view, catalog)
+        .map_err(|_| HttpError::internal_server_error())?;
+    Ok(Response::html(html))
+}
+
 /// Render a complete HTML document from a title, language, and structural body.
 ///
 /// The document shell and title are built as structural nodes; title, language,
 /// attributes, and body text are escaped/validated by the safe SSR serializer.
 /// No caller-supplied string is inserted as raw markup.
 pub fn html_document(title: &str, lang: &str, body: &View) -> Result<Response, HttpError> {
-    render_html_document(title, lang, body, None)
+    render_html_document(title, lang, body, None, None)
 }
 
-/// Render a complete HTML document while resolving components in the body.
+/// Render a complete HTML document while resolving components through a local registry.
 pub fn html_document_with_components(
     title: &str,
     lang: &str,
     body: &View,
     registry: &ComponentRegistry,
 ) -> Result<Response, HttpError> {
-    render_html_document(title, lang, body, Some(registry))
+    render_html_document(title, lang, body, Some(registry), None)
+}
+
+/// Render a complete HTML document using a shareable immutable component catalog.
+pub fn html_document_with_shared_components(
+    title: &str,
+    lang: &str,
+    body: &View,
+    catalog: &SharedComponentCatalog,
+) -> Result<Response, HttpError> {
+    render_html_document(title, lang, body, None, Some(catalog))
 }
 
 fn render_html_document(
@@ -518,6 +538,7 @@ fn render_html_document(
     lang: &str,
     body: &View,
     registry: Option<&ComponentRegistry>,
+    shared_catalog: Option<&SharedComponentCatalog>,
 ) -> Result<Response, HttpError> {
     let title = View::element("title", [View::text(title)])
         .map_err(|_| HttpError::internal_server_error())?;
@@ -535,9 +556,10 @@ fn render_html_document(
         .with_children([head, body])
         .build();
     let tree = root;
-    let markup = match registry {
-        Some(registry) => rustflow_ssr::render_with_components(&tree, registry),
-        None => rustflow_ssr::render_to_string(&tree),
+    let markup = match (registry, shared_catalog) {
+        (Some(registry), _) => rustflow_ssr::render_with_components(&tree, registry),
+        (_, Some(catalog)) => rustflow_ssr::render_with_shared_components(&tree, catalog),
+        (None, None) => rustflow_ssr::render_to_string(&tree),
     }
     .map_err(|_| HttpError::internal_server_error())?;
     Ok(Response::html(format!("<!doctype html>{markup}")))
@@ -1565,7 +1587,11 @@ mod tests {
         body::{Body, to_bytes},
         http::{Request as AxumHttpRequest, StatusCode},
     };
-    use rustflow::components::{ComponentDefinition, ComponentRegistry, ComponentRender};
+    use rustflow::components::{
+        ComponentDefinition, ComponentRegistry, ComponentRender, SharedComponentCatalog,
+        SharedComponentCatalogBuilder, SharedComponentDefinition,
+    };
+    use rustflow::reactivity::signal;
     use rustflow_view::{Property, PropertyValue};
     use serde::Deserialize;
     use std::{
@@ -2051,6 +2077,94 @@ mod tests {
         assert!(html.contains("<html lang=\"es\">"));
         assert!(html.contains("<title>Article &amp; details</title>"));
         assert!(html.contains("<main><article><h1>42</h1></article></main>"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn shared_catalog_is_reused_across_concurrent_http_requests_and_isolates_state() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<SharedComponentCatalog>();
+
+        let cleanup_count = Arc::new(AtomicUsize::new(0));
+        let setup_cleanup_count = Arc::clone(&cleanup_count);
+        let article = SharedComponentDefinition::new("ArticlePage", move |context, properties| {
+            let id = properties
+                .iter()
+                .find(|property| property.name() == "id")
+                .and_then(|property| match property.value() {
+                    PropertyValue::Text(value) => Some(value.clone()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| "missing".to_owned());
+            let state = signal(id);
+            let cleanup_count = Arc::clone(&setup_cleanup_count);
+            context.on_cleanup(move || {
+                cleanup_count.fetch_add(1, Ordering::SeqCst);
+            })?;
+            let render: ComponentRender = Rc::new(move |_properties, _children| {
+                Ok(View::element(
+                    "article",
+                    [View::element("h1", [View::text(state.get())])?],
+                )?)
+            });
+            Ok(render)
+        })
+        .expect("shareable article definition")
+        .server_only();
+
+        let layout = SharedComponentDefinition::new("AppLayout", |_context, _properties| {
+            let render: ComponentRender =
+                Rc::new(|_properties, children| Ok(View::element("main", children.to_vec())?));
+            Ok(render)
+        })
+        .expect("shareable layout definition");
+
+        let mut builder = SharedComponentCatalogBuilder::new();
+        builder.register(article).expect("register article");
+        builder.register(layout).expect("register layout");
+        let catalog = Arc::new(builder.build());
+
+        let route_catalog = Arc::clone(&catalog);
+        let mut app = Application::new();
+        app.get("/articles/{id}", move |request| {
+            let catalog = Arc::clone(&route_catalog);
+            async move {
+                let id = request.path_param("id").unwrap_or("missing").to_owned();
+                let prop =
+                    Property::new("id", id).map_err(|_| HttpError::internal_server_error())?;
+                HtmlPage::from_component("Article", "ArticlePage", [prop], [])?
+                    .language("es")
+                    .with_shared_components(&catalog)
+                    .with_layout("AppLayout", [])?
+                    .render()
+            }
+        })
+        .expect("route registration");
+
+        let router = app.into_router(BindKind::Plain).expect("router");
+        let make_request = |id: &str| {
+            AxumHttpRequest::builder()
+                .uri(format!("/articles/{id}"))
+                .body(Body::empty())
+                .expect("request")
+        };
+        let (first, second, repeated) = tokio::join!(
+            router.clone().oneshot(make_request("7")),
+            router.clone().oneshot(make_request("12")),
+            router.clone().oneshot(make_request("7")),
+        );
+
+        let first_html = body_text(first.expect("first request")).await;
+        let second_html = body_text(second.expect("second request")).await;
+        let repeated_html = body_text(repeated.expect("repeated request")).await;
+        assert!(first_html.contains("<main><article><h1>7</h1></article></main>"));
+        assert!(second_html.contains("<main><article><h1>12</h1></article></main>"));
+        assert!(repeated_html.contains("<main><article><h1>7</h1></article></main>"));
+        assert_eq!(first_html, repeated_html);
+        assert_eq!(
+            cleanup_count.load(Ordering::SeqCst),
+            3,
+            "every request must dispose its local component scope"
+        );
     }
 
     #[tokio::test]

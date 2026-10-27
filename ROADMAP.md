@@ -241,6 +241,9 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 **Estado de 5.1 (completada el 2026-10-27):** `HydrationData` implementa y prueba JSON acotado; `ComponentCapability` declara componentes `Universal`, `ServerOnly` y `BrowserOnly`; SSR/browser validan el destino antes de ejecutar setup; SSR exige fallback estático explícito para componentes browser-only, o devuelve un error; y CI bloquea crates de servidor conocidos en el grafo WASM. El límite de secretos se define mediante proyección explícita de campos públicos por la aplicación: RustFlow no serializa automáticamente structs arbitrarios ni puede deducir el significado secreto de una cadena. La hidratación DOM, los identificadores de límite, la detección/recuperación de discrepancias siguen siendo trabajo de 5.3, no están implícitos en el cierre de este contrato.
 
 ### 5.2 SSR
+- [x] Build an immutable `SharedComponentCatalog` with `Send + Sync` setup/fallback factories and capture it in HTTP route closures.
+- [x] Prove concurrent request isolation, local runtime/scope cleanup, browser-only fallback behavior, and all required CI checks before closing this architectural follow-up.
+
 - [x] Render structural view trees into HTML fragments using rustflow-ssr.
 - [x] Expose complete HTML document responses and configurable escaped error pages through `rustflow-server` (Phase 4.4); route handlers can call these helpers.
 - [x] Add advanced layout composition and explicit route-to-component data integration (rustflow-server::HtmlPage, nested layout components, and allow-listed route props). Full-stack SSR composition is improved but hydration/navigation remain incomplete.

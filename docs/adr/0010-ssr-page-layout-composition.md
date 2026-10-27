@@ -15,16 +15,17 @@ Add `rustflow_server::HtmlPage` as an application-level composition helper. It a
 
 Route-to-component data flow is explicit. Route handlers extract, validate, and project only public fields from the `Request`; they pass those values into the page component's properties. The helper does not receive the complete request and does not automatically serialize arbitrary Rust structs, headers, cookies, sessions, authorization data, or private application state. The application remains responsible for data validation and the public/private allow-list.
 
-Every SSR render creates a fresh runtime, mounts each component in an owned scope, serializes the resulting view, and unmounts/disposes the scope before returning. No process-global mutable runtime or request state is introduced. A renderer can be reused as a definition/configuration holder in a single-threaded context; its per-render state is not reused.
+Every SSR render creates a fresh runtime, mounts each component in an owned scope, serializes the resulting view, and unmounts/disposes the scope before returning. No process-global mutable runtime or request state is introduced. The shared immutable catalog may be reused concurrently; per-render state is never reused.
 
-Current integration constraint: ComponentRegistry contains owner-thread-local state and is not Send + Sync, while Application handlers require Send + Sync. An HTTP route therefore cannot capture a prebuilt registry. The supported initial pattern is to construct/register a local ComponentRegistry inside the synchronous part of each handler invocation and immediately render the page. A regression test exercises this actual path. This rebuilds definitions per request and is a known performance/developer-experience limitation; safe shared registries across async server workers require a separate architectural change and must not be implied by this phase.
+The local ComponentRegistry remains suitable for local callbacks but cannot be captured by Application routes because its definitions use Rc-backed callbacks and local View fallbacks. Add SharedComponentDefinition and SharedComponentCatalogBuilder as a separate server-safe path. A built SharedComponentCatalog stores only immutable definitions and Send + Sync setup/fallback factories; it is cheaply cloneable and can be captured by HTTP handlers. Each setup factory produces a local ComponentRender for a request-local reactive runtime and scope. Browser-only fallbacks are created by a Send + Sync factory on demand, so a potentially non-Send View is never stored inside the shared catalog. A concurrent HTTP integration test verifies that one captured catalog serves distinct and repeated route parameters without state leakage and that each render cleans up its scopes.
 
 ## Consequences
 
 - Page content and nested layouts use the same registered component model as browser components.
 - Full documents are serialized through the existing escaping, element allow-list, attribute policy, and URL-scheme checks; arbitrary raw HTML strings are not accepted.
 - Layout composition is explicit and order-dependent, and the route handler explicitly selects component properties.
-- Each request gets isolated reactive state and deterministic output for the same structural tree, registered definitions, and props, provided render callbacks are themselves deterministic and side-effect free.
+- Each request gets isolated reactive state and deterministic output for the same structural tree, shared catalog, and props, provided render callbacks are themselves deterministic and side-effect free.
+- Shared catalog definitions and fallback factories must be Send + Sync; the local ComponentRegistry remains available where callbacks cannot satisfy that contract.
 - Component props are not a hydration transport. DOM hydration, boundary IDs, client navigation, and mismatch recovery remain in Phases 5.3 and 5.4.
 
 ## Validation

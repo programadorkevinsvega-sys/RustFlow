@@ -1,6 +1,6 @@
 //! Component setup, rendering, and deterministic ownership lifecycle.
 
-use std::{collections::HashMap, error::Error, fmt, rc::Rc};
+use std::{collections::HashMap, error::Error, fmt, rc::Rc, sync::Arc};
 
 use crate::reactivity::{Runtime, RuntimeError, Scope};
 use rustflow_view::{ComponentName, ComponentNode, Property, View, ViewError};
@@ -265,6 +265,214 @@ impl ComponentRegistry {
             .ok_or_else(|| ComponentError::UnknownComponent(node.name().to_owned()))?;
         ComponentInstance::mount_for_target(
             definition,
+            runtime,
+            parent_scope,
+            node.properties().iter().cloned(),
+            node.children().iter().cloned(),
+            target,
+        )
+    }
+}
+
+/// A shareable setup factory for server component definitions.
+///
+/// The factory may be called concurrently. Request-local reactive values belong in the returned
+/// local `ComponentRender`, not in shared mutable state.
+type SharedComponentSetup = Arc<
+    dyn Fn(&ComponentContext, &[Property]) -> Result<ComponentRender, ComponentError>
+        + Send
+        + Sync
+        + 'static,
+>;
+
+/// A shareable factory that creates a fresh, request-local SSR fallback view.
+type SharedSsrFallbackFactory =
+    Arc<dyn Fn() -> Result<View, ComponentError> + Send + Sync + 'static>;
+
+/// A component definition whose setup factory can safely be shared across server workers.
+///
+/// The setup factory is `Send + Sync`, but the `ComponentRender` it returns remains local
+/// to one render and may use `Rc`-backed reactive values. Fallback views are built on demand
+/// so this definition never stores a potentially non-`Send` `View`.
+#[derive(Clone)]
+pub struct SharedComponentDefinition {
+    name: ComponentName,
+    setup: SharedComponentSetup,
+    capability: ComponentCapability,
+    ssr_fallback: Option<SharedSsrFallbackFactory>,
+}
+
+impl SharedComponentDefinition {
+    /// Define a component with a shareable setup factory and a request-local render callback.
+    pub fn new(
+        name: impl Into<String>,
+        setup: impl Fn(&ComponentContext, &[Property]) -> Result<ComponentRender, ComponentError>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Result<Self, ComponentError> {
+        Ok(Self {
+            name: ComponentName::new(name)?,
+            setup: Arc::new(setup),
+            capability: ComponentCapability::Universal,
+            ssr_fallback: None,
+        })
+    }
+
+    /// Restrict where this definition may execute.
+    pub fn with_capability(mut self, capability: ComponentCapability) -> Self {
+        self.capability = capability;
+        self
+    }
+
+    /// Declare a server-only component.
+    pub fn server_only(self) -> Self {
+        self.with_capability(ComponentCapability::ServerOnly)
+    }
+
+    /// Declare a browser-only component, which requires an SSR fallback when rendered on server.
+    pub fn browser_only(self) -> Self {
+        self.with_capability(ComponentCapability::BrowserOnly)
+    }
+
+    /// Build a fresh structural fallback for SSR without storing a local `View` in the catalog.
+    ///
+    /// The factory must be safe to call concurrently and must not retain request-specific state.
+    pub fn with_ssr_fallback_factory(
+        mut self,
+        factory: impl Fn() -> Result<View, ComponentError> + Send + Sync + 'static,
+    ) -> Self {
+        self.ssr_fallback = Some(Arc::new(factory));
+        self
+    }
+
+    /// Return the component's public name.
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    /// Return the component's execution capability.
+    pub fn capability(&self) -> ComponentCapability {
+        self.capability
+    }
+
+    fn to_local_definition(&self) -> Result<ComponentDefinition, ComponentError> {
+        let setup = Arc::clone(&self.setup);
+        Ok(
+            ComponentDefinition::new(self.name.as_str().to_owned(), move |context, properties| {
+                setup(context, properties)
+            })?
+            .with_capability(self.capability),
+        )
+    }
+
+    fn build_ssr_fallback(&self) -> Result<Option<View>, ComponentError> {
+        self.ssr_fallback
+            .as_ref()
+            .map(|factory| factory())
+            .transpose()
+    }
+}
+
+/// Builder for a shareable component catalog.
+///
+/// Mutation is confined to startup. Calling `build` freezes the definitions into an
+/// immutable catalog suitable for sharing with `Arc` across server workers.
+#[derive(Default)]
+pub struct SharedComponentCatalogBuilder {
+    definitions: HashMap<String, SharedComponentDefinition>,
+}
+
+impl SharedComponentCatalogBuilder {
+    /// Create an empty catalog builder.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a definition, rejecting duplicate component names.
+    pub fn register(
+        &mut self,
+        definition: SharedComponentDefinition,
+    ) -> Result<(), ComponentError> {
+        let name = definition.name().to_owned();
+        if self.definitions.contains_key(&name) {
+            return Err(ComponentError::DuplicateDefinition(name));
+        }
+        self.definitions.insert(name, definition);
+        Ok(())
+    }
+
+    /// Freeze the definitions in an immutable, cheaply cloneable catalog.
+    pub fn build(self) -> SharedComponentCatalog {
+        SharedComponentCatalog {
+            definitions: Arc::new(self.definitions),
+        }
+    }
+}
+
+/// An immutable catalog of component definitions safe to share across server workers.
+///
+/// The catalog contains setup factories and fallback factories only. It does not contain
+/// a reactive runtime, mounted component instances, per-request properties, or rendered views.
+#[derive(Clone, Default)]
+pub struct SharedComponentCatalog {
+    definitions: Arc<HashMap<String, SharedComponentDefinition>>,
+}
+
+impl SharedComponentCatalog {
+    /// Create an empty immutable catalog.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Return whether the catalog contains a definition with this name.
+    pub fn contains(&self, name: &str) -> bool {
+        self.definitions.contains_key(name)
+    }
+
+    /// Return the number of definitions in the catalog.
+    pub fn len(&self) -> usize {
+        self.definitions.len()
+    }
+
+    /// Return whether the catalog contains no definitions.
+    pub fn is_empty(&self) -> bool {
+        self.definitions.is_empty()
+    }
+
+    /// Return the declared capability for a registered component.
+    pub fn capability(&self, name: &str) -> Option<ComponentCapability> {
+        self.definitions
+            .get(name)
+            .map(SharedComponentDefinition::capability)
+    }
+
+    /// Build a new local SSR fallback, if one is configured.
+    ///
+    /// Unknown names return `ComponentError::UnknownComponent`; registered definitions without
+    /// a fallback return `Ok(None)`.
+    pub fn ssr_fallback(&self, name: &str) -> Result<Option<View>, ComponentError> {
+        self.definitions
+            .get(name)
+            .ok_or_else(|| ComponentError::UnknownComponent(name.to_owned()))?
+            .build_ssr_fallback()
+    }
+
+    /// Mount a descriptor using this shared definition and a request-local runtime/scope.
+    pub fn mount_for_target(
+        &self,
+        node: &ComponentNode,
+        runtime: Runtime,
+        parent_scope: &Scope,
+        target: RenderTarget,
+    ) -> Result<ComponentInstance, ComponentError> {
+        let shared_definition = self
+            .definitions
+            .get(node.name())
+            .ok_or_else(|| ComponentError::UnknownComponent(node.name().to_owned()))?;
+        let local_definition = shared_definition.to_local_definition()?;
+        ComponentInstance::mount_for_target(
+            local_definition,
             runtime,
             parent_scope,
             node.properties().iter().cloned(),
@@ -1049,5 +1257,71 @@ mod tests {
             Err(crate::reactivity::RuntimeError::InvalidSignal)
         );
         runtime.dispose().expect("dispose runtime");
+    }
+}
+
+#[cfg(test)]
+mod shared_catalog_tests {
+    use super::{
+        ComponentRender, SharedComponentCatalog, SharedComponentCatalogBuilder,
+        SharedComponentDefinition,
+    };
+    use rustflow_view::View;
+    use std::{
+        rc::Rc,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+
+    #[test]
+    fn shared_catalog_is_send_sync_and_rejects_duplicate_names() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<SharedComponentCatalog>();
+
+        let make_definition = || {
+            SharedComponentDefinition::new("SharedText", |_context, _properties| {
+                let render: ComponentRender =
+                    Rc::new(|_properties, _children| Ok(View::text("shared")));
+                Ok(render)
+            })
+            .expect("valid shared definition")
+        };
+
+        let mut builder = SharedComponentCatalogBuilder::new();
+        builder
+            .register(make_definition())
+            .expect("first definition");
+        assert!(builder.register(make_definition()).is_err());
+        let catalog = builder.build();
+        assert!(catalog.contains("SharedText"));
+        assert_eq!(catalog.len(), 1);
+    }
+
+    #[test]
+    fn shared_browser_fallback_is_built_on_demand() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let factory_calls = Arc::clone(&calls);
+        let definition = SharedComponentDefinition::new("ClientWidget", |_context, _properties| {
+            let render: ComponentRender =
+                Rc::new(|_properties, _children| Ok(View::text("browser")));
+            Ok(render)
+        })
+        .expect("valid definition")
+        .browser_only()
+        .with_ssr_fallback_factory(move || {
+            factory_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(View::element("span", [View::text("static fallback")])?)
+        });
+        let mut builder = SharedComponentCatalogBuilder::new();
+        builder.register(definition).expect("register");
+        let catalog = builder.build();
+        let fallback = catalog
+            .ssr_fallback("ClientWidget")
+            .expect("fallback factory")
+            .expect("fallback exists");
+        assert!(matches!(fallback, View::Element(_)));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }

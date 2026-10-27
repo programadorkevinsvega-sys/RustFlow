@@ -42,6 +42,7 @@ pub use rustflow_macros::{component, view};
 pub mod prelude {
     pub use crate::components::{
         ComponentCapability, ComponentDefinition, ComponentRegistry, RenderTarget,
+        SharedComponentCatalog, SharedComponentCatalogBuilder, SharedComponentDefinition,
     };
     pub use crate::reactivity::{
         Effect, Runtime, RuntimeError, Scope, Signal, on_cleanup, signal, try_signal, use_effect,
