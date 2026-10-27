@@ -100,16 +100,6 @@ fn cargo_target_dir() -> PathBuf {
     workspace_root().join("target")
 }
 
-fn cargo_check(project: &Path) -> Output {
-    Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
-        .args(["check", "--offline", "--manifest-path"])
-        .arg(project.join("Cargo.toml"))
-        .current_dir(project)
-        .env("CARGO_TARGET_DIR", cargo_target_dir())
-        .output()
-        .expect("check generated project")
-}
-
 struct ChildGuard(Child);
 
 impl ChildGuard {
@@ -246,6 +236,15 @@ fn generator_templates_and_module_indexes_are_deterministic() {
 fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
     let temp = TempDir::new("clean-build");
     let project = create_project(temp.path(), "cli-fixture-app");
+    for (kind, name) in [
+        ("component", "ProductCard"),
+        ("page", "about"),
+        ("controller", "health"),
+        ("model", "User"),
+        ("migration", "create_users"),
+    ] {
+        assert_success(&invoke(&project, &["generate", kind, name]));
+    }
     localize_framework_dependencies(&project);
 
     let output = cli()
@@ -279,7 +278,7 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
             response = Some(String::from_utf8_lossy(&bytes).into_owned());
             break;
         }
-        if let Some(Ok(_)) = child.0.try_wait() {
+        if let Ok(Some(_)) = child.0.try_wait() {
             break;
         }
         thread::sleep(Duration::from_millis(25));

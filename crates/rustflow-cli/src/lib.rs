@@ -246,7 +246,7 @@ fn is_help(arg: &OsStr) -> bool {
     matches!(arg.to_str(), Some("--help" | "-h"))
 }
 
-fn argument_text<'a>(arg: &'a OsStr, label: &str) -> Result<&'a str, CliError> {
+fn argument_text(arg: &OsStr, label: &str) -> Result<&str, CliError> {
     arg.to_str().ok_or_else(|| format!("{label} must be valid UTF-8").into())
 }
 
@@ -256,7 +256,7 @@ fn validate_project_name(name: &str) -> Result<(), CliError> {
         || !name
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-        || name.ends_with(['-', '_'])
+        || matches!(name.as_bytes().last(), Some(b'-' | b'_'))
     {
         return Err(format!(
             "invalid project name `{name}`; use an ASCII letter first, followed by letters, digits, hyphens, or underscores"
@@ -284,7 +284,7 @@ fn generated_identifier(name: &str) -> Result<String, CliError> {
             let boundary = previous.is_some_and(|previous| {
                 previous.is_ascii_lowercase()
                     || previous.is_ascii_digit()
-                    || (previous.is_ascii_uppercase() && next.is_some_and(char::is_ascii_lowercase))
+                    || (previous.is_ascii_uppercase() && next.is_some_and(|character| character.is_ascii_lowercase()))
             });
             if boundary && !snake.ends_with('_') {
                 snake.push('_');
@@ -315,7 +315,7 @@ fn is_rust_keyword(name: &str) -> bool {
             | "in" | "let" | "loop" | "match" | "mod" | "move" | "mut" | "pub"
             | "ref" | "return" | "self" | "Self" | "static" | "struct" | "super"
             | "trait" | "true" | "type" | "union" | "unsafe" | "use" | "where"
-            | "while" | "abstract" | "become" | "box" | "do" | "final" | "macro"
+            | "while" | "gen" | "abstract" | "become" | "box" | "do" | "final" | "macro"
             | "override" | "priv" | "typeof" | "unsized" | "virtual" | "yield" | "try"
     )
 }
@@ -349,13 +349,20 @@ fn create_project(name: &str, parent: &Path, revision: &str) -> Result<PathBuf, 
         return Err(error);
     }
 
-    if path_exists(&destination)? {
-        let _ = fs::remove_dir_all(&staging);
-        return Err(format!(
-            "destination {} appeared while the project was being created; no existing files were changed",
-            destination.display()
-        )
-        .into());
+    match path_exists(&destination) {
+        Ok(false) => {}
+        Ok(true) => {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(format!(
+                "destination {} appeared while the project was being created; no existing files were changed",
+                destination.display()
+            )
+            .into());
+        }
+        Err(error) => {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(error);
+        }
     }
 
     if let Err(error) = fs::rename(&staging, &destination) {
@@ -438,30 +445,30 @@ fn scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
         ),
         (
             PathBuf::from("src/main.rs"),
-            format!(
-                "use std::{{error::Error, net::SocketAddr}};\n\
-                 use rustflow_server::{{Application, Request}};\n\
-                 \n\
-                 pub mod components;\n\
-                 pub mod controllers;\n\
-                 pub mod models;\n\
-                 pub mod pages;\n\
-                 \n\
-                 #[tokio::main]\n\
-                 async fn main() -> Result<(), Box<dyn Error>> {{\n\
-                 \    let mut app = Application::new();\n\
-                 \    app.get(\"/\", controllers::home_controller::index)?;\n\
-                 \    let port = match std::env::var(\"RUSTFLOW_PORT\") {{\n\
-                 \        Ok(value) => value.parse::<u16>()?,\n\
-                 \        Err(std::env::VarError::NotPresent) => 3000,\n\
-                 \        Err(error) => return Err(Box::new(error)),\n\
-                 \    }};\n\
-                 \    let address = SocketAddr::from(([127, 0, 0, 1], port));\n\
-                 \    println!(\"RustFlow server listening on http://{{address}}\");\n\
-                 \    app.serve(address).await?;\n\
-                 \    Ok(())\n\
-                 }}\n"
-            ),
+            r#"use std::{error::Error, net::SocketAddr};
+use rustflow_server::Application;
+
+pub mod components;
+pub mod controllers;
+pub mod models;
+pub mod pages;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let mut app = Application::new();
+    app.get("/", controllers::home_controller::index)?;
+    let port = match std::env::var("RUSTFLOW_PORT") {
+        Ok(value) => value.parse::<u16>()?,
+        Err(std::env::VarError::NotPresent) => 3000,
+        Err(error) => return Err(Box::new(error)),
+    };
+    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    println!("RustFlow server listening on http://{address}");
+    app.serve(address).await?;
+    Ok(())
+}
+"#
+            .to_owned(),
         ),
         (
             PathBuf::from("src/components/mod.rs"),
@@ -481,7 +488,7 @@ fn scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
         ),
         (
             PathBuf::from("src/controllers/home_controller.rs"),
-            "use rustflow::view::View;\nuse rustflow_server::{html_document, HttpError, Request, Response};\n\n/// Responde con la página inicial renderizada en el servidor.\npub async fn index(_request: Request) -> Result<Response, HttpError> {\n    let page = crate::pages::home::render()\n        .map_err(|_| HttpError::internal_server_error())?;\n    let _ = View::text(\"\");\n    html_document(\"RustFlow\", \"es\", &page)\n}\n".to_owned(),
+            "use rustflow_server::{html_document, HttpError, Request, Response};\n\n/// Responde con la página inicial renderizada en el servidor.\npub async fn index(_request: Request) -> Result<Response, HttpError> {\n    let page = crate::pages::home::render()\n        .map_err(|_| HttpError::internal_server_error())?;\n    html_document(\"RustFlow\", \"es\", &page)\n}\n".to_owned(),
         ),
         (
             PathBuf::from("src/models/mod.rs"),
