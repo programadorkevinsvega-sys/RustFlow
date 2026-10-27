@@ -6,13 +6,15 @@ test.beforeEach(async ({ page }, testInfo) => {
   }
 });
 
-async function gotoWithHydrationFixture(page, corrupt = false, interactive = false) {
+async function gotoWithHydrationFixture(page, corrupt = false, interactive = false, repeat = false) {
   const interactiveFixture = '<div id="hydration-fixture" data-hydration-case="interactive"><!--rustflow:root:start--><main><form data-testid="hydration-form"><label for="hydration-input">Name</label><input id="hydration-input" aria-label="Name" value="Ada"><p data-testid="hydration-input-output"><!--rustflow:dynamic:start:0-->Ada<!--rustflow:dynamic:end:0--></p><button type="button" data-testid="hydration-toggle">Toggle help</button><button type="button" data-testid="hydration-reverse">Reverse list</button></form><ul data-testid="hydration-list"><!--rustflow:dynamic:start:1--><li data-testid="hydration-item-first">First</li><li data-testid="hydration-item-second">Second</li><!--rustflow:dynamic:end:1--></ul><!--rustflow:dynamic:start:2--><p data-testid="hydration-help" role="status">Help</p><!--rustflow:dynamic:end:2--><a href="#hydration-details" data-testid="hydration-link">Go</a><div id="hydration-details">Target</div></main><!--rustflow:root:end--></div>';
   const fixture = interactive
     ? interactiveFixture
     : corrupt
       ? '<div id="hydration-fixture"><!--rustflow:root:start--><button data-testid="hydration-action">Corrupt: <!--rustflow:dynamic:start:0-->0<!--rustflow:dynamic:end:0--></button><!--rustflow:root:end--></div>'
-      : '<div id="hydration-fixture"><!--rustflow:root:start--><button data-testid="hydration-action">Count: <!--rustflow:dynamic:start:0-->0<!--rustflow:dynamic:end:0--></button><!--rustflow:root:end--></div>';
+      : repeat
+        ? '<div id="hydration-fixture" data-hydration-repeat="true"><!--rustflow:root:start--><button data-testid="hydration-action">Count: <!--rustflow:dynamic:start:0-->0<!--rustflow:dynamic:end:0--></button><!--rustflow:root:end--></div>'
+        : '<div id="hydration-fixture"><!--rustflow:root:start--><button data-testid="hydration-action">Count: <!--rustflow:dynamic:start:0-->0<!--rustflow:dynamic:end:0--></button><!--rustflow:root:end--></div>';
 
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
@@ -185,6 +187,23 @@ test("SSR hydration supports forms, conditional regions, keyed lists, and ordina
 
   await page.getByTestId("hydration-link").click();
   await expect(page).toHaveURL(/#hydration-details$/);
+});
+
+test("SSR hydration rejects a repeated mount without duplicating events", async ({ page }) => {
+  const diagnostics = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") diagnostics.push(message.text());
+  });
+
+  await gotoWithHydrationFixture(page, false, false, true);
+  const button = page.getByTestId("hydration-action");
+  await expect(button).toHaveText("Count: 0");
+  await expect.poll(() => diagnostics.some((message) => message.includes("already been hydrated"))).toBe(true);
+
+  await button.click();
+  await expect(button).toHaveText("Count: 1");
+  await button.click();
+  await expect(button).toHaveText("Count: 2");
 });
 
 test("SSR hydration mismatch reports a diagnostic and preserves static content", async ({ page }) => {
