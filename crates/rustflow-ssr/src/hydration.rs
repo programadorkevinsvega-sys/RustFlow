@@ -170,13 +170,15 @@ mod tests {
         assert!(encoded.contains("\\u003c/script\\u003e"));
         assert!(encoded.contains("\\u2028"));
         assert!(encoded.contains("\\u2029"));
-        assert_eq!(serde_json::from_str::<Value>(encoded).expect("valid JSON"), value);
+        assert_eq!(
+            serde_json::from_str::<Value>(encoded).expect("valid JSON"),
+            value
+        );
     }
 
     #[test]
     fn normalizes_json_and_repeats_identically_for_the_same_value() {
-        let first =
-            HydrationData::from_json(r#"{"z": 1, "a": [true, null]}"#).expect("valid JSON");
+        let first = HydrationData::from_json(r#"{"z": 1, "a": [true, null]}"#).expect("valid JSON");
         let second =
             HydrationData::from_json(r#"{"z": 1, "a": [true, null]}"#).expect("valid JSON");
 
