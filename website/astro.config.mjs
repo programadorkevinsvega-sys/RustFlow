@@ -29,6 +29,7 @@ export default defineConfig({
           label: 'Construir aplicaciones',
           items: [
             { label: 'CLI y generadores', slug: 'guides/cli' },
+            { label: 'Configuración por entornos', slug: 'guides/configuration' },
             { label: 'Servidor HTTP', slug: 'guides/server' },
             { label: 'SSR e hidratación', slug: 'guides/ssr' },
             { label: 'Layouts y páginas', slug: 'guides/layouts' },
