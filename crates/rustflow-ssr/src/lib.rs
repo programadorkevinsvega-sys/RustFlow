@@ -776,8 +776,10 @@ mod tests {
     use super::{HtmlRenderer, SsrError, render_to_string, render_with_components};
     use rustflow::{
         components::{ComponentDefinition, ComponentRegistry, ComponentRender},
+        reactivity::signal,
         view::{Element, View},
     };
+    use rustflow_view::{Property, PropertyValue};
     use std::{cell::Cell, rc::Rc};
 
     #[test]
@@ -1018,4 +1020,56 @@ mod tests {
             Err(SsrError::NestingLimitExceeded { limit: 1 })
         ));
     }
+
+    #[test]
+    fn reusable_renderer_isolates_component_state_between_requests() {
+        let cleanups = Rc::new(Cell::new(0));
+        let setup_cleanups = cleanups.clone();
+        let definition = ComponentDefinition::new("RouteValue", move |context, properties| {
+            let initial = properties
+                .iter()
+                .find(|property| property.name() == "value")
+                .and_then(|property| match property.value() {
+                    PropertyValue::Integer(value) => Some(*value),
+                    _ => None,
+                })
+                .unwrap_or_default();
+
+            // Setup runs in a fresh owner scope for each SSR render.
+            let state = signal(initial);
+            let cleanup_count = setup_cleanups.clone();
+            context.on_cleanup(move || cleanup_count.set(cleanup_count.get() + 1))?;
+            let render: ComponentRender = Rc::new(move |_properties, _children| {
+                Ok(View::element("output", [View::text(state.get().to_string())])?)
+            });
+            Ok(render)
+        })
+        .expect("definition")
+        .server_only();
+
+        let mut registry = ComponentRegistry::new();
+        registry.register(definition).expect("register");
+        let renderer = HtmlRenderer::with_components(&registry);
+        let view_for = |value| {
+            View::component(
+                "RouteValue",
+                [Property::new("value", value).expect("value property")],
+                [],
+                None,
+            )
+            .expect("route component")
+        };
+        let first_request = view_for(7_i32);
+        let second_request = view_for(12_i32);
+
+        let first = renderer.render(&first_request).expect("first request");
+        let second = renderer.render(&second_request).expect("second request");
+        let repeated = renderer.render(&first_request).expect("repeated request");
+
+        assert_eq!(first, "<output>7</output>");
+        assert_eq!(second, "<output>12</output>");
+        assert_eq!(repeated, first, "the same public route props render deterministically");
+        assert_eq!(cleanups.get(), 3, "every request disposes its component scope");
+    }
+
 }
