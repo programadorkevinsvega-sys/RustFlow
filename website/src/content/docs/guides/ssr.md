@@ -5,7 +5,7 @@ description: Aprende a renderizar vistas de forma segura, crear documentos compl
 
 El renderizado del lado del servidor (SSR) transforma una vista tipada en HTML que el navegador puede mostrar antes de ejecutar código de cliente. En RustFlow conviene distinguir tres responsabilidades: el serializador produce un fragmento HTML, el adapter HTTP puede convertir una vista en un documento completo y la hidratación del navegador intenta conectar una vista cliente compatible al DOM SSR existente.
 
-Todo este conjunto está en etapa de prototipo. Usa los ejemplos para aprender el contrato actual, no como una afirmación de que el framework ya ofrece un despliegue de producción completo. Los fragmentos que no incluyen una función o el inicio del handler son extractos para explicar una API; el ejemplo server-side ejecutable completo está en `crates/rustflow-server/examples/basic.rs` y el tutorial de producto enlaza otro ejecutable.
+Todo este conjunto está en etapa de prototipo. Si necesitas iniciar una aplicación, el [CLI y sus generadores](/guides/cli/) crean un servidor base; esta guía y los ejemplos existentes explican explícitamente la composición SSR, los catálogos y los layouts, que no se montan automáticamente por el CLI. Usa los ejemplos para aprender el contrato actual, no como una afirmación de que el framework ya ofrece un despliegue de producción completo. Los fragmentos que no incluyen una función o el inicio del handler son extractos para explicar una API; el ejemplo server-side ejecutable completo está en `crates/rustflow-server/examples/basic.rs` y el tutorial de producto enlaza otro ejecutable.
 
 ## 1. Renderizar una vista a un fragmento
 

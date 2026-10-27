@@ -8,6 +8,7 @@ This document defines the initial repository conventions. It is intentionally sm
 - Crate and package names use lowercase kebab-case. The initial public package is `rustflow`.
 - Add a crate only when it has a cohesive responsibility, a meaningful test boundary, and a clear dependency direction. Do not split crates merely to mirror a diagram.
 - Prefer workspace-inherited edition, MSRV, license, repository metadata, and lint policy.
+- `crates/rustflow-cli` owns the `rustflow` binary and Cargo orchestration. Generators use deterministic templates and reject file collisions.
 - The MSRV is Rust 1.85. CI checks both 1.85 and current stable. Raise it only through a documented decision and corresponding manifest, CI, and documentation updates.
 
 ## Dependency policy

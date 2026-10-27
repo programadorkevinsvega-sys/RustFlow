@@ -21,8 +21,8 @@ Consulta el [estado público de las capacidades](website/src/content/docs/projec
 
 ## Qué sigue pendiente o tiene alcance limitado
 
-- <code>use_memo</code>, <code>use_ref</code> y <code>use_context</code>.
-- CLI propio, scaffolding y comandos <code>rustflow new/dev/build</code>.
+- <code>use_memo</code>, <code>use_ref</code> y <code>use_context</code> siguen pendientes.
+- La configuración completa por entornos, validación de formularios, sesiones, autenticación/autorización, CSRF, server actions y persistencia integrada siguen pendientes. El CLI de la Fase 6.1 no implementa estas capas.
 - Validación de formularios de servidor, sesiones, autenticación/autorización, CSRF, server actions y persistencia integrada.
 - Un router general integrado: el callback de navegación cliente y las rutas HTTP de servidor no son un router full-stack unificado.
 - Un flujo de desarrollo y despliegue de producción validado, una política completa de compatibilidad y la revisión de seguridad de producción.
@@ -37,6 +37,7 @@ La hidratación y la navegación cliente existen como APIs explícitas y optativ
 - <code>crates/rustflow-dom</code>: runtime DOM/WASM, reconciliación, hidratación y navegación cliente.
 - <code>crates/rustflow-ssr</code>: serialización segura de vistas a fragmentos HTML y datos acotados para hidratación.
 - <code>crates/rustflow-server</code>: adapter HTTP, documentos HTML, páginas compuestas y servidor.
+- <code>crates/rustflow-cli</code>: binario <code>rustflow</code>, scaffolding de servidor y generadores protegidos contra colisiones.
 - <code>examples/browser</code>: aplicación de navegador con Counter, lista de tareas y cobertura Playwright.
 - <code>website/</code>: documentación pública para desarrolladores.
 - <code>docs/</code>: contratos técnicos, semántica, decisiones arquitectónicas y detalles de ingeniería.
@@ -51,6 +52,7 @@ Desde la raíz del repositorio:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
+cargo test -p rustflow-cli
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 ~~~
 
@@ -62,7 +64,16 @@ cargo run -p rustflow-server --example basic
 
 Abre <code>http://127.0.0.1:3000/</code>. Para compilar y ejecutar el ejemplo del navegador, consulta [examples/browser/README.md](examples/browser/README.md). Para ejecutar el website, consulta [website/README.md](website/README.md).
 
-No hay todavía un flujo recomendado de instalación de una aplicación nueva desde un paquete estable publicado en crates.io ni un CLI propio. La forma más fiable de evaluar las APIs es usar el repositorio y los ejemplos de la misma revisión.
+No existe una publicación estable de RustFlow en crates.io. Desde un checkout de este repositorio puedes instalar el CLI experimental y crear una aplicación de servidor:
+
+~~~sh
+cargo install --path crates/rustflow-cli --locked
+rustflow new hello-rustflow
+cd hello-rustflow
+rustflow dev
+~~~
+
+Consulta [docs/CLI.md](docs/CLI.md) y la [guía pública del CLI](website/src/content/docs/guides/cli.md) para conocer los límites del scaffold y de los generadores.
 
 ## Calidad, límites y contribuciones
 

@@ -28,6 +28,7 @@ export default defineConfig({
         {
           label: 'Construir aplicaciones',
           items: [
+            { label: 'CLI y generadores', slug: 'guides/cli' },
             { label: 'Servidor HTTP', slug: 'guides/server' },
             { label: 'SSR e hidratación', slug: 'guides/ssr' },
             { label: 'Layouts y páginas', slug: 'guides/layouts' },
@@ -42,6 +43,7 @@ export default defineConfig({
             { label: 'Página de producto SSR', slug: 'tutorials/product-page' },
             { label: 'API JSON', slug: 'tutorials/json-api' },
             { label: 'Interfaz reactiva de tareas', slug: 'tutorials/reactive-todo' },
+            { label: 'Primera aplicación con el CLI', slug: 'tutorials/first-cli-app' },
           ],
         },
         {
@@ -56,7 +58,6 @@ export default defineConfig({
           items: [
             { label: 'Escribir documentación', slug: 'contributing/documentation' },
             { label: 'Verificación del runtime', slug: 'verification/reactivity' },
-            { label: 'CLI planificado', slug: 'guides/cli' },
           ],
         },
       ],

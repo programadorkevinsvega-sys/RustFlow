@@ -45,6 +45,17 @@ La hidratación es optativa y añade límites deterministas a la salida SSR; el 
 
 <code>ClientNavigation</code> ofrece interceptación conservadora de enlaces same-origin, integración con History API y manejo de atrás/adelante. La mejora progresiva de formulario requiere opt-in y se limita a GET URL-encoded con controles escalares compatibles; el resto conserva el envío nativo. La aplicación debe definir las rutas del cliente; esto no es un router general ni incluye server actions. El PR #41 se fusionó y los checks de CI post-merge sobre el commit documentado en el roadmap se ejecutaron con éxito; los checks propios del PR también cubrieron documentación, gobernanza y dependencias. El ADR 0011 sigue marcado como “Proposed for review”: ese estado indica que falta la aprobación arquitectónica formal, no que la implementación o sus pruebas estén ausentes.
 
+### Fase 6.1 — CLI y generadores: implementación experimental
+
+La rama de la Fase 6.1 incorpora `crates/rustflow-cli` con `rustflow new`, `rustflow dev`, `rustflow build` y los generadores de componentes, páginas, controladores, modelos y migraciones. Este texto describe el alcance de la revisión; la fase no se declara cerrada hasta que los tests y CI pasen sobre el HEAD final de la PR.
+
+- `new` crea un proyecto de servidor y fija dependencias Git a la revisión fuente del CLI.
+- `dev` y `build` delegan a Cargo; `dev` no incluye watcher ni hot reload.
+- Los generadores rechazan colisiones y editan solo una sección delimitada en los índices de módulos.
+- Los modelos son structs Rust y las migraciones plantillas SQL; no existe ORM, conexión o runner de migraciones integrado.
+
+Sigue la [guía del CLI](/guides/cli/) y el [tutorial completo](/tutorials/first-cli-app/) para comandos y recuperación ante errores.
+
 ## Matriz rápida: ¿qué puedes hacer?
 
 | Tarea | ¿Disponible hoy? | Qué leer |
@@ -58,7 +69,7 @@ La hidratación es optativa y añade límites deterministas a la salida SSR; el 
 | Hidratar HTML SSR existente | Sí, opt-in y con una vista cliente compatible | [SSR e hidratación](/guides/ssr/) |
 | Navegación cliente e historial | Sí, opt-in con callback de ruta de aplicación | [Navegación](/guides/navigation/) |
 | Forms mejorados | Solo GET elegibles con opt-in | [Navegación](/guides/navigation/) |
-| CLI y scaffolding | No | [CLI planificado](/guides/cli/) |
+| CLI y scaffolding | Experimental, en revisión en la Fase 6.1 | [CLI y generadores](/guides/cli/) |
 | <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> | No | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
 | Auth/sesiones/CSRF/server actions/persistencia integrada | No | [Product scope](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/PRODUCT_SCOPE.md) |
 

@@ -3,7 +3,7 @@ title: "Tutorial: una API JSON"
 description: Recorre los endpoints HTTP ejecutables de RustFlow para query strings, parámetros de ruta y cuerpos JSON.
 ---
 
-Este tutorial usa el servidor real del repositorio, no una API inventada para la documentación. La implementación fuente es [`crates/rustflow-server/examples/basic.rs`](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow-server/examples/basic.rs). Incluye endpoints de demostración y no depende de una base de datos.
+Este tutorial usa el servidor real del repositorio, no una API inventada para la documentación. Puedes crear primero una app con el [CLI experimental](/guides/cli/), pero el endpoint JSON de este tutorial pertenece al ejemplo canónico y no se agrega automáticamente al scaffold. La implementación fuente es [`crates/rustflow-server/examples/basic.rs`](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow-server/examples/basic.rs). Incluye endpoints de demostración y no depende de una base de datos.
 
 ## 1. Arrancar el servidor
 

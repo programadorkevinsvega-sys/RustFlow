@@ -553,6 +553,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustflow-cli"
+version = "0.1.0"
+
+[[package]]
 name = "rustflow-dom"
 version = "0.1.0"
 dependencies = [

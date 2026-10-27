@@ -276,11 +276,13 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 ## Phase 6 — Laravel-inspired developer experience
 
 ### 6.1 CLI
-- [ ] Implement rustflow new.
-- [ ] Implement rustflow dev and rustflow build.
-- [ ] Generate components, pages, controllers, models, and migrations.
-- [ ] Prevent generators from silently overwriting user files.
-- [ ] Add deterministic CLI integration tests.
+- [x] Implement rustflow new.
+- [x] Implement rustflow dev and rustflow build.
+- [x] Generate components, pages, controllers, models, and migrations.
+- [x] Prevent generators from silently overwriting user files.
+- [x] Add deterministic CLI integration tests.
+
+**Verification gate:** the implementation criteria above have evidence in the CLI code, deterministic unit/integration tests, and technical/public documentation. Do not declare Phase 6.1 formally closed until every required check has a green result on the final PR HEAD, including Browser E2E and bundle-size validation.
 
 ### 6.2 Configuration
 - [ ] Define configuration precedence and validation.

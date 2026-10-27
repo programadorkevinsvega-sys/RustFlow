@@ -19,22 +19,24 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 
 ## Una ruta de aprendizaje
 
-- [1. Empezar desde cero](/getting-started/setup/): clonar el repositorio, ejecutar tests y conocer los workflows actuales.
-- [2. Aprender estado y efectos](/concepts/reactivity/): señales, dependencias, batching, scopes y limpieza.
-- [3. Crear componentes](/guides/components/): vistas, props, eventos, estado y listas keyed.
-- [4. Crear rutas HTTP](/guides/server/): HTML, JSON, parámetros y middleware.
-- [5. Renderizar HTML en servidor](/guides/ssr/): escape, documentos completos, catálogo e hidratación optativa.
-- [6. Compartir estructura con layouts](/guides/layouts/): composición de páginas y datos públicos.
-- [7. Añadir navegación progresiva](/guides/navigation/): historial, enlaces elegibles y formularios GET.
-- [8. Construir una página de producto](/tutorials/product-page/): conectar rutas, props, catálogo SSR y layouts.
-- [9. Construir una API JSON](/tutorials/json-api/): comprobar query strings, parámetros de ruta y cuerpo JSON con `curl`.
-- [10. Crear una UI interactiva](/tutorials/reactive-todo/): estado, eventos, listas con claves y limpieza en el navegador.
-- [11. Probar el proyecto](/guides/testing/): ejecutar tests Rust, integración HTTP y Playwright E2E.
+- [1. Crear tu primera aplicación con el CLI](/tutorials/first-cli-app/): scaffold de servidor, ejecución, build, generadores y colisiones.
+- [2. Empezar desde cero](/getting-started/setup/): clonar el repositorio, ejecutar tests y conocer los workflows actuales.
+- [3. Aprender estado y efectos](/concepts/reactivity/): señales, dependencias, batching, scopes y limpieza.
+- [4. Crear componentes](/guides/components/): vistas, props, eventos, estado y listas keyed.
+- [5. Crear rutas HTTP](/guides/server/): HTML, JSON, parámetros y middleware.
+- [6. Renderizar HTML en servidor](/guides/ssr/): escape, documentos completos, catálogo e hidratación optativa.
+- [7. Compartir estructura con layouts](/guides/layouts/): composición de páginas y datos públicos.
+- [8. Añadir navegación progresiva](/guides/navigation/): historial, enlaces elegibles y formularios GET.
+- [9. Construir una página de producto](/tutorials/product-page/): conectar rutas, props, catálogo SSR y layouts.
+- [10. Construir una API JSON](/tutorials/json-api/): comprobar query strings, parámetros de ruta y cuerpo JSON con `curl`.
+- [11. Crear una UI interactiva](/tutorials/reactive-todo/): estado, eventos, listas con claves y limpieza en el navegador.
+- [12. Probar el proyecto](/guides/testing/): ejecutar tests Rust, integración HTTP y Playwright E2E.
 
 ## Elige un caso de uso
 
 | Lo que quieres explorar | Empieza aquí |
 |---|---|
+| Crear un proyecto de servidor y generar archivos | [CLI y generadores](/guides/cli/) y [tutorial de primera aplicación](/tutorials/first-cli-app/) |
 | Un componente o un contador reactivo | [Componentes](/guides/components/) y [reactividad](/concepts/reactivity/) |
 | Una lista de tareas interactiva en el navegador | [Tutorial browser/WASM](/tutorials/reactive-todo/) |
 | Un endpoint que recibe o devuelve JSON | [Tutorial de API JSON](/tutorials/json-api/) |
@@ -56,7 +58,7 @@ El [catálogo de ejemplos](/reference/examples/) conecta cada caso con un archiv
 
 ## Lo que no debes asumir
 
-Todavía no hay un CLI propio, scaffolding, `use_memo`, `use_ref`, `use_context`, sesiones/autenticación integradas, CSRF, server actions, persistencia integrada ni una receta de despliegue de producción. El callback de navegación cliente no es un router general y la mejora de formularios no procesa cargas de archivos ni mutaciones. Consulta [Estado del proyecto](/project-status/) y [referencia de disponibilidad de API](/reference/api-status/).
+El CLI de la Fase 6.1 es experimental y solo genera un servidor nativo; no ofrece hot reload, un bundle browser automático ni persistencia. `use_memo`, `use_ref`, `use_context`, sesiones/autenticación integradas, CSRF, server actions, persistencia y una receta de despliegue de producción siguen pendientes. El callback de navegación cliente no es un router general y la mejora de formularios no procesa cargas de archivos ni mutaciones. Consulta [Estado del proyecto](/project-status/) y [referencia de disponibilidad de API](/reference/api-status/).
 
 ## Si ya conoces React
 

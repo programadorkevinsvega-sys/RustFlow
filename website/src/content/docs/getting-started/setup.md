@@ -3,7 +3,7 @@ title: Empezar con RustFlow
 description: Prepara Rust, prueba el runtime, ejecuta el servidor y compila la demo interactiva.
 ---
 
-Esta guía te ayuda a comprobar el código real de RustFlow. Distingue tres tareas: ejecutar los tests del workspace, probar el ejemplo HTTP y levantar el ejemplo WASM del navegador. **No es todavía un instalador de aplicaciones**: RustFlow es pre-1.0, no tiene un CLI propio ni un workflow estable de scaffolding.
+Esta guía te ayuda a comprobar el código real de RustFlow: ejecutar tests del workspace, probar el ejemplo HTTP y levantar el ejemplo WASM del navegador. El CLI experimental de la Fase 6.1 puede crear una aplicación de servidor y generar archivos; consulta la [guía del CLI](/guides/cli/) antes de adoptarlo. RustFlow sigue siendo pre-1.0 y no es una plataforma lista para producción.
 
 ## 1. Requisitos
 
@@ -31,7 +31,20 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 
 Estas comprobaciones verifican la revisión del repositorio que tienes clonada. No prueban por sí solas el despliegue, la estabilidad de APIs ni la preparación para producción.
 
-## 3. Ejecutar el servidor HTTP
+## 3. Crear una aplicación con el CLI
+
+Desde la raíz del checkout instala el binario y crea una aplicación de servidor:
+
+~~~sh
+cargo install --path crates/rustflow-cli --locked
+rustflow new hello-rustflow
+cd hello-rustflow
+rustflow dev
+~~~
+
+El scaffold es un servidor nativo. Si quieres recorrer las APIs del repositorio sin crear una carpeta nueva, continúa con los ejemplos de esta guía. El [tutorial de primera aplicación](/tutorials/first-cli-app/) explica el flujo completo, los generadores y las colisiones.
+
+## 4. Ejecutar el servidor HTTP
 
 Desde la raíz del repositorio:
 
@@ -49,7 +62,7 @@ cargo test -p rustflow-server --test http_integration
 
 Para probar la API JSON con peticiones reales, sigue [Tutorial: una API JSON](/tutorials/json-api/). Para ejecutar el tutorial de producto, detén el primer servidor y ejecuta `cargo run -p rustflow-server --example product_page`; abre `/products/keyboard` o `/products/mouse`. Después continúa con [Servidor HTTP](/guides/server/), [SSR](/guides/ssr/) y [Layouts](/guides/layouts/).
 
-## 4. Ejecutar la interfaz interactiva WASM
+## 5. Ejecutar la interfaz interactiva WASM
 
 ~~~sh
 cd examples/browser
@@ -67,7 +80,7 @@ npm run test:e2e
 
 Esta demo muestra Counter, estado reactivo, eventos, una lista de tareas con claves, montaje/desmontaje condicional y navegación optativa. Las fixtures E2E también prueban hidratación en HTML preparado para ese contrato; no quiere decir que el servidor de demo sea una aplicación SSR integrada. El recorrido guiado está en [Tutorial: interfaz reactiva de tareas](/tutorials/reactive-todo/).
 
-## 5. Conceptos que conviene aprender
+## 6. Conceptos que conviene aprender
 
 1. [Reactividad](/concepts/reactivity/): qué es una señal, cómo se registran dependencias y cuándo se ejecuta un efecto.
 2. [Crear componentes](/guides/components/): props, `view!`, eventos y actualización de UI.
@@ -77,6 +90,6 @@ Esta demo muestra Counter, estado reactivo, eventos, una lista de tareas con cla
 6. [Página de producto](/tutorials/product-page/): tutorial integrado que conecta las piezas.
 7. [Catálogo de ejemplos](/reference/examples/): mapa de todos los ejecutables verificados del repositorio.
 
-## ¿Puedo crear un proyecto con cargo add o rustflow new?
+## Instalación y límites del CLI
 
-No hay una versión estable publicada ni un CLI propio verificado para crear proyectos, ejecutar `rustflow dev` o generar componentes. No asumas que esos comandos existen. Por ahora, prueba los ejemplos dentro del workspace y consulta [Estado del proyecto](/project-status/) antes de adoptar una capacidad.
+Todavía no hay una versión estable publicada en crates.io. El método disponible es instalar desde el checkout con `cargo install --path crates/rustflow-cli --locked`. El scaffold genera un servidor nativo; las plantillas de modelo y migración no integran persistencia. Consulta [CLI y generadores](/guides/cli/) y [Estado del proyecto](/project-status/).

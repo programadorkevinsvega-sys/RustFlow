@@ -29,9 +29,10 @@ Once the Cargo workspace exists, run the checks that apply to your change:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
+cargo test -p rustflow-cli
 ```
 
-For browser/runtime changes, run the relevant WASM build and browser end-to-end tests. For security-sensitive changes, add regression tests and explain the threat model. If a command cannot run because the relevant workspace or tool is not yet implemented, state that clearly in the PR.
+For CLI changes, run `cargo test -p rustflow-cli`; the integration suite creates isolated temporary applications and builds a generated project. For browser/runtime changes, run the relevant WASM build and browser end-to-end tests. For security-sensitive changes, add regression tests and explain the threat model. If a command cannot run because the relevant workspace or tool is not yet implemented, state that clearly in the PR.
 
 Do not claim that a check passed unless it actually ran and passed.
 
