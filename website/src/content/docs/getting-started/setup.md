@@ -47,7 +47,7 @@ Para ejecutar las pruebas de integración HTTP/TCP:
 cargo test -p rustflow-server --test http_integration
 ~~~
 
-Después continúa con [Servidor HTTP](/guides/server/), [SSR](/guides/ssr/) y [Layouts](/guides/layouts/).
+Para ejecutar el tutorial de producto, detén el primer servidor y ejecuta `cargo run -p rustflow-server --example product_page`; abre `/products/keyboard` o `/products/mouse`. Después continúa con [Servidor HTTP](/guides/server/), [SSR](/guides/ssr/) y [Layouts](/guides/layouts/).
 
 ## 4. Ejecutar la interfaz interactiva WASM
 
