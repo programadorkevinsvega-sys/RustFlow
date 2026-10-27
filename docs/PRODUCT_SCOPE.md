@@ -8,7 +8,11 @@
 
 RustFlow is an early-stage Rust web framework project intended to make it practical to build interactive web interfaces and full-stack web applications with Rust. Its differentiator is a RustFlow-owned reactive UI model combined with a convention-oriented server workflow inspired by Laravel. The project is not production-ready and does not promise stable APIs.
 
-The first milestone is a small, testable vertical slice—not a complete full-stack framework. RustFlow's target is a React-like component-authoring experience built with Rust types and RustFlow-owned reactivity; it is not a promise of source/API compatibility with React. Parts of this experience are not implemented yet and must remain labeled as planned until verified.
+The first milestone is a small, testable vertical slice—not a complete full-stack framework. RustFlow's target is a React-like component-authoring experience built with Rust types and RustFlow-owned reactivity; it is not a promise of source/API compatibility with React. Parts of this experience were not implemented when this baseline was accepted and must remain labeled as planned until verified.
+
+## Current implementation note (2026-10-27)
+
+This document preserves the original Phase 0.2 product-scope baseline; its references to the initial MVP and later roadmap milestones are historical scope statements, not the current feature inventory. Since this baseline, later phases have implemented the component/browser MVP, HTTP server prototype, SSR page/layout composition, opt-in DOM hydration, and opt-in client navigation/forms. Those additions do not make RustFlow stable or production-ready. For current availability and exact limits, see the [public project status](../website/src/content/docs/project-status.md), [API availability reference](../website/src/content/docs/reference/api-status.md), and [ROADMAP.md](../ROADMAP.md).
 
 ## 2. Target users
 
@@ -66,7 +70,7 @@ The MVP is complete only when all of the following are implemented, documented, 
 6. CI runs core unit tests, browser tests, and server integration tests on pull requests.
 7. A clean-checkout guide lets a contributor install prerequisites, run checks, and launch examples.
 
-This MVP does **not** include complete SSR/hydration composition, a complete authentication system, a custom ORM, or production deployment tooling. Prototype HTML-fragment/document rendering exists, but full-stack SSR composition and client hydration remain later roadmap milestones.
+This paragraph records the initial MVP boundary. Later phases have since added SSR page/layout composition and opt-in hydration/navigation, but RustFlow still does not provide a complete production-ready full-stack workflow, integrated authentication, a custom ORM, or production deployment tooling.
 
 ## 6. MVP user stories and acceptance criteria
 
@@ -126,7 +130,7 @@ Acceptance criteria:
 
 - Reimplementing Tokio, an HTTP server, database drivers, cryptographic primitives, or a general-purpose ORM.
 - Supporting every HTML element, browser API, and browser engine from day one.
-- Full SSR/hydration and client-side navigation.
+- Turnkey SSR/hydration and client-side navigation in the initial MVP; later phases implemented an opt-in prototype with explicit compatibility and fallback limits.
 - Built-in production-grade authentication, authorization, sessions, and migrations.
 - Hot reload, a complete design system, or an extensive component library.
 - Promising API stability, performance superiority, or production readiness without release evidence.
@@ -140,7 +144,7 @@ Acceptance criteria:
 | Procedural macro complexity and poor diagnostics | High / Medium | Start with a constrained grammar; use compile-fail tests and source spans | Invalid syntax produces actionable errors |
 | Ergonomic component API hides runtime ownership or loses reactive tracking | High / High | Record the component/owner contract in an ADR; test scope isolation, reactive interpolation, callbacks, cleanup, and browser updates | The intended Counter and todo compile and pass browser E2E tests without manual runtime/registry plumbing |
 | Native/WASM dependency leakage | Medium / High | Separate target-specific crates and features; compile each supported target in CI | Native and WASM checks run independently |
-| SSR/hydration mismatch | Medium / High | Defer hydration beyond MVP; define deterministic rendering and serialization contracts first | Explicit mismatch tests before enabling hydration |
+| SSR/hydration mismatch | Medium / High | Keep hydration opt-in, validate the existing DOM before enabling events, and preserve the whole SSR root as static on mismatch | Hydration mismatch and preservation tests in Phase 5.3 |
 | XSS or unsafe HTML rendering | Medium / Critical | Escape by default; make trusted HTML explicit and narrowly scoped; test adversarial inputs | Security tests for text, attributes, and serialization |
 | Scope growth into a full Laravel clone | High / High | Keep MVP limited to the defined vertical slice; require ADRs for major additions | Roadmap changes include rationale and acceptance criteria |
 | Dependency/API churn | Medium / Medium | Pin policy rather than arbitrary versions; review dependencies and isolate integrations | Dependency review and upgrade tests |
@@ -158,15 +162,15 @@ The initial decisions and alternatives are recorded in:
 - [ADR 0003 — Server integration](adr/0003-server-integration.md)
 - [ADR 0004 — React-like component authoring](adr/0004-react-like-component-authoring.md)
 
-These records are proposed design constraints for review, not proof of implemented functionality. Revisit them when prototypes provide evidence that changes the trade-offs.
+Each ADR's status line records whether its architectural decision is accepted or still proposed. An accepted decision explains a design choice but is not proof that every related feature is implemented; feature availability must be checked against code, tests, and the roadmap.
 
 ## 10. Phase 0.2 exit criteria
 
-- [ ] Maintainers approve target users, product principles, supported platforms, and non-goals.
-- [ ] MVP user stories and acceptance criteria are reviewed.
-- [ ] Risks have named mitigations and observable validation evidence.
-- [ ] The architecture decision records relevant to Phase 0.2 are reviewed and accepted or amended.
-- [ ] README and roadmap agree with this scope.
-- [ ] No planned capability is represented as implemented.
+- [x] Maintainers approve target users, product principles, supported platforms, and non-goals.
+- [x] MVP user stories and acceptance criteria are reviewed.
+- [x] Risks have named mitigations and observable validation evidence.
+- [x] The architecture decision records relevant to Phase 0.2 are reviewed and accepted or amended.
+- [x] README and roadmap agree with this scope.
+- [x] No planned capability is represented as implemented.
 
-Phase 0.2 is not complete until the review items are resolved and the roadmap is updated accordingly.
+Phase 0.2 was marked complete in ROADMAP.md after its scope baseline and initial architecture/governance criteria were accepted. Keep this checklist and the roadmap synchronized if that status changes.
