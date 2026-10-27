@@ -274,7 +274,6 @@ impl ComponentRegistry {
     }
 }
 
-
 /// A shareable setup factory for server component definitions.
 ///
 /// The factory may be called concurrently. Request-local reactive values belong in the returned
@@ -307,13 +306,10 @@ impl SharedComponentDefinition {
     /// Define a component with a shareable setup factory and a request-local render callback.
     pub fn new(
         name: impl Into<String>,
-        setup: impl Fn(
-                &ComponentContext,
-                &[Property],
-            ) -> Result<ComponentRender, ComponentError>
-            + Send
-            + Sync
-            + 'static,
+        setup: impl Fn(&ComponentContext, &[Property]) -> Result<ComponentRender, ComponentError>
+        + Send
+        + Sync
+        + 'static,
     ) -> Result<Self, ComponentError> {
         Ok(Self {
             name: ComponentName::new(name)?,
@@ -362,15 +358,19 @@ impl SharedComponentDefinition {
 
     fn to_local_definition(&self) -> Result<ComponentDefinition, ComponentError> {
         let setup = Arc::clone(&self.setup);
-        Ok(ComponentDefinition::new(
-            self.name.as_str().to_owned(),
-            move |context, properties| setup(context, properties),
-        )?
-        .with_capability(self.capability))
+        Ok(
+            ComponentDefinition::new(self.name.as_str().to_owned(), move |context, properties| {
+                setup(context, properties)
+            })?
+            .with_capability(self.capability),
+        )
     }
 
     fn build_ssr_fallback(&self) -> Result<Option<View>, ComponentError> {
-        self.ssr_fallback.as_ref().map(|factory| factory()).transpose()
+        self.ssr_fallback
+            .as_ref()
+            .map(|factory| factory())
+            .transpose()
     }
 }
 
@@ -442,7 +442,9 @@ impl SharedComponentCatalog {
 
     /// Return the declared capability for a registered component.
     pub fn capability(&self, name: &str) -> Option<ComponentCapability> {
-        self.definitions.get(name).map(SharedComponentDefinition::capability)
+        self.definitions
+            .get(name)
+            .map(SharedComponentDefinition::capability)
     }
 
     /// Build a new local SSR fallback, if one is configured.
@@ -1265,7 +1267,13 @@ mod shared_catalog_tests {
         SharedComponentDefinition,
     };
     use rustflow_view::View;
-    use std::{rc::Rc, sync::{Arc, atomic::{AtomicUsize, Ordering}}};
+    use std::{
+        rc::Rc,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
 
     #[test]
     fn shared_catalog_is_send_sync_and_rejects_duplicate_names() {
@@ -1282,7 +1290,9 @@ mod shared_catalog_tests {
         };
 
         let mut builder = SharedComponentCatalogBuilder::new();
-        builder.register(make_definition()).expect("first definition");
+        builder
+            .register(make_definition())
+            .expect("first definition");
         assert!(builder.register(make_definition()).is_err());
         let catalog = builder.build();
         assert!(catalog.contains("SharedText"));

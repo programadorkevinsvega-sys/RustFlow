@@ -10,7 +10,8 @@ use std::{collections::HashSet, error::Error, fmt};
 
 use rustflow::{
     components::{
-        ComponentCapability, ComponentError, ComponentRegistry, RenderTarget, SharedComponentCatalog,
+        ComponentCapability, ComponentError, ComponentRegistry, RenderTarget,
+        SharedComponentCatalog,
     },
     reactivity::{Runtime, RuntimeError, Scope},
 };
@@ -1146,9 +1147,8 @@ mod shared_catalog_tests {
 
         let cleanup_count = Arc::new(AtomicUsize::new(0));
         let setup_cleanup_count = Arc::clone(&cleanup_count);
-        let definition = SharedComponentDefinition::new(
-            "BrokenComponent",
-            move |context, _properties| {
+        let definition =
+            SharedComponentDefinition::new("BrokenComponent", move |context, _properties| {
                 let cleanup_count = Arc::clone(&setup_cleanup_count);
                 context.on_cleanup(move || {
                     cleanup_count.fetch_add(1, Ordering::SeqCst);
@@ -1157,9 +1157,8 @@ mod shared_catalog_tests {
                     Ok(View::element("script", [View::text("not allowed")])?)
                 });
                 Ok(render)
-            },
-        )
-        .expect("definition");
+            })
+            .expect("definition");
         let mut builder = SharedComponentCatalogBuilder::new();
         builder.register(definition).expect("register");
         let catalog = builder.build();
@@ -1182,9 +1181,7 @@ mod shared_catalog_tests {
         })
         .expect("definition")
         .browser_only()
-        .with_ssr_fallback_factory(|| {
-            Ok(View::element("span", [View::text("static fallback")])?)
-        });
+        .with_ssr_fallback_factory(|| Ok(View::element("span", [View::text("static fallback")])?));
         let mut builder = SharedComponentCatalogBuilder::new();
         builder.register(definition).expect("register");
         let catalog = builder.build();

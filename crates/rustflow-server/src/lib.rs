@@ -1591,8 +1591,8 @@ mod tests {
         ComponentDefinition, ComponentRegistry, ComponentRender, SharedComponentCatalog,
         SharedComponentCatalogBuilder, SharedComponentDefinition,
     };
-    use rustflow_view::{Property, PropertyValue};
     use rustflow::reactivity::signal;
+    use rustflow_view::{Property, PropertyValue};
     use serde::Deserialize;
     use std::{
         rc::Rc,
@@ -2129,8 +2129,8 @@ mod tests {
             let catalog = Arc::clone(&route_catalog);
             async move {
                 let id = request.path_param("id").unwrap_or("missing").to_owned();
-                let prop = Property::new("id", id)
-                    .map_err(|_| HttpError::internal_server_error())?;
+                let prop =
+                    Property::new("id", id).map_err(|_| HttpError::internal_server_error())?;
                 HtmlPage::from_component("Article", "ArticlePage", [prop], [])?
                     .language("es")
                     .with_shared_components(&catalog)
