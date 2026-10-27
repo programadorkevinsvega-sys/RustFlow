@@ -1,5 +1,5 @@
 ---
-title: Tutorial: página de producto SSR
+title: "Tutorial: página de producto SSR"
 description: Construye una página de producto con una ruta HTTP, props públicas, un componente registrado y un layout.
 ---
 
