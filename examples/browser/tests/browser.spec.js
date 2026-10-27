@@ -267,7 +267,7 @@ test("opt-in GET forms use client navigation and suppress duplicate submissions"
     }
   });
 
-  await page.getByRole("textbox", { name: "Search query" }).fill("rust flow");
+  await page.getByRole("searchbox", { name: "Search query" }).fill("rust flow");
   await page.evaluate(() => {
     const form = document.querySelector('[data-testid="search-form"]');
     form.requestSubmit();
