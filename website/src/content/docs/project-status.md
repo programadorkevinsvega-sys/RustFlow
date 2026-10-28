@@ -82,6 +82,7 @@ La fase no se debe marcar cerrada hasta que el código, las pruebas de integraci
 | Componer páginas con layouts y props de ruta | Sí, con componentes registrados/catálogo | [Layouts](/guides/layouts/) |
 | Hidratar HTML SSR existente | Sí, opt-in y con una vista cliente compatible | [SSR e hidratación](/guides/ssr/) |
 | Navegación cliente e historial | Sí, opt-in con callback de ruta de aplicación | [Navegación](/guides/navigation/) |
+| Extracción tipada y errores 422 | Experimental, Fase 6.3 en revisión | [Formularios y validación](/guides/forms-validation/) |
 | Forms mejorados | Solo GET elegibles con opt-in | [Navegación](/guides/navigation/) |
 | CLI y scaffolding | Experimental, en revisión en la Fase 6.1 | [CLI y generadores](/guides/cli/) |
 | <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> | No | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
