@@ -72,7 +72,7 @@ Si una mutación se autentica mediante cookies del navegador, conecta el middlew
 use rustflow_server::{CsrfProtection, HttpError, HttpMethod, Request, Response};
 
 let key = std::env::var("RUSTFLOW_CSRF_KEY")?;
-let csrf = CsrfProtection::new(key)?;
+let csrf = CsrfProtection::new(key.as_bytes())?;
 let for_token_route = csrf.clone();
 
 app.get("/profile/csrf-token", move |request: Request| {
