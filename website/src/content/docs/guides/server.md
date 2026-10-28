@@ -81,7 +81,7 @@ La configuración del servidor establece límites de body, timeouts para lectura
 
 El API de apagado graceful recibe una future desde el punto de composición de la aplicación; la integración con señales del sistema operativo corresponde al caller. TLS local está implementado con rustls. La política de proxies de confianza requiere que el proxy sanee las cabeceras reenviadas y que el enlace hacia el origen esté protegido.
 
-Estos controles son una base de ingeniería, no reemplazan rate limiting, revisión de amenazas, autenticación, autorización, CSRF, hardening del reverse proxy ni una receta de producción.
+Estos controles son una base de ingeniería, no reemplazan rate limiting, revisión de amenazas, autenticación, autorización, hardening del reverse proxy ni una receta de producción. En mutaciones autenticadas mediante cookies, conecta además el middleware CSRF optativo a las rutas correspondientes; no sustituye autenticación o autorización.
 
 ## 7. SSR, páginas y layouts
 
