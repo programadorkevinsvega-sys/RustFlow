@@ -3,8 +3,8 @@ use std::{net::SocketAddr, time::Duration};
 use http::StatusCode;
 use rustflow::view::View;
 use rustflow_server::{
-    Application, CsrfProtection, ErrorPages, HttpError, HttpMethod, IpNetwork, Middleware,
-    Request, Response, ServerConfig, ServerError, ValidateInput, ValidationErrors, html_document,
+    Application, CsrfProtection, ErrorPages, HttpError, HttpMethod, IpNetwork, Middleware, Request,
+    Response, ServerConfig, ServerError, ValidateInput, ValidationErrors, html_document,
     tls_server_config_from_pem,
 };
 use serde::{Deserialize, Serialize};
@@ -685,7 +685,6 @@ async fn real_tls_serves_https_and_marks_the_connection_secure() {
     task.await.expect("tls task").expect("tls server stop");
 }
 
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SignupForm {
@@ -760,7 +759,10 @@ async fn real_tcp_typed_forms_validate_and_return_structured_errors() {
     assert!(payload.contains("\"age\""));
     assert!(payload.contains("formErrors"));
     assert!(payload.contains("Please correct the highlighted fields."));
-    assert!(!payload.contains("bad"), "raw user input must not be echoed");
+    assert!(
+        !payload.contains("bad"),
+        "raw user input must not be echoed"
+    );
 
     let unexpected = send_http(
         address,
@@ -945,7 +947,11 @@ async fn real_tcp_redirect_back_accepts_same_origin_and_falls_back_for_external_
     )
     .await;
     assert_eq!(status_code(&same_origin), 303);
-    assert!(same_origin.to_ascii_lowercase().contains("location: /previous?tab=1"));
+    assert!(
+        same_origin
+            .to_ascii_lowercase()
+            .contains("location: /previous?tab=1")
+    );
 
     let external = send_http(
         address,
