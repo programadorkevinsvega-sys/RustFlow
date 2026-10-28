@@ -62,13 +62,13 @@ La configuración pública rustflow_server::AppConfig valida el perfil, la IP de
 
 .env.example no contiene secretos reales y el scaffold ignora los archivos de entorno privados. Esta API no es un sistema de configuración general ni un gestor de secretos; tampoco configura sesiones, base de datos o autenticación. La implementación de la Fase 6.2 está en la PR #46, fusionada mediante squash en el commit 34110b77afad1ade5827979825e98ecb4767a5dd; la verificación post-merge debe consultarse en CI.
 
-### Fase 6.3 — Validación y formularios del servidor: alcance experimental en revisión
+### Fase 6.3 — Validación y formularios del servidor: implementada e integrada en main
 
 El trabajo de esta fase añade extracción URL-encoded tipada con Request::form, validación de formularios/JSON/query mediante ValidateInput, y respuestas HTTP 422 con errores separados por campo y formulario. Los errores de decodificación y medio no compatible siguen siendo genéricos (400/415), mientras que el límite de cuerpo del servidor rechaza payloads demasiado grandes con 413.
 
 CsrfProtection ofrece middleware optativo basado en tokens firmados y expiran en ocho horas. La aplicación debe proveer una clave aleatoria de al menos 32 bytes fuera del repositorio y conectar el middleware a las rutas mutables que dependen de cookies. Request::redirect_back acepta solo un fallback local y usa un Referer cuando el origen coincide. Estas herramientas no implementan sesiones, login, autenticación ni autorización; las comprobaciones de permisos siguen siendo responsabilidad del caso de uso.
 
-La fase no se debe marcar cerrada hasta que el código, las pruebas de integración, la guía pública y todos los checks requeridos estén verificados en el HEAD final de la PR. Consulta la [guía de formularios y validación](/guides/forms-validation/).
+La PR #47 se fusionó en `main` mediante squash en el commit `0a307e84bafabbc7dfaa5d4e361723b82fce042e`. Los checks requeridos pasaron en el HEAD final de la PR antes de la fusión, incluidos Rust 1.85/stable, WASM, E2E de navegador y presupuesto del bundle, build del sitio, gobernanza y revisión de dependencias. Esto confirma la verificación del HEAD de la PR; la consulta de estados combinados del commit de merge no devolvió estados individuales, así que no se afirma una ejecución post-merge verificada. Consulta la [guía de formularios y validación](/guides/forms-validation/).
 
 ## Matriz rápida: ¿qué puedes hacer?
 
@@ -82,7 +82,7 @@ La fase no se debe marcar cerrada hasta que el código, las pruebas de integraci
 | Componer páginas con layouts y props de ruta | Sí, con componentes registrados/catálogo | [Layouts](/guides/layouts/) |
 | Hidratar HTML SSR existente | Sí, opt-in y con una vista cliente compatible | [SSR e hidratación](/guides/ssr/) |
 | Navegación cliente e historial | Sí, opt-in con callback de ruta de aplicación | [Navegación](/guides/navigation/) |
-| Extracción tipada y errores 422 | Experimental, Fase 6.3 en revisión | [Formularios y validación](/guides/forms-validation/) |
+| Extracción tipada y errores 422 | Experimental, integrada en main (Fase 6.3) | [Formularios y validación](/guides/forms-validation/) |
 | Forms mejorados | Solo GET elegibles con opt-in | [Navegación](/guides/navigation/) |
 | CLI y scaffolding | Experimental, en revisión en la Fase 6.1 | [CLI y generadores](/guides/cli/) |
 | <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> | No | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
