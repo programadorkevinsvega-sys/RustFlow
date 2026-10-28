@@ -132,11 +132,12 @@ impl CsrfProtection {
                 let cookie = request
                     .header("cookie")
                     .and_then(|header| header.to_str().ok())
-                    .and_then(cookie_token);
+                    .and_then(cookie_token)
+                    .map(str::to_owned);
                 let submitted = submitted_token(&request);
                 match (cookie, submitted) {
                     (Some(cookie), Some(submitted))
-                        if protection.verify_pair(cookie, &submitted) =>
+                        if protection.verify_pair(&cookie, &submitted) =>
                     {
                         next.run(request).await
                     }
