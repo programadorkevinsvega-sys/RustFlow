@@ -32,6 +32,7 @@ A workflow file is not proof that a check passed. Report actual CI results and k
 
 - Never commit secrets or real environment files.
 - The experimental rustflow_server::AppConfig reads only RUSTFLOW_ENV, RUSTFLOW_HOST, and RUSTFLOW_PORT. Development/test dotenv files are parsed without mutating the process environment; production ignores dotenv files and requires process-level bind settings.
+- The experimental server input boundary supports typed URL-encoded form/JSON/query extraction and a ValidateInput contract. Validation messages are public output; the optional CsrfProtection middleware must be attached deliberately to cookie-authenticated mutation routes and does not replace authentication or authorization.
 - Treat external input as untrusted and escape HTML by default when rendering is implemented.
 - Keep changes focused, add tests for behavior and failure paths, and update docs when contracts change.
 - Mark roadmap items complete only after evidence is available.
