@@ -347,9 +347,7 @@ impl Request {
             let Ok(uri) = origin.parse::<Uri>() else {
                 return false;
             };
-            return uri.path() == "/"
-                && uri.query().is_none()
-                && self.is_same_origin_uri(&uri);
+            return uri.path() == "/" && uri.query().is_none() && self.is_same_origin_uri(&uri);
         }
 
         self.header("referer")
