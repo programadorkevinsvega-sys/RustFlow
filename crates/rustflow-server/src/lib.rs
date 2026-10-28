@@ -40,7 +40,6 @@ use bytes::Bytes;
 pub use config::{AppConfig, AppEnvironment, ConfigError};
 pub use csrf::{CsrfError, CsrfProtection, CsrfToken};
 pub use group::RouteGroup;
-pub use validation::{ValidateInput, ValidationErrors};
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
 pub use page::HtmlPage;
@@ -50,6 +49,7 @@ pub use tls::tls_server_config_from_pem;
 use tokio::net::TcpListener;
 use tower::limit::GlobalConcurrencyLimitLayer;
 use tracing::Instrument;
+pub use validation::{ValidateInput, ValidationErrors};
 
 use rustflow::components::{ComponentRegistry, SharedComponentCatalog};
 use rustflow_view::{Element, View};
@@ -278,14 +278,11 @@ impl Request {
             .header("content-type")
             .and_then(|value| value.to_str().ok());
         if !content_type.is_some_and(|value| {
-            value
-                .split(';')
-                .next()
-                .is_some_and(|media_type| {
-                    media_type
-                        .trim()
-                        .eq_ignore_ascii_case("application/x-www-form-urlencoded")
-                })
+            value.split(';').next().is_some_and(|media_type| {
+                media_type
+                    .trim()
+                    .eq_ignore_ascii_case("application/x-www-form-urlencoded")
+            })
         }) {
             return Err(HttpError::new(
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
@@ -295,16 +292,13 @@ impl Request {
 
         let body = std::str::from_utf8(self.body())
             .map_err(|_| HttpError::bad_request("Invalid form input"))?;
-        serde_urlencoded::from_str(body)
-            .map_err(|_| HttpError::bad_request("Invalid form input"))
+        serde_urlencoded::from_str(body).map_err(|_| HttpError::bad_request("Invalid form input"))
     }
 
     /// Deserialize and validate a URL-encoded HTML form body.
     pub fn validated_form<T: DeserializeOwned + ValidateInput>(&self) -> Result<T, HttpError> {
         let value = self.form::<T>()?;
-        value
-            .validate()
-            .map_err(HttpError::validation_failed)?;
+        value.validate().map_err(HttpError::validation_failed)?;
         Ok(value)
     }
 
@@ -362,9 +356,7 @@ impl Request {
             return None;
         }
         let default_port = if self.is_https() { 443 } else { 80 };
-        if remote.port_u16().unwrap_or(default_port)
-            != local.port_u16().unwrap_or(default_port)
-        {
+        if remote.port_u16().unwrap_or(default_port) != local.port_u16().unwrap_or(default_port) {
             return None;
         }
         let target = uri.path_and_query()?.as_str();
