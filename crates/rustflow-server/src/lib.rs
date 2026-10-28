@@ -335,13 +335,12 @@ impl Request {
     pub fn redirect_back(&self, fallback: &str) -> Result<Response, HttpError> {
         let fallback = safe_local_redirect_target(fallback)
             .ok_or_else(|| HttpError::bad_request("Invalid local redirect target"))?;
-        if let Some(referer) = self
+        if let Some(target) = self
             .header("referer")
             .and_then(|value| value.to_str().ok())
+            .and_then(|referer| self.same_origin_referer_target(referer))
         {
-            if let Some(target) = self.same_origin_referer_target(referer) {
-                return Response::redirect(&target);
-            }
+            return Response::redirect(&target);
         }
         Response::redirect(&fallback)
     }
