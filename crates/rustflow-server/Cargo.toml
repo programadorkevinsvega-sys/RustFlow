@@ -21,6 +21,7 @@ tracing.workspace = true
 rustls.workspace = true
 tokio-rustls.workspace = true
 rustls-pki-types.workspace = true
+ring.workspace = true
 rustflow = { path = "../rustflow" }
 rustflow-view = { path = "../rustflow-view" }
 rustflow-ssr = { path = "../rustflow-ssr" }
