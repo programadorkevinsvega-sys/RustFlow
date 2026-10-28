@@ -60,7 +60,15 @@ Sigue la [guía del CLI](/guides/cli/) y el [tutorial completo](/tutorials/first
 
 La configuración pública rustflow_server::AppConfig valida el perfil, la IP de bind y el puerto de la aplicación generada. En desarrollo/test aplica la precedencia variable del proceso > .env.<perfil> > .env > defaults. Producción no lee archivos dotenv y exige RUSTFLOW_ENV=production, RUSTFLOW_HOST y RUSTFLOW_PORT desde el entorno del proceso.
 
-.env.example no contiene secretos reales y el scaffold ignora los archivos de entorno privados. Esta API no es un sistema de configuración general ni un gestor de secretos; tampoco configura sesiones, base de datos, autenticación o CSRF. La fase permanece sujeta a que todas las verificaciones de la PR pasen.
+.env.example no contiene secretos reales y el scaffold ignora los archivos de entorno privados. Esta API no es un sistema de configuración general ni un gestor de secretos; tampoco configura sesiones, base de datos o autenticación. La implementación de la Fase 6.2 está en la PR #46, fusionada mediante squash en el commit 34110b77afad1ade5827979825e98ecb4767a5dd; la verificación post-merge debe consultarse en CI.
+
+### Fase 6.3 — Validación y formularios del servidor: alcance experimental en revisión
+
+El trabajo de esta fase añade extracción URL-encoded tipada con Request::form, validación de formularios/JSON/query mediante ValidateInput, y respuestas HTTP 422 con errores separados por campo y formulario. Los errores de decodificación y medio no compatible siguen siendo genéricos (400/415), mientras que el límite de cuerpo del servidor rechaza payloads demasiado grandes con 413.
+
+CsrfProtection ofrece middleware optativo basado en tokens firmados y expiran en ocho horas. La aplicación debe proveer una clave aleatoria de al menos 32 bytes fuera del repositorio y conectar el middleware a las rutas mutables que dependen de cookies. Request::redirect_back acepta solo un fallback local y usa un Referer cuando el origen coincide. Estas herramientas no implementan sesiones, login, autenticación ni autorización; las comprobaciones de permisos siguen siendo responsabilidad del caso de uso.
+
+La fase no se debe marcar cerrada hasta que el código, las pruebas de integración, la guía pública y todos los checks requeridos estén verificados en el HEAD final de la PR. Consulta la [guía de formularios y validación](/guides/forms-validation/).
 
 ## Matriz rápida: ¿qué puedes hacer?
 
@@ -77,7 +85,8 @@ La configuración pública rustflow_server::AppConfig valida el perfil, la IP de
 | Forms mejorados | Solo GET elegibles con opt-in | [Navegación](/guides/navigation/) |
 | CLI y scaffolding | Experimental, en revisión en la Fase 6.1 | [CLI y generadores](/guides/cli/) |
 | <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> | No | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
-| Auth/sesiones/CSRF/server actions/persistencia integrada | No | [Product scope](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/PRODUCT_SCOPE.md) |
+| Protección CSRF en mutaciones mediante cookies | Experimental, opt-in; requiere conectar middleware y proveer clave | [Formularios y validación](/guides/forms-validation/) |
+| Sesiones, login/auth, autorización integrada, server actions y persistencia | No | [Product scope](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/PRODUCT_SCOPE.md) |
 
 ## Cómo interpretar las pruebas
 
