@@ -335,24 +335,59 @@ impl Request {
         Response::redirect(&fallback)
     }
 
-    fn same_origin_referer_target(&self, referer: &str) -> Option<String> {
-        let uri = referer.parse::<Uri>().ok()?;
-        let scheme = uri.scheme_str()?;
+    /// Require an explicit same-origin browser context for cookie-authenticated mutations.
+    ///
+    /// An invalid or cross-origin Origin header fails closed rather than falling back
+    /// to Referer. When Origin is absent, a same-origin Referer is accepted.
+    pub(crate) fn has_same_origin_context(&self) -> bool {
+        if let Some(origin) = self.header("origin") {
+            let Ok(origin) = origin.to_str() else {
+                return false;
+            };
+            let Ok(uri) = origin.parse::<Uri>() else {
+                return false;
+            };
+            return uri.path() == "/"
+                && uri.query().is_none()
+                && self.is_same_origin_uri(&uri);
+        }
+
+        self.header("referer")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|referer| referer.parse::<Uri>().ok())
+            .is_some_and(|uri| self.is_same_origin_uri(&uri))
+    }
+
+    fn is_same_origin_uri(&self, uri: &Uri) -> bool {
+        let Some(scheme) = uri.scheme_str() else {
+            return false;
+        };
         let expected_scheme = if self.is_https() { "https" } else { "http" };
         if !scheme.eq_ignore_ascii_case(expected_scheme) {
-            return None;
+            return false;
         }
-        let remote = uri.authority()?;
+        let Some(remote) = uri.authority() else {
+            return false;
+        };
         if remote.as_str().contains('@') {
-            return None;
+            return false;
         }
-        let host_header = self.header("host")?.to_str().ok()?;
-        let local = host_header.parse::<http::uri::Authority>().ok()?;
+        let Some(host_header) = self.header("host").and_then(|value| value.to_str().ok()) else {
+            return false;
+        };
+        let Ok(local) = host_header.parse::<http::uri::Authority>() else {
+            return false;
+        };
         if !remote.host().eq_ignore_ascii_case(local.host()) {
-            return None;
+            return false;
         }
         let default_port = if self.is_https() { 443 } else { 80 };
-        if remote.port_u16().unwrap_or(default_port) != local.port_u16().unwrap_or(default_port) {
+        remote.port_u16().unwrap_or(default_port) == local.port_u16().unwrap_or(default_port)
+    }
+
+    fn same_origin_referer_target(&self, referer: &str) -> Option<String> {
+        let uri = referer.parse::<Uri>().ok()?;
+        if !self.is_same_origin_uri(&uri) {
             return None;
         }
         let target = uri.path_and_query()?.as_str();
