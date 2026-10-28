@@ -97,11 +97,7 @@ impl CsrfProtection {
     /// The cookie is HttpOnly and SameSite=Lax. Render the token separately in a
     /// hidden form field or expose it to same-origin code for an
     /// `X-CSRF-Token` header. Pass `secure = true` for HTTPS deployments.
-    pub fn cookie_header(
-        &self,
-        token: &CsrfToken,
-        secure: bool,
-    ) -> Result<HeaderValue, CsrfError> {
+    pub fn cookie_header(&self, token: &CsrfToken, secure: bool) -> Result<HeaderValue, CsrfError> {
         if !self.verify_signed_token(token.as_str()) {
             return Err(CsrfError::InvalidToken);
         }
@@ -244,15 +240,11 @@ fn submitted_token(request: &Request) -> Option<String> {
     }
 
     let content_type = request.header("content-type")?.to_str().ok()?;
-    if !content_type
-        .split(';')
-        .next()
-        .is_some_and(|media_type| {
-            media_type
-                .trim()
-                .eq_ignore_ascii_case("application/x-www-form-urlencoded")
-        })
-    {
+    if !content_type.split(';').next().is_some_and(|media_type| {
+        media_type
+            .trim()
+            .eq_ignore_ascii_case("application/x-www-form-urlencoded")
+    }) {
         return None;
     }
     let body = std::str::from_utf8(request.body()).ok()?;
@@ -353,9 +345,6 @@ mod tests {
         let mut tampered = token.as_str().to_owned();
         tampered.push('0');
         assert!(!protection.verify_signed_token(&tampered));
-        assert_eq!(
-            format!("{token:?}"),
-            "CsrfToken([REDACTED])"
-        );
+        assert_eq!(format!("{token:?}"), "CsrfToken([REDACTED])");
     }
 }
