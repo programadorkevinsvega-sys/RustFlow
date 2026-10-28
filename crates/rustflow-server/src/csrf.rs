@@ -259,9 +259,10 @@ fn submitted_token(request: &Request) -> Option<String> {
 
 fn cookie_token(cookie_header: &str) -> Option<&str> {
     for part in cookie_header.split(';') {
-        if let Some((name, value)) = part.trim().split_once('=')
-            && name.trim() == COOKIE_NAME
-        {
+        let Some((name, value)) = part.trim().split_once('=') else {
+            continue;
+        };
+        if name.trim() == COOKIE_NAME {
             let value = value.trim();
             if !value.is_empty() {
                 return Some(value);
