@@ -38,7 +38,7 @@ app.group("/api", |api| {
 # }
 ```
 
-Handlers are async closures that return `Result<Response, HttpError>`. Route handlers can capture shared state explicitly; this prototype intentionally has no hidden global service locator. Path parameters are decoded from the route template. Query strings can be decoded with `Request::query::<T>()`, and JSON bodies with `Request::json::<T>()`; invalid inputs produce generic 400 responses.
+Handlers are async closures that return `Result<Response, HttpError>`. Route handlers can capture shared state explicitly; this prototype intentionally has no hidden global service locator. Path parameters are decoded from the route template. Query strings can be decoded with `Request::query::<T>()`, and JSON bodies with `Request::json::<T>()`. Phase 6.3 adds `Request::form::<T>()` for URL-encoded bodies, `validated_form`, `validated_json`, and `validated_query` with the `ValidateInput` trait, and structured HTTP 422 field/form errors. Malformed input returns a generic 400; an unsupported form media type returns 415.
 
 ## Responses
 
@@ -95,7 +95,7 @@ Only 4xx/5xx statuses can be configured. Unconfigured statuses keep their normal
 
 Routing supports conventional methods and Axum path templates such as `/users/{id}`. Duplicate method/path registration and equivalent parameter-only route shapes are rejected before router construction. Unknown paths return 404, unsupported methods return 405, oversized bodies return 413, handler/body timeouts return 504, and required-HTTPS failures return 400. The adapter provides ordered global, group, and route-scoped async middleware, uniquely named routes, route groups, deterministic metadata from `Application::routes()`, graceful shutdown APIs, local rustls serving, trusted-proxy reconstruction, safe full HTML documents, and configurable escaped 4xx/5xx error pages.
 
-It still lacks typed extraction traits, built-in subscriber/export configuration, automatic OS-signal wiring, rate limiting, auth/CSRF, and database/session integrations. Integration tests cover HTML/JSON routes, groups, route middleware, query/path parameters, custom 404/405 pages, 413/504, request-ID headers, graceful shutdown, trusted and spoofed forwarded headers, local TLS, client aborts, malformed input, and a concurrency cap. They are not a substitute for a reverse-proxy deployment recipe or a Phase 9 threat model.
+The typed form/JSON/query validation APIs and opt-in `CsrfProtection` middleware are experimental. CSRF middleware must be explicitly attached to cookie-authenticated mutation routes and does not provide sessions, authentication, authorization or rate limiting. The adapter still lacks built-in subscriber/export configuration, automatic OS-signal wiring, and database/session integrations. Integration tests cover HTML/JSON routes, groups, route middleware, query/path parameters, custom 404/405 pages, 413/504, request-ID headers, graceful shutdown, trusted and spoofed forwarded headers, local TLS, client aborts, malformed input, and a concurrency cap. They are not a substitute for a reverse-proxy deployment recipe or a Phase 9 threat model.
 
 ## Current SSR composition, hydration, and browser navigation
 
