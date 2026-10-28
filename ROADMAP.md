@@ -294,13 +294,13 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 **Verification gate:** the implementation and technical/public documentation are included in the Phase 6.2 PR. Do not mark the phase formally closed until Rust 1.85/stable, Clippy, workspace tests, rustdoc, WASM/browser checks, bundle budget, website build, governance and dependency review pass on the final PR HEAD.
 
 ### 6.3 Validation and forms
-- [ ] Implement typed input extraction and validation.
-- [ ] Return structured field/form errors.
-- [ ] Add CSRF protection for cookie-authenticated mutations.
-- [ ] Add safe redirect-back behavior.
-- [ ] Test oversized payloads and unexpected input.
+- [x] Implement typed input extraction and validation.
+- [x] Return structured field/form errors.
+- [x] Add CSRF protection for cookie-authenticated mutations.
+- [x] Add safe redirect-back behavior.
+- [x] Test oversized payloads and unexpected input.
 
-**Verification gate (pending):** the implementation, server/HTTP tests, technical contract, ADR and public guide are being reviewed in the Phase 6.3 PR. Keep every criterion unchecked until the final PR HEAD passes Rust 1.85/stable, formatting, Clippy, workspace tests, rustdoc, WASM/browser checks, bundle budget, website build, governance and dependency review; then record the exact merge and post-merge evidence.
+**Closure evidence:** PR #47 ([Validation and forms](https://github.com/programadorkevinsvega-sys/RustFlow/pull/47)) was squash-merged into `main` as commit `0a307e84bafabbc7dfaa5d4e361723b82fce042e`. All required checks passed on the final PR HEAD `222f1b381aeffd82127c7fbe688b75f0d6e4007a` before merge: Rust 1.85/stable, WASM target, browser E2E and bundle budget (run `40667608192`); website build (run `40667608245`); governance/whitespace (run `40667608233`); and dependency review (run `40667608162`). The implementation, HTTP integration tests, technical contract, ADR and public guide are included in the merged change. The combined-status query for the merge commit returned no status entries while this closure was recorded, so this evidence confirms the green PR-head checks and does not claim a separately verified post-merge run.
 
 ### 6.4 Sessions and access control
 - [ ] Define session abstraction and secure cookie defaults.
