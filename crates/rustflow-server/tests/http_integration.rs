@@ -758,6 +758,8 @@ async fn real_tcp_typed_forms_validate_and_return_structured_errors() {
     assert!(payload.contains("\"fieldErrors\""));
     assert!(payload.contains("\"email\""));
     assert!(payload.contains("\"age\""));
+    assert!(payload.contains("formErrors"));
+    assert!(payload.contains("Please correct the highlighted fields."));
     assert!(!payload.contains("bad"), "raw user input must not be echoed");
 
     let unexpected = send_http(
