@@ -69,7 +69,7 @@ El API no crea sesiones ni autentica usuarios. Conecta el middleware a las rutas
 use rustflow_server::{CsrfProtection, HttpError, HttpMethod, Request, Response};
 
 let key = std::env::var("RUSTFLOW_CSRF_KEY")?;
-let csrf = CsrfProtection::new(key)?; // La variable debe contener una clave aleatoria fuerte.
+let csrf = CsrfProtection::new(key.as_bytes())?; // La variable debe contener una clave aleatoria fuerte.
 let token_protection = csrf.clone();
 
 app.get("/signup/token", move |request: Request| {
