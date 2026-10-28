@@ -73,4 +73,4 @@ La demo interactiva y sus tests están explicados paso a paso en el [tutorial de
 
 ## Límites
 
-La aplicación tiene que resolver rutas y actualizar la vista. Esta API no descarga e inserta HTML arbitrario como mecanismo de routing, no genera rutas a partir del filesystem, no aporta auth/sesiones/CSRF, no procesa mutaciones de formularios y no reemplaza el routing del servidor. La API es pre-1.0 y puede cambiar.
+La aplicación tiene que resolver rutas y actualizar la vista. Esta API de navegación cliente no descarga e inserta HTML arbitrario como mecanismo de routing, no genera rutas a partir del filesystem, no aporta autenticación/sesiones ni procesa mutaciones de formularios, y no reemplaza el routing del servidor. Para la extracción y validación tipada del lado servidor, los errores 422 y el middleware CSRF optativo en mutaciones autenticadas mediante cookies, consulta la [guía de formularios y validación](/guides/forms-validation/). La API es pre-1.0 y puede cambiar.
