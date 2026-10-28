@@ -305,18 +305,14 @@ impl Request {
     /// Deserialize and validate a JSON body.
     pub fn validated_json<T: DeserializeOwned + ValidateInput>(&self) -> Result<T, HttpError> {
         let value = self.json::<T>()?;
-        value
-            .validate()
-            .map_err(HttpError::validation_failed)?;
+        value.validate().map_err(HttpError::validation_failed)?;
         Ok(value)
     }
 
     /// Deserialize and validate typed query parameters.
     pub fn validated_query<T: DeserializeOwned + ValidateInput>(&self) -> Result<T, HttpError> {
         let value = self.query::<T>()?;
-        value
-            .validate()
-            .map_err(HttpError::validation_failed)?;
+        value.validate().map_err(HttpError::validation_failed)?;
         Ok(value)
     }
 
