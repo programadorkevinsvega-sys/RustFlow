@@ -98,7 +98,7 @@ app.post("/profile", |request: Request| async move {
 app.route_middleware(HttpMethod::Post, "/profile", csrf.middleware())?;
 ~~~
 
-Registra la ruta POST antes de llamar a route_middleware. La respuesta que entrega el token debe incluir Cache-Control: no-store y no debe almacenarse en una caché compartida. Para una página HTML, coloca el token dentro de un campo oculto correctamente escapado; para una petición same-origin, envíalo en X-CSRF-Token. El navegador debe enviar la cookie rustflow_csrf; el middleware exige que el token presentado coincida y tenga una firma válida. Los métodos GET, HEAD, OPTIONS y TRACE no requieren token; los demás métodos lo requieren si el middleware está conectado.
+Registra la ruta POST antes de llamar a route_middleware. La respuesta que entrega el token debe incluir Cache-Control: no-store y no debe almacenarse en una caché compartida. Para una página HTML, coloca el token dentro de un campo oculto correctamente escapado; para una petición same-origin, envíalo en X-CSRF-Token. El navegador debe enviar la cookie rustflow_csrf; el middleware exige que el token presentado coincida, tenga firma válida y que Origin (o Referer cuando Origin falta) coincida con el mismo origen; las solicitudes sin origen verificable o con origen cruzado se rechazan. Los métodos GET, HEAD, OPTIONS y TRACE no requieren token; los demás métodos lo requieren si el middleware está conectado.
 
 El token firmado expira después de ocho horas. cookie_header configura HttpOnly y SameSite=Lax; en producción HTTPS, usa Secure. request.is_https() solo refleja TLS o un proxy expresamente confiable. No registres el token ni la clave. Este mecanismo no identifica al usuario ni reemplaza sesiones, autenticación o autorización.
 
