@@ -113,7 +113,9 @@ impl CsrfProtection {
     ///
     /// GET, HEAD, OPTIONS, and TRACE bypass token checks. Other methods require
     /// the valid `rustflow_csrf` cookie and a matching `X-CSRF-Token` header,
-    /// or a matching `_csrf` field on an URL-encoded form. Register globally
+    /// or a matching `_csrf` field on an URL-encoded form. Unsafe requests must also
+/// send a same-origin `Origin` header, or a same-origin `Referer` when `Origin` is absent.
+/// Register globally
     /// only if all matching mutating routes use cookie authentication, or attach
     /// it to selected routes/groups.
     pub fn middleware(&self) -> Middleware {
@@ -123,6 +125,9 @@ impl CsrfProtection {
             async move {
                 if is_safe_method(request.method()) {
                     return next.run(request).await;
+                }
+                if !request.has_same_origin_context() {
+                    return Err(HttpError::forbidden("CSRF validation failed"));
                 }
 
                 let cookie = request
