@@ -106,7 +106,7 @@ Request::redirect_back("/signup") usa el path/query del Referer únicamente si s
 
 ~~~rust
 app.post("/profile", |request: Request| async move {
-    let _profile = request.validated_form::<ProfileInput>()?;
+    let _profile = request.validated_form::<SignupInput>()?;
     request.redirect_back("/profile")
 })?;
 ~~~
