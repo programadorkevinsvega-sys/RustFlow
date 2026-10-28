@@ -702,6 +702,9 @@ impl ValidateInput for SignupForm {
         if self.age < 18 {
             errors.add_field_error("age", "You must be at least 18 years old.");
         }
+        if !errors.is_empty() {
+            errors.add_form_error("Please correct the highlighted fields.");
+        }
         if errors.is_empty() {
             Ok(())
         } else {
@@ -718,6 +721,16 @@ async fn real_tcp_typed_forms_validate_and_return_structured_errors() {
         Ok(Response::text(format!("accepted:{}", signup.email)))
     })
     .expect("signup route");
+    app.post("/signup-json", |request: Request| async move {
+        let signup = request.validated_json::<SignupForm>()?;
+        Ok(Response::text(format!("accepted:{}", signup.email)))
+    })
+    .expect("signup json route");
+    app.get("/signup-query", |request: Request| async move {
+        let signup = request.validated_query::<SignupForm>()?;
+        Ok(Response::text(format!("accepted:{}", signup.email)))
+    })
+    .expect("signup query route");
     let (address, shutdown, task) = start_server(app).await;
 
     let valid = send_http(
@@ -767,6 +780,28 @@ async fn real_tcp_typed_forms_validate_and_return_structured_errors() {
     )
     .await;
     assert_eq!(status_code(&wrong_content_type), 415);
+
+    let json = send_http(
+        address,
+        "POST",
+        "/signup-json",
+        &[("content-type", "application/json")],
+        r#"{"email":"json@example.test","age":29}"#,
+    )
+    .await;
+    assert_eq!(status_code(&json), 200);
+    assert!(response_body(&json).contains("accepted:json@example.test"));
+
+    let query = send_http(
+        address,
+        "GET",
+        "/signup-query?email=query%40example.test&age=24",
+        &[],
+        "",
+    )
+    .await;
+    assert_eq!(status_code(&query), 200);
+    assert!(response_body(&query).contains("accepted:query@example.test"));
 
     stop_server(shutdown, task).await;
 }
@@ -833,16 +868,20 @@ async fn real_tcp_csrf_middleware_requires_a_valid_cookie_and_matching_token() {
     assert_eq!(status_code(&token_response), 200);
     let token = response_body(&token_response).trim().to_owned();
     assert!(!token.is_empty());
+    let lower_headers = token_response.to_ascii_lowercase();
+    assert!(lower_headers.contains("set-cookie: rustflow_csrf="));
+    assert!(lower_headers.contains("samesite=lax; httponly"));
 
     let rejected_without_token = send_http(address, "POST", "/mutate", &[], "").await;
     assert_eq!(status_code(&rejected_without_token), 403);
 
+    let cookie = format!("rustflow_csrf={token}");
     let rejected_mismatch = send_http(
         address,
         "POST",
         "/mutate",
         &[
-            ("cookie", &format!("rustflow_csrf={token}")),
+            ("cookie", cookie.as_str()),
             ("x-csrf-token", "different-token"),
         ],
         "",
@@ -855,14 +894,29 @@ async fn real_tcp_csrf_middleware_requires_a_valid_cookie_and_matching_token() {
         "POST",
         "/mutate",
         &[
-            ("cookie", &format!("rustflow_csrf={token}")),
-            ("x-csrf-token", &token),
+            ("cookie", cookie.as_str()),
+            ("x-csrf-token", token.as_str()),
         ],
         "",
     )
     .await;
     assert_eq!(status_code(&accepted), 200);
     assert!(response_body(&accepted).contains("mutated"));
+
+    let form_body = format!("_csrf={token}&comment=hello");
+    let accepted_form_token = send_http(
+        address,
+        "POST",
+        "/mutate",
+        &[
+            ("cookie", cookie.as_str()),
+            ("content-type", "application/x-www-form-urlencoded"),
+        ],
+        &form_body,
+    )
+    .await;
+    assert_eq!(status_code(&accepted_form_token), 200);
+    assert!(response_body(&accepted_form_token).contains("mutated"));
 
     stop_server(shutdown, task).await;
 }
