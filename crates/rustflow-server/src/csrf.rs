@@ -8,7 +8,6 @@ use std::{
 
 use http::{HeaderValue, Method};
 use ring::{
-    constant_time::verify_slices_are_equal,
     hmac,
     rand::{SecureRandom, SystemRandom},
 };
@@ -149,7 +148,9 @@ impl CsrfProtection {
     }
 
     fn verify_pair(&self, cookie: &str, submitted: &str) -> bool {
-        verify_slices_are_equal(cookie.as_bytes(), submitted.as_bytes()).is_ok()
+        let key = hmac::Key::new(hmac::HMAC_SHA256, self.secret.as_ref());
+        let submitted_tag = hmac::sign(&key, submitted.as_bytes());
+        hmac::verify(&key, cookie.as_bytes(), submitted_tag.as_ref()).is_ok()
             && self.verify_signed_token(cookie)
     }
 
