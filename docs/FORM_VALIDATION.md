@@ -80,7 +80,11 @@ app.get("/signup/token", move |request: Request| {
         let cookie = csrf.cookie_header(&token, request.is_https())
             .map_err(|_| HttpError::internal_server_error())?;
         Ok(Response::text(token.as_str().to_owned())
-            .with_header(http::header::SET_COOKIE, cookie))
+            .with_header(http::header::SET_COOKIE, cookie)
+            .with_header(
+                http::header::CACHE_CONTROL,
+                http::HeaderValue::from_static("no-store"),
+            ))
     }
 })?;
 
@@ -92,7 +96,7 @@ app.post("/signup", |request: Request| async move {
 app.route_middleware(HttpMethod::Post, "/signup", csrf.middleware())?;
 ~~~
 
-El endpoint de token ilustra el contrato: en una página HTML, coloca el token dentro de un campo oculto escapado; para una petición fetch del mismo origen, envíalo en X-CSRF-Token. El navegador debe enviar la cookie rustflow_csrf; el middleware exige que el token presentado coincida y tenga una firma válida. Configura Secure para producción HTTPS; request.is_https() solo es confiable si TLS o la política de proxy del servidor están configurados correctamente. Usa una clave distinta por entorno y una estrategia administrada para su rotación.
+El endpoint de token ilustra el contrato y usa Cache-Control: no-store; no permitas que un CDN o caché compartido almacene su respuesta. En una página HTML, coloca el token dentro de un campo oculto escapado; para una petición fetch del mismo origen, envíalo en X-CSRF-Token. El navegador debe enviar la cookie rustflow_csrf; el middleware exige que el token presentado coincida y tenga una firma válida. Configura Secure para producción HTTPS; request.is_https() solo es confiable si TLS o la política de proxy del servidor están configurados correctamente. Usa una clave distinta por entorno y una estrategia administrada para su rotación.
 
 El middleware debe limitarse a operaciones que dependan de cookies de navegador. No protege automáticamente rutas que no lo hayan registrado y no define política de autorización. Las sesiones, autenticación y autorización integradas pertenecen a una fase posterior.
 
