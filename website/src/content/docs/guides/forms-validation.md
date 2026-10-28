@@ -92,7 +92,7 @@ app.get("/profile/csrf-token", move |request: Request| {
 })?;
 
 app.post("/profile", |request: Request| async move {
-    let _profile = request.validated_form::<ProfileInput>()?;
+    let _profile = request.validated_form::<SignupInput>()?;
     request.redirect_back("/profile")
 })?;
 app.route_middleware(HttpMethod::Post, "/profile", csrf.middleware())?;
