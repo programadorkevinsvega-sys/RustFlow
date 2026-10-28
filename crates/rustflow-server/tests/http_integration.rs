@@ -851,7 +851,11 @@ async fn real_tcp_csrf_middleware_requires_a_valid_cookie_and_matching_token() {
                 .cookie_header(&token, request.is_https())
                 .map_err(|_| HttpError::internal_server_error())?;
             Ok(Response::text(token.as_str().to_owned())
-                .with_header(http::header::SET_COOKIE, cookie))
+                .with_header(http::header::SET_COOKIE, cookie)
+                .with_header(
+                    http::header::CACHE_CONTROL,
+                    http::HeaderValue::from_static("no-store"),
+                ))
         }
     })
     .expect("token route");
@@ -875,6 +879,7 @@ async fn real_tcp_csrf_middleware_requires_a_valid_cookie_and_matching_token() {
     let lower_headers = token_response.to_ascii_lowercase();
     assert!(lower_headers.contains("set-cookie: rustflow_csrf="));
     assert!(lower_headers.contains("samesite=lax; httponly"));
+    assert!(lower_headers.contains("cache-control: no-store"));
 
     let rejected_without_token = send_http(address, "POST", "/mutate", &[], "").await;
     assert_eq!(status_code(&rejected_without_token), 403);
