@@ -113,7 +113,7 @@ impl CsrfProtection {
     ///
     /// GET, HEAD, OPTIONS, and TRACE bypass token checks. Other methods require
     /// the valid `rustflow_csrf` cookie and a matching `X-CSRF-Token` header,
-            /// or a matching `_csrf` field on an URL-encoded form. Unsafe requests must also
+    /// or a matching `_csrf` field on an URL-encoded form. Unsafe requests must also
     /// send a same-origin `Origin` header, or a same-origin `Referer` when `Origin` is absent.
     /// Missing or cross-origin browser context fails closed. Register globally
     /// only if all matching mutating routes use cookie authentication, or attach
