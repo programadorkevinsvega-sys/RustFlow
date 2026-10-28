@@ -300,6 +300,8 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [ ] Add safe redirect-back behavior.
 - [ ] Test oversized payloads and unexpected input.
 
+**Verification gate (pending):** the implementation, server/HTTP tests, technical contract, ADR and public guide are being reviewed in the Phase 6.3 PR. Keep every criterion unchecked until the final PR HEAD passes Rust 1.85/stable, formatting, Clippy, workspace tests, rustdoc, WASM/browser checks, bundle budget, website build, governance and dependency review; then record the exact merge and post-merge evidence.
+
 ### 6.4 Sessions and access control
 - [ ] Define session abstraction and secure cookie defaults.
 - [ ] Implement expiry, rotation, invalidation, and storage adapters.
