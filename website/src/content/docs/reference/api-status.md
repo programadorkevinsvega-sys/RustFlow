@@ -30,7 +30,10 @@ Esta página es un índice de disponibilidad, no una promesa de compatibilidad e
 | TLS local y política de proxies confiables | Disponible | No sustituye al hardening del despliegue. |
 | CLI <code>rustflow new/dev/build</code> y generadores | Experimental disponible | Scaffold de servidor nativo; delega a Cargo y no incluye file watcher/hot reload. Modelos y migraciones son plantillas estructurales, sin persistencia integrada. |
 | <code>rustflow_server::AppConfig</code> | Experimental disponible | Valida perfil, IP y puerto. Desarrollo/test: proceso > <code>.env.&lt;perfil&gt;</code> > <code>.env</code> > defaults; producción exige variables del proceso y no lee dotenv. No almacena secretos. |
-| Sesiones, auth, autorización, CSRF, server actions | No disponible | No forma parte del servidor actual. |
+| Extracción tipada de formularios/JSON/query y errores 422 | Experimental disponible en la Fase 6.3 | La aplicación implementa `ValidateInput`; los mensajes son salida pública. 400/415 son errores de decodificación/medio y 413 aplica al límite de cuerpo. |
+| `CsrfProtection` | Experimental, opt-in | Token HMAC con expiración; debe conectarse a mutaciones autenticadas por cookies. No implementa sesiones, identidad ni autorización. |
+| `Request::redirect_back` | Experimental disponible en la Fase 6.3 | Solo acepta fallback local y Referer del mismo origen; un Referer externo usa el fallback. |
+| Sesiones, auth, autorización integrada y server actions | No disponible | No forma parte del servidor actual. |
 | Persistencia SQL/migraciones integradas | No disponible | No hay un modelo de base de datos integrado. |
 
 ## SSR, layouts e interacción cliente
@@ -57,6 +60,7 @@ Esta página es un índice de disponibilidad, no una promesa de compatibilidad e
 - [Estado y reactividad](/concepts/reactivity/)
 - [Crear componentes](/guides/components/)
 - [Servidor HTTP](/guides/server/)
+- [Formularios y validación](/guides/forms-validation/)
 - [SSR, documentos HTML e hidratación](/guides/ssr/)
 - [Componer páginas con layouts](/guides/layouts/)
 - [Navegación cliente y formularios](/guides/navigation/)

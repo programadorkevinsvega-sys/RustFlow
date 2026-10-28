@@ -11,19 +11,19 @@ RustFlow es un proyecto de framework pre-1.0. Combina un runtime reactivo propio
 - **Reactividad:** señales tipadas, lecturas con seguimiento de dependencias, escrituras, efectos, scheduler, batching, scopes de propietario y limpieza.
 - **Componentes:** macro <code>#[rustflow::component]</code>, props tipados dentro del subconjunto documentado, callbacks tipados y sintaxis <code>view!</code>.
 - **DOM/WASM:** montaje y reconciliación de texto, elementos, fragmentos, componentes, regiones dinámicas y listas con claves; eventos y limpieza de recursos.
-- **Servidor HTTP:** rutas y grupos, handlers asíncronos, parámetros de ruta/query, decodificación básica de JSON, middleware, IDs de petición, límites, timeouts, apagado graceful y TLS local.
+- **Servidor HTTP:** rutas y grupos, handlers asíncronos, parámetros de ruta/query, extracción tipada de formularios/JSON/query, validación con errores estructurados 422, middleware CSRF optativo para mutaciones con cookies, redirección de retorno local segura, IDs de petición, límites, timeouts, apagado graceful y TLS local.
 - **SSR:** serialización de vistas con escape, documentos HTML completos, páginas de error configurables, componentes de servidor y catálogo compartido seguro para uso concurrente.
 - **Composición de páginas:** <code>HtmlPage</code>, propiedades de ruta explícitas y layouts de componentes anidados.
 - **Hidratación optativa:** límites estructurales, adjunción de eventos al DOM compatible y recuperación conservadora ante discrepancias.
 - **Navegación cliente optativa:** intercepción conservadora de enlaces del mismo origen, History API y mejora de formularios GET compatibles con fallback nativo.
 
-Consulta el [estado público de las capacidades](website/src/content/docs/project-status.md), la [guía de componentes](website/src/content/docs/guides/components.md), la [guía SSR](website/src/content/docs/guides/ssr.md), la [guía de layouts](website/src/content/docs/guides/layouts.md), la [guía HTTP](website/src/content/docs/guides/server.md) y el [tutorial de página de producto](website/src/content/docs/tutorials/product-page.md).
+Consulta el [estado público de las capacidades](website/src/content/docs/project-status.md), la [guía de componentes](website/src/content/docs/guides/components.md), la [guía HTTP](website/src/content/docs/guides/server.md), la [guía de formularios y validación](website/src/content/docs/guides/forms-validation.md), la [guía SSR](website/src/content/docs/guides/ssr.md), la [guía de layouts](website/src/content/docs/guides/layouts.md) y el [tutorial de página de producto](website/src/content/docs/tutorials/product-page.md).
 
 ## Qué sigue pendiente o tiene alcance limitado
 
 - <code>use_memo</code>, <code>use_ref</code> y <code>use_context</code> siguen pendientes.
 - La configuración de la Fase 6.2 cubre solo perfil, host y puerto; no es un sistema general ni un gestor de secretos.
-- Validación de formularios de servidor, sesiones, autenticación/autorización, CSRF, server actions y persistencia integrada siguen pendientes.
+- La validación tipada, los errores de formulario estructurados, el middleware CSRF optativo y la redirección de retorno segura son APIs experimentales; sesiones, autenticación/autorización integradas, server actions y persistencia siguen pendientes.
 - Un router general integrado: el callback de navegación cliente y las rutas HTTP de servidor no son un router full-stack unificado.
 - Un flujo de desarrollo y despliegue de producción validado, una política completa de compatibilidad y la revisión de seguridad de producción.
 

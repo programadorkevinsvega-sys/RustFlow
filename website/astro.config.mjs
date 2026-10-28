@@ -31,6 +31,7 @@ export default defineConfig({
             { label: 'CLI y generadores', slug: 'guides/cli' },
             { label: 'Configuración por entornos', slug: 'guides/configuration' },
             { label: 'Servidor HTTP', slug: 'guides/server' },
+            { label: 'Formularios y validación', slug: 'guides/forms-validation' },
             { label: 'SSR e hidratación', slug: 'guides/ssr' },
             { label: 'Layouts y páginas', slug: 'guides/layouts' },
             { label: 'Navegación y formularios', slug: 'guides/navigation' },

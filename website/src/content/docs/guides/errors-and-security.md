@@ -68,7 +68,7 @@ La configuración TLS local ayuda a probar el transporte; no es una receta compl
 
 ## Lo que RustFlow todavía no resuelve por ti
 
-El adaptador no ofrece una solución integrada de sesiones, autenticación, autorización, CSRF, rate limiting de aplicación, almacenamiento de secretos, ORM, migraciones ni server actions. Los controles de entrada y transporte no implementan estas funciones por sí solos. No declares una aplicación lista para producción únicamente porque usa RustFlow o porque pasa CI.
+El adaptador ofrece APIs experimentales de extracción/validación tipada y un middleware CSRF optativo basado en tokens firmados. El middleware se debe adjuntar a las mutaciones autenticadas mediante cookies y no reemplaza sesiones, autenticación ni autorización. No hay sesiones, identidad/autorización integradas, rate limiting de aplicación, almacenamiento de secretos, ORM, migraciones ni server actions. Los controles de entrada y transporte no convierten el proyecto en una plataforma lista para producción. Consulta la [guía de formularios y validación](/guides/forms-validation/) para el contrato y ejemplos.
 
 ## Referencias
 

@@ -81,7 +81,7 @@ La configuración del servidor establece límites de body, timeouts para lectura
 
 El API de apagado graceful recibe una future desde el punto de composición de la aplicación; la integración con señales del sistema operativo corresponde al caller. TLS local está implementado con rustls. La política de proxies de confianza requiere que el proxy sanee las cabeceras reenviadas y que el enlace hacia el origen esté protegido.
 
-Estos controles son una base de ingeniería, no reemplazan rate limiting, revisión de amenazas, autenticación, autorización, CSRF, hardening del reverse proxy ni una receta de producción.
+Estos controles son una base de ingeniería, no reemplazan rate limiting, revisión de amenazas, autenticación, autorización, hardening del reverse proxy ni una receta de producción. En mutaciones autenticadas mediante cookies, conecta además el middleware CSRF optativo a las rutas correspondientes; no sustituye autenticación o autorización.
 
 ## 7. SSR, páginas y layouts
 
@@ -102,10 +102,10 @@ La hidratación y la navegación existen como capacidades explícitas y optativa
 cargo test -p rustflow-server --test http_integration
 ~~~
 
-La suite cubre rutas por TCP local, query/path/JSON, grupos, middleware, IDs de petición, error pages, límites, timeouts, apagado graceful, TLS local, proxies de confianza, abortos de cliente, entradas malformadas y concurrencia acotada. Ejecuta también la suite completa del workspace antes de depender de un cambio.
+La suite cubre rutas por TCP local, query/path/JSON/formularios tipados, errores de validación 422, campos inesperados, CSRF, redirección de retorno, grupos, middleware, IDs de petición, error pages, límites, timeouts, apagado graceful, TLS local, proxies de confianza, abortos de cliente, entradas malformadas y concurrencia acotada. Ejecuta también la suite completa del workspace antes de depender de un cambio.
 
 Para practicar peticiones reales, ejecuta el [tutorial de API JSON](/tutorials/json-api/). Antes de exponer un servicio, revisa [errores, límites de recursos y seguridad HTTP](/guides/errors-and-security/) y [cómo probar los endpoints](/guides/testing/).
 
 ## Qué no incluye todavía
 
-El CLI experimental genera una aplicación de servidor y archivos base, pero no añade sesiones, autenticación/autorización integrada, CSRF, server actions, persistencia ni una abstracción de aplicación lista para producción. Los forms mejorados del navegador están limitados a ciertos GET URL-encoded; no son un sistema de mutaciones server-side. El router HTTP y el callback de navegación cliente son responsabilidades separadas, no un router full-stack integrado.
+El CLI experimental genera una aplicación de servidor y archivos base, pero no añade sesiones, autenticación/autorización integrada, server actions, persistencia ni una abstracción de aplicación lista para producción. La validación tipada y el middleware CSRF optativo se explican en la [guía de formularios y validación](/guides/forms-validation/); este middleware debe conectarse deliberadamente a las rutas mutables que usen cookies. Los forms mejorados del navegador están limitados a ciertos GET URL-encoded; no son un sistema de mutaciones server-side. El router HTTP y el callback de navegación cliente son responsabilidades separadas, no un router full-stack integrado.

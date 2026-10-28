@@ -3,8 +3,9 @@ use std::{net::SocketAddr, time::Duration};
 use http::StatusCode;
 use rustflow::view::View;
 use rustflow_server::{
-    Application, ErrorPages, HttpError, HttpMethod, IpNetwork, Middleware, Request, Response,
-    ServerConfig, ServerError, html_document, tls_server_config_from_pem,
+    Application, CsrfProtection, ErrorPages, HttpError, HttpMethod, IpNetwork, Middleware, Request,
+    Response, ServerConfig, ServerError, ValidateInput, ValidationErrors, html_document,
+    tls_server_config_from_pem,
 };
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -682,4 +683,318 @@ async fn real_tls_serves_https_and_marks_the_connection_secure() {
 
     shutdown_tx.send(()).expect("tls shutdown");
     task.await.expect("tls task").expect("tls server stop");
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SignupForm {
+    email: String,
+    age: u8,
+}
+
+impl ValidateInput for SignupForm {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let mut errors = ValidationErrors::new();
+        if !self.email.contains('@') {
+            errors.add_field_error("email", "Enter a valid email address.");
+        }
+        if self.age < 18 {
+            errors.add_field_error("age", "You must be at least 18 years old.");
+        }
+        if !errors.is_empty() {
+            errors.add_form_error("Please correct the highlighted fields.");
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+}
+
+#[tokio::test]
+async fn real_tcp_typed_forms_validate_and_return_structured_errors() {
+    let mut app = Application::new();
+    app.post("/signup", |request: Request| async move {
+        let signup = request.validated_form::<SignupForm>()?;
+        Ok(Response::text(format!("accepted:{}", signup.email)))
+    })
+    .expect("signup route");
+    app.post("/signup-json", |request: Request| async move {
+        let signup = request.validated_json::<SignupForm>()?;
+        Ok(Response::text(format!("accepted:{}", signup.email)))
+    })
+    .expect("signup json route");
+    app.get("/signup-query", |request: Request| async move {
+        let signup = request.validated_query::<SignupForm>()?;
+        Ok(Response::text(format!("accepted:{}", signup.email)))
+    })
+    .expect("signup query route");
+    let (address, shutdown, task) = start_server(app).await;
+
+    let valid = send_http(
+        address,
+        "POST",
+        "/signup",
+        &[("content-type", "application/x-www-form-urlencoded")],
+        "email=person%40example.test&age=21",
+    )
+    .await;
+    assert_eq!(status_code(&valid), 200);
+    assert!(response_body(&valid).contains("accepted:person@example.test"));
+
+    let invalid = send_http(
+        address,
+        "POST",
+        "/signup",
+        &[("content-type", "application/x-www-form-urlencoded")],
+        "email=bad&age=16",
+    )
+    .await;
+    assert_eq!(status_code(&invalid), 422);
+    let payload = response_body(&invalid);
+    assert!(payload.contains("\"error\":\"validation_failed\""));
+    assert!(payload.contains("\"fieldErrors\""));
+    assert!(payload.contains("\"email\""));
+    assert!(payload.contains("\"age\""));
+    assert!(payload.contains("formErrors"));
+    assert!(payload.contains("Please correct the highlighted fields."));
+    assert!(
+        !payload.contains("bad"),
+        "raw user input must not be echoed"
+    );
+
+    let unexpected = send_http(
+        address,
+        "POST",
+        "/signup",
+        &[("content-type", "application/x-www-form-urlencoded")],
+        "email=person%40example.test&age=21&admin=true",
+    )
+    .await;
+    assert_eq!(status_code(&unexpected), 400);
+    assert!(response_body(&unexpected).contains("Invalid form input"));
+
+    let wrong_content_type = send_http(
+        address,
+        "POST",
+        "/signup",
+        &[("content-type", "application/json")],
+        "{\"email\":\"person@example.test\",\"age\":21}",
+    )
+    .await;
+    assert_eq!(status_code(&wrong_content_type), 415);
+
+    let json = send_http(
+        address,
+        "POST",
+        "/signup-json",
+        &[("content-type", "application/json")],
+        r#"{"email":"json@example.test","age":29}"#,
+    )
+    .await;
+    assert_eq!(status_code(&json), 200);
+    assert!(response_body(&json).contains("accepted:json@example.test"));
+
+    let query = send_http(
+        address,
+        "GET",
+        "/signup-query?email=query%40example.test&age=24",
+        &[],
+        "",
+    )
+    .await;
+    assert_eq!(status_code(&query), 200);
+    assert!(response_body(&query).contains("accepted:query@example.test"));
+
+    stop_server(shutdown, task).await;
+}
+
+#[tokio::test]
+async fn real_tcp_rejects_oversized_payloads_before_handler_execution() {
+    let mut app = Application::with_config(ServerConfig::new().with_max_body_bytes(8));
+    app.post("/submit", |_request: Request| async {
+        Ok(Response::text("must not run"))
+    })
+    .expect("submit route");
+    let (address, shutdown, task) = start_server(app).await;
+
+    let response = send_http(
+        address,
+        "POST",
+        "/submit",
+        &[("content-type", "application/x-www-form-urlencoded")],
+        "payload=too-large",
+    )
+    .await;
+    assert_eq!(status_code(&response), 413);
+    assert!(response_body(&response).contains("Request body is too large"));
+    assert!(!response_body(&response).contains("must not run"));
+
+    stop_server(shutdown, task).await;
+}
+
+#[tokio::test]
+async fn real_tcp_csrf_middleware_requires_a_valid_cookie_and_matching_token() {
+    let csrf = CsrfProtection::new([9_u8; 32]).expect("strong application key");
+    let mut app = Application::new();
+    app.middleware(csrf.middleware())
+        .expect("register CSRF middleware");
+    let token_protection = csrf.clone();
+    app.get("/token", move |request: Request| {
+        let protection = token_protection.clone();
+        async move {
+            let token = protection
+                .token_for(&request)
+                .map_err(|_| HttpError::internal_server_error())?;
+            let cookie = protection
+                .cookie_header(&token, request.is_https())
+                .map_err(|_| HttpError::internal_server_error())?;
+            Ok(Response::text(token.as_str().to_owned())
+                .with_header(http::header::SET_COOKIE, cookie)
+                .with_header(
+                    http::header::CACHE_CONTROL,
+                    http::HeaderValue::from_static("no-store"),
+                ))
+        }
+    })
+    .expect("token route");
+    app.get("/public", |_request: Request| async {
+        Ok(Response::text("public"))
+    })
+    .expect("public route");
+    app.post("/mutate", |_request: Request| async {
+        Ok(Response::text("mutated"))
+    })
+    .expect("mutation route");
+    let (address, shutdown, task) = start_server(app).await;
+
+    let public = send_http(address, "GET", "/public", &[], "").await;
+    assert_eq!(status_code(&public), 200);
+
+    let token_response = send_http(address, "GET", "/token", &[], "").await;
+    assert_eq!(status_code(&token_response), 200);
+    let token = response_body(&token_response).trim().to_owned();
+    assert!(!token.is_empty());
+    let lower_headers = token_response.to_ascii_lowercase();
+    assert!(lower_headers.contains("set-cookie: rustflow_csrf="));
+    assert!(lower_headers.contains("samesite=lax; httponly"));
+    assert!(lower_headers.contains("cache-control: no-store"));
+
+    let rejected_without_token = send_http(
+        address,
+        "POST",
+        "/mutate",
+        &[("origin", "http://localhost")],
+        "",
+    )
+    .await;
+    assert_eq!(status_code(&rejected_without_token), 403);
+
+    let cookie = format!("rustflow_csrf={token}");
+    let rejected_mismatch = send_http(
+        address,
+        "POST",
+        "/mutate",
+        &[
+            ("cookie", cookie.as_str()),
+            ("x-csrf-token", "different-token"),
+            ("origin", "http://localhost"),
+        ],
+        "",
+    )
+    .await;
+    assert_eq!(status_code(&rejected_mismatch), 403);
+
+    let accepted = send_http(
+        address,
+        "POST",
+        "/mutate",
+        &[
+            ("cookie", cookie.as_str()),
+            ("x-csrf-token", token.as_str()),
+            ("origin", "http://localhost"),
+        ],
+        "",
+    )
+    .await;
+    assert_eq!(status_code(&accepted), 200);
+    assert!(response_body(&accepted).contains("mutated"));
+
+    let rejected_cross_origin = send_http(
+        address,
+        "POST",
+        "/mutate",
+        &[
+            ("cookie", cookie.as_str()),
+            ("x-csrf-token", token.as_str()),
+            ("origin", "https://attacker.invalid"),
+        ],
+        "",
+    )
+    .await;
+    assert_eq!(status_code(&rejected_cross_origin), 403);
+
+    let form_body = format!("_csrf={token}&comment=hello");
+    let accepted_form_token = send_http(
+        address,
+        "POST",
+        "/mutate",
+        &[
+            ("cookie", cookie.as_str()),
+            ("content-type", "application/x-www-form-urlencoded"),
+            ("referer", "http://localhost/form"),
+        ],
+        &form_body,
+    )
+    .await;
+    assert_eq!(status_code(&accepted_form_token), 200);
+    assert!(response_body(&accepted_form_token).contains("mutated"));
+
+    stop_server(shutdown, task).await;
+}
+
+#[tokio::test]
+async fn real_tcp_redirect_back_accepts_same_origin_and_falls_back_for_external_referers() {
+    let mut app = Application::new();
+    app.post("/return", |request: Request| async move {
+        request.redirect_back("/form")
+    })
+    .expect("return route");
+    app.get("/bad-fallback", |request: Request| async move {
+        request.redirect_back("//attacker.invalid")
+    })
+    .expect("bad fallback route");
+    let (address, shutdown, task) = start_server(app).await;
+
+    let same_origin = send_http(
+        address,
+        "POST",
+        "/return",
+        &[("referer", "http://localhost/previous?tab=1")],
+        "",
+    )
+    .await;
+    assert_eq!(status_code(&same_origin), 303);
+    assert!(
+        same_origin
+            .to_ascii_lowercase()
+            .contains("location: /previous?tab=1")
+    );
+
+    let external = send_http(
+        address,
+        "POST",
+        "/return",
+        &[("referer", "https://attacker.invalid/phish")],
+        "",
+    )
+    .await;
+    assert_eq!(status_code(&external), 303);
+    assert!(external.to_ascii_lowercase().contains("location: /form"));
+
+    let unsafe_fallback = send_http(address, "GET", "/bad-fallback", &[], "").await;
+    assert_eq!(status_code(&unsafe_fallback), 400);
+
+    stop_server(shutdown, task).await;
 }

@@ -4,10 +4,12 @@
 //! the structural view model do not depend on HTTP infrastructure.
 
 mod config;
+mod csrf;
 mod group;
 mod page;
 mod proxy;
 mod tls;
+mod validation;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -36,6 +38,7 @@ use axum::{
 
 use bytes::Bytes;
 pub use config::{AppConfig, AppEnvironment, ConfigError};
+pub use csrf::{CsrfError, CsrfProtection, CsrfToken};
 pub use group::RouteGroup;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
@@ -46,6 +49,7 @@ pub use tls::tls_server_config_from_pem;
 use tokio::net::TcpListener;
 use tower::limit::GlobalConcurrencyLimitLayer;
 use tracing::Instrument;
+pub use validation::{ValidateInput, ValidationErrors};
 
 use rustflow::components::{ComponentRegistry, SharedComponentCatalog};
 use rustflow_view::{Element, View};
@@ -263,6 +267,130 @@ impl Request {
         serde_urlencoded::from_str(self.query_string.as_deref().unwrap_or(""))
             .map_err(|_| HttpError::bad_request("Invalid query parameters"))
     }
+
+    /// Deserialize an `application/x-www-form-urlencoded` body into a typed value.
+    ///
+    /// Unsupported media types return 415 and malformed/incorrectly typed values
+    /// return a generic 400. The server body-size limit applies before this method
+    /// can be called.
+    pub fn form<T: DeserializeOwned>(&self) -> Result<T, HttpError> {
+        let content_type = self
+            .header("content-type")
+            .and_then(|value| value.to_str().ok());
+        if !content_type.is_some_and(|value| {
+            value.split(';').next().is_some_and(|media_type| {
+                media_type
+                    .trim()
+                    .eq_ignore_ascii_case("application/x-www-form-urlencoded")
+            })
+        }) {
+            return Err(HttpError::new(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "Expected application/x-www-form-urlencoded content",
+            ));
+        }
+
+        let body = std::str::from_utf8(self.body())
+            .map_err(|_| HttpError::bad_request("Invalid form input"))?;
+        serde_urlencoded::from_str(body).map_err(|_| HttpError::bad_request("Invalid form input"))
+    }
+
+    /// Deserialize and validate a URL-encoded HTML form body.
+    pub fn validated_form<T: DeserializeOwned + ValidateInput>(&self) -> Result<T, HttpError> {
+        let value = self.form::<T>()?;
+        value.validate().map_err(HttpError::validation_failed)?;
+        Ok(value)
+    }
+
+    /// Deserialize and validate a JSON body.
+    pub fn validated_json<T: DeserializeOwned + ValidateInput>(&self) -> Result<T, HttpError> {
+        let value = self.json::<T>()?;
+        value.validate().map_err(HttpError::validation_failed)?;
+        Ok(value)
+    }
+
+    /// Deserialize and validate typed query parameters.
+    pub fn validated_query<T: DeserializeOwned + ValidateInput>(&self) -> Result<T, HttpError> {
+        let value = self.query::<T>()?;
+        value.validate().map_err(HttpError::validation_failed)?;
+        Ok(value)
+    }
+
+    /// Redirect to a validated same-origin Referer path, or to a local fallback.
+    ///
+    /// Absolute Referer values are accepted only when scheme, host, and effective
+    /// port match this request. Missing/invalid/cross-origin referrers use the
+    /// fallback. The fallback must be an origin-relative path, never an absolute
+    /// URL or a protocol-relative URL.
+    pub fn redirect_back(&self, fallback: &str) -> Result<Response, HttpError> {
+        let fallback = safe_local_redirect_target(fallback)
+            .ok_or_else(|| HttpError::bad_request("Invalid local redirect target"))?;
+        if let Some(target) = self
+            .header("referer")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|referer| self.same_origin_referer_target(referer))
+        {
+            return Response::redirect(&target);
+        }
+        Response::redirect(&fallback)
+    }
+
+    /// Require an explicit same-origin browser context for cookie-authenticated mutations.
+    ///
+    /// An invalid or cross-origin Origin header fails closed rather than falling back
+    /// to Referer. When Origin is absent, a same-origin Referer is accepted.
+    pub(crate) fn has_same_origin_context(&self) -> bool {
+        if let Some(origin) = self.header("origin") {
+            let Ok(origin) = origin.to_str() else {
+                return false;
+            };
+            let Ok(uri) = origin.parse::<Uri>() else {
+                return false;
+            };
+            return uri.path() == "/" && uri.query().is_none() && self.is_same_origin_uri(&uri);
+        }
+
+        self.header("referer")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|referer| referer.parse::<Uri>().ok())
+            .is_some_and(|uri| self.is_same_origin_uri(&uri))
+    }
+
+    fn is_same_origin_uri(&self, uri: &Uri) -> bool {
+        let Some(scheme) = uri.scheme_str() else {
+            return false;
+        };
+        let expected_scheme = if self.is_https() { "https" } else { "http" };
+        if !scheme.eq_ignore_ascii_case(expected_scheme) {
+            return false;
+        }
+        let Some(remote) = uri.authority() else {
+            return false;
+        };
+        if remote.as_str().contains('@') {
+            return false;
+        }
+        let Some(host_header) = self.header("host").and_then(|value| value.to_str().ok()) else {
+            return false;
+        };
+        let Ok(local) = host_header.parse::<http::uri::Authority>() else {
+            return false;
+        };
+        if !remote.host().eq_ignore_ascii_case(local.host()) {
+            return false;
+        }
+        let default_port = if self.is_https() { 443 } else { 80 };
+        remote.port_u16().unwrap_or(default_port) == local.port_u16().unwrap_or(default_port)
+    }
+
+    fn same_origin_referer_target(&self, referer: &str) -> Option<String> {
+        let uri = referer.parse::<Uri>().ok()?;
+        if !self.is_same_origin_uri(&uri) {
+            return None;
+        }
+        let target = uri.path_and_query()?.as_str();
+        safe_local_redirect_target(target)
+    }
 }
 
 /// An HTTP response independent of Axum's response/body type.
@@ -425,6 +553,13 @@ impl Response {
 pub struct HttpError {
     status: StatusCode,
     public_message: String,
+    validation_errors: Option<ValidationErrors>,
+}
+
+#[derive(Serialize)]
+struct ValidationErrorBody {
+    error: &'static str,
+    errors: ValidationErrors,
 }
 
 impl HttpError {
@@ -433,6 +568,20 @@ impl HttpError {
         Self {
             status,
             public_message: public_message.into(),
+            validation_errors: None,
+        }
+    }
+
+    /// A 403 Forbidden error.
+    pub fn forbidden(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::FORBIDDEN, message)
+    }
+
+    fn validation_failed(errors: ValidationErrors) -> Self {
+        Self {
+            status: StatusCode::UNPROCESSABLE_ENTITY,
+            public_message: "Request validation failed".to_owned(),
+            validation_errors: Some(errors),
         }
     }
 
@@ -468,6 +617,24 @@ impl HttpError {
     }
 
     fn into_response(self) -> Response {
+        if let Some(errors) = self.validation_errors {
+            let payload = ValidationErrorBody {
+                error: "validation_failed",
+                errors,
+            };
+            if let Ok(body) = serde_json::to_vec(&payload) {
+                let mut response = Response::new(self.status, Bytes::from(body));
+                response.headers.insert(
+                    http::header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/json; charset=utf-8"),
+                );
+                return response;
+            }
+            return Response::text_with_status(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error",
+            );
+        }
         Response::text_with_status(self.status, self.public_message)
     }
 }
@@ -1636,6 +1803,26 @@ fn route_shape(path: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("/")
+}
+
+fn safe_local_redirect_target(target: &str) -> Option<String> {
+    if target.is_empty()
+        || target.starts_with("//")
+        || target.starts_with("/\\")
+        || target.contains('\\')
+        || target.chars().any(char::is_control)
+    {
+        return None;
+    }
+    let uri = target.parse::<Uri>().ok()?;
+    if uri.scheme().is_some() || uri.authority().is_some() {
+        return None;
+    }
+    let path_and_query = uri.path_and_query()?.as_str();
+    if !path_and_query.starts_with('/') || path_and_query.starts_with("//") {
+        return None;
+    }
+    Some(path_and_query.to_owned())
 }
 
 fn is_safe_redirect_location(location: &str) -> bool {
