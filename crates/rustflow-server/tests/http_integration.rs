@@ -881,7 +881,14 @@ async fn real_tcp_csrf_middleware_requires_a_valid_cookie_and_matching_token() {
     assert!(lower_headers.contains("samesite=lax; httponly"));
     assert!(lower_headers.contains("cache-control: no-store"));
 
-    let rejected_without_token = send_http(address, "POST", "/mutate", &[], "").await;
+    let rejected_without_token = send_http(
+        address,
+        "POST",
+        "/mutate",
+        &[("origin", "http://localhost")],
+        "",
+    )
+    .await;
     assert_eq!(status_code(&rejected_without_token), 403);
 
     let cookie = format!("rustflow_csrf={token}");
