@@ -161,6 +161,7 @@ The initial decisions and alternatives are recorded in:
 - [ADR 0002 — Client runtime](adr/0002-client-runtime.md)
 - [ADR 0003 — Server integration](adr/0003-server-integration.md)
 - [ADR 0004 — React-like component authoring](adr/0004-react-like-component-authoring.md)
+- [ADR 0014 — Typed request validation and opt-in CSRF protection](adr/0014-input-validation-and-csrf-contract.md)
 
 Each ADR's status line records whether its architectural decision is accepted or still proposed. An accepted decision explains a design choice but is not proof that every related feature is implemented; feature availability must be checked against code, tests, and the roadmap.
 
