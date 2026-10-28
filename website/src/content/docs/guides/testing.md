@@ -44,7 +44,7 @@ El ejemplo demuestra documento HTML, componente SSR, catálogo y layout comparti
 cargo test -p rustflow-server --test http_integration
 ~~~
 
-La suite prueba rutas por TCP local, datos malformados, grupos, middleware, request IDs, páginas de error, límites, timeouts, TLS local, proxies confiables, abortos de cliente y concurrencia acotada.
+La suite prueba rutas por TCP local, datos malformados, grupos, middleware, request IDs, páginas de error, límites, timeouts, TLS local, proxies confiables, abortos de cliente y concurrencia acotada. Los casos de la Fase 6.3 incluyen formularios tipados, validación JSON/query, errores estructurados 422, content-types no admitidos, campos inesperados, CSRF ausente/inválido/válido y redirecciones de retorno seguras. Consulta también la [guía de formularios y validación](/guides/forms-validation/).
 
 ## 3. Compilar y probar el navegador WebAssembly
 
