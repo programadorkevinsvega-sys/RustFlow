@@ -892,6 +892,7 @@ async fn real_tcp_csrf_middleware_requires_a_valid_cookie_and_matching_token() {
         &[
             ("cookie", cookie.as_str()),
             ("x-csrf-token", "different-token"),
+            ("origin", "http://localhost"),
         ],
         "",
     )
@@ -905,12 +906,27 @@ async fn real_tcp_csrf_middleware_requires_a_valid_cookie_and_matching_token() {
         &[
             ("cookie", cookie.as_str()),
             ("x-csrf-token", token.as_str()),
+            ("origin", "http://localhost"),
         ],
         "",
     )
     .await;
     assert_eq!(status_code(&accepted), 200);
     assert!(response_body(&accepted).contains("mutated"));
+
+    let rejected_cross_origin = send_http(
+        address,
+        "POST",
+        "/mutate",
+        &[
+            ("cookie", cookie.as_str()),
+            ("x-csrf-token", token.as_str()),
+            ("origin", "https://attacker.invalid"),
+        ],
+        "",
+    )
+    .await;
+    assert_eq!(status_code(&rejected_cross_origin), 403);
 
     let form_body = format!("_csrf={token}&comment=hello");
     let accepted_form_token = send_http(
@@ -920,6 +936,7 @@ async fn real_tcp_csrf_middleware_requires_a_valid_cookie_and_matching_token() {
         &[
             ("cookie", cookie.as_str()),
             ("content-type", "application/x-www-form-urlencoded"),
+            ("referer", "http://localhost/form"),
         ],
         &form_body,
     )
