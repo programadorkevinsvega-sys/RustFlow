@@ -106,7 +106,7 @@ impl CsrfProtection {
             "{COOKIE_NAME}={}; Path=/; SameSite=Lax; HttpOnly; Max-Age={TOKEN_TTL_SECS}{secure_attribute}",
             token.as_str()
         );
-        HeaderValue::from_str(&header).map_err(|_| CsrfError::InvalidToken)
+        HeaderValue::from_bytes(header.as_bytes()).map_err(|_| CsrfError::InvalidToken)
     }
 
     /// Middleware that rejects unsafe methods without a matching signed CSRF token.
