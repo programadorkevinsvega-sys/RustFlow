@@ -326,7 +326,7 @@ mod tests {
     #[test]
     fn rejects_short_secrets_and_redacts_secret_debug_output() {
         assert!(matches!(
-            CsrfProtection::new("too-short"),
+            CsrfProtection::new(b"too-short"),
             Err(CsrfError::WeakSecret)
         ));
         let protection = CsrfProtection::new([7_u8; 32]).expect("32 byte key");
