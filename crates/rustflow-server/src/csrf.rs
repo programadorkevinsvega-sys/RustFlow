@@ -14,7 +14,7 @@ use ring::{
 };
 use serde::Deserialize;
 
-use crate::{HttpError, Middleware, Request, Response};
+use crate::{HttpError, Middleware, Request};
 
 const COOKIE_NAME: &str = "rustflow_csrf";
 const TOKEN_TTL_SECS: u64 = 8 * 60 * 60;
@@ -332,10 +332,10 @@ mod tests {
 
     #[test]
     fn rejects_short_secrets_and_redacts_secret_debug_output() {
-        assert_eq!(
+        assert!(matches!(
             CsrfProtection::new("too-short"),
             Err(CsrfError::WeakSecret)
-        );
+        ));
         let protection = CsrfProtection::new([7_u8; 32]).expect("32 byte key");
         assert!(!format!("{protection:?}").contains("777777"));
         assert!(format!("{protection:?}").contains("[REDACTED]"));
