@@ -103,7 +103,7 @@ Para ejecutar la suite de integración local, configura dos bases desechables co
 
 MongoDB no usa DatabasePool, SQLx AnyPool, SQL ni migraciones *.sql. RustFlow expone un límite documental separado con MongoConfig, MongoDatabase, BSON y los tipos nativos del driver oficial.
 
-Configura RUSTFLOW_MONGODB_URI y RUSTFLOW_MONGODB_DATABASE. Los timeouts opcionales en segundos son RUSTFLOW_MONGODB_CONNECT_TIMEOUT_SECS, RUSTFLOW_MONGODB_SERVER_SELECTION_TIMEOUT_SECS y RUSTFLOW_MONGODB_OPERATION_TIMEOUT_SECS. Los defaults son 10 s, 10 s y 15 s. MongoConfig::from_app_config respeta la política de configuración de RustFlow: en producción los valores vienen del entorno del proceso, no de archivos dotenv. La URI se redacta en Debug.
+Configura RUSTFLOW_MONGODB_URI (URI estándar mongodb://; URI SRV mongodb+srv:// no habilitada en esta versión por la revisión de seguridad de la dependencia DNS) y RUSTFLOW_MONGODB_DATABASE. Los timeouts opcionales en segundos son RUSTFLOW_MONGODB_CONNECT_TIMEOUT_SECS, RUSTFLOW_MONGODB_SERVER_SELECTION_TIMEOUT_SECS y RUSTFLOW_MONGODB_OPERATION_TIMEOUT_SECS. Los defaults son 10 s, 10 s y 15 s. MongoConfig::from_app_config respeta la política de configuración de RustFlow: en producción los valores vienen del entorno del proceso, no de archivos dotenv. La URI se redacta en Debug.
 
 ~~~rust
 use rustflow_server::{AppConfig, MongoConfig, MongoDatabase};

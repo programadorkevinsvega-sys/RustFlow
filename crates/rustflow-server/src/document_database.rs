@@ -54,11 +54,11 @@ impl MongoConfig {
         let database = database.into();
         if uri.is_empty()
             || uri.chars().any(char::is_control)
-            || !(uri.starts_with("mongodb://") || uri.starts_with("mongodb+srv://"))
+            || !uri.starts_with("mongodb://")
             || uri.ends_with("://")
         {
             return Err(MongoError::InvalidConfiguration(
-                "MongoDB URI must use mongodb:// or mongodb+srv:// and contain no control characters",
+                "MongoDB URI must use mongodb:// and contain no control characters",
             ));
         }
         validate_database_name(&database)?;

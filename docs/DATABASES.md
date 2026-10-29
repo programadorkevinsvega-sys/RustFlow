@@ -92,7 +92,7 @@ When running locally outside CI, a test skips if its corresponding URL is absent
 
 MongoDB is document-oriented and uses its own adapter, independent of SQLx, AnyPool, SQL transactions, and SQL migrations. The current API is experimental and exposes the official driver's native collection API rather than an ODM.
 
-The official MongoDB Rust driver is pinned to =3.6.0 because that release retains the repository's Rust 1.85 MSRV. Re-evaluate the pin during dependency/security reviews before upgrading; newer driver lines can raise the MSRV. The initial CI server contract is MongoDB 7.0.45.
+The official MongoDB Rust driver is pinned to =3.6.0 because that release retains the repository's Rust 1.85 MSRV. The DNS SRV resolver feature is intentionally disabled because its Hickory 0.25 dependency triggered a high-severity dependency-review advisory; only standard mongodb:// URIs are supported by this initial adapter. Re-evaluate the pin and optional features during dependency/security reviews. The initial CI server contract is MongoDB 7.0.45.
 
 ### Configuration
 

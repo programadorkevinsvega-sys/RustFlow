@@ -238,6 +238,7 @@ async fn mongodb_7045_real_server_contract() {
 #[tokio::test]
 async fn mongodb_invalid_uri_and_unreachable_server_fail_with_bounded_timeout() {
     assert!(MongoConfig::new("postgres://127.0.0.1/test", "test").is_err());
+    assert!(MongoConfig::new("mongodb+srv://cluster.example.test", "test").is_err());
 
     let config = MongoConfig::new(
         "mongodb://127.0.0.1:1/rustflow_test",
