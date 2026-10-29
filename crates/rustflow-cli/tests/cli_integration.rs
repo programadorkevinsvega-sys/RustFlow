@@ -12,6 +12,188 @@ use std::{
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(1);
 const REPOSITORY_URL: &str = "https://github.com/programadorkevinsvega-sys/RustFlow.git";
 
+const GENERATED_CRUD_MAIN: &str = r#"use std::{error::Error, sync::Arc, time::Duration};
+
+use http::{header::{CACHE_CONTROL, SET_COOKIE}, HeaderValue, StatusCode};
+use rustflow::view::View;
+use rustflow_server::{
+    AccessPolicy, AppConfig, AppEnvironment, Application, AuthIdentity, CsrfProtection,
+    DatabaseConfig, DatabaseError, DatabasePool, HttpError, HttpMethod, PasswordHash, Request,
+    Response, RolePolicy, SessionCookieConfig, SessionManager, ValidateInput, ValidationErrors,
+    html_document,
+};
+use serde::Deserialize;
+
+pub mod components;
+pub mod controllers;
+pub mod models;
+pub mod pages;
+
+#[derive(Debug, Deserialize)]
+struct LoginForm {
+    username: String,
+    password: String,
+}
+
+impl ValidateInput for LoginForm {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let mut errors = ValidationErrors::new();
+        if self.username.trim().is_empty() {
+            errors.add_field_error("username", "Enter a username.");
+        }
+        if self.password.is_empty() {
+            errors.add_field_error("password", "Enter a password.");
+        }
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct NewNoteForm {
+    title: String,
+}
+
+impl ValidateInput for NewNoteForm {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let mut errors = ValidationErrors::new();
+        let title = self.title.trim();
+        if title.is_empty() {
+            errors.add_field_error("title", "A title is required.");
+        } else if title.len() > 120 {
+            errors.add_field_error("title", "The title must be at most 120 bytes.");
+        }
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let config = AppConfig::load()?;
+    let address = config.socket_addr();
+    let database_config = DatabaseConfig::from_app_config(&config)?;
+    let database = Arc::new(DatabasePool::connect(&database_config).await?);
+    if config.environment != AppEnvironment::Production {
+        database.run_migrations("migrations").await?;
+    }
+
+    let sessions = SessionManager::in_memory(Duration::from_secs(300))
+        .expect("session manager")
+        .with_cookie_config(SessionCookieConfig::development())
+        .expect("development cookie");
+    let csrf = CsrfProtection::new([0x39_u8; 32]).expect("CSRF protection");
+    let stored_password = Arc::new(
+        PasswordHash::hash("correct horse battery staple").expect("hash test credential"),
+    );
+    let policy: Arc<dyn AccessPolicy> = Arc::new(
+        RolePolicy::new()
+            .allow_role("notes.write", "writer")
+            .expect("access rule"),
+    );
+
+    let mut app = Application::new();
+    app.middleware(sessions.middleware())?;
+
+    let csrf_for_route = csrf.clone();
+    app.get("/csrf", move |request: Request| {
+        let csrf = csrf_for_route.clone();
+        async move {
+            let token = csrf.token_for(&request)
+                .map_err(|_| HttpError::internal_server_error())?;
+            let cookie = csrf.cookie_header(&token, request.is_https())
+                .map_err(|_| HttpError::internal_server_error())?;
+            Ok(Response::text(token.as_str().to_owned())
+                .with_header(SET_COOKIE, cookie)
+                .with_header(CACHE_CONTROL, HeaderValue::from_static("no-store")))
+        }
+    })?;
+
+    let password_for_login = stored_password.clone();
+    app.post("/login", move |request: Request| {
+        let password_hash = password_for_login.clone();
+        async move {
+            let form = request.validated_form::<LoginForm>()?;
+            let accepted = form.username == "ada"
+                && password_hash.verify(&form.password)
+                    .map_err(|_| HttpError::internal_server_error())?;
+            if !accepted {
+                return Err(HttpError::new(StatusCode::UNAUTHORIZED, "Invalid credentials"));
+            }
+            let identity = AuthIdentity::new("user-ada")
+                .map_err(|_| HttpError::internal_server_error())?
+                .with_role("writer")
+                .map_err(|_| HttpError::internal_server_error())?;
+            request.session().ok_or_else(HttpError::internal_server_error)?
+                .authenticate(identity)
+                .map_err(|_| HttpError::internal_server_error())?;
+            Ok(Response::text("signed in"))
+        }
+    })?;
+    app.route_middleware(HttpMethod::Post, "/login", csrf.clone().middleware())?;
+
+    let database_for_create = database.clone();
+    app.route_authorized(
+        HttpMethod::Post,
+        "/notes",
+        "notes.write",
+        Some(policy),
+        move |request: Request| {
+            let database = database_for_create.clone();
+            async move {
+                let input = request.validated_form::<NewNoteForm>()?;
+                rustflow_server::sqlx::query("INSERT INTO notes (title) VALUES (?)")
+                    .bind(input.title.trim())
+                    .execute(database.pool())
+                    .await
+                    .map_err(|error| DatabaseError::from(error).to_http_error())?;
+                Ok(Response::new(StatusCode::SEE_OTHER, "saved")
+                    .with_header(http::header::LOCATION, HeaderValue::from_static("/notes")))
+            }
+        },
+    )?;
+    app.route_middleware(HttpMethod::Post, "/notes", csrf.clone().middleware())?;
+
+    let database_for_list = database.clone();
+    app.route_protected(HttpMethod::Get, "/notes", move |_request: Request| {
+        let database = database_for_list.clone();
+        async move {
+            let rows: Vec<String> = rustflow_server::sqlx::query_scalar(
+                "SELECT title FROM notes ORDER BY id"
+            )
+            .fetch_all(database.pool())
+            .await
+            .map_err(|error| DatabaseError::from(error).to_http_error())?;
+            let mut children = vec![View::element("h1", [View::text("Notes")])
+                .map_err(|_| HttpError::internal_server_error())?];
+            let items = rows.into_iter().map(|title| {
+                View::element("li", [View::text(title)])
+                    .map_err(|_| HttpError::internal_server_error())
+            }).collect::<Result<Vec<_>, _>>()?;
+            children.push(View::element("ul", items)
+                .map_err(|_| HttpError::internal_server_error())?);
+            let body = View::element("main", children)
+                .map_err(|_| HttpError::internal_server_error())?;
+            html_document("Notes", "en", &body)
+        }
+    })?;
+
+    let database_for_health = database.clone();
+    app.get("/health/database", move |_request: Request| {
+        let database = database_for_health.clone();
+        async move {
+            rustflow_server::sqlx::query("SELECT 1")
+                .execute(database.pool())
+                .await
+                .map_err(|error| DatabaseError::from(error).to_http_error())?;
+            Ok(Response::text("ok"))
+        }
+    })?;
+    app.get("/", controllers::home_controller::index)?;
+    app.serve(address).await?;
+    Ok(())
+}
+"#;
+
+
 struct TempDir(PathBuf);
 
 impl TempDir {
@@ -111,6 +293,66 @@ fn toml_path(path: &Path) -> String {
 
 fn cargo_target_dir(temp: &TempDir) -> PathBuf {
     temp.path().join("cargo-target")
+}
+
+
+fn generated_http_request(
+    port: u16,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: &str,
+) -> String {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect to generated server");
+    let mut request = format!(
+        "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: {}\r\n",
+        body.len()
+    );
+    for (name, value) in headers {
+        request.push_str(name);
+        request.push_str(": ");
+        request.push_str(value);
+        request.push_str("\r\n");
+    }
+    request.push_str("\r\n");
+    request.push_str(body);
+    stream.write_all(request.as_bytes()).expect("write request");
+    let mut bytes = Vec::new();
+    stream.read_to_end(&mut bytes).expect("read response");
+    String::from_utf8(bytes).expect("response is UTF-8")
+}
+
+fn generated_response_status(response: &str) -> u16 {
+    response
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|value| value.parse().ok())
+        .expect("HTTP status")
+}
+
+fn generated_response_body(response: &str) -> &str {
+    response
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| body)
+        .expect("HTTP response body")
+}
+
+fn generated_response_cookie(response: &str, name: &str) -> String {
+    let prefix = format!("{name}=");
+    response
+        .lines()
+        .take_while(|line| !line.is_empty())
+        .filter_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            key.eq_ignore_ascii_case("set-cookie").then_some(value.trim())
+        })
+        .find(|value| value.starts_with(&prefix))
+        .expect("expected Set-Cookie")
+        .split(';')
+        .next()
+        .expect("cookie pair")
+        .to_owned()
 }
 
 struct ChildGuard(Child);
@@ -317,6 +559,22 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
     ] {
         assert_success(&invoke(&project, &["generate", kind, name]));
     }
+    let manifest_path = project.join("Cargo.toml");
+    let manifest = fs::read_to_string(&manifest_path).unwrap();
+    fs::write(
+        &manifest_path,
+        format!(
+            "{manifest}\nserde = {{ version = \"1\", features = [\"derive\"] }}\nhttp = \"1\"\n"
+        ),
+    )
+    .unwrap();
+    fs::write(project.join("src/main.rs"), GENERATED_CRUD_MAIN).unwrap();
+    fs::write(
+        project.join("migrations/0001_create_users.sql"),
+        "CREATE TABLE notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL UNIQUE);\n",
+    )
+    .unwrap();
+
     localize_framework_dependencies(&project);
     let target_dir = cargo_target_dir(&temp);
 
@@ -344,6 +602,7 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
         .env("RUSTFLOW_ENV", "test")
         .env("RUSTFLOW_HOST", "127.0.0.1")
         .env("RUSTFLOW_PORT", port.to_string())
+        .env("RUSTFLOW_DATABASE_URL", "sqlite://rustflow.db?mode=rwc")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -370,16 +629,77 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
     assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
     assert!(response.contains("Hola, RustFlow"), "{response}");
 
-    let mut health_stream = TcpStream::connect(("127.0.0.1", port))
-        .expect("connect to generated database health route");
-    health_stream
-        .write_all(b"GET /health/database HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
-        .unwrap();
-    let mut health_bytes = Vec::new();
-    health_stream.read_to_end(&mut health_bytes).unwrap();
-    let health = String::from_utf8_lossy(&health_bytes).into_owned();
-    assert!(health.starts_with("HTTP/1.1 200 OK"), "{health}");
-    assert!(health.ends_with("ok"), "{health}");
+    let health = generated_http_request(port, "GET", "/health/database", &[], "");
+    assert_eq!(generated_response_status(&health), 200, "{health}");
+    assert_eq!(generated_response_body(&health), "ok");
+
+    let anonymous = generated_http_request(port, "GET", "/notes", &[], "");
+    assert_eq!(generated_response_status(&anonymous), 401, "{anonymous}");
+
+    let csrf = generated_http_request(port, "GET", "/csrf", &[], "");
+    assert_eq!(generated_response_status(&csrf), 200, "{csrf}");
+    let csrf_token = generated_response_body(&csrf).to_owned();
+    let csrf_cookie = generated_response_cookie(&csrf, "rustflow_csrf");
+
+    let login_headers = [
+        ("content-type", "application/x-www-form-urlencoded"),
+        ("origin", "http://localhost"),
+        ("cookie", csrf_cookie.as_str()),
+        ("x-csrf-token", csrf_token.as_str()),
+    ];
+    let wrong_login = generated_http_request(
+        port,
+        "POST",
+        "/login",
+        &login_headers,
+        "username=ada&password=incorrect",
+    );
+    assert_eq!(generated_response_status(&wrong_login), 401, "{wrong_login}");
+
+    let login = generated_http_request(
+        port,
+        "POST",
+        "/login",
+        &login_headers,
+        "username=ada&password=correct%20horse%20battery%20staple",
+    );
+    assert_eq!(generated_response_status(&login), 200, "{login}");
+    let session_cookie = generated_response_cookie(&login, "rustflow_session");
+    let cookies = format!("{csrf_cookie}; {session_cookie}");
+    let secured_headers = [
+        ("content-type", "application/x-www-form-urlencoded"),
+        ("origin", "http://localhost"),
+        ("cookie", cookies.as_str()),
+        ("x-csrf-token", csrf_token.as_str()),
+    ];
+
+    let invalid = generated_http_request(
+        port,
+        "POST",
+        "/notes",
+        &secured_headers,
+        "title=%20%20%20",
+    );
+    assert_eq!(generated_response_status(&invalid), 422, "{invalid}");
+
+    let created = generated_http_request(
+        port,
+        "POST",
+        "/notes",
+        &secured_headers,
+        "title=Ledger%20%3Cscript%3E",
+    );
+    assert_eq!(generated_response_status(&created), 303, "{created}");
+
+    let notes = generated_http_request(port, "GET", "/notes", &[("cookie", cookies.as_str())], "");
+    assert_eq!(generated_response_status(&notes), 200, "{notes}");
+    assert!(generated_response_body(&notes).contains("Ledger &lt;script&gt;"), "{notes}");
+    assert!(!generated_response_body(&notes).contains("<script>"), "{notes}");
+    assert_eq!(
+        generated_response_body(&notes).matches("<li>").count(),
+        1,
+        "only a successfully validated note should be persisted: {notes}"
+    );
 }
 
 #[test]
