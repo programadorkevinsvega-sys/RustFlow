@@ -454,11 +454,7 @@ impl DatabaseError {
                 StatusCode::SERVICE_UNAVAILABLE,
                 "Database temporarily unavailable",
             ),
-            Some(sqlx::Error::Database(error))
-                if error.is_unique_violation()
-                    || error.code().is_some_and(|code| {
-                        matches!(code.as_ref(), "23505" | "1555" | "2067")
-                    }) =>
+            Some(sqlx::Error::Database(error)) if is_unique_constraint_error(error.as_ref()) =>
             {
                 HttpError::new(
                     StatusCode::CONFLICT,
@@ -492,6 +488,11 @@ impl Error for DatabaseError {
             Self::InvalidConfiguration(_) => None,
         }
     }
+}
+
+fn is_unique_constraint_error(error: &dyn sqlx::error::DatabaseError) -> bool {
+    let code = error.code();
+    error.is_unique_violation() || matches!(code.as_deref(), Some("23505" | "1555" | "2067"))
 }
 
 impl From<sqlx::Error> for DatabaseError {
