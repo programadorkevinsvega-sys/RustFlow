@@ -70,7 +70,7 @@ The MVP is complete only when all of the following are implemented, documented, 
 6. CI runs core unit tests, browser tests, and server integration tests on pull requests.
 7. A clean-checkout guide lets a contributor install prerequisites, run checks, and launch examples.
 
-This paragraph records the initial MVP boundary. Later phases have since added SSR page/layout composition and opt-in hydration/navigation, but RustFlow still does not provide a complete production-ready full-stack workflow, integrated authentication, a custom ORM, or production deployment tooling.
+This paragraph records the initial MVP boundary. Later phases have since added SSR page/layout composition and opt-in hydration/navigation, but RustFlow still does not provide a complete production-ready full-stack workflow or an integrated user/credential provider; it also lacks a custom ORM and production deployment tooling. Phase 6.4 adds experimental session and access-control primitives, not a complete account-authentication system.
 
 ## 6. MVP user stories and acceptance criteria
 
@@ -179,4 +179,9 @@ Phase 0.2 was marked complete in ROADMAP.md after its scope baseline and initial
 
 ### CLI Fase 6.1 (alcance experimental)
 
-El CLI de desarrollo genera un scaffold de servidor, delega `dev` y `build` a Cargo, y crea componentes/páginas/controladores/modelos/migraciones estructurales. Las dependencias Git del scaffold quedan fijadas a la revisión fuente del CLI. Los modelos no son entidades ORM y las migraciones no se ejecutan. La Fase 6.2 añade una configuración experimental limitada al perfil, host y puerto, con variables del proceso obligatorias en producción. La Fase 6.3 introduce extracción tipada, validación de formularios, errores de campo/formulario, CSRF optativo para mutaciones autenticadas por cookies y redirección de retorno segura; siguen fuera de alcance las sesiones, la autenticación/autorización integradas y la persistencia.
+El CLI de desarrollo genera un scaffold de servidor, delega `dev` y `build` a Cargo, y crea componentes/páginas/controladores/modelos/migraciones estructurales. Las dependencias Git del scaffold quedan fijadas a la revisión fuente del CLI. Los modelos no son entidades ORM y las migraciones no se ejecutan. La Fase 6.2 añade una configuración experimental limitada al perfil, host y puerto, con variables del proceso obligatorias en producción. La Fase 6.3 introdujo extracción tipada, validación de formularios, errores de campo/formulario, CSRF optativo para mutaciones autenticadas por cookies y redirección de retorno segura. En ese cierre las sesiones seguían fuera de alcance; la Fase 6.4 ahora propone sesiones server-side, guards y autorización deny-by-default, todavía en revisión en la PR #49. La autenticación completa de cuentas, el proveedor de usuarios y la persistencia siguen fuera de alcance.
+
+
+## Current implementation note — Phase 6.4 (under review)
+
+The current Phase 6.4 proposal adds experimental server-side sessions, host-only secure cookies, pre-handler authentication guards, default-deny authorization policies, and password hashing through ring. The included memory adapter is volatile and process-local, not production persistence. Credential verification, user-provider integration, role assignment, OAuth/OIDC, MFA, account recovery and brute-force protection are not included. Database adapters, migrations and durable persistence remain part of Phase 6.5. This implementation is not considered complete until the required PR checks pass on the final head.

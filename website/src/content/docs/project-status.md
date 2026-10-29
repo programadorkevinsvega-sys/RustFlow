@@ -87,8 +87,13 @@ La PR #47 se fusionó en `main` mediante squash en el commit `0a307e84bafabbc7df
 | CLI y scaffolding | Experimental, en revisión en la Fase 6.1 | [CLI y generadores](/guides/cli/) |
 | <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> | No | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
 | Protección CSRF en mutaciones mediante cookies | Experimental, opt-in; requiere conectar middleware y proveer clave | [Formularios y validación](/guides/forms-validation/) |
-| Sesiones, login/auth, autorización integrada, server actions y persistencia | No | [Product scope](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/PRODUCT_SCOPE.md) |
+| Sesiones server-side y guards de acceso | Experimental; Fase 6.4 en revisión, sin proveedor de usuarios ni persistencia | [Guía de sesiones](/guides/sessions-and-access/) |
 
 ## Cómo interpretar las pruebas
 
 Las pruebas unitarias, de integración HTTP/TCP y E2E Chromium demuestran los casos que ejercitan. No son una garantía de que se hayan probado todas las combinaciones ni sustituyen un modelo de amenazas, la operación real de producción o una promesa de compatibilidad. Antes de tomar decisiones de adopción, consulta el HEAD actual de <code>main</code>, la CI correspondiente y las limitaciones de cada guía.
+
+
+## Fase 6.4 — Sesiones y control de acceso (en revisión)
+
+La rama dedicada incorpora sesiones server-side, cookies host-only seguras, rotación e invalidación, extracción de identidad, guards antes de ejecutar el handler, política deny-by-default y hashing de contraseñas con ring. El adaptador incluido es volátil y local al proceso; el proveedor de usuarios y la persistencia de base de datos siguen fuera del alcance. La fase permanece abierta hasta que pasen todos los checks requeridos del HEAD final de la PR. Consulta la [guía de sesiones](/guides/sessions-and-access/).

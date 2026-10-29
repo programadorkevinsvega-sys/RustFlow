@@ -8,6 +8,7 @@ mod csrf;
 mod group;
 mod page;
 mod proxy;
+mod sessions;
 mod tls;
 mod validation;
 
@@ -45,6 +46,11 @@ use http_body_util::LengthLimitError;
 pub use page::HtmlPage;
 pub use proxy::{ClientAddressPolicy, IpNetwork};
 use serde::{Serialize, de::DeserializeOwned};
+pub use sessions::{
+    AccessPolicy, AccessPolicyError, AuthIdentity, InMemorySessionStore, PasswordHash, RolePolicy,
+    SameSite, SessionContext, SessionCookieConfig, SessionError, SessionId, SessionManager,
+    SessionStore, require_authentication, require_permission,
+};
 pub use tls::tls_server_config_from_pem;
 use tokio::net::TcpListener;
 use tower::limit::GlobalConcurrencyLimitLayer;
@@ -169,6 +175,7 @@ pub struct Request {
     peer_addr: Option<SocketAddr>,
     client_ip: Option<IpAddr>,
     https: bool,
+    session: Option<SessionContext>,
 }
 
 struct RequestInit {
@@ -195,6 +202,7 @@ impl Request {
             peer_addr: init.peer_addr,
             client_ip: init.identity.client_ip,
             https: init.identity.https,
+            session: None,
         }
     }
 
@@ -510,6 +518,14 @@ impl Response {
     /// Add or replace a response header.
     pub fn with_header(mut self, name: HeaderName, value: HeaderValue) -> Self {
         self.headers.insert(name, value);
+        self
+    }
+
+    /// Append a response header without replacing other values under the same name.
+    ///
+    /// This is useful for repeatable headers such as Set-Cookie.
+    pub fn with_appended_header(mut self, name: HeaderName, value: HeaderValue) -> Self {
+        self.headers.append(name, value);
         self
     }
 
@@ -1323,6 +1339,48 @@ impl Application {
         Fut: Future<Output = Result<Response, HttpError>> + Send + 'static,
     {
         self.register_route(method, path.into(), None, Vec::new(), handler)
+    }
+
+    /// Register a route whose authentication guard runs before its handler.
+    /// SessionManager middleware must also be installed; without it, the guard fails closed.
+    pub fn route_protected<F, Fut>(
+        &mut self,
+        method: HttpMethod,
+        path: impl Into<String>,
+        handler: F,
+    ) -> Result<&mut Self, ServerError>
+    where
+        F: Fn(Request) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Response, HttpError>> + Send + 'static,
+    {
+        let path = path.into();
+        self.route(method, path.clone(), handler)?;
+        self.route_middleware(method, path, sessions::require_authentication())?;
+        Ok(self)
+    }
+
+    /// Register a route with authorization checked before its handler.
+    /// A missing policy/rule or an evaluation error never grants access.
+    pub fn route_authorized<F, Fut>(
+        &mut self,
+        method: HttpMethod,
+        path: impl Into<String>,
+        permission: impl Into<String>,
+        policy: Option<Arc<dyn AccessPolicy>>,
+        handler: F,
+    ) -> Result<&mut Self, ServerError>
+    where
+        F: Fn(Request) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Response, HttpError>> + Send + 'static,
+    {
+        let path = path.into();
+        self.route(method, path.clone(), handler)?;
+        self.route_middleware(
+            method,
+            path,
+            sessions::require_permission(permission, policy),
+        )?;
+        Ok(self)
     }
 
     /// Register a uniquely named route for reverse lookup and diagnostics.

@@ -3,7 +3,7 @@ title: Formularios y validación
 description: Extrae entradas tipadas, devuelve errores de campo, protege mutaciones con cookies mediante CSRF y vuelve a una ruta local segura.
 ---
 
-Esta guía cubre las APIs experimentales de la Fase 6.3 del servidor RustFlow. Un dato recibido es siempre no confiable: primero decodifícalo a un tipo, después valida las reglas de aplicación y realiza la comprobación de permisos por separado. RustFlow todavía no integra sesiones, autenticación ni persistencia.
+Esta guía cubre las APIs experimentales de la Fase 6.3 del servidor RustFlow. Un dato recibido es siempre no confiable: primero decodifícalo a un tipo, después valida las reglas de aplicación y realiza la comprobación de permisos por separado. La Fase 6.4 incorpora APIs experimentales de sesiones y guards que están en revisión. Esta guía describe la validación y el middleware CSRF, que deben integrarse deliberadamente en las rutas con cookies. No hay persistencia de base de datos.
 
 ## 1. Extrae un formulario tipado
 
@@ -128,3 +128,8 @@ Tras aceptar una mutación, Request::redirect_back("/profile") usa la ruta de Re
 Las pruebas deben cubrir entradas válidas, errores de campo/formulario, content-types no admitidos, datos inesperados, payloads demasiado grandes, tokens ausentes/incompatibles, tokens firmados válidos y Referer externo. La suite de integración TCP canónica se ejecuta desde la raíz con `cargo test -p rustflow-server --test http_integration`; cubre el contrato de red real del servidor. Para toda la verificación del workspace, consulta [Probar y depurar aplicaciones](/guides/testing/). Consulta también el contrato técnico en [HTTP_SERVER.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/HTTP_SERVER.md) y el [estado del proyecto](/project-status/).
 
 Sesiones, login, autorización integrada, almacenamiento, bases de datos, uploads y server actions no forman parte de esta fase. RustFlow sigue siendo un prototipo pre-1.0.
+
+
+## CSRF cuando se usan sesiones
+
+Una sesión no reemplaza CSRF. Añade CsrfProtection::middleware() a cada ruta de mutación que dependa de cookies de navegador, incluido login y logout. Conserva las comprobaciones de token y Origin/Referer; la rotación de sesión no desactiva esas comprobaciones. Consulta la [guía de sesiones y control de acceso](/guides/sessions-and-access/).

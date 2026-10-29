@@ -11,7 +11,7 @@ RustFlow es un proyecto de framework pre-1.0. Combina un runtime reactivo propio
 - **Reactividad:** señales tipadas, lecturas con seguimiento de dependencias, escrituras, efectos, scheduler, batching, scopes de propietario y limpieza.
 - **Componentes:** macro <code>#[rustflow::component]</code>, props tipados dentro del subconjunto documentado, callbacks tipados y sintaxis <code>view!</code>.
 - **DOM/WASM:** montaje y reconciliación de texto, elementos, fragmentos, componentes, regiones dinámicas y listas con claves; eventos y limpieza de recursos.
-- **Servidor HTTP:** rutas y grupos, handlers asíncronos, parámetros de ruta/query, extracción tipada de formularios/JSON/query, validación con errores estructurados 422, middleware CSRF optativo para mutaciones con cookies, redirección de retorno local segura, IDs de petición, límites, timeouts, apagado graceful y TLS local.
+- **Servidor HTTP:** rutas y grupos, handlers asíncronos, extracción tipada, validación 422, CSRF optativo, sesiones server-side experimentales, cookies seguras, guards de autenticación, políticas deny-by-default, IDs de petición, límites, timeouts, apagado graceful y TLS local.
 - **SSR:** serialización de vistas con escape, documentos HTML completos, páginas de error configurables, componentes de servidor y catálogo compartido seguro para uso concurrente.
 - **Composición de páginas:** <code>HtmlPage</code>, propiedades de ruta explícitas y layouts de componentes anidados.
 - **Hidratación optativa:** límites estructurales, adjunción de eventos al DOM compatible y recuperación conservadora ante discrepancias.
@@ -23,7 +23,7 @@ Consulta el [estado público de las capacidades](website/src/content/docs/projec
 
 - <code>use_memo</code>, <code>use_ref</code> y <code>use_context</code> siguen pendientes.
 - La configuración de la Fase 6.2 cubre solo perfil, host y puerto; no es un sistema general ni un gestor de secretos.
-- La validación tipada, los errores de formulario estructurados, el middleware CSRF optativo y la redirección de retorno segura son APIs experimentales; sesiones, autenticación/autorización integradas, server actions y persistencia siguen pendientes.
+- Las sesiones, autenticación y autorización de la Fase 6.4 están en revisión y siguen siendo APIs experimentales. El adaptador es volátil y local al proceso; no ofrece persistencia ni coordinación entre instancias. Proveedor de usuarios, OAuth/OIDC, MFA, recuperación de cuentas, server actions y persistencia de base de datos siguen fuera de alcance.
 - Un router general integrado: el callback de navegación cliente y las rutas HTTP de servidor no son un router full-stack unificado.
 - Un flujo de desarrollo y despliegue de producción validado, una política completa de compatibilidad y la revisión de seguridad de producción.
 
@@ -84,3 +84,8 @@ Antes de contribuir, consulta [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AG
 ## Licencia
 
 RustFlow se distribuye bajo licencia dual MIT o Apache-2.0. Puedes elegir cualquiera de ellas según los términos de cada licencia.
+
+
+## Phase 6.4: sessions and access control
+
+The current Phase 6.4 branch adds experimental server-side sessions, secure cookie defaults, route authentication guards, default-deny policies and password hashing through ring. The PR and its required CI checks must be reviewed before describing the phase as complete. InMemorySessionStore is volatile and process-local; database persistence is Phase 6.5. See the sessions guide at website/src/content/docs/guides/sessions-and-access.md and ADR 0015 at docs/adr/0015-sessions-and-access-control.md.
