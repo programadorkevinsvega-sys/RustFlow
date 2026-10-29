@@ -7,7 +7,23 @@ La integración SQLx de RustFlow es experimental y pre-1.0. Proporciona configur
 
 ## 1. Configurar el pool
 
-La PR #54 añadió SQLite, PostgreSQL y el driver de protocolo MySQL de SQLx mediante `AnyPool`; fue fusionada en `main` con el commit `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`. Las URLs `mysql://` son compartidas por MySQL y MariaDB, y `DatabaseBackend::MySql` identifica el driver, no el producto servidor. La fase 6.6.2 añade un adaptador documental MongoDB separado de SQLx, fusionado en `main` mediante PR #55 con el commit `e3ceb86d757bb7aa1a07e16a1e21b462adb69841`. La CI del HEAD final `8c1a33c261769bd731f00c371bac17a569611c68` pasó en Rust estable y Rust 1.85, con integración real contra MongoDB 7.0.45.
+La integración relacional de RustFlow usa SQLx 0.8.6 mediante `AnyPool`; MySQL y MariaDB comparten el driver `mysql`, así que `DatabaseBackend::MySql` identifica la familia del driver, no el producto servidor. La fase 6.6.2 añadió el adaptador documental MongoDB independiente de SQLx y está fusionada en `main` mediante PR #55 (`e3ceb86d757bb7aa1a07e16a1e21b462adb69841`). La fase 6.6.3 establece los targets de compatibilidad actuales, el MSRV y qué garantías son compartidas frente a específicas por motor. Consulta también la [matriz técnica de compatibilidad](/guides/database/#matriz-de-versiones-verificadas) y el [contrato detallado de versiones](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/DATABASE_SUPPORT_MATRIX.md).
+
+## Matriz de versiones verificadas
+
+Estas son las versiones objetivo exactas que CI valida; no implican compatibilidad idéntica con todas las versiones de cada familia. La matriz se prueba en Rust 1.85 (MSRV del workspace) y Rust estable.
+
+| Motor/servidor | Driver bloqueado | URI de conexión | Contrato comprobado en CI |
+|---|---|---|---|
+| SQLite 3.46.0 (incluido en el build) | SQLx 0.8.6; `sqlx-sqlite` / `libsqlite3-sys` 0.30.1 | `sqlite:` | Migraciones repetibles y reversibles, CRUD, transacciones y scaffold generado |
+| PostgreSQL 16.15 | SQLx 0.8.6 | `postgres://`, `postgresql://` | Versión de servidor exacta, pool y rollback de transacción |
+| MySQL 8.4.13 LTS | SQLx 0.8.6, driver `mysql` | `mysql://` | Versión exacta, CRUD, binding, transacciones, unicidad y migraciones |
+| MariaDB 11.4.13 LTS | SQLx 0.8.6, mismo driver `mysql` | `mysql://` | Identidad y versión exactas de MariaDB, además del contrato SQL |
+| MongoDB 7.0.45 | Driver oficial `mongodb` 3.6.0 (MSRV 1.85) | `mongodb://` | CRUD BSON, ObjectId, índices únicos, bootstrap, errores y timeouts acotados |
+
+El scaffold del CLI continúa siendo SQLite-first. Cambiar `RUSTFLOW_DATABASE_URL` a otro motor SQL no traduce sus placeholders, tipos ni migraciones. MongoDB usa las variables `RUSTFLOW_MONGODB_URI` / `RUSTFLOW_MONGODB_DATABASE` y una API separada; no se inicializa automáticamente por la plantilla. `mongodb+srv://` no está habilitado en esta configuración porque el feature del resolver DNS está desactivado tras la revisión de seguridad de dependencias.
+
+
 
 ~~~rust
 use rustflow_server::{AppConfig, DatabaseConfig, DatabasePool};
@@ -156,11 +172,11 @@ Las migraciones de producción deben ejecutarse como un paso coordinado, antes d
 
 ## Límites actuales
 
-Esta integración SQLx no introduce ORM, modelos ActiveRecord, repositorio genérico ni generación de modelos SQL. MongoDB cuenta con un adaptador documental separado en la subfase 6.6.2; la matriz consolidada de compatibilidad de la subfase 6.6.3 continúa pendiente. Las APIs de base de datos son experimentales; sesiones y autorización siguen siendo contratos separados. InMemorySessionStore continúa siendo volátil y local al proceso.
+Esta integración SQLx no introduce ORM, modelos ActiveRecord, repositorio genérico ni generación de modelos SQL. MongoDB cuenta con un adaptador documental separado en la subfase 6.6.2. La matriz versionada de la subfase 6.6.3 está en validación en el PR de esta fase; el hito solo se cierra cuando los checks del HEAD final confirmen los targets de la tabla y las pruebas generadas/servidor pasen. Las APIs de base de datos son experimentales; sesiones y autorización siguen siendo contratos separados. InMemorySessionStore continúa siendo volátil y local al proceso.
 
 ## Roadmap de persistencia (subfases pendientes y fase 6.7 planificada)
 
-- **Fase 6.6.1:** integrada en `main` mediante PR #54; la matriz validada cubre MySQL 8.0/MariaDB 11.4. **Fase 6.6.2:** adaptador documental MongoDB integrado en `main` mediante PR #55; CI, integración MongoDB 7.0.45, Rust estable/Rust 1.85 y los gates de calidad pasaron en el HEAD final. **Fase 6.6.3:** matriz de compatibilidad consolidada pendiente.
+- **Fase 6.6.1:** integrada en `main` mediante PR #54; sus pruebas originales cubrieron MySQL 8.0/MariaDB 11.4. **Fase 6.6.2:** adaptador documental MongoDB integrado en `main` mediante PR #55; CI de Rust estable/1.85 e integración MongoDB 7.0.45 pasaron en el HEAD final. **Fase 6.6.3:** define y verifica el contrato público actual (SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS y MongoDB 7.0.45); permanece en curso hasta que toda la CI del HEAD final esté verde.
 - **Fase 6.7:** crear un ORM SQL maduro para SQLite, PostgreSQL, MySQL y MariaDB. MongoDB tendrá una subfase separada de mapeo documental/ODM maduro; no se presentará como SQL ni se forzarán relaciones SQL sobre colecciones de documentos. La fase no se cerrará con un ORM mínimo de solo CRUD: el diseño, consultas tipadas, relaciones/carga eficiente, transacciones, mapeo de tipos, diagnósticos y CI deben satisfacer el contrato completo aceptado antes de declarar el hito terminado.
 
 Consulta el [roadmap completo](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) para criterios de aceptación. La Phase 6.6.2 ofrece un adaptador experimental disponible en `main`; la matriz consolidada de la fase 6.6 y la API ORM/ODM prevista en la fase 6.7 siguen pendientes.
