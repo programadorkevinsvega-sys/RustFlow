@@ -752,8 +752,6 @@ fn compile_error(error: ParseError) -> TokenStream {
     .collect()
 }
 
-
-
 #[derive(Default)]
 struct ModelAttrs {
     table: Option<String>,
