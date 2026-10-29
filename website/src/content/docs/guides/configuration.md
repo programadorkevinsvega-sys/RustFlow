@@ -3,7 +3,7 @@ title: Configuración por entornos
 description: Configura perfil, host y puerto en desarrollo, pruebas y producción con precedencia explícita y sin incluir secretos.
 ---
 
-La configuración del servidor de una aplicación creada con el CLI se carga mediante rustflow_server::AppConfig. Es una API experimental que valida el perfil y la dirección de bind antes de que el servidor empiece a escuchar. No configura todavía bases de datos, sesiones, autenticación ni secretos.
+La configuración del servidor de una aplicación creada con el CLI se carga mediante `rustflow_server::AppConfig`. Es una API experimental que valida el perfil y la dirección de bind antes de que el servidor empiece a escuchar. `AppConfig` no configura bases de datos, sesiones ni autenticación y no gestiona secretos; las primitivas experimentales de sesión/guards son APIs separadas, documentadas en [Sesiones y control de acceso](/guides/sessions-and-access/).
 
 ## 1. Valores iniciales
 

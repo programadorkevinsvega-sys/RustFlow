@@ -66,7 +66,7 @@ La configuración pública rustflow_server::AppConfig valida el perfil, la IP de
 
 El trabajo de esta fase añade extracción URL-encoded tipada con Request::form, validación de formularios/JSON/query mediante ValidateInput, y respuestas HTTP 422 con errores separados por campo y formulario. Los errores de decodificación y medio no compatible siguen siendo genéricos (400/415), mientras que el límite de cuerpo del servidor rechaza payloads demasiado grandes con 413.
 
-CsrfProtection ofrece middleware optativo basado en tokens firmados y expiran en ocho horas. La aplicación debe proveer una clave aleatoria de al menos 32 bytes fuera del repositorio y conectar el middleware a las rutas mutables que dependen de cookies. Request::redirect_back acepta solo un fallback local y usa un Referer cuando el origen coincide. Estas herramientas no implementan sesiones, login, autenticación ni autorización; las comprobaciones de permisos siguen siendo responsabilidad del caso de uso.
+CsrfProtection ofrece middleware optativo basado en tokens firmados y expiran en ocho horas. La aplicación debe proveer una clave aleatoria de al menos 32 bytes fuera del repositorio y conectar el middleware a las rutas mutables que dependen de cookies. Request::redirect_back acepta solo un fallback local y usa un Referer cuando el origen coincide. Estas herramientas de validación/CSRF no implementan por sí solas login ni un proveedor de usuarios. La Fase 6.4 añade primitivas experimentales de sesión e identidad, mientras que la aplicación sigue siendo responsable de verificar credenciales, asignar roles desde datos confiables y comprobar permisos según cada caso de uso.
 
 La PR #47 se fusionó en `main` mediante squash en el commit `0a307e84bafabbc7dfaa5d4e361723b82fce042e`. Los checks requeridos pasaron en el HEAD final de la PR antes de la fusión, incluidos Rust 1.85/stable, WASM, E2E de navegador y presupuesto del bundle, build del sitio, gobernanza y revisión de dependencias. Esto confirma la verificación del HEAD de la PR; la consulta de estados combinados del commit de merge no devolvió estados individuales, así que no se afirma una ejecución post-merge verificada. Consulta la [guía de formularios y validación](/guides/forms-validation/).
 
@@ -84,16 +84,20 @@ La PR #47 se fusionó en `main` mediante squash en el commit `0a307e84bafabbc7df
 | Navegación cliente e historial | Sí, opt-in con callback de ruta de aplicación | [Navegación](/guides/navigation/) |
 | Extracción tipada y errores 422 | Experimental, integrada en main (Fase 6.3) | [Formularios y validación](/guides/forms-validation/) |
 | Forms mejorados | Solo GET elegibles con opt-in | [Navegación](/guides/navigation/) |
-| CLI y scaffolding | Experimental, en revisión en la Fase 6.1 | [CLI y generadores](/guides/cli/) |
+| CLI y scaffolding | Experimental, integrado en `main` (Fase 6.1) | [CLI y generadores](/guides/cli/) |
 | <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> | No | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
 | Protección CSRF en mutaciones mediante cookies | Experimental, opt-in; requiere conectar middleware y proveer clave | [Formularios y validación](/guides/forms-validation/) |
-| Sesiones server-side y guards de acceso | Experimental; Fase 6.4 en revisión, sin proveedor de usuarios ni persistencia | [Guía de sesiones](/guides/sessions-and-access/) |
+| Sesiones server-side y guards de acceso | Experimental, integrado en `main` (Fase 6.4); sin proveedor de usuarios ni persistencia durable | [Guía de sesiones](/guides/sessions-and-access/) |
 
 ## Cómo interpretar las pruebas
 
 Las pruebas unitarias, de integración HTTP/TCP y E2E Chromium demuestran los casos que ejercitan. No son una garantía de que se hayan probado todas las combinaciones ni sustituyen un modelo de amenazas, la operación real de producción o una promesa de compatibilidad. Antes de tomar decisiones de adopción, consulta el HEAD actual de <code>main</code>, la CI correspondiente y las limitaciones de cada guía.
 
 
-## Fase 6.4 — Sesiones y control de acceso (en revisión)
+## Fase 6.4 — Sesiones y control de acceso (integrada en main)
 
-La rama dedicada incorpora sesiones server-side, cookies host-only seguras, rotación e invalidación, extracción de identidad, guards antes de ejecutar el handler, política deny-by-default y hashing de contraseñas con ring. El adaptador incluido es volátil y local al proceso; el proveedor de usuarios y la persistencia de base de datos siguen fuera del alcance. La fase permanece abierta hasta que pasen todos los checks requeridos del HEAD final de la PR. Consulta la [guía de sesiones](/guides/sessions-and-access/).
+La PR #49 se fusionó mediante squash en el commit `d53036410fc0d51900acf0c59b52c85f64cd1640`. Los checks requeridos pasaron en el HEAD final de la PR y la CI post-merge terminó en verde para Rust, WASM, Browser E2E/presupuesto de bundle, documentación, gobernanza y Cloudflare Pages. La implementación aporta sesiones server-side, cookies host-only seguras, rotación e invalidación, identidad extraída desde la sesión, guards previos al handler, políticas deny-by-default y hashing de contraseñas con `ring`. El adaptador incluido es volátil y local al proceso; no hay proveedor de usuarios ni persistencia durable. Consulta la [guía de sesiones](/guides/sessions-and-access/) y el [ADR 0015](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0015-sessions-and-access-control.md).
+
+## Fase 6.5 — Base de datos y migraciones (pendiente)
+
+La siguiente fase contempla SQLx y pools de conexiones configurables, helpers de transacción y mapeo de errores, migraciones versionadas y una política de rollback. Las abstracciones de modelos/consultas deberán justificarse con un caso CRUD real; las consultas usarán parámetros y los motores compatibles tendrán pruebas de integración. El criterio de salida es una aplicación CRUD generada que valide entradas, persista registros, use sesiones/autenticación, renderice páginas y tenga pruebas repetibles.

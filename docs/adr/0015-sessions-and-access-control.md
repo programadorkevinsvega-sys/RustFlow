@@ -1,6 +1,6 @@
 # ADR 0015: Server-side sessions and access control
 
-- Status: Proposed for review; the Phase 6.4 implementation and CI gate are pending PR verification.
+- Status: Accepted for Phase 6.4; implementation merged in PR #49. Public APIs remain experimental.
 - Date: 2026-10-29
 
 ## Context
