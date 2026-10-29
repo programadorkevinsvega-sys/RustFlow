@@ -40,7 +40,7 @@ Esta página es un índice de disponibilidad, no una promesa de compatibilidad e
 | MySQL y MariaDB | Planificado, no disponible (Fase 6.6) | Requiere driver, configuración, compatibilidad de dialecto y CI de integración. |
 | MongoDB | Planificado, no disponible (Fase 6.6) | Requiere un adaptador documental separado de SQLx `AnyPool`. |
 | ORM SQL para SQLite/PostgreSQL/MySQL/MariaDB | Planificado, no disponible (Fase 6.7) | No hay modelos, derives ni constructor de consultas ORM en la API actual. |
-| Mapeo documental/ODM para MongoDB | Planificado, no disponible (subfase 6.7.3) | Contrato BSON/documentos separado del ORM SQL. |
+| Mapeo documental/ODM para MongoDB | Planificado, no disponible (subfase 6.7.3) | Contrato BSON/documentos separado del ORM SQL; el objetivo de Fase 6.7 es maduro, no CRUD mínimo. |
 
 ## SSR, layouts e interacción cliente
 

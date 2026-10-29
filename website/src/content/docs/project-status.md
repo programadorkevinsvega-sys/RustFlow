@@ -114,7 +114,7 @@ Esta fase tiene como objetivo añadir MySQL y MariaDB como motores relacionales 
 
 ## Fase 6.7 — ORM SQL y mapeo documental (planificada)
 
-La fase se divide en subfases para mantener contratos separados:
+La fase se divide en subfases para mantener contratos separados, pero **el objetivo obligatorio es una capa madura desde el principio, no un ORM mínimo que se declare terminado tras CRUD**. Las subfases son orden de ejecución; el cierre de la Fase 6.7 requiere que el contrato completo de modelos, consultas, relaciones/carga, transacciones, diagnósticos, compatibilidad y CI pase conjuntamente. Un ADR previo a la implementación debe fijar arquitectura, fundamentos mantenidos y capacidades obligatorias/excluidas.
 
 - **6.7.1 — Arquitectura y contrato de modelos:** metadatos tipados, claves, conversión de tipos, errores y un ADR antes de fijar la API pública.
 - **6.7.2 — ORM SQL:** operaciones CRUD, filtros y consultas parametrizadas para SQLite, PostgreSQL, MySQL y MariaDB, con diferencias de dialecto explícitas.
