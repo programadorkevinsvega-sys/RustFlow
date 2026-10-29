@@ -12,8 +12,8 @@
 extern crate self as rustflow;
 
 pub mod components;
-pub mod reactivity;
 pub mod orm;
+pub mod reactivity;
 
 #[doc = "Builds a typed view tree from constrained HTML-like syntax."]
 #[doc = ""]
@@ -37,7 +37,7 @@ pub mod orm;
 #[doc = "    rustflow::view! { <div>\"text\"</span> }"]
 #[doc = "}"]
 #[doc = "```"]
-pub use rustflow_macros::{component, view, Model};
+pub use rustflow_macros::{Model, component, view};
 
 /// Common imports for authoring RustFlow reactive views and components.
 pub mod prelude {

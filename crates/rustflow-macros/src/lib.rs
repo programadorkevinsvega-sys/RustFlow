@@ -3,7 +3,6 @@
 use proc_macro::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
 
 use quote::quote;
-use syn::spanned::Spanned;
 
 /// Mark a Rust function as a RustFlow component authoring function.
 ///
@@ -754,6 +753,7 @@ fn compile_error(error: ParseError) -> TokenStream {
 }
 
 
+
 #[derive(Default)]
 struct ModelAttrs {
     table: Option<String>,
@@ -779,6 +779,9 @@ struct ModelField {
     has_default: bool,
 }
 
+/// Derive static table and column metadata for a SQL Data Mapper model.
+///
+/// The derive does not generate SQL, row decoders or persistence methods.
 #[proc_macro_derive(Model, attributes(model))]
 pub fn derive_model(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
@@ -791,108 +794,186 @@ pub fn derive_model(input: TokenStream) -> TokenStream {
 fn expand_model(input: &syn::DeriveInput) -> Result<TokenStream, syn::Error> {
     let struct_name = &input.ident;
     if !input.generics.params.is_empty() || input.generics.where_clause.is_some() {
-        return Err(syn::Error::new_spanned(&input.generics, "Model metadata currently supports only non-generic structs"));
+        return Err(syn::Error::new_spanned(
+            &input.generics,
+            "Model metadata currently supports only non-generic structs",
+        ));
     }
 
     let model_attrs = parse_model_attrs(&input.attrs)?;
     let fields = match &input.data {
         syn::Data::Struct(data) => match &data.fields {
             syn::Fields::Named(fields) => &fields.named,
-            _ => return Err(syn::Error::new_spanned(struct_name, "Model metadata requires a struct with named fields")),
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    struct_name,
+                    "Model metadata requires a struct with named fields",
+                ));
+            }
         },
-        syn::Data::Enum(_) => return Err(syn::Error::new_spanned(struct_name, "Model metadata cannot be derived for an enum; mark enum fields with #[model(sql_type = \"enum\")]")),
-        syn::Data::Union(_) => return Err(syn::Error::new_spanned(struct_name, "Model metadata cannot be derived for a union")),
+        syn::Data::Enum(_) => {
+            return Err(syn::Error::new_spanned(
+                struct_name,
+                "Model metadata cannot be derived for an enum; mark enum fields with #[model(sql_type = \"enum\")]",
+            ));
+        }
+        syn::Data::Union(_) => {
+            return Err(syn::Error::new_spanned(
+                struct_name,
+                "Model metadata cannot be derived for a union",
+            ));
+        }
     };
 
-    let table_name = model_attrs.table.unwrap_or_else(|| rust_type_to_snake_case(&struct_name.to_string()));
+    let table_name = model_attrs
+        .table
+        .unwrap_or_else(|| rust_type_to_snake_case(&struct_name.to_string()));
     if !is_safe_sql_identifier(&table_name) {
-        return Err(syn::Error::new_spanned(struct_name, "model table name must be an ASCII SQL identifier matching [A-Za-z_][A-Za-z0-9_]*"));
+        return Err(syn::Error::new_spanned(
+            struct_name,
+            "model table name must be an ASCII SQL identifier matching [A-Za-z_][A-Za-z0-9_]*",
+        ));
     }
 
     let mut model_fields = Vec::new();
     let mut seen_columns = std::collections::HashSet::new();
     for field in fields {
-        let field_ident = field.ident.as_ref()
-            .ok_or_else(|| syn::Error::new_spanned(field, "Model metadata requires named fields"))?;
+        let field_ident = field.ident.as_ref().ok_or_else(|| {
+            syn::Error::new_spanned(field, "Model metadata requires named fields")
+        })?;
         let field_name = field_ident.to_string().trim_start_matches("r#").to_owned();
         let attrs = parse_field_attrs(&field.attrs)?;
         let column_name = attrs.column.unwrap_or_else(|| field_name.clone());
 
         if !is_safe_sql_identifier(&column_name) {
-            return Err(syn::Error::new_spanned(field_ident, "model column name must be an ASCII SQL identifier matching [A-Za-z_][A-Za-z0-9_]*"));
+            return Err(syn::Error::new_spanned(
+                field_ident,
+                "model column name must be an ASCII SQL identifier matching [A-Za-z_][A-Za-z0-9_]*",
+            ));
         }
         if !seen_columns.insert(column_name.clone()) {
-            return Err(syn::Error::new_spanned(field_ident, format!("duplicate model column mapping {column_name:?}")));
+            return Err(syn::Error::new_spanned(
+                field_ident,
+                format!("duplicate model column mapping {column_name:?}"),
+            ));
         }
 
         let (base_type, nullable) = unwrap_option(&field.ty)?;
         if attrs.primary_key && nullable {
-            return Err(syn::Error::new_spanned(field_ident, "a primary-key field cannot be nullable; use a non-Option type"));
+            return Err(syn::Error::new_spanned(
+                field_ident,
+                "a primary-key field cannot be nullable; use a non-Option type",
+            ));
         }
         if attrs.generated && attrs.has_default {
-            return Err(syn::Error::new_spanned(field_ident, "model field cannot combine generated and default; choose one metadata contract"));
+            return Err(syn::Error::new_spanned(
+                field_ident,
+                "model field cannot combine generated and default; choose one metadata contract",
+            ));
         }
 
         let inferred_type = infer_logical_type(base_type)?;
         let rust_type = match (attrs.sql_type.as_deref(), inferred_type) {
             (Some("enum"), None) => "Enum",
-            (Some("enum"), Some(_)) => return Err(syn::Error::new_spanned(field_ident, "sql_type = \"enum\" is only for custom enum field types and cannot override a built-in mapping")),
-            (Some(other), _) => return Err(syn::Error::new_spanned(field_ident, format!("unsupported model sql_type {other:?}; only \"enum\" is defined in this contract"))),
+            (Some("enum"), Some(_)) => {
+                return Err(syn::Error::new_spanned(
+                    field_ident,
+                    "sql_type = \"enum\" is only for custom enum field types and cannot override a built-in mapping",
+                ));
+            }
+            (Some(other), _) => {
+                return Err(syn::Error::new_spanned(
+                    field_ident,
+                    format!(
+                        "unsupported model sql_type {other:?}; only \"enum\" is defined in this contract"
+                    ),
+                ));
+            }
             (None, Some(name)) => name,
-            (None, None) => return Err(syn::Error::new_spanned(&field.ty, "unsupported model field type; use a supported scalar type or mark a custom enum with #[model(sql_type = \"enum\")]")),
+            (None, None) => {
+                return Err(syn::Error::new_spanned(
+                    &field.ty,
+                    "unsupported model field type; use a supported scalar type or mark a custom enum with #[model(sql_type = \"enum\")]",
+                ));
+            }
         };
+
         model_fields.push(ModelField {
-            field_name, column_name, rust_type, nullable,
-            primary_key: attrs.primary_key, generated: attrs.generated, has_default: attrs.has_default,
+            field_name,
+            column_name,
+            rust_type,
+            nullable,
+            primary_key: attrs.primary_key,
+            generated: attrs.generated,
+            has_default: attrs.has_default,
         });
     }
 
     if model_fields.iter().all(|field| !field.primary_key) && !model_attrs.read_only {
-        return Err(syn::Error::new_spanned(struct_name, "Model requires at least one #[model(primary_key)] field; add #[model(read_only)] only for a keyless view"));
+        return Err(syn::Error::new_spanned(
+            struct_name,
+            "Model requires at least one #[model(primary_key)] field; add #[model(read_only)] only for a keyless view",
+        ));
     }
 
     let table_literal = syn::LitStr::new(&table_name, struct_name.span());
-    let columns = model_fields.iter().map(|field| {
-        let field_name = syn::LitStr::new(&field.field_name, struct_name.span());
-        let column_name = syn::LitStr::new(&field.column_name, struct_name.span());
-        let rust_type = match field.rust_type {
-            "Bool" => quote!(::rustflow::orm::RustType::Bool),
-            "I8" => quote!(::rustflow::orm::RustType::I8),
-            "I16" => quote!(::rustflow::orm::RustType::I16),
-            "I32" => quote!(::rustflow::orm::RustType::I32),
-            "I64" => quote!(::rustflow::orm::RustType::I64),
-            "U8" => quote!(::rustflow::orm::RustType::U8),
-            "U16" => quote!(::rustflow::orm::RustType::U16),
-            "U32" => quote!(::rustflow::orm::RustType::U32),
-            "U64" => quote!(::rustflow::orm::RustType::U64),
-            "F32" => quote!(::rustflow::orm::RustType::F32),
-            "F64" => quote!(::rustflow::orm::RustType::F64),
-            "String" => quote!(::rustflow::orm::RustType::String),
-            "Bytes" => quote!(::rustflow::orm::RustType::Bytes),
-            "Decimal" => quote!(::rustflow::orm::RustType::Decimal),
-            "Uuid" => quote!(::rustflow::orm::RustType::Uuid),
-            "Date" => quote!(::rustflow::orm::RustType::Date),
-            "Time" => quote!(::rustflow::orm::RustType::Time),
-            "Timestamp" => quote!(::rustflow::orm::RustType::Timestamp),
-            "TimestampWithTimeZone" => quote!(::rustflow::orm::RustType::TimestampWithTimeZone),
-            "Json" => quote!(::rustflow::orm::RustType::Json),
-            "Enum" => quote!(::rustflow::orm::RustType::Enum),
-            _ => return Err(syn::Error::new(struct_name.span(), "internal model type mapping is incomplete")),
-        };
-        let nullable = field.nullable;
-        let primary_key = field.primary_key;
-        let generated = field.generated;
-        let has_default = field.has_default;
-        Ok(quote! {
-            ::rustflow::orm::ColumnMetadata {
-                field_name: #field_name, column_name: #column_name, rust_type: #rust_type,
-                nullable: #nullable, primary_key: #primary_key, generated: #generated,
-                has_default: #has_default,
-            }
+    let columns = model_fields
+        .iter()
+        .map(|field| {
+            let field_name = syn::LitStr::new(&field.field_name, struct_name.span());
+            let column_name = syn::LitStr::new(&field.column_name, struct_name.span());
+            let rust_type = match field.rust_type {
+                "Bool" => quote!(::rustflow::orm::RustType::Bool),
+                "I8" => quote!(::rustflow::orm::RustType::I8),
+                "I16" => quote!(::rustflow::orm::RustType::I16),
+                "I32" => quote!(::rustflow::orm::RustType::I32),
+                "I64" => quote!(::rustflow::orm::RustType::I64),
+                "U8" => quote!(::rustflow::orm::RustType::U8),
+                "U16" => quote!(::rustflow::orm::RustType::U16),
+                "U32" => quote!(::rustflow::orm::RustType::U32),
+                "U64" => quote!(::rustflow::orm::RustType::U64),
+                "F32" => quote!(::rustflow::orm::RustType::F32),
+                "F64" => quote!(::rustflow::orm::RustType::F64),
+                "String" => quote!(::rustflow::orm::RustType::String),
+                "Bytes" => quote!(::rustflow::orm::RustType::Bytes),
+                "Decimal" => quote!(::rustflow::orm::RustType::Decimal),
+                "Uuid" => quote!(::rustflow::orm::RustType::Uuid),
+                "Date" => quote!(::rustflow::orm::RustType::Date),
+                "Time" => quote!(::rustflow::orm::RustType::Time),
+                "Timestamp" => quote!(::rustflow::orm::RustType::Timestamp),
+                "TimestampWithTimeZone" => {
+                    quote!(::rustflow::orm::RustType::TimestampWithTimeZone)
+                }
+                "Json" => quote!(::rustflow::orm::RustType::Json),
+                "Enum" => quote!(::rustflow::orm::RustType::Enum),
+                _ => {
+                    return Err(syn::Error::new(
+                        struct_name.span(),
+                        "internal model type mapping is incomplete",
+                    ));
+                }
+            };
+            let nullable = field.nullable;
+            let primary_key = field.primary_key;
+            let generated = field.generated;
+            let has_default = field.has_default;
+            Ok(quote! {
+                ::rustflow::orm::ColumnMetadata {
+                    field_name: #field_name,
+                    column_name: #column_name,
+                    rust_type: #rust_type,
+                    nullable: #nullable,
+                    primary_key: #primary_key,
+                    generated: #generated,
+                    has_default: #has_default,
+                }
+            })
         })
-    }).collect::<Result<Vec<_>, syn::Error>>()?;
+        .collect::<Result<Vec<_>, syn::Error>>()?;
 
-    let primary_keys = model_fields.iter().filter(|field| field.primary_key)
+    let primary_keys = model_fields
+        .iter()
+        .filter(|field| field.primary_key)
         .map(|field| syn::LitStr::new(&field.column_name, struct_name.span()))
         .collect::<Vec<_>>();
     let read_only = model_attrs.read_only;
@@ -904,7 +985,8 @@ fn expand_model(input: &syn::DeriveInput) -> Result<TokenStream, syn::Error> {
             const PRIMARY_KEY_COLUMNS: &'static [&'static str] = &[#(#primary_keys),*];
             const READ_ONLY: bool = #read_only;
         }
-    }.into())
+    }
+    .into())
 }
 
 fn parse_model_attrs(attrs: &[syn::Attribute]) -> Result<ModelAttrs, syn::Error> {
@@ -912,19 +994,30 @@ fn parse_model_attrs(attrs: &[syn::Attribute]) -> Result<ModelAttrs, syn::Error>
     let mut seen = std::collections::HashSet::new();
     for attr in attrs.iter().filter(|attr| attr.path().is_ident("model")) {
         attr.parse_nested_meta(|meta| {
-            let name = meta.path.get_ident().map(ToString::to_string).unwrap_or_else(|| "qualified".to_owned());
-            if !seen.insert(name.clone()) { return Err(meta.error(format!("duplicate model attribute {name:?}"))); }
+            let name = meta
+                .path
+                .get_ident()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "qualified".to_owned());
+            if !seen.insert(name.clone()) {
+                return Err(meta.error(format!("duplicate model attribute {name:?}")));
+            }
             match name.as_str() {
                 "table" => {
                     let value: syn::LitStr = meta.value()?.parse()?;
                     if !is_safe_sql_identifier(&value.value()) {
-                        return Err(syn::Error::new(value.span(), "table name must be an ASCII SQL identifier matching [A-Za-z_][A-Za-z0-9_]*"));
+                        return Err(syn::Error::new(
+                            value.span(),
+                            "table name must be an ASCII SQL identifier matching [A-Za-z_][A-Za-z0-9_]*",
+                        ));
                     }
                     options.table = Some(value.value());
                     Ok(())
                 }
                 "read_only" => {
-                    if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) { return Err(meta.error("read_only does not take a value")); }
+                    if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
+                        return Err(meta.error("read_only does not take a value"));
+                    }
                     options.read_only = true;
                     Ok(())
                 }
@@ -940,32 +1033,51 @@ fn parse_field_attrs(attrs: &[syn::Attribute]) -> Result<FieldAttrs, syn::Error>
     let mut seen = std::collections::HashSet::new();
     for attr in attrs.iter().filter(|attr| attr.path().is_ident("model")) {
         attr.parse_nested_meta(|meta| {
-            let name = meta.path.get_ident().map(ToString::to_string).unwrap_or_else(|| "qualified".to_owned());
-            if !seen.insert(name.clone()) { return Err(meta.error(format!("duplicate model field attribute {name:?}"))); }
+            let name = meta
+                .path
+                .get_ident()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "qualified".to_owned());
+            if !seen.insert(name.clone()) {
+                return Err(meta.error(format!("duplicate model field attribute {name:?}")));
+            }
             match name.as_str() {
                 "column" => {
                     let value: syn::LitStr = meta.value()?.parse()?;
                     if !is_safe_sql_identifier(&value.value()) {
-                        return Err(syn::Error::new(value.span(), "column name must be an ASCII SQL identifier matching [A-Za-z_][A-Za-z0-9_]*"));
+                        return Err(syn::Error::new(
+                            value.span(),
+                            "column name must be an ASCII SQL identifier matching [A-Za-z_][A-Za-z0-9_]*",
+                        ));
                     }
                     options.column = Some(value.value());
                     Ok(())
                 }
                 "primary_key" => {
-                    if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) { return Err(meta.error("primary_key does not take a value")); }
-                    options.primary_key = true; Ok(())
+                    if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
+                        return Err(meta.error("primary_key does not take a value"));
+                    }
+                    options.primary_key = true;
+                    Ok(())
                 }
                 "generated" => {
-                    if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) { return Err(meta.error("generated does not take a value")); }
-                    options.generated = true; Ok(())
+                    if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
+                        return Err(meta.error("generated does not take a value"));
+                    }
+                    options.generated = true;
+                    Ok(())
                 }
                 "default" => {
-                    if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) { return Err(meta.error("default does not take a value")); }
-                    options.has_default = true; Ok(())
+                    if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
+                        return Err(meta.error("default does not take a value"));
+                    }
+                    options.has_default = true;
+                    Ok(())
                 }
                 "sql_type" => {
                     let value: syn::LitStr = meta.value()?.parse()?;
-                    options.sql_type = Some(value.value()); Ok(())
+                    options.sql_type = Some(value.value());
+                    Ok(())
                 }
                 _ => Err(meta.error(format!("unknown model field attribute {name:?}"))),
             }
@@ -976,76 +1088,162 @@ fn parse_field_attrs(attrs: &[syn::Attribute]) -> Result<FieldAttrs, syn::Error>
 
 fn unwrap_option(ty: &syn::Type) -> Result<(&syn::Type, bool), syn::Error> {
     let syn::Type::Path(type_path) = ty else {
-        return Err(syn::Error::new_spanned(ty, "model fields must use owned, supported Rust value types"));
+        return Err(syn::Error::new_spanned(
+            ty,
+            "model fields must use owned, supported Rust value types",
+        ));
     };
-    if type_path.qself.is_some() { return Err(syn::Error::new_spanned(ty, "qualified-self field types are not supported in model metadata")); }
+    if type_path.qself.is_some() {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "qualified-self field types are not supported in model metadata",
+        ));
+    }
     let Some(last) = type_path.path.segments.last() else {
-        return Err(syn::Error::new_spanned(ty, "could not resolve model field type"));
+        return Err(syn::Error::new_spanned(
+            ty,
+            "could not resolve model field type",
+        ));
     };
-    if last.ident != "Option" { return Ok((ty, false)); }
+    if last.ident != "Option" {
+        return Ok((ty, false));
+    }
     let syn::PathArguments::AngleBracketed(arguments) = &last.arguments else {
-        return Err(syn::Error::new_spanned(ty, "Option model fields require one type parameter"));
+        return Err(syn::Error::new_spanned(
+            ty,
+            "Option model fields require one type parameter",
+        ));
     };
     let mut type_arguments = arguments.args.iter().filter_map(|argument| {
-        if let syn::GenericArgument::Type(inner) = argument { Some(inner) } else { None }
+        if let syn::GenericArgument::Type(inner) = argument {
+            Some(inner)
+        } else {
+            None
+        }
     });
     let Some(inner) = type_arguments.next() else {
-        return Err(syn::Error::new_spanned(ty, "Option model fields require one type parameter"));
+        return Err(syn::Error::new_spanned(
+            ty,
+            "Option model fields require one type parameter",
+        ));
     };
     if type_arguments.next().is_some() || arguments.args.len() != 1 {
-        return Err(syn::Error::new_spanned(ty, "Option model fields require exactly one type parameter"));
+        return Err(syn::Error::new_spanned(
+            ty,
+            "Option model fields require exactly one type parameter",
+        ));
     }
-    if matches!(inner, syn::Type::Path(path) if path.path.segments.last().is_some_and(|segment| segment.ident == "Option")) {
-        return Err(syn::Error::new_spanned(ty, "nested Option<Option<T>> is not supported; use a single Option<T>"));
+    if matches!(inner, syn::Type::Path(path) if path.path.segments.last().is_some_and(|segment| segment.ident == "Option"))
+    {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "nested Option<Option<T>> is not supported; use a single Option<T>",
+        ));
     }
     Ok((inner, true))
 }
 
 fn infer_logical_type(ty: &syn::Type) -> Result<Option<&'static str>, syn::Error> {
     let syn::Type::Path(type_path) = ty else {
-        return Err(syn::Error::new_spanned(ty, "unsupported model field type syntax"));
+        return Err(syn::Error::new_spanned(
+            ty,
+            "unsupported model field type syntax",
+        ));
     };
-    if type_path.qself.is_some() { return Err(syn::Error::new_spanned(ty, "qualified-self field types are not supported")); }
+    if type_path.qself.is_some() {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "qualified-self field types are not supported",
+        ));
+    }
     let Some(last) = type_path.path.segments.last() else {
-        return Err(syn::Error::new_spanned(ty, "could not resolve model field type"));
+        return Err(syn::Error::new_spanned(
+            ty,
+            "could not resolve model field type",
+        ));
     };
     let name = last.ident.to_string();
     let mapped = match name.as_str() {
-        "bool" => Some("Bool"), "i8" => Some("I8"), "i16" => Some("I16"),
-        "i32" => Some("I32"), "i64" => Some("I64"), "u8" => Some("U8"),
-        "u16" => Some("U16"), "u32" => Some("U32"), "u64" => Some("U64"),
-        "f32" => Some("F32"), "f64" => Some("F64"), "String" => Some("String"),
-        "Decimal" | "BigDecimal" => Some("Decimal"), "Uuid" => Some("Uuid"),
-        "NaiveDate" | "Date" => Some("Date"), "NaiveTime" | "Time" => Some("Time"),
+        "bool" => Some("Bool"),
+        "i8" => Some("I8"),
+        "i16" => Some("I16"),
+        "i32" => Some("I32"),
+        "i64" => Some("I64"),
+        "u8" => Some("U8"),
+        "u16" => Some("U16"),
+        "u32" => Some("U32"),
+        "u64" => Some("U64"),
+        "f32" => Some("F32"),
+        "f64" => Some("F64"),
+        "String" => Some("String"),
+        "Decimal" | "BigDecimal" => Some("Decimal"),
+        "Uuid" => Some("Uuid"),
+        "NaiveDate" | "Date" => Some("Date"),
+        "NaiveTime" | "Time" => Some("Time"),
         "NaiveDateTime" | "PrimitiveDateTime" => Some("Timestamp"),
-        "OffsetDateTime" => Some("TimestampWithTimeZone"), "Value" => Some("Json"),
-        "isize" | "usize" => return Err(syn::Error::new_spanned(ty, "isize/usize are architecture-width types; use fixed-width database fields")),
+        "OffsetDateTime" => Some("TimestampWithTimeZone"),
+        "Value" => Some("Json"),
+        "isize" | "usize" => {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "isize/usize are architecture-width types; use fixed-width database fields",
+            ));
+        }
         "Vec" => {
             let syn::PathArguments::AngleBracketed(arguments) = &last.arguments else {
-                return Err(syn::Error::new_spanned(ty, "only Vec<u8> is supported for a byte field"));
+                return Err(syn::Error::new_spanned(
+                    ty,
+                    "only Vec<u8> is supported for a byte field",
+                ));
             };
             let inner = arguments.args.iter().next();
-            if arguments.args.len() == 1 && matches!(inner, Some(syn::GenericArgument::Type(syn::Type::Path(inner))) if inner.path.segments.last().is_some_and(|segment| segment.ident == "u8")) {
+            if arguments.args.len() == 1
+                && matches!(inner, Some(syn::GenericArgument::Type(syn::Type::Path(inner))) if inner.path.segments.last().is_some_and(|segment| segment.ident == "u8"))
+            {
                 Some("Bytes")
             } else {
-                return Err(syn::Error::new_spanned(ty, "only Vec<u8> is supported for a byte field"));
+                return Err(syn::Error::new_spanned(
+                    ty,
+                    "only Vec<u8> is supported for a byte field",
+                ));
             }
         }
         "DateTime" => {
             let syn::PathArguments::AngleBracketed(arguments) = &last.arguments else {
-                return Err(syn::Error::new_spanned(ty, "DateTime requires Utc or FixedOffset timezone type"));
+                return Err(syn::Error::new_spanned(
+                    ty,
+                    "DateTime requires Utc or FixedOffset timezone type",
+                ));
             };
             let inner = arguments.args.iter().find_map(|argument| {
-                if let syn::GenericArgument::Type(inner) = argument { Some(inner) } else { None }
+                if let syn::GenericArgument::Type(inner) = argument {
+                    Some(inner)
+                } else {
+                    None
+                }
             });
             let zone = match inner {
-                Some(syn::Type::Path(path)) => path.path.segments.last().map(|segment| segment.ident.to_string()),
+                Some(syn::Type::Path(path)) => path
+                    .path
+                    .segments
+                    .last()
+                    .map(|segment| segment.ident.to_string()),
                 _ => None,
             };
             match zone.as_deref() {
                 Some("Utc") | Some("FixedOffset") => Some("TimestampWithTimeZone"),
-                Some("Local") => return Err(syn::Error::new_spanned(ty, "DateTime<Local> is not portable; use Utc or FixedOffset")),
-                _ => return Err(syn::Error::new_spanned(ty, "DateTime requires Utc or FixedOffset; other timezone types are unsupported")),
+                Some("Local") => {
+                    return Err(syn::Error::new_spanned(
+                        ty,
+                        "DateTime<Local> is not portable; use Utc or FixedOffset",
+                    ));
+                }
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        ty,
+                        "DateTime requires Utc or FixedOffset; other timezone types are unsupported",
+                    ));
+                }
             }
         }
         _ => None,
@@ -1055,7 +1253,9 @@ fn infer_logical_type(ty: &syn::Type) -> Result<Option<&'static str>, syn::Error
 
 fn is_safe_sql_identifier(value: &str) -> bool {
     let mut chars = value.chars();
-    let Some(first) = chars.next() else { return false; };
+    let Some(first) = chars.next() else {
+        return false;
+    };
     (first == '_' || first.is_ascii_alphabetic())
         && chars.all(|character| character == '_' || character.is_ascii_alphanumeric())
 }
@@ -1065,12 +1265,20 @@ fn rust_type_to_snake_case(value: &str) -> String {
     let mut output = String::new();
     for (index, character) in chars.iter().copied().enumerate() {
         if character.is_ascii_uppercase() {
-            let boundary = index > 0 && (chars[index - 1].is_ascii_lowercase()
-                || chars[index - 1].is_ascii_digit()
-                || (chars[index - 1].is_ascii_uppercase() && chars.get(index + 1).is_some_and(|next| next.is_ascii_lowercase())));
-            if !output.is_empty() && boundary { output.push('_'); }
+            let boundary = index > 0
+                && (chars[index - 1].is_ascii_lowercase()
+                    || chars[index - 1].is_ascii_digit()
+                    || (chars[index - 1].is_ascii_uppercase()
+                        && chars
+                            .get(index + 1)
+                            .is_some_and(|next| next.is_ascii_lowercase())));
+            if !output.is_empty() && boundary {
+                output.push('_');
+            }
             output.push(character.to_ascii_lowercase());
-        } else { output.push(character); }
+        } else {
+            output.push(character);
+        }
     }
     output
 }

@@ -55,8 +55,27 @@
 /// is already available for this type on every engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RustType {
-    Bool, I8, I16, I32, I64, U8, U16, U32, U64, F32, F64, String, Bytes,
-    Decimal, Uuid, Date, Time, Timestamp, TimestampWithTimeZone, Json, Enum,
+    Bool,
+    I8,
+    I16,
+    I32,
+    I64,
+    U8,
+    U16,
+    U32,
+    U64,
+    F32,
+    F64,
+    String,
+    Bytes,
+    Decimal,
+    Uuid,
+    Date,
+    Time,
+    Timestamp,
+    TimestampWithTimeZone,
+    Json,
+    Enum,
 }
 
 /// Static metadata for one named model field.
@@ -98,7 +117,10 @@ mod tests {
     use super::{ModelMetadata, RustType};
 
     #[allow(dead_code)]
-    enum Status { Active, Disabled }
+    enum Status {
+        Active,
+        Disabled,
+    }
 
     #[allow(dead_code)]
     #[derive(crate::Model)]
@@ -119,6 +141,15 @@ mod tests {
     struct ApiToken {
         #[model(primary_key)]
         token_id: String,
+    }
+
+    #[allow(dead_code)]
+    #[derive(crate::Model)]
+    struct CompositeKey {
+        #[model(primary_key)]
+        tenant_id: i64,
+        #[model(primary_key)]
+        item_id: i64,
     }
 
     #[allow(dead_code)]
@@ -154,6 +185,11 @@ mod tests {
     fn derive_defaults_table_name_to_snake_case() {
         assert_eq!(ApiToken::TABLE_NAME, "api_token");
         assert_eq!(ApiToken::PRIMARY_KEY_COLUMNS, &["token_id"]);
+    }
+
+    #[test]
+    fn composite_primary_keys_preserve_declaration_order() {
+        assert_eq!(CompositeKey::PRIMARY_KEY_COLUMNS, &["tenant_id", "item_id"]);
     }
 
     #[test]
