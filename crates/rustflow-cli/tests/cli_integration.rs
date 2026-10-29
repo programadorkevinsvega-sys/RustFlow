@@ -396,18 +396,26 @@ fn creates_a_project_and_generates_all_five_file_types_without_overwrite() {
     assert!(env_example.contains("RUSTFLOW_PORT=3000"));
     assert!(env_example.contains("RUSTFLOW_DATABASE_URL=sqlite://rustflow.db?mode=rwc"));
     assert!(env_example.contains("RUSTFLOW_DATABASE_MAX_CONNECTIONS=10"));
+    assert!(env_example.contains("sqlite:, postgres://, postgresql://, or mysql://"));
+    assert!(env_example.contains("SQL placeholders and migrations are engine-specific"));
+    assert!(env_example.contains("MongoConfig/MongoDatabase"));
+    assert!(env_example.contains("mongodb:// URI"));
     for forbidden in [
         "PASSWORD=",
         "TOKEN=",
         "SECRET_KEY=",
-        "postgres://",
-        "postgresql://",
+        "user:password",
+        "root:root",
     ] {
         assert!(
             !env_example.contains(forbidden),
-            "unsafe variable in .env.example: {forbidden}"
+            "unsafe value in .env.example: {forbidden}"
         );
     }
+    let generated_readme = fs::read_to_string(project.join("README.md")).unwrap();
+    assert!(generated_readme.contains("docs/DATABASE_SUPPORT_MATRIX.md"));
+    assert!(generated_readme.contains("no hace portables los placeholders"));
+    assert!(generated_readme.contains("MongoDB usa una API documental independiente"));
     let generated_ignore = fs::read_to_string(project.join(".gitignore")).unwrap();
     assert!(generated_ignore.contains(".env.*"));
     assert!(generated_ignore.contains("!.env.example"));

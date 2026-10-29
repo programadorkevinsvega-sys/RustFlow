@@ -607,6 +607,16 @@ mod tests {
             .with_max_connections(1)
             .unwrap();
         let database = DatabasePool::connect(&config).await.unwrap();
+        let sqlite_version: String = sqlx::query_scalar("SELECT sqlite_version()")
+            .fetch_one(database.pool())
+            .await
+            .unwrap();
+        assert_eq!(
+            sqlite_version, "3.46.0",
+            "support matrix expects bundled SQLite 3.46.0, received {sqlite_version}"
+        );
+        println!("verified bundled SQLite version: {sqlite_version}");
+
         let migrations = sqlite_migrations();
 
         database.run_migrations(&migrations).await.unwrap();
@@ -664,14 +674,31 @@ mod tests {
 
     #[tokio::test]
     async fn optional_postgres_service_supports_pool_and_transaction_contract() {
-        let Ok(url) = std::env::var("RUSTFLOW_TEST_DATABASE_URL") else {
-            return;
+        let url = match std::env::var("RUSTFLOW_TEST_DATABASE_URL") {
+            Ok(url) if !url.trim().is_empty() => url,
+            _ if std::env::var("CI").is_ok_and(|value| value == "true") => {
+                panic!(
+                    "RUSTFLOW_TEST_DATABASE_URL must be set to run the PostgreSQL contract in CI"
+                );
+            }
+            _ => return,
         };
         let config = DatabaseConfig::new(url)
             .unwrap()
             .with_max_connections(1)
             .unwrap();
         let database = DatabasePool::connect(&config).await.unwrap();
+        let server_version: String = sqlx::query_scalar("SHOW server_version")
+            .fetch_one(database.pool())
+            .await
+            .unwrap();
+        assert_eq!(
+            server_version.split_whitespace().next(),
+            Some("16.15"),
+            "support matrix expects PostgreSQL 16.15, received {server_version}"
+        );
+        println!("verified PostgreSQL server version: {server_version}");
+
         let row = sqlx::query("SELECT CAST(1 AS BIGINT)")
             .fetch_one(database.pool())
             .await

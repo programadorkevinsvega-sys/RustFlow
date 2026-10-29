@@ -1,6 +1,6 @@
 # ADR 0017: MySQL protocol driver for MySQL and MariaDB
 
-- Status: Implemented and CI-verified on PR #54; review/merge pending.
+- Status: Implemented and merged into `main` via PR #54. The original Phase 6.6.1 server targets were MySQL 8.0 and MariaDB 11.4; see ADR 0019 and `docs/DATABASE_SUPPORT_MATRIX.md` for the current public contract.
 - Phase: 6.6.1 — Relational engines: MySQL and MariaDB.
 - Related: ADR 0013 (configuration), ADR 0016 (SQLx pools and migrations).
 
@@ -32,4 +32,4 @@ The public API remains experimental. MySQL and MariaDB share one `DatabaseBacken
 
 ## Verification gate
 
-The exact PR head `3e97b580cc86fdd3b0307724c54a45efe0a9209f` passed the MySQL and MariaDB integration contracts and migration-marker unit test on both Rust 1.85 and stable, alongside formatting, Clippy, workspace tests, rustdoc, WASM, browser E2E/bundle size, website build, governance, and dependency review. The verified server matrix is limited to MySQL 8.0 and MariaDB 11.4. PR #54 remains open for review and has not been merged.
+The exact historical PR head `3e97b580cc86fdd3b0307724c54a45efe0a9209f` passed the MySQL 8.0 and MariaDB 11.4 contracts and migration-marker unit test on Rust 1.85 and stable, alongside the required quality gates. PR #54 was merged into `main` as `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`. This ADR records the Phase 6.6.1 decision and its original CI evidence; Phase 6.6.3 supersedes MySQL 8.0 as the current public target with MySQL 8.4.13 LTS and MariaDB 11.4.13 LTS. The complete current matrix and evidence boundaries are in `docs/DATABASE_SUPPORT_MATRIX.md`.

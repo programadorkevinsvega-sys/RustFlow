@@ -111,15 +111,16 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .expect("read server version");
     if server.is_mariadb() {
         assert!(
-            server_version.to_ascii_lowercase().contains("mariadb"),
-            "MariaDB job connected to unexpected server version: {server_version}"
+            server_version.starts_with("11.4.13-MariaDB"),
+            "MariaDB support contract expects 11.4.13, received: {server_version}"
         );
     } else {
         assert!(
-            !server_version.to_ascii_lowercase().contains("mariadb"),
-            "MySQL job must exercise MySQL, received: {server_version}"
+            server_version.starts_with("8.4.13"),
+            "MySQL support contract expects 8.4.13 LTS, received: {server_version}"
         );
     }
+    println!("verified database service version: {server_version}");
 
     // CI gives each engine its own disposable database. Reset the fixture state so a
     // developer can repeat the same test against a dedicated local test database.
@@ -277,7 +278,7 @@ async fn run_contract(url: &str, server: ExpectedServer) {
 }
 
 #[tokio::test]
-async fn mysql_80_support_contract() {
+async fn mysql_8413_support_contract() {
     let Some(url) = configured_url(ExpectedServer::MySql) else {
         eprintln!("Skipping MySQL integration test outside CI: RUSTFLOW_TEST_MYSQL_URL is unset");
         return;
@@ -286,7 +287,7 @@ async fn mysql_80_support_contract() {
 }
 
 #[tokio::test]
-async fn mariadb_114_support_contract() {
+async fn mariadb_11413_support_contract() {
     let Some(url) = configured_url(ExpectedServer::MariaDb) else {
         eprintln!(
             "Skipping MariaDB integration test outside CI: RUSTFLOW_TEST_MARIADB_URL is unset"

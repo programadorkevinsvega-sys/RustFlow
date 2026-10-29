@@ -324,9 +324,9 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 
 **Exit gate:** covered by the generated CLI integration test, with repeatable CI coverage on Rust stable and Rust 1.85. The Phase 6.5 implementation criteria are satisfied for SQLite and PostgreSQL. Additional engines (MySQL, MariaDB, and MongoDB) are planned for Phase 6.6; the SQL ORM and MongoDB document-mapping layer are planned for Phase 6.7. These are roadmap targets only and are not implemented by the Phase 6.5 closure. Production deployment/security hardening and durable database-backed sessions remain separate concerns.
 
-## Phase 6.6 — Additional database engines (in progress)
+## Phase 6.6 — Additional database engines (completed)
 
-**Status: in progress.** Phase 6.6.1 was merged into `main` as commit `48a491d660c71005b58ed88a4f6a7e8ba3390c9d` (PR #54); its MySQL 8.0 and MariaDB 11.4 real-server contracts passed under Rust 1.85 and stable. Phase 6.6.2 was merged into `main` as commit `e3ceb86d757bb7aa1a07e16a1e21b462adb69841` (PR #55). The final PR head `8c1a33c261769bd731f00c371bac17a569611c68` passed CI on Rust stable and Rust 1.85, including real MongoDB/MySQL/MariaDB integration, as well as documentation, governance, dependency review, WebAssembly, and browser E2E/bundle checks. Phase 6.6 remains in progress because subphase 6.6.3 (the consolidated compatibility matrix) is still pending.
+**Status: complete.** Phase 6.6.1 was merged into `main` as commit `48a491d660c71005b58ed88a4f6a7e8ba3390c9d` (PR #54); its original MySQL 8.0 and MariaDB 11.4 contracts passed under Rust 1.85 and stable. Phase 6.6.2 was merged into `main` as commit `e3ceb86d757bb7aa1a07e16a1e21b462adb69841` (PR #55), with MongoDB 7.0.45 integration and all required checks passing on the final PR head. Phase 6.6.3 publishes the verified matrix in `docs/DATABASE_SUPPORT_MATRIX.md`: bundled SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS, and MongoDB 7.0.45, including exact runtime-version assertions, driver/MSRV details, shared relational APIs versus engine-specific contracts, configuration examples and generated-app coverage. The code head `51ac4c212b3d6bf68483ee2ef8e28b5c3a75f421` passed all required workflows on Rust stable and Rust 1.85, including all five runtime/engine contracts, generated CLI smoke tests, rustdoc, documentation, governance, dependency review, WebAssembly, and browser E2E/bundle checks. Phase 6.7 ORM/ODM remains separate planned work.
 
 ### 6.6.1 Relational engines: MySQL and MariaDB
 - [x] Select and document the SQLx driver/configuration strategy compatible with RustFlow's Rust 1.85 MSRV and dependency policy.
@@ -335,7 +335,7 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [x] Define and test migration directory/dialect expectations without assuming DDL portability or full migration atomicity.
 - [x] Run disposable MySQL 8.0 and MariaDB 11.4 integration services on Rust 1.85 and stable.
 
-**Implementation and limitations:** SQLx 0.8.6's `mysql` feature supplies one MySQL-protocol driver for both products. `DatabaseBackend::MySql` identifies that driver family, not the server product. The verified server matrix is MySQL 8.0 and MariaDB 11.4; other versions and vendor-specific behavior are not implied. MySQL-family DDL may implicitly commit. MongoDB (6.6.2) is implemented through a separate experimental document adapter verified against MongoDB 7.0.45; the consolidated compatibility matrix (6.6.3) remains pending.
+**Implementation and limitations:** SQLx 0.8.6's `mysql` feature supplies one MySQL-protocol driver for both products. `DatabaseBackend::MySql` identifies that driver family, not the server product. Phase 6.6.1 originally tested MySQL 8.0 and MariaDB 11.4; the Phase 6.6.3 public matrix supersedes those targets with maintained MySQL 8.4.13 LTS and MariaDB 11.4.13 LTS, alongside PostgreSQL 16.15, bundled SQLite 3.46.0, and MongoDB 7.0.45. These current targets are accepted only after exact-version assertions and all final-head checks pass. MySQL-family DDL may implicitly commit.
 
 ### 6.6.2 Document database: MongoDB
 - [x] Add a maintained MongoDB Rust-driver adapter separately from SQLx `AnyPool`; MongoDB must not be described as a SQL engine.
@@ -344,9 +344,9 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [x] Add repeatable integration tests against a disposable MongoDB service for connect, CRUD, indexes, and failure paths.
 
 ### 6.6.3 Public support contract
-- [ ] Publish a verified engine/version matrix, including the Rust/MSRV compatibility of each driver.
-- [ ] Document which APIs are relational/shared and which are engine-specific; do not promise identical SQL behavior across engines.
-- [ ] Update configuration examples, technical/public docs, generated-app tests, and CI evidence.
+- [x] Publish the engine/version matrix and Rust/MSRV compatibility details in `docs/DATABASE_SUPPORT_MATRIX.md`.
+- [x] Document shared relational APIs versus engine-specific SQL/migration/DDL behavior; do not promise identical SQL semantics across engines.
+- [x] Update configuration examples, technical/public docs, generated-app tests, and exact-version CI assertions; the final passing evidence is recorded above.
 
 **Exit gate:** SQLite, PostgreSQL, MySQL, MariaDB, and MongoDB each have an explicit verified support contract and reproducible integration coverage. SQL engines have correct engine-specific tests/migration expectations; MongoDB has its own document and index lifecycle contract. Merely adding a dependency does not close this phase.
 
