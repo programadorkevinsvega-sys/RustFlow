@@ -11,7 +11,7 @@ The adapter enables SQLite, PostgreSQL, and the SQLx MySQL protocol driver throu
 - MySQL: `mysql://user:password@host:3306/database`.
 - MariaDB: the same `mysql://` URL and SQLx MySQL driver; `mariadb://` is not accepted by SQLx `AnyPool` driver selection.
 
-MySQL and MariaDB are represented by `DatabaseBackend::MySql` because a `mysql://` URL selects the driver and does not identify the responding server product. CI is configured to exercise MySQL 8.0 and MariaDB 11.4 separately; other server versions and vendor-specific SQL features are not implied. MongoDB is implemented through a separate document adapter in Phase 6.6.2; it does not use SQLx `AnyPool` or SQL migrations. SQL syntax, placeholders, migrations, and value support remain engine-specific. Bind user values rather than interpolating request data into SQL.
+MySQL and MariaDB are represented by `DatabaseBackend::MySql` because a `mysql://` URL selects the driver and does not identify the responding server product. The current pinned CI contract is PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS, SQLite 3.46.0 bundled by the locked SQLx / `libsqlite3-sys` dependencies, and MongoDB 7.0.45. The full tested version/MSRV matrix and evidence boundaries live in [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md). These exact targets do not imply compatibility with every version or vendor-specific feature. MongoDB is implemented through a separate document adapter and does not use SQLx `AnyPool` or SQL migrations. SQL syntax, placeholders, migrations, and value support remain engine-specific. Bind user values rather than interpolating request data into SQL.
 
 ## Configuration and connection pool
 
@@ -140,7 +140,7 @@ Phase 6.7 is planned to deliver a mature, cohesive typed SQL ORM for SQLite, Pos
 
 ## Testing
 
-The server tests exercise repeatable SQLite migrations, forward application, rollback, parameterized writes, and—when configured—PostgreSQL pool/transaction behavior. The new `database_engines` integration target exercises MySQL and MariaDB separately, including URL redaction, real server identity, CRUD with bound values, transactions, duplicate-key mapping, migration failure/rollback, and pool closure. CI configures disposable PostgreSQL, MySQL, and MariaDB services. The MySQL-family cases skip when their URLs are absent outside CI and fail if a URL is absent in CI.
+The server tests exercise SQLite 3.46.0 migrations, forward application, rollback, parameterized writes, and PostgreSQL 16.15 pool/transaction behavior. The `database_engines` integration target exercises MySQL 8.4.13 and MariaDB 11.4.13 separately, including URL redaction, exact server version and identity, CRUD with bound values, transactions, duplicate-key mapping, migration failure/rollback, and pool closure. CI also provisions MongoDB 7.0.45 and explicitly runs the `mongodb_adapter` integration target. These service contracts are run on Rust 1.85 and stable; the corresponding tests fail in CI if a required service URL is absent.
 
 Run:
 
@@ -150,4 +150,4 @@ cargo test -p rustflow-server --all-features
 cargo test --workspace --all-features
 ~~~
 
-The SQL integration does not include an ORM, a general model/query abstraction, migration generation by sqlx-cli, database-backed sessions, or a built-in repository layer. MongoDB has its own separate experimental adapter contract, merged in PR #55 as `e3ceb86d757bb7aa1a07e16a1e21b462adb69841`; the final-head CI and all required quality gates passed. MySQL/MariaDB support is implemented experimentally and merged in PR #54 as `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`; the verified contracts cover MySQL 8.0 and MariaDB 11.4. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.
+The SQL integration does not include an ORM, a general model/query abstraction, migration generation by sqlx-cli, database-backed sessions, or a built-in repository layer. MongoDB has its own separate experimental adapter contract, merged in PR #55 as `e3ceb86d757bb7aa1a07e16a1e21b462adb69841`. MySQL/MariaDB support was introduced in PR #54 as `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`; Phase 6.6.3 now retests the maintained MySQL 8.4.13 LTS and MariaDB 11.4.13 LTS lines alongside PostgreSQL 16.15, SQLite 3.46.0, and MongoDB 7.0.45. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.
