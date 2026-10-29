@@ -92,7 +92,7 @@ When running locally outside CI, a test skips if its corresponding URL is absent
 
 MongoDB is document-oriented and uses its own adapter, independent of SQLx, AnyPool, SQL transactions, and SQL migrations. The current API is experimental and exposes the official driver's native collection API rather than an ODM.
 
-The official MongoDB Rust driver is pinned to 3.6.0 because that release retains the repository's Rust 1.85 MSRV. Re-evaluate the pin during dependency/security reviews before upgrading; newer driver lines can raise the MSRV. The initial CI server contract is MongoDB 8.0.
+The official MongoDB Rust driver is pinned to =3.6.0 because that release retains the repository's Rust 1.85 MSRV. Re-evaluate the pin during dependency/security reviews before upgrading; newer driver lines can raise the MSRV. The initial CI server contract is MongoDB 8.0.
 
 ### Configuration
 
@@ -103,9 +103,9 @@ MongoConfig::from_app_config follows AppConfig's existing precedence. In product
 ~~~rust
 use rustflow_server::{AppConfig, MongoConfig, MongoDatabase};
 
-let app  AppConfig::load()?;
-let config  MongoConfig::from_app_config(&app)?;
-let database  MongoDatabase::connect(&config).await?;
+let app = AppConfig::load()?;
+let config = MongoConfig::from_app_config(&app)?;
+let database = MongoDatabase::connect(&config).await?;
 database.ping().await?;
 ~~~
 
@@ -118,12 +118,12 @@ use rustflow_server::{
     DocumentBootstrap, DocumentIndex, MongoDatabase, mongodb_driver::bson::{doc, Document},
 };
 
-let notes  database.collection::<Document>("notes");
+let notes = database.collection::<Document>("notes");
 database
     .run_with_timeout(notes.insert_one(doc! { "title": "A note", "metadata": { "pinned": false } }))
     .await?;
 
-let bootstrap  DocumentBootstrap::new("notes")?
+let bootstrap = DocumentBootstrap::new("notes")?
     .with_index(DocumentIndex::new("title_idx", doc! { "title": 1 }, false)?)?;
 database.bootstrap(&bootstrap).await?;
 ~~~
