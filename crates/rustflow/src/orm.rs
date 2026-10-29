@@ -143,6 +143,14 @@ pub trait ModelMetadata: 'static {
 mod tests {
     use super::{ModelMetadata, RustType};
 
+    fn model_is_read_only<M: ModelMetadata>() -> bool {
+        M::READ_ONLY
+    }
+
+    fn model_has_no_primary_key<M: ModelMetadata>() -> bool {
+        M::PRIMARY_KEY_COLUMNS.is_empty()
+    }
+
     #[allow(dead_code)]
     enum Status {
         Active,
@@ -191,7 +199,7 @@ mod tests {
     fn derive_publishes_table_columns_and_metadata() {
         assert_eq!(UserProfile::TABLE_NAME, "user_profiles");
         assert_eq!(UserProfile::PRIMARY_KEY_COLUMNS, &["id"]);
-        assert!(!UserProfile::READ_ONLY);
+        assert!(!model_is_read_only::<UserProfile>());
         let columns = UserProfile::COLUMNS;
         assert_eq!(columns.len(), 4);
         assert_eq!(columns[0].field_name, "id");
@@ -221,8 +229,8 @@ mod tests {
 
     #[test]
     fn read_only_keyless_models_are_explicit() {
-        assert!(AuditView::READ_ONLY);
-        assert!(AuditView::PRIMARY_KEY_COLUMNS.is_empty());
+        assert!(model_is_read_only::<AuditView>());
+        assert!(model_has_no_primary_key::<AuditView>());
         assert_eq!(AuditView::COLUMNS.len(), 2);
     }
 }
