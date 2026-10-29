@@ -1,6 +1,6 @@
 # Database support matrix (Phase 6.6.3)
 
-**Status:** implementation contract for the RustFlow 0.1/pre-1.0 database adapters. The exact service versions below are pinned in `.github/workflows/ci.yml` and are tested on the workspace MSRV lane (Rust 1.85) and current stable. This matrix describes the versions the project verifies; it is not a promise that every version in the same major line, server fork, SQL dialect, cloud service, or deployment topology behaves identically.
+**Verification evidence:** the runtime-version assertions and engine integration contracts passed on PR #57 code head `51ac4c212b3d6bf68483ee2ef8e28b5c3a75f421` under Rust 1.85 and current stable, along with the required CI workflows. The service targets are pinned in `.github/workflows/ci.yml`. This matrix describes the exact versions RustFlow verifies; it is not a promise that every version in the same major line, server fork, SQL dialect, cloud service, or deployment topology behaves identically.
 
 ## Verified engine/version matrix
 
