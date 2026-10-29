@@ -90,7 +90,7 @@ When running locally outside CI, a test skips if its corresponding URL is absent
 
 ## Roadmap status
 
-Subphase 6.6.1 is under review: the branch adds SQLx's MySQL-protocol feature and real-server integration contracts for MySQL 8.0 and MariaDB 11.4. It must not be considered accepted until the PR checks pass. Subphases 6.6.2/6.6.3 remain open, and MongoDB still requires its own document-oriented adapter. MongoDB must not be routed through SQLx `AnyPool`; its connection configuration, BSON mapping, indexes, and collection lifecycle need their own contract.
+Subphase 6.6.1 is implemented on PR #54. On exact PR head `3e97b580cc86fdd3b0307724c54a45efe0a9209f`, MySQL 8.0 and MariaDB 11.4 integration contracts, workspace tests, migration-marker unit coverage, formatting, Clippy, rustdoc, Browser E2E/bundle size, WASM, website build, dependency review, and governance all passed under Rust 1.85 and stable. The PR remains open for review. Subphases 6.6.2/6.6.3 remain open; MongoDB needs its own document-oriented adapter.
 
 Phase 6.7 is planned to deliver a mature, cohesive typed SQL ORM for SQLite, PostgreSQL, MySQL, and MariaDB, plus a separate mature document-mapping/ODM API for MongoDB. This is not a CRUD-only MVP target. The subphases organize implementation work; they do not permit Phase 6.7 to close until model metadata/type mapping, a composable query builder, relations and explicit efficient loading, transaction/error semantics, derive diagnostics, driver-specific behavior, generated-app examples, and CI-backed integration coverage meet the full acceptance gate. An ADR must select the architectural pattern, dependency strategy, and mandatory/excluded feature matrix before the public contract is fixed. These capabilities are not implemented or stabilized yet.
 
@@ -106,4 +106,4 @@ cargo test -p rustflow-server --all-features
 cargo test --workspace --all-features
 ~~~
 
-This feature does not include an ORM, a general model/query abstraction, migration generation by sqlx-cli, a MongoDB adapter, database-backed sessions, or a built-in repository layer. MySQL/MariaDB support remains under review until the new integration jobs pass. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.
+This feature does not include an ORM, a general model/query abstraction, migration generation by sqlx-cli, a MongoDB adapter, database-backed sessions, or a built-in repository layer. MySQL/MariaDB support is implemented experimentally on PR #54; the described contracts and required checks passed on PR head `3e97b580cc86fdd3b0307724c54a45efe0a9209f`. The PR remains open for review and merge. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.

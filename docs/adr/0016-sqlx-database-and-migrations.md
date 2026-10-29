@@ -10,7 +10,7 @@ RustFlow already has an experimental HTTP server, typed request validation, CSRF
 
 ## Decision
 
-- Integrate SQLx 0.8.6 with runtime Tokio/Rustls support, SQLite, PostgreSQL, the runtime-generic Any driver and SQLx migrations. MySQL was deferred to Phase 6.6.1; the proposed extension is recorded in ADR 0017.
+- Integrate SQLx 0.8.6 with runtime Tokio/Rustls support, SQLite, PostgreSQL, the runtime-generic Any driver and SQLx migrations. MySQL was deferred to Phase 6.6.1; the shared SQLx driver extension is implemented on PR #54 and its architectural rationale is recorded in ADR 0017.
 - Expose configurable DatabaseConfig and cloneable DatabasePool from rustflow-server. DatabaseConfig validates supported URL schemes, pool bounds and acquire timeout; its Debug representation redacts the connection URL.
 - Resolve RUSTFLOW_DATABASE_URL, max/min pool connections and acquire timeout using AppConfig precedence. Development/test may read dotenv files. Production reads database settings only from the process environment and requires an explicit database URL.
 - Re-export SQLx for explicit, parameterized queries. Do not introduce an ORM or invent a model/query abstraction before CRUD use cases establish its shape.

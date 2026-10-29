@@ -326,7 +326,7 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 
 ## Phase 6.6 — Additional database engines (in progress)
 
-**Status: in progress.** The Phase 6.6.1 implementation and real MySQL/MariaDB contracts passed all checks on the previously verified PR head `5b6c91ffb763865f2f258752b8efea8dd171af33` under Rust 1.85 and stable. This follow-up adds direct unit coverage for migration marker presence and mismatches, so final acceptance must use CI results for this updated PR head. Phase 6.6 remains in progress because subphases 6.6.2 and 6.6.3 are not implemented.
+**Status: in progress.** Phase 6.6.1 and the migration-marker unit test passed every required workflow on PR head `3e97b580cc86fdd3b0307724c54a45efe0a9209f` under Rust 1.85 and stable. The MySQL 8.0 and MariaDB 11.4 real-server contracts passed independently on both toolchains. Phase 6.6 remains in progress because subphases 6.6.2 and 6.6.3 are not implemented; PR #54 remains open for review and has not been merged.
 
 ### 6.6.1 Relational engines: MySQL and MariaDB
 - [x] Select and document the SQLx driver/configuration strategy compatible with RustFlow's Rust 1.85 MSRV and dependency policy.

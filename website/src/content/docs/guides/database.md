@@ -7,7 +7,7 @@ La integración SQLx de RustFlow es experimental y pre-1.0. Proporciona configur
 
 ## 1. Configurar el pool
 
-El código de la rama de revisión añade SQLite, PostgreSQL y el driver de protocolo MySQL de SQLx mediante `AnyPool`. Las URLs `mysql://` son compartidas por MySQL y MariaDB; `DatabaseBackend::MySql` identifica el driver y no detecta el producto servidor. CI está configurada para probar MySQL 8.0 y MariaDB 11.4 por separado; el soporte sigue bajo revisión hasta que pasen sus checks. MongoDB aún no está implementado y necesitará un adaptador documental independiente porque trabaja con BSON, no SQL.
+La rama del PR #54 incorpora SQLite, PostgreSQL y el driver de protocolo MySQL de SQLx mediante `AnyPool`. Las URLs `mysql://` son compartidas por MySQL y MariaDB; `DatabaseBackend::MySql` identifica el driver y no detecta el producto servidor. Los contratos reales de MySQL 8.0 y MariaDB 11.4, la prueba unitaria de marcadores de dialecto y todos los workflows obligatorios pasaron en el head `3e97b580cc86fdd3b0307724c54a45efe0a9209f` con Rust 1.85/stable. El PR sigue abierto para revisión. MongoDB aún no está implementado y necesitará un adaptador documental independiente porque trabaja con BSON, no SQL.
 
 ~~~rust
 use rustflow_server::{AppConfig, DatabaseConfig, DatabasePool};

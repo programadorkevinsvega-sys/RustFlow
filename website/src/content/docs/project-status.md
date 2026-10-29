@@ -112,7 +112,7 @@ La prueba de integración del CLI genera una aplicación y verifica validación,
 
 La subfase 6.6.1 añade a la rama de revisión el driver SQLx `mysql` para MySQL y MariaDB mediante `AnyPool`. Ambos productos se prueban por separado (MySQL 8.0 y MariaDB 11.4); el backend `DatabaseBackend::MySql` representa el driver compartido, no la identificación del producto servidor. Las URLs admitidas para estos servidores usan `mysql://`, y los directorios de migración requieren `.rustflow-dialect` con `mysql`.
 
-La aceptación está pendiente hasta que pasen las pruebas reales de ambos motores y los checks obligatorios en Rust 1.85/stable. La subfase 6.6.2 (adaptador documental MongoDB independiente) y 6.6.3 (matriz de compatibilidad) siguen pendientes. Esta fase no implementa el ORM de la 6.7.
+Los contratos reales de ambos motores, la prueba unitaria de marcadores de dialecto y todos los workflows obligatorios pasaron en el head `3e97b580cc86fdd3b0307724c54a45efe0a9209f` bajo Rust 1.85/stable; PR #54 sigue abierto para revisión y no se ha fusionado. La subfase 6.6.2 (adaptador documental MongoDB independiente) y 6.6.3 (matriz de compatibilidad) siguen pendientes. Esta fase no implementa el ORM de la 6.7.
 
 ## Fase 6.7 — ORM SQL y mapeo documental (planificada)
 
