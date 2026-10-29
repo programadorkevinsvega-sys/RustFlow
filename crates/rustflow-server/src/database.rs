@@ -693,7 +693,8 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            server_version, "16.15",
+            server_version.split_whitespace().next(),
+            Some("16.15"),
             "support matrix expects PostgreSQL 16.15, received {server_version}"
         );
         println!("verified PostgreSQL server version: {server_version}");
