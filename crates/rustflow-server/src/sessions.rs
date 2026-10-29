@@ -247,7 +247,7 @@ impl SessionManager {
                 let now = current_epoch_seconds().map_err(|_| HttpError::internal_server_error())?;
                 let allow_cookie = !manager.cookie.secure || request.is_https();
                 let parsed = request.header("cookie").and_then(|v| v.to_str().ok())
-                    .map(|value| find_cookie(value, &manager.cookie.name)).unwrap_or(Ok(None));
+                    .map_or(Ok(None), |value| find_cookie(value, &manager.cookie.name));
                 let cookie_present = matches!(parsed, Ok(Some(_)) | Err(_));
                 let mut id = None;
                 let mut expires = None;
@@ -740,6 +740,58 @@ mod tests {
             Box::pin(async move { flag.store(true, Ordering::SeqCst); Ok(Response::text("handler")) })
         });
         Next { index: 0, middleware: Arc::new(Vec::new()), terminal }
+    }
+
+    struct FailingStore;
+
+    impl SessionStore for FailingStore {
+        fn create(&self, _id: SessionId, _expires_at_unix: u64, _now_unix: u64) -> Result<(), SessionError> {
+            Err(SessionError::StoreUnavailable)
+        }
+        fn expires_at(&self, _id: &SessionId, _now_unix: u64) -> Result<Option<u64>, SessionError> {
+            Err(SessionError::StoreUnavailable)
+        }
+        fn get(&self, _id: &SessionId, _key: &str, _now_unix: u64) -> Result<Option<Value>, SessionError> {
+            Err(SessionError::StoreUnavailable)
+        }
+        fn set(&self, _id: &SessionId, _key: String, _value: Value, _now_unix: u64) -> Result<(), SessionError> {
+            Err(SessionError::StoreUnavailable)
+        }
+        fn rotate(
+            &self, _old_id: Option<&SessionId>, _new_id: SessionId, _expires_at_unix: u64,
+            _now_unix: u64, _preserve_data: bool,
+        ) -> Result<(), SessionError> {
+            Err(SessionError::StoreUnavailable)
+        }
+        fn invalidate(&self, _id: &SessionId) -> Result<(), SessionError> {
+            Err(SessionError::StoreUnavailable)
+        }
+    }
+
+    #[tokio::test]
+    async fn storage_failure_returns_500_without_reaching_the_handler() {
+        let manager = SessionManager::new(
+            Arc::new(FailingStore),
+            Duration::from_secs(60),
+        )
+        .expect("manager")
+        .with_cookie_config(SessionCookieConfig::development())
+        .expect("development cookie");
+        let mut request = request_with_session(None);
+        let cookie = format!("rustflow_session={}", "a".repeat(SESSION_ID_HEX_LEN));
+        request.headers.insert(
+            http::header::COOKIE,
+            http::HeaderValue::from_str(&cookie).expect("cookie header"),
+        );
+        let called = Arc::new(AtomicBool::new(false));
+        let result = manager.middleware().call(request, next_with_flag(called.clone())).await;
+        assert_eq!(
+            result.expect_err("storage failure must fail closed")
+                .into_response()
+                .status_code(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+        assert!(!called.load(Ordering::SeqCst));
     }
 
     #[test]
