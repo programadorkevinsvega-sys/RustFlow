@@ -64,6 +64,30 @@ app.serve(address).await?;
 
 Este es un extracto para insertar en el main asíncrono de una aplicación generada; app representa una instancia ya configurada de rustflow_server::Application.
 
+## Configuración de bases de datos (contrato separado)
+
+Las variables de base de datos no forman parte de las tres variables de bind que valida `AppConfig`. Los adaptadores las leen mediante su propia configuración, manteniendo la precedencia existente: desarrollo/test usan proceso > `.env.<perfil>` > `.env`; producción exige valores del entorno del proceso.
+
+### Motores SQL
+
+`RUSTFLOW_DATABASE_URL` selecciona el driver SQLx. Esquemas admitidos:
+
+- SQLite: `sqlite://rustflow.db?mode=rwc` o `sqlite::memory:`.
+- PostgreSQL: `postgres://<user>:<password>@<host>/<database>` o `postgresql://...`.
+- MySQL y MariaDB: `mysql://<user>:<password>@<host>/<database>` para el driver de protocolo MySQL de SQLx. `mariadb://` no es aceptado.
+
+Los ajustes de pool opcionales son `RUSTFLOW_DATABASE_MAX_CONNECTIONS`, `RUSTFLOW_DATABASE_MIN_CONNECTIONS` y `RUSTFLOW_DATABASE_ACQUIRE_TIMEOUT_SECS`. Las URLs son secretas si incluyen credenciales; no las copies en logs ni en archivos versionados. SQLx comparte el límite de pool/transacción, no una promesa de SQL portable. Placeholders, DDL, tipos y archivos de migración deben corresponder al motor real. El scaffold CLI es SQLite-first: cambiar la URL no porta las consultas ni las migraciones generadas.
+
+### MongoDB documental (adaptador separado)
+
+MongoDB no se selecciona mediante `RUSTFLOW_DATABASE_URL` y no usa SQLx, `AnyPool` ni migraciones SQL. Usa:
+
+- `RUSTFLOW_MONGODB_URI=mongodb://<user>:<password>@<host>:27017/<database>?authSource=admin`
+- `RUSTFLOW_MONGODB_DATABASE=<database>`
+- Opcionales, en segundos positivos: `RUSTFLOW_MONGODB_CONNECT_TIMEOUT_SECS`, `RUSTFLOW_MONGODB_SERVER_SELECTION_TIMEOUT_SECS`, `RUSTFLOW_MONGODB_OPERATION_TIMEOUT_SECS`.
+
+La implementación exige que la aplicación construya `MongoConfig` y `MongoDatabase` explícitamente; la plantilla generada no inicializa MongoDB. Solo URI estándar `mongodb://` está habilitada en esta configuración; `mongodb+srv://` no está soportada mientras el feature del resolver DNS permanezca deshabilitado. El bootstrap declarativo administra colecciones e índices, pero no es un sistema de migraciones de documentos. Consulta [DATABASES.md](DATABASES.md) y [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md) para límites y versiones objetivo.
+
 ## Límites actuales
 
 La configuración no es un sistema general de configuración TOML/YAML, no incluye perfiles personalizados ni resuelve nombres DNS. Los ajustes de base de datos de la Fase 6.5 usan `AppConfig::setting`: en desarrollo/test respetan proceso > `.env.<perfil>` > `.env`; en producción solo consultan el entorno del proceso. El framework no incluye un gestor de secretos. Las APIs son pre-1.0 y el contrato público puede cambiar. Validación de formularios, sesiones, autenticación/autorización y CSRF siguen siendo APIs separadas; la persistencia SQLx tiene su propio contrato en [DATABASES.md](DATABASES.md).
