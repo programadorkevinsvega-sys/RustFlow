@@ -64,7 +64,7 @@ Until a real hydration implementation and boundary metadata exist, non-hydratabl
 3. On mismatch, report a bounded diagnostic and recover only within the smallest known boundary; do not attach duplicate listeners, silently accept unsafe markup, or discard compatible component state outside that boundary.
 4. If a boundary cannot be classified safely, leave it static and report the limitation rather than guessing.
 
-These are target rules for later implementation. The current code does not yet detect hydration mismatches, mark boundary identities, preserve DOM during hydration, or implement fallback recovery.
+These rules were drafted before hydration existed and are not a description of the current implementation. ADR 0010 later defined the implemented protocol: SSR markers and public hydration data are validated before activation, compatible DOM receives listeners without rebuilding nodes, and a mismatch conservatively preserves the entire root as static HTML while disposing candidate resources. Partial-region repair is not implemented; see `docs/SSR_RENDERING.md` and ADR 0010.
 
 ## Alternatives considered
 
@@ -85,8 +85,8 @@ Costs and limitations:
 - Component capabilities are runtime metadata enforced by target-aware mount/render paths; they are not a proof that user-authored server-only code is absent from every possible binary.
 - Secret exclusion depends on explicit public-data projection at the application boundary; the framework cannot semantically detect arbitrary secrets in JSON. This is the documented trust boundary, not a promise of automatic secret detection.
 - Determinism is guaranteed only for constrained static inputs; arbitrary component render closures remain outside that guarantee.
-- The fallback is static markup, not a hydration boundary. Mismatch detection, partial DOM recovery, and listener attachment are not implemented.
-- Full SSR composition, route data, hydration IDs, event attachment, mismatch detection/recovery, navigation, and forms remain future phases.
+- On mismatch, the implemented fallback preserves the entire SSR root as static markup and disposes candidate resources. Partial-region repair is not implemented; compatible DOM can be hydrated by attaching listeners after validation.
+- Full SSR composition, route data, hydration markers, event attachment, mismatch diagnostics/recovery, navigation, and progressive forms were implemented in later phases with narrower opt-in contracts; see `docs/SSR_RENDERING.md`, ADR 0010 and ADR 0011.
 
 ## Validation
 

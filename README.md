@@ -23,7 +23,7 @@ Consulta el [estado público de las capacidades](website/src/content/docs/projec
 
 - <code>use_memo</code>, <code>use_ref</code> y <code>use_context</code> siguen pendientes.
 - La configuración de la Fase 6.2 cubre solo perfil, host y puerto; no es un sistema general ni un gestor de secretos.
-- Las sesiones, autenticación y autorización de la Fase 6.4 están en revisión y siguen siendo APIs experimentales. El adaptador es volátil y local al proceso; no ofrece persistencia ni coordinación entre instancias. Proveedor de usuarios, OAuth/OIDC, MFA, recuperación de cuentas, server actions y persistencia de base de datos siguen fuera de alcance.
+- La Fase 6.4 de sesiones y control de acceso ya está integrada en `main` y sus checks post-merge pasaron. Las APIs siguen siendo experimentales: `InMemorySessionStore` es volátil y local al proceso. No se incluyen proveedor de usuarios, OAuth/OIDC, MFA, recuperación de cuentas, rate limiting ni persistencia de base de datos.
 - Un router general integrado: el callback de navegación cliente y las rutas HTTP de servidor no son un router full-stack unificado.
 - Un flujo de desarrollo y despliegue de producción validado, una política completa de compatibilidad y la revisión de seguridad de producción.
 
@@ -85,7 +85,3 @@ Antes de contribuir, consulta [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AG
 
 RustFlow se distribuye bajo licencia dual MIT o Apache-2.0. Puedes elegir cualquiera de ellas según los términos de cada licencia.
 
-
-## Phase 6.4: sessions and access control
-
-The current Phase 6.4 branch adds experimental server-side sessions, secure cookie defaults, route authentication guards, default-deny policies and password hashing through ring. The PR and its required CI checks must be reviewed before describing the phase as complete. InMemorySessionStore is volatile and process-local; database persistence is Phase 6.5. See the sessions guide at website/src/content/docs/guides/sessions-and-access.md and ADR 0015 at docs/adr/0015-sessions-and-access-control.md.

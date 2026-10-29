@@ -68,7 +68,7 @@ La configuración TLS local ayuda a probar el transporte; no es una receta compl
 
 ## Lo que RustFlow todavía no resuelve por ti
 
-El adaptador ofrece APIs experimentales de extracción/validación tipada y un middleware CSRF optativo basado en tokens firmados. El middleware se debe adjuntar a las mutaciones autenticadas mediante cookies y no reemplaza sesiones, autenticación ni autorización. No hay sesiones, identidad/autorización integradas, rate limiting de aplicación, almacenamiento de secretos, ORM, migraciones ni server actions. Los controles de entrada y transporte no convierten el proyecto en una plataforma lista para producción. Consulta la [guía de formularios y validación](/guides/forms-validation/) para el contrato y ejemplos.
+El adaptador ofrece APIs experimentales de extracción/validación tipada, un middleware CSRF optativo basado en tokens firmados y primitivas separadas de sesión, identidad y guards de acceso. CSRF debe conectarse explícitamente a las mutaciones autenticadas mediante cookies; no sustituye una autorización de negocio. No hay proveedor de usuarios/credenciales, rate limiting de aplicación, almacén durable de sesiones, gestor de secretos, ORM, persistencia integrada ni server actions. Los controles de entrada y transporte no convierten el proyecto en una plataforma lista para producción. Consulta las guías de [formularios y validación](/guides/forms-validation/) y [sesiones y control de acceso](/guides/sessions-and-access/).
 
 ## Referencias
 

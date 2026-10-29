@@ -291,7 +291,7 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [x] Fail fast on invalid production configuration.
 - [x] Document secret management.
 
-**Verification gate:** the implementation and technical/public documentation are included in the Phase 6.2 PR. Do not mark the phase formally closed until Rust 1.85/stable, Clippy, workspace tests, rustdoc, WASM/browser checks, bundle budget, website build, governance and dependency review pass on the final PR HEAD.
+**Cierre verificado:** la PR #46 ([configuración por entornos](https://github.com/programadorkevinsvega-sys/RustFlow/pull/46)) se integró mediante squash en `main` en el commit `34110b77afad1ade5827979825e98ecb4767a5dd`. Los ocho checks requeridos pasaron en el HEAD final de la PR `24fb875e83a6f7b324a281b5f065c43ab8a2e158`; la comprobación post-merge también terminó en verde para Rust 1.85/stable, WASM, E2E y presupuesto del bundle, documentación, gobernanza y Cloudflare Pages.
 
 ### 6.3 Validation and forms
 - [x] Implement typed input extraction and validation.
@@ -310,7 +310,7 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [x] Use maintained password hashing and cryptographic libraries.
 - [x] Test fixation, CSRF, privilege escalation, and access boundaries.
 
-**Closure evidence (PR #49, pending merge):** all required checks passed on PR HEAD `844013e74dd02a38c0e72747376a7ff4e9eb9005`: Rust 1.85 and stable (format, Clippy, workspace tests, rustdoc), WASM target, browser E2E/bundle size, documentation site, governance/whitespace, and dependency review. The TCP integration test covers anonymous rejection, session fixation/rotation, CSRF-protected login/logout, role denial, cookie revocation/replay, and preserving multiple Set-Cookie headers. The PR remains open; these criteria will become part of `main` only when PR #49 is merged. Durable database sessions, SQLx, transactions, and migrations remain Phase 6.5.
+**Cierre verificado:** la PR #49 ([sesiones y control de acceso](https://github.com/programadorkevinsvega-sys/RustFlow/pull/49)) se integró mediante squash en `main` en el commit `d53036410fc0d51900acf0c59b52c85f64cd1640`. Los checks requeridos pasaron en el HEAD final de la PR `f23fba7fcbba6d7da50d959d2fa74fcd5e60dcab`; la CI post-merge terminó en verde en [CI](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/40841892564), [documentación](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/40841892518), [gobernanza](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/40841892473) y Cloudflare Pages. Las pruebas TCP cubren acceso anónimo, rotación anti-fijación, login/logout protegidos por CSRF, denegación por rol, revocación/replay de cookies y preservación de múltiples cabeceras Set-Cookie. `InMemorySessionStore` sigue siendo volátil y local al proceso; sesiones durables, SQLx, transacciones y migraciones corresponden a la Fase 6.5.
 
 ### 6.5 Database and migrations
 - [ ] Integrate SQLx and configurable connection pools.

@@ -63,7 +63,7 @@ Los mensajes son contenido visible al usuario. No incluyas el valor enviado, con
 
 CsrfProtection proporciona un token aleatorio firmado por HMAC-SHA-256 usando la biblioteca mantenida ring. Debes proporcionar una clave aleatoria de al menos 32 bytes, almacenada fuera del repositorio y estable entre reinicios para cada despliegue. No uses una cadena pública, el nombre de la aplicación ni una clave nueva por petición.
 
-El API no crea sesiones ni autentica usuarios. Conecta el middleware a las rutas o grupos que usan cookies para autenticar mutaciones. No lo uses como sustituto de la comprobación de identidad y autorización. El token tiene una duración de ocho horas. GET, HEAD, OPTIONS y TRACE omiten la comprobación; los demás métodos deben enviar la cookie rustflow_csrf y el mismo valor en X-CSRF-Token o en el campo URL-encoded _csrf.
+Las APIs de validación y CSRF no crean sesiones ni autentican usuarios por sí mismas. RustFlow ofrece primitivas experimentales de sesión y guards de acceso por separado; consulta [HTTP_SERVER.md](HTTP_SERVER.md). Conecta el middleware CSRF a las rutas o grupos que usan cookies para autenticar mutaciones. No lo uses como sustituto de la comprobación de identidad y autorización. El token tiene una duración de ocho horas. GET, HEAD, OPTIONS y TRACE omiten la comprobación; los demás métodos deben enviar la cookie rustflow_csrf y el mismo valor en X-CSRF-Token o en el campo URL-encoded _csrf.
 
 ~~~rust
 use rustflow_server::{CsrfProtection, HttpError, HttpMethod, Request, Response};

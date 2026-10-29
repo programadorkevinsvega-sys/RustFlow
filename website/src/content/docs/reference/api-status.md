@@ -33,7 +33,8 @@ Esta página es un índice de disponibilidad, no una promesa de compatibilidad e
 | Extracción tipada de formularios/JSON/query y errores 422 | Experimental disponible en la Fase 6.3 | La aplicación implementa `ValidateInput`; los mensajes son salida pública. 400/415 son errores de decodificación/medio y 413 aplica al límite de cuerpo. |
 | `CsrfProtection` | Experimental, opt-in | Token HMAC con expiración; debe conectarse a mutaciones autenticadas por cookies. No implementa sesiones, identidad ni autorización. |
 | `Request::redirect_back` | Experimental disponible en la Fase 6.3 | Solo acepta fallback local y Referer del mismo origen; un Referer externo usa el fallback. |
-| Sesiones, auth, autorización integrada y server actions | No disponible | No forma parte del servidor actual. |
+| Sesiones server-side, identidad y guards de autenticación/autorización | Experimental disponible (Fase 6.4, integrada en `main`) | `SessionManager`, `SessionContext`, `AuthIdentity`, `route_protected`, `route_authorized`; sin proveedor de usuarios ni almacenamiento durable. [Guía de sesiones](/guides/sessions-and-access/). |
+| Server actions | No disponible | No forma parte del servidor actual. |
 | Persistencia SQL/migraciones integradas | No disponible | No hay un modelo de base de datos integrado. |
 
 ## SSR, layouts e interacción cliente

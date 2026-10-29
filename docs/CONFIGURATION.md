@@ -1,6 +1,6 @@
 # Configuración por entornos (Fase 6.2)
 
-La configuración de RustFlow sigue siendo experimental y deliberadamente pequeña. La API pública rustflow_server::AppConfig valida el perfil de ejecución y la dirección de bind del servidor. No configura todavía bases de datos, sesiones, autenticación ni secretos de aplicación.
+La configuración de RustFlow sigue siendo experimental y deliberadamente pequeña. La API pública `rustflow_server::AppConfig` valida el perfil de ejecución y la dirección de bind del servidor. No configura bases de datos, sesiones, autenticación ni secretos de aplicación; estas capas se configuran por separado y las primitivas experimentales de sesiones/guards se describen en [HTTP_SERVER.md](HTTP_SERVER.md).
 
 ## Archivos y precedencia
 
