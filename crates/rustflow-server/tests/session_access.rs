@@ -1,5 +1,3 @@
-#![cfg_attr(rustfmt, rustfmt_skip)]
-
 use std::{net::SocketAddr, sync::{Arc, atomic::{AtomicBool, Ordering}}, time::Duration};
 
 use http::StatusCode;

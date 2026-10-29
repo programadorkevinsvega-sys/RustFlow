@@ -8,7 +8,6 @@ mod csrf;
 mod group;
 mod page;
 mod proxy;
-#[rustfmt::skip]
 mod sessions;
 mod tls;
 mod validation;
