@@ -110,7 +110,7 @@ fn cookie_pair(response: &str, name: &str) -> String {
         .to_owned()
 }
 
-fn cookie_header(response: &str, name: &str) -> &str {
+fn cookie_header<'a>(response: &'a str, name: &str) -> &'a str {
     let prefix = format!("{name}=");
     response
         .lines()
