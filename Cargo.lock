@@ -1646,7 +1646,10 @@ dependencies = [
 [[package]]
 name = "rustflow-macros"
 version = "0.1.0"
-
+dependencies = [
+ "quote",
+ "syn 2.0.119",
+]
 [[package]]
 name = "rustflow-server"
 version = "0.1.0"
