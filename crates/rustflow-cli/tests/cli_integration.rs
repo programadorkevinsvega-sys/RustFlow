@@ -193,7 +193,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 "#;
 
-
 struct TempDir(PathBuf);
 
 impl TempDir {
@@ -295,7 +294,6 @@ fn cargo_target_dir(temp: &TempDir) -> PathBuf {
     temp.path().join("cargo-target")
 }
 
-
 fn generated_http_request(
     port: u16,
     method: &str,
@@ -345,7 +343,8 @@ fn generated_response_cookie(response: &str, name: &str) -> String {
         .take_while(|line| !line.is_empty())
         .filter_map(|line| {
             let (key, value) = line.split_once(':')?;
-            key.eq_ignore_ascii_case("set-cookie").then_some(value.trim())
+            key.eq_ignore_ascii_case("set-cookie")
+                .then_some(value.trim())
         })
         .find(|value| value.starts_with(&prefix))
         .expect("expected Set-Cookie")
@@ -654,7 +653,11 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
         &login_headers,
         "username=ada&password=incorrect",
     );
-    assert_eq!(generated_response_status(&wrong_login), 401, "{wrong_login}");
+    assert_eq!(
+        generated_response_status(&wrong_login),
+        401,
+        "{wrong_login}"
+    );
 
     let login = generated_http_request(
         port,
@@ -673,13 +676,8 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
         ("x-csrf-token", csrf_token.as_str()),
     ];
 
-    let invalid = generated_http_request(
-        port,
-        "POST",
-        "/notes",
-        &secured_headers,
-        "title=%20%20%20",
-    );
+    let invalid =
+        generated_http_request(port, "POST", "/notes", &secured_headers, "title=%20%20%20");
     assert_eq!(generated_response_status(&invalid), 422, "{invalid}");
 
     let created = generated_http_request(
@@ -693,8 +691,14 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
 
     let notes = generated_http_request(port, "GET", "/notes", &[("cookie", cookies.as_str())], "");
     assert_eq!(generated_response_status(&notes), 200, "{notes}");
-    assert!(generated_response_body(&notes).contains("Ledger &lt;script&gt;"), "{notes}");
-    assert!(!generated_response_body(&notes).contains("<script>"), "{notes}");
+    assert!(
+        generated_response_body(&notes).contains("Ledger &lt;script&gt;"),
+        "{notes}"
+    );
+    assert!(
+        !generated_response_body(&notes).contains("<script>"),
+        "{notes}"
+    );
     assert_eq!(
         generated_response_body(&notes).matches("<li>").count(),
         1,
