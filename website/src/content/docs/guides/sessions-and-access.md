@@ -3,7 +3,7 @@ title: Sesiones, autenticación y autorización
 description: Usa sesiones del lado del servidor, guards de ruta y políticas de acceso con denegación predeterminada.
 ---
 
-Estas APIs son experimentales y pre-1.0. El adaptador HTTP ofrece sesiones del lado del servidor y guards integrados en el registro de rutas. No equivale a una revisión de seguridad de producción y no incluye OAuth/OIDC, MFA, recuperación de cuentas, rate limiting ni persistencia de base de datos.
+Estas APIs son experimentales y pre-1.0. El adaptador HTTP ofrece sesiones del lado del servidor y guards integrados en el registro de rutas. La integración SQLx de la Fase 6.5 es un contrato independiente de persistencia de la aplicación; no convierte `InMemorySessionStore` en un almacén durable ni integra las sesiones con la base de datos. No equivale a una revisión de seguridad de producción y no incluye OAuth/OIDC, MFA, recuperación de cuentas ni rate limiting.
 
 ## 1. Instalar el middleware
 
@@ -119,7 +119,7 @@ El secreto debe ser aleatorio, estable para el despliegue y almacenado fuera del
 - 500 genérico: falla almacenamiento o política; no se concede acceso.
 - Los IDs manipulados, caducados o revocados no reconstruyen identidad.
 - InMemorySessionStore es volátil, local al proceso y no se comparte entre instancias.
-- SessionStore exige operaciones atómicas. El adaptador de base de datos, transacciones y migraciones pertenecen a la Fase 6.5.
+- SessionStore exige operaciones atómicas. La PR de la Fase 6.5 añade SQLx, pools, transacciones y migraciones para datos de aplicación, pero todavía no implementa un adaptador SQL para SessionStore; `InMemorySessionStore` sigue siendo volátil y local al proceso.
 - No se incluyen OAuth/OIDC, MFA, recuperación de cuentas, rate limiting, protección de fuerza bruta ni auditoría completa del despliegue.
 
 ## 8. Ejecutar pruebas

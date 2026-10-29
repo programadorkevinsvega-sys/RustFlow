@@ -28,14 +28,15 @@ Esta página es un índice de disponibilidad, no una promesa de compatibilidad e
 | Middleware global/grupo/ruta y grupos | Disponible | Composición ordenada con posibilidad de short-circuit. |
 | Request ID, eventos/spans tracing, límites y timeouts | Disponible | Subscriber/exporter configurado por la app. |
 | TLS local y política de proxies confiables | Disponible | No sustituye al hardening del despliegue. |
-| CLI <code>rustflow new/dev/build</code> y generadores | Experimental disponible | Scaffold de servidor nativo; delega a Cargo y no incluye file watcher/hot reload. Modelos y migraciones son plantillas estructurales, sin persistencia integrada. |
+| CLI <code>rustflow new/dev/build</code> y generadores | Experimental disponible | Scaffold de servidor nativo; delega a Cargo y no incluye file watcher/hot reload. Los modelos siguen siendo structs y las migraciones son plantillas; la integración SQLx de la Fase 6.5 añade pool y runner de migraciones por separado. |
 | <code>rustflow_server::AppConfig</code> | Experimental disponible | Valida perfil, IP y puerto. Desarrollo/test: proceso > <code>.env.&lt;perfil&gt;</code> > <code>.env</code> > defaults; producción exige variables del proceso y no lee dotenv. No almacena secretos. |
 | Extracción tipada de formularios/JSON/query y errores 422 | Experimental disponible en la Fase 6.3 | La aplicación implementa `ValidateInput`; los mensajes son salida pública. 400/415 son errores de decodificación/medio y 413 aplica al límite de cuerpo. |
 | `CsrfProtection` | Experimental, opt-in | Token HMAC con expiración; debe conectarse a mutaciones autenticadas por cookies. No implementa sesiones, identidad ni autorización. |
 | `Request::redirect_back` | Experimental disponible en la Fase 6.3 | Solo acepta fallback local y Referer del mismo origen; un Referer externo usa el fallback. |
 | Sesiones server-side, identidad y guards de autenticación/autorización | Experimental disponible (Fase 6.4, integrada en `main`) | `SessionManager`, `SessionContext`, `AuthIdentity`, `route_protected`, `route_authorized`; sin proveedor de usuarios ni almacenamiento durable. [Guía de sesiones](/guides/sessions-and-access/). |
 | Server actions | No disponible | No forma parte del servidor actual. |
-| Persistencia SQL/migraciones integradas | No disponible | No hay un modelo de base de datos integrado. |
+| Pool SQLx para SQLite/PostgreSQL y consultas parametrizadas | Experimental en la Fase 6.5 | `DatabaseConfig`, `DatabasePool` y reexport de `rustflow_server::sqlx`; no hay ORM ni capa de repositorios. [Guía de base de datos](/guides/database/). |
+| Transacciones y migraciones SQLx | Experimental en la Fase 6.5 | `begin_transaction`, `run_migrations`, `rollback_migrations_to`; rollback explícito y condicionado a archivos `.down.sql`. [Guía de base de datos](/guides/database/). |
 
 ## SSR, layouts e interacción cliente
 
@@ -57,6 +58,7 @@ Esta página es un índice de disponibilidad, no una promesa de compatibilidad e
 - [Primera aplicación con el CLI](/tutorials/first-cli-app/)
 - [Guía del CLI y generadores](/guides/cli/)
 - [Configuración por entornos](/guides/configuration/)
+- [Base de datos, SQLx y migraciones](/guides/database/)
 - [Empezar con RustFlow](/getting-started/setup/)
 - [Estado y reactividad](/concepts/reactivity/)
 - [Crear componentes](/guides/components/)

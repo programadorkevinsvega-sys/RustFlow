@@ -44,7 +44,7 @@ La estructura principal es:
 | `src/pages/home.rs` | Vista estructural de la página inicial. |
 | `src/controllers/home_controller.rs` | Handler que renderiza la página como documento HTML. |
 | `src/components/mod.rs`, `src/pages/mod.rs`, `src/controllers/mod.rs`, `src/models/mod.rs` | Índices de módulos con una sección delimitada que administra el CLI. |
-| `migrations/` | Directorio para plantillas SQL; no ejecuta migraciones. |
+| `migrations/` | Directorio para migraciones SQLx; `generate migration` crea un archivo, pero no lo ejecuta. |
 
 Abre <code>http://127.0.0.1:3000/</code>. La aplicación carga rustflow_server::AppConfig antes de escuchar. En desarrollo/test puedes copiar .env.example a .env; RUSTFLOW_HOST y RUSTFLOW_PORT controlan el bind. Producción exige ambas variables desde el entorno del proceso y no lee archivos dotenv. Consulta [Configuración por entornos](/guides/configuration/). La plantilla no incluye una app browser/WASM integrada ni crea automáticamente un bundle cliente.
 
@@ -94,7 +94,7 @@ Si un destino ya existe, el generador no lo sobrescribe. Inspecciona y conserva 
 
 ### Modelos y migraciones no son persistencia
 
-El modelo generado es un tipo Rust ordinario. La migración es un archivo de texto; el CLI no ejecuta SQL ni valida el dialecto. RustFlow no incluye todavía pool de conexiones, ORM, transacciones ni runner de migraciones.
+El modelo generado sigue siendo un tipo Rust ordinario; no es un ORM. La migración generada es un archivo SQL y no se ejecuta en el momento de generarla. En la rama de la Fase 6.5, el scaffold ya incluye un pool SQLx para SQLite/PostgreSQL, helpers de transacción y runner de migraciones. Revisa el dialecto y el esquema antes de aplicar SQL. En producción, ejecuta `cargo run --bin migrate` como un paso único de despliegue.
 
 ## Errores frecuentes
 
@@ -116,4 +116,4 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 
 La suite de integración usa directorios temporales aislados, prueba nombres y conflictos, genera los cinco tipos, compila un proyecto con dependencias locales y realiza una petición HTTP. Revisa [la implementación](https://github.com/programadorkevinsvega-sys/RustFlow/tree/main/crates/rustflow-cli), la [nota técnica](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/CLI.md) y la [referencia de API](/reference/api-status/).
 
-El scaffold no conecta automáticamente `AppConfig`, validación tipada, `CsrfProtection` ni `SessionManager`/guards. Estas APIs experimentales están disponibles por separado; consulta [Configuración](/guides/configuration/), [Formularios y validación](/guides/forms-validation/) y [Sesiones y control de acceso](/guides/sessions-and-access/). Siguen pendientes server actions y persistencia integrada (SQLx, transacciones y runner de migraciones). `use_memo`, `use_ref` y `use_context` continúan pendientes.
+El scaffold integra `AppConfig`, un pool SQLx configurable y una comprobación `/health/database`; en desarrollo/test aplica migraciones al iniciar y en producción expone el binario `migrate` para un paso de despliegue controlado. La validación tipada, `CsrfProtection` y `SessionManager`/guards siguen siendo APIs experimentales separadas y no se conectan automáticamente a cada ruta. Consulta [Configuración](/guides/configuration/), [Formularios y validación](/guides/forms-validation/), [Sesiones y control de acceso](/guides/sessions-and-access/) y [Base de datos](/guides/database/). Siguen pendientes server actions, ORM, un proveedor de usuarios y sesiones durables. `use_memo`, `use_ref` y `use_context` continúan pendientes.

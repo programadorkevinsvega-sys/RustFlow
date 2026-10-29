@@ -66,6 +66,6 @@ Este es un extracto para insertar en el main asíncrono de una aplicación gener
 
 ## Límites actuales
 
-La configuración no es un sistema general de configuración TOML/YAML, no incluye perfiles personalizados, no resuelve nombres DNS y no carga secretos. Las APIs son pre-1.0; el contrato público puede cambiar. La validación de formularios, sesiones, autenticación/autorización, CSRF y persistencia siguen siendo fases separadas.
+La configuración no es un sistema general de configuración TOML/YAML, no incluye perfiles personalizados ni resuelve nombres DNS. Los ajustes de base de datos de la Fase 6.5 usan `AppConfig::setting`: en desarrollo/test respetan proceso > `.env.<perfil>` > `.env`; en producción solo consultan el entorno del proceso. El framework no incluye un gestor de secretos. Las APIs son pre-1.0 y el contrato público puede cambiar. Validación de formularios, sesiones, autenticación/autorización y CSRF siguen siendo APIs separadas; la persistencia SQLx tiene su propio contrato en [DATABASES.md](DATABASES.md).
 
 Consulta también la guía pública de configuración, docs/CLI.md y ROADMAP.md.

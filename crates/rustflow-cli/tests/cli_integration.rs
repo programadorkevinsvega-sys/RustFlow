@@ -139,6 +139,7 @@ fn creates_a_project_and_generates_all_five_file_types_without_overwrite() {
         ".gitignore",
         ".env.example",
         "src/main.rs",
+        "src/bin/migrate.rs",
         "src/components/mod.rs",
         "src/pages/home.rs",
         "src/controllers/home_controller.rs",
@@ -152,7 +153,9 @@ fn creates_a_project_and_generates_all_five_file_types_without_overwrite() {
     assert!(env_example.contains("RUSTFLOW_ENV=development"));
     assert!(env_example.contains("RUSTFLOW_HOST=127.0.0.1"));
     assert!(env_example.contains("RUSTFLOW_PORT=3000"));
-    for forbidden in ["PASSWORD=", "TOKEN=", "SECRET_KEY=", "DATABASE_URL="] {
+    assert!(env_example.contains("RUSTFLOW_DATABASE_URL=sqlite://rustflow.db?mode=rwc"));
+    assert!(env_example.contains("RUSTFLOW_DATABASE_MAX_CONNECTIONS=10"));
+    for forbidden in ["PASSWORD=", "TOKEN=", "SECRET_KEY=", "postgres://", "postgresql://"] {
         assert!(
             !env_example.contains(forbidden),
             "unsafe variable in .env.example: {forbidden}"
@@ -360,6 +363,19 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
     let response = response.expect("generated server became reachable");
     assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
     assert!(response.contains("Hola, RustFlow"), "{response}");
+
+    let mut health_stream = TcpStream::connect(("127.0.0.1", port))
+        .expect("connect to generated database health route");
+    health_stream
+        .write_all(
+            b"GET /health/database HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .unwrap();
+    let mut health_bytes = Vec::new();
+    health_stream.read_to_end(&mut health_bytes).unwrap();
+    let health = String::from_utf8_lossy(&health_bytes).into_owned();
+    assert!(health.starts_with("HTTP/1.1 200 OK"), "{health}");
+    assert!(health.ends_with("ok"), "{health}");
 }
 
 #[test]

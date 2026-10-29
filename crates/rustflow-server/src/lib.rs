@@ -5,6 +5,7 @@
 
 mod config;
 mod csrf;
+mod database;
 mod group;
 mod page;
 mod proxy;
@@ -40,12 +41,14 @@ use axum::{
 use bytes::Bytes;
 pub use config::{AppConfig, AppEnvironment, ConfigError};
 pub use csrf::{CsrfError, CsrfProtection, CsrfToken};
+pub use database::{DatabaseBackend, DatabaseConfig, DatabaseError, DatabasePool, DatabaseTransaction};
 pub use group::RouteGroup;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
 pub use page::HtmlPage;
 pub use proxy::{ClientAddressPolicy, IpNetwork};
 use serde::{Serialize, de::DeserializeOwned};
+pub use sqlx;
 pub use sessions::{
     AccessPolicy, AccessPolicyError, AuthIdentity, InMemorySessionStore, PasswordHash, RolePolicy,
     SameSite, SessionContext, SessionCookieConfig, SessionError, SessionId, SessionManager,

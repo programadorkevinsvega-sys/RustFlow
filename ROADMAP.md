@@ -320,6 +320,8 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [ ] Use parameterized SQL and test supported database engines.
 - [ ] Document pool sizing and deployment migration practices.
 
+**Implementation under review:** branch `feat/phase-6-5-sqlx-database-migrations` proposes SQLx `AnyPool` support for SQLite/PostgreSQL, validated pool settings via `AppConfig::setting`, an explicit transaction wrapper, safe HTTP error mapping, SQLx versioned migrations and opt-in rollback, SQLite CRUD/transaction/migration tests, an optional PostgreSQL smoke test backed by CI service, and a database-aware CLI scaffold. The API is experimental and intentionally does not add an ORM or database-backed sessions. Keep the checklist open until the final PR HEAD passes all mandatory checks and the generated-app exit gate has repeatable end-to-end coverage.
+
 **Exit gate:** a generated CRUD application validates input, persists records, uses sessions/auth, renders pages, and has repeatable integration tests.
 
 ## Phase 7 — Core framework completeness

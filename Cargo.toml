@@ -23,6 +23,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 rustls-pki-types = "1"
 ring = "0.17"
+sqlx = { version = "=0.8.6", default-features = false, features = ["runtime-tokio-rustls", "any", "sqlite", "postgres", "migrate"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

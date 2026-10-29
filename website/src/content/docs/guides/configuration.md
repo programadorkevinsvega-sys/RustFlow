@@ -75,6 +75,6 @@ let address = config.socket_addr();
 app.serve(address).await?;
 ~~~
 
-AppConfig expone el perfil, la IP y el puerto validados. No hay un formato TOML/YAML, resolución DNS, perfiles personalizados, conexión de base de datos, configuración de sesión ni almacenamiento de secretos. El framework sigue siendo pre-1.0 y no debe considerarse listo para producción solo por validar estas tres variables.
+AppConfig expone el perfil, la IP y el puerto validados. Los ajustes SQLx se resuelven por separado con `AppConfig::setting` y `DatabaseConfig::from_app_config`; consulta [Base de datos, SQLx y migraciones](/guides/database/). No hay formato TOML/YAML, resolución DNS, perfiles personalizados ni gestor de secretos. El framework sigue siendo pre-1.0 y no debe considerarse listo para producción solo por validar estas variables.
 
 Para crear el scaffold desde cero, sigue el tutorial de primera aplicación. Para consultar comandos y generadores, usa la guía del CLI.

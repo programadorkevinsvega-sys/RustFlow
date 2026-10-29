@@ -33,6 +33,7 @@ export default defineConfig({
             { label: 'Servidor HTTP', slug: 'guides/server' },
             { label: 'Formularios y validación', slug: 'guides/forms-validation' },
             { label: 'Sesiones y control de acceso', slug: 'guides/sessions-and-access' },
+            { label: 'Base de datos, SQLx y migraciones', slug: 'guides/database' },
             { label: 'SSR e hidratación', slug: 'guides/ssr' },
             { label: 'Layouts y páginas', slug: 'guides/layouts' },
             { label: 'Navegación y formularios', slug: 'guides/navigation' },

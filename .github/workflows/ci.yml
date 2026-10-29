@@ -46,6 +46,22 @@ jobs:
   rust:
     name: Rust checks (${{ matrix.toolchain }})
     runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rustflow_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d rustflow_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      RUSTFLOW_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/rustflow_test
     strategy:
       fail-fast: false
       matrix:
@@ -63,6 +79,26 @@ jobs:
 
       - name: Cache Cargo artifacts
         uses: Swatinem/rust-cache@v2
+
+      # Temporary diagnostic to transfer Cargo's resolved lockfile back into the
+      # source branch on the first SQLx dependency resolution. Remove after capture.
+      - name: Resolve SQLx dependencies and capture lockfile (temporary)
+        shell: bash
+        run: |
+          set +e
+          cargo check -p rustflow-server --all-features
+          check_status=$?
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+
+          payload = base64.b64encode(Path("Cargo.lock").read_bytes()).decode("ascii")
+          print("RUSTFLOW_LOCKFILE_BASE64_BEGIN")
+          for index in range(0, len(payload), 900):
+              print(f"RUSTFLOW_LOCKFILE_CHUNK_{index // 900:04d}={payload[index:index + 900]}")
+          print("RUSTFLOW_LOCKFILE_BASE64_END")
+          PY
+          exit "$check_status"
 
       - name: Check formatting
         run: cargo fmt --all -- --check

@@ -33,6 +33,7 @@ A workflow file is not proof that a check passed. Report actual CI results and k
 - Never commit secrets or real environment files.
 - The experimental rustflow_server::AppConfig reads only RUSTFLOW_ENV, RUSTFLOW_HOST, and RUSTFLOW_PORT. Development/test dotenv files are parsed without mutating the process environment; production ignores dotenv files and requires process-level bind settings.
 - The experimental server boundary supports typed input validation, `CsrfProtection`, server-side sessions and pre-handler authentication/authorization guards. Phase 6.4 is merged into `main`, but these APIs remain experimental. `InMemorySessionStore` is volatile and cannot coordinate multiple processes. The application must verify credentials and assign roles from trusted data. `CsrfProtection` must remain attached deliberately to cookie-authenticated mutations, including login/logout, and does not replace authorization.
+- Phase 6.5 introduces an experimental SQLx pool/migration boundary for SQLite and PostgreSQL. SQL remains explicit and parameterized; no ORM or generic repository abstraction is implied. Production deployments must coordinate migrations before rolling out application replicas.
 - Treat external input as untrusted and escape HTML by default when rendering is implemented.
 - Keep changes focused, add tests for behavior and failure paths, and update docs when contracts change.
 - Mark roadmap items complete only after evidence is available.
