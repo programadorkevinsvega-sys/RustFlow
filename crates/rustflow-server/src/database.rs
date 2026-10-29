@@ -509,7 +509,7 @@ impl From<sqlx::migrate::MigrateError> for DatabaseError {
 #[cfg(test)]
 mod tests {
     use super::{
-        validate_migration_dialect, DatabaseBackend, DatabaseConfig, DatabaseError, DatabasePool,
+        DatabaseBackend, DatabaseConfig, DatabaseError, DatabasePool, validate_migration_dialect,
     };
     use std::{
         fs,
@@ -572,10 +572,8 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let directory = std::env::temp_dir().join(format!(
-            "rustflow-dialect-{}-{unique}",
-            std::process::id()
-        ));
+        let directory =
+            std::env::temp_dir().join(format!("rustflow-dialect-{}-{unique}", std::process::id()));
         fs::create_dir_all(&directory).unwrap();
         let marker = directory.join(".rustflow-dialect");
 
