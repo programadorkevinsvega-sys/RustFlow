@@ -393,6 +393,8 @@ fn dev_runs_cargo_and_invalid_projects_return_a_clear_error() {
     assert!(String::from_utf8_lossy(&outside_build.stderr).contains("no RustFlow application"));
 
     let project = create_project(temp.path(), "dev-fixture-app");
+    let cargo_manifest = fs::read_to_string(project.join("Cargo.toml")).unwrap();
+    assert!(cargo_manifest.contains("default-run = \"dev-fixture-app\""));
     localize_framework_dependencies(&project);
     let target_dir = cargo_target_dir(&temp);
     fs::write(

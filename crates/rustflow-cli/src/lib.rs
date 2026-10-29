@@ -498,7 +498,7 @@ fn write_project_files(root: &Path, files: &[(PathBuf, String)]) -> Result<(), C
 
 fn scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
     let package_manifest = format!(
-        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.85\"\n\n[package.metadata.rustflow]\ntemplate = \"server\"\n\n[[bin]]\nname = \"migrate\"\npath = \"src/bin/migrate.rs\"\n\n[dependencies]\nrustflow = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\nrustflow-server = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\", \"net\"] }}\n"
+        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.85\"\ndefault-run = \"{name}\"\n\n[package.metadata.rustflow]\ntemplate = \"server\"\n\n[[bin]]\nname = \"migrate\"\npath = \"src/bin/migrate.rs\"\n\n[dependencies]\nrustflow = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\nrustflow-server = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\", \"net\"] }}\n"
     );
     vec![
         (PathBuf::from("Cargo.toml"), package_manifest),
