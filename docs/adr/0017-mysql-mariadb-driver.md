@@ -16,7 +16,7 @@ Phase 6.5 introduced SQLx 0.8.6, `AnyPool`, configuration validation, parameteri
 - Configure disposable MySQL 8.0 and MariaDB 11.4 services separately in CI and run both real-engine contracts on Rust 1.85 and stable. These are the initial intended verification versions; compatibility with other server versions is not implied until verified.
 - Require MySQL-family migration directories to include `.rustflow-dialect` containing `mysql`. Existing SQLite/PostgreSQL migration directories without markers remain compatible; any present marker must match the selected backend.
 - Keep SQL explicit and parameterized; do not introduce an ORM, dialect-rewriting layer, or MongoDB contract in this phase. Use separate migration directories when schema syntax or vendor-specific features diverge.
-- Map MySQL/MariaDB duplicate-key code `1062` to the existing safe HTTP conflict response while preserving the internal SQLx error as the error source.
+- Map MySQL/MariaDB unique violations through SQLx's backend-neutral `DatabaseError::is_unique_violation()` classification (the server's duplicate-entry number is 1062) to the existing safe HTTP conflict response while preserving the original SQLx error as the error source.
 
 ## Alternatives considered
 
