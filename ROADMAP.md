@@ -303,14 +303,14 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 **Closure evidence:** PR #47 ([Validation and forms](https://github.com/programadorkevinsvega-sys/RustFlow/pull/47)) was squash-merged into `main` as commit `0a307e84bafabbc7dfaa5d4e361723b82fce042e`. All required checks passed on the final PR HEAD `222f1b381aeffd82127c7fbe688b75f0d6e4007a` before merge: Rust 1.85/stable, WASM target, browser E2E and bundle budget (run `40667608192`); website build (run `40667608245`); governance/whitespace (run `40667608233`); and dependency review (run `40667608162`). The implementation, HTTP integration tests, technical contract, ADR and public guide are included in the merged change. The combined-status query for the merge commit returned no status entries while this closure was recorded, so this evidence confirms the green PR-head checks and does not claim a separately verified post-merge run.
 
 ### 6.4 Sessions and access control
-- [ ] Define session abstraction and secure cookie defaults.
-- [ ] Implement expiry, rotation, invalidation, and storage adapters.
-- [ ] Implement authentication guards and identity extraction.
-- [ ] Implement authorization policies with deny-by-default behavior.
-- [ ] Use maintained password hashing and cryptographic libraries.
-- [ ] Test fixation, CSRF, privilege escalation, and access boundaries.
+- [x] Define session abstraction and secure cookie defaults.
+- [x] Implement expiry, rotation, invalidation, and storage adapters.
+- [x] Implement authentication guards and identity extraction.
+- [x] Implement authorization policies with deny-by-default behavior.
+- [x] Use maintained password hashing and cryptographic libraries.
+- [x] Test fixation, CSRF, privilege escalation, and access boundaries.
 
-**Estado en revisión:** la rama feat/phase-6-4-sessions-access-control incorpora el contrato de sesión, el adaptador en memoria, guards, políticas y hashing de contraseñas, además de pruebas y guías. Los criterios permanecen sin marcar hasta que la CI obligatoria pase en el HEAD final y se revise el diff. La persistencia de base de datos sigue reservada para 6.5.
+**Closure evidence (PR #49, pending merge):** all required checks passed on PR HEAD `844013e74dd02a38c0e72747376a7ff4e9eb9005`: Rust 1.85 and stable (format, Clippy, workspace tests, rustdoc), WASM target, browser E2E/bundle size, documentation site, governance/whitespace, and dependency review. The TCP integration test covers anonymous rejection, session fixation/rotation, CSRF-protected login/logout, role denial, cookie revocation/replay, and preserving multiple Set-Cookie headers. The PR remains open; these criteria will become part of `main` only when PR #49 is merged. Durable database sessions, SQLx, transactions, and migrations remain Phase 6.5.
 
 ### 6.5 Database and migrations
 - [ ] Integrate SQLx and configurable connection pools.

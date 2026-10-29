@@ -70,7 +70,7 @@ The MVP is complete only when all of the following are implemented, documented, 
 6. CI runs core unit tests, browser tests, and server integration tests on pull requests.
 7. A clean-checkout guide lets a contributor install prerequisites, run checks, and launch examples.
 
-This paragraph records the initial MVP boundary. Later phases have since added SSR page/layout composition and opt-in hydration/navigation, but RustFlow still does not provide a complete production-ready full-stack workflow, integrated authentication, a custom ORM, or production deployment tooling.
+This paragraph records the initial MVP boundary. Later phases have since added SSR page/layout composition and opt-in hydration/navigation, but RustFlow still does not provide a complete production-ready full-stack workflow or an integrated user/credential provider; it also lacks a custom ORM and production deployment tooling. Phase 6.4 adds experimental session and access-control primitives, not a complete account-authentication system.
 
 ## 6. MVP user stories and acceptance criteria
 
