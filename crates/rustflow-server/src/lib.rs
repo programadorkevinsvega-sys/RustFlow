@@ -6,6 +6,7 @@
 mod config;
 mod csrf;
 mod database;
+mod document_database;
 mod group;
 mod page;
 mod proxy;
@@ -41,6 +42,10 @@ use axum::{
 use bytes::Bytes;
 pub use config::{AppConfig, AppEnvironment, ConfigError};
 pub use csrf::{CsrfError, CsrfProtection, CsrfToken};
+pub use document_database::{
+    from_bson_document, to_bson_document, DocumentBootstrap, DocumentIndex, MongoConfig,
+    MongoDatabase, MongoError,
+};
 pub use database::{
     DatabaseBackend, DatabaseConfig, DatabaseError, DatabasePool, DatabaseTransaction,
 };
@@ -55,6 +60,7 @@ pub use sessions::{
     SameSite, SessionContext, SessionCookieConfig, SessionError, SessionId, SessionManager,
     SessionStore, require_authentication, require_permission,
 };
+pub use mongodb as mongodb_driver;
 pub use sqlx;
 pub use tls::tls_server_config_from_pem;
 use tokio::net::TcpListener;

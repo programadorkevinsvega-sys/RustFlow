@@ -23,6 +23,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 rustls-pki-types = "1"
 ring = "0.17"
+mongodb = { version = "=3.6.0", default-features = false, features = ["compat-3-0-0", "dns-resolver", "rustls-tls"] }
 sqlx = { version = "=0.8.6", default-features = false, features = ["runtime-tokio-rustls", "any", "sqlite", "postgres", "mysql", "migrate"] }
 
 [workspace.lints.rust]
