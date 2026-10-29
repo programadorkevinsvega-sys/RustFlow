@@ -94,7 +94,7 @@ Si un destino ya existe, el generador no lo sobrescribe. Inspecciona y conserva 
 
 ### Modelos y migraciones no son persistencia
 
-El modelo generado sigue siendo un tipo Rust ordinario; no es un ORM. La migración generada es un archivo SQL y no se ejecuta en el momento de generarla. En la rama de la Fase 6.5, el scaffold ya incluye un pool SQLx para SQLite/PostgreSQL, helpers de transacción y runner de migraciones. Revisa el dialecto y el esquema antes de aplicar SQL. En producción, ejecuta `cargo run --bin migrate` como un paso único de despliegue.
+El modelo generado sigue siendo un tipo Rust ordinario; no es un ORM. La migración generada es un archivo SQL y no se ejecuta en el momento de generarla. El scaffold incluye un pool SQLx para SQLite/PostgreSQL, helpers de transacción y runner de migraciones. Revisa el dialecto y el esquema antes de aplicar SQL. En producción, ejecuta `cargo run --bin migrate` como un paso único de despliegue.
 
 ## Errores frecuentes
 

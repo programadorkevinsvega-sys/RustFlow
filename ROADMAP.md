@@ -313,16 +313,16 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 **Cierre verificado:** la PR #49 ([sesiones y control de acceso](https://github.com/programadorkevinsvega-sys/RustFlow/pull/49)) se integró mediante squash en `main` en el commit `d53036410fc0d51900acf0c59b52c85f64cd1640`. Los checks requeridos pasaron en el HEAD final de la PR `f23fba7fcbba6d7da50d959d2fa74fcd5e60dcab`; la CI post-merge terminó en verde en [CI](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/40841892564), [documentación](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/40841892518), [gobernanza](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/40841892473) y Cloudflare Pages. Las pruebas TCP cubren acceso anónimo, rotación anti-fijación, login/logout protegidos por CSRF, denegación por rol, revocación/replay de cookies y preservación de múltiples cabeceras Set-Cookie. `InMemorySessionStore` sigue siendo volátil y local al proceso; sesiones durables, SQLx, transacciones y migraciones corresponden a la Fase 6.5.
 
 ### 6.5 Database and migrations
-- [ ] Integrate SQLx and configurable connection pools.
-- [ ] Add transaction helpers and error mapping.
-- [ ] Implement versioned migrations and rollback policy.
-- [ ] Design model/query abstractions only after real use cases validate them.
-- [ ] Use parameterized SQL and test supported database engines.
-- [ ] Document pool sizing and deployment migration practices.
+- [x] Integrate SQLx and configurable connection pools.
+- [x] Add transaction helpers and error mapping.
+- [x] Implement versioned migrations and rollback policy.
+- [x] Defer model/query abstractions until real use cases justify them; no ORM or generic repository was introduced.
+- [x] Use parameterized SQL and test both supported database engines in CI.
+- [x] Document pool sizing and deployment migration practices.
 
-**Implementation under review:** branch `feat/phase-6-5-sqlx-database-migrations` proposes SQLx `AnyPool` support for SQLite/PostgreSQL, validated pool settings via `AppConfig::setting`, an explicit transaction wrapper, safe HTTP error mapping, SQLx versioned migrations and opt-in rollback, SQLite CRUD/transaction/migration tests, an optional PostgreSQL smoke test backed by CI service, and a database-aware CLI scaffold. The API is experimental and intentionally does not add an ORM or database-backed sessions. Keep the checklist open until the final PR HEAD passes all mandatory checks and the generated-app exit gate has repeatable end-to-end coverage.
+**Implementation in PR #51:** SQLx `AnyPool` supports SQLite/PostgreSQL, pool settings resolve through `AppConfig::setting`, transactions expose explicit commit/rollback, HTTP error mapping avoids leaking driver messages, and SQLx applies versioned migrations with opt-in rollback. The generated CLI integration test builds a generated application and verifies its database health route, validation, login/password verification, session/auth guards, CSRF-protected CRUD, persisted results, SSR output, and HTML escaping. SQLite migrations/transactions/CRUD and a PostgreSQL service smoke test also run in CI. The API remains experimental; no ORM, generic repository abstraction, MySQL support, or database-backed sessions are included.
 
-**Exit gate:** a generated CRUD application validates input, persists records, uses sessions/auth, renders pages, and has repeatable integration tests.
+**Exit gate:** covered by the generated CLI integration test, with repeatable CI coverage on Rust stable and Rust 1.85. The Phase 6.5 implementation criteria are satisfied; production deployment/security hardening, an ORM, MySQL support, and durable database-backed sessions remain outside this phase.
 
 ## Phase 7 — Core framework completeness
 

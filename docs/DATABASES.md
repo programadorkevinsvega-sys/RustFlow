@@ -67,7 +67,7 @@ The generated CLI scaffold applies migrations automatically only in development/
 
 ## Testing
 
-The server tests exercise repeatable SQLite migrations, forward application, rollback, a parameterized write inside a transaction, and—when RUSTFLOW_TEST_DATABASE_URL is present—a PostgreSQL pool and transaction smoke test. CI configures a disposable PostgreSQL service. No test depends on a developer database.
+The server tests exercise repeatable SQLite migrations, forward application, rollback, a parameterized write inside a transaction, and—when RUSTFLOW_TEST_DATABASE_URL is present—a PostgreSQL pool and transaction smoke test. A generated CLI integration test builds a project with SQLx migrations and exercises validation, login/password verification, session/auth guards, CSRF-protected CRUD and escaped SSR output. CI configures a disposable PostgreSQL service. No test depends on a developer database.
 
 Run:
 

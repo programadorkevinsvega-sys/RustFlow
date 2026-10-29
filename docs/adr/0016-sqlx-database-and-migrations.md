@@ -34,4 +34,4 @@ The API is experimental and couples RustFlow's public surface to SQLx's runtime 
 
 ## Verification gate
 
-Before Phase 6.5 closes, required CI must pass on the final PR head, including Rust 1.85/stable, formatting, Clippy, workspace tests, rustdoc, WASM boundary checks, browser E2E/bundle budget, documentation build, governance and dependency review. The generated-app exit gate still requires end-to-end evidence for validated CRUD, persistence, session/auth integration, rendered pages and repeatable integration tests.
+The generated CLI integration test builds a project using the RustFlow CLI and verifies validated CRUD, persistence, password verification, session/auth guards, CSRF, rendered pages and HTML escaping. SQLite and PostgreSQL receive CI coverage. Before merging, required checks must pass on the final PR head for Rust 1.85/stable, formatting, Clippy, workspace tests, rustdoc, WASM, browser E2E/bundle budget, documentation, governance and dependency review.
