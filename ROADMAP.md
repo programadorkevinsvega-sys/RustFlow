@@ -326,16 +326,16 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 
 ## Phase 6.6 — Additional database engines (in progress)
 
-**Status: in progress.** Subphase 6.6.1 is being implemented on a review branch. Its checklist remains open until real MySQL and MariaDB integration cases and all required checks pass on the final pull-request head. This does not close Phase 6.6: subphases 6.6.2 and 6.6.3 remain planned.
+**Status: in progress.** The Phase 6.6.1 implementation and real MySQL/MariaDB contracts passed all checks on the previously verified PR head `5b6c91ffb763865f2f258752b8efea8dd171af33` under Rust 1.85 and stable. This follow-up adds direct unit coverage for migration marker presence and mismatches, so final acceptance must use CI results for this updated PR head. Phase 6.6 remains in progress because subphases 6.6.2 and 6.6.3 are not implemented.
 
 ### 6.6.1 Relational engines: MySQL and MariaDB
-- [ ] Select and document the SQLx driver/configuration strategy compatible with RustFlow's Rust 1.85 MSRV and dependency policy.
-- [ ] Validate `mysql://` URL configuration for both products while preserving SQLite/PostgreSQL contracts and credential redaction.
-- [ ] Verify pool lifecycle, parameter binding, transactions, unique-constraint mapping, invalid credentials, and connection failure behavior against each server.
-- [ ] Define and test migration directory/dialect expectations without assuming DDL portability or full migration atomicity.
-- [ ] Run disposable MySQL 8.0 and MariaDB 11.4 integration services on Rust 1.85 and stable.
+- [x] Select and document the SQLx driver/configuration strategy compatible with RustFlow's Rust 1.85 MSRV and dependency policy.
+- [x] Validate `mysql://` URL configuration for both products while preserving SQLite/PostgreSQL contracts and credential redaction.
+- [x] Verify pool lifecycle, parameter binding, transactions, unique-constraint mapping, invalid credentials, and connection failure behavior against each server.
+- [x] Define and test migration directory/dialect expectations without assuming DDL portability or full migration atomicity.
+- [x] Run disposable MySQL 8.0 and MariaDB 11.4 integration services on Rust 1.85 and stable.
 
-**Implementation note:** SQLx 0.8.6's `mysql` feature provides one MySQL-protocol driver for both products. `DatabaseBackend::MySql` identifies that driver family; it does not prove which server product is connected. Acceptance remains unchecked until the dedicated integration tests and required CI checks have actually passed.
+**Implementation and limitations:** SQLx 0.8.6's `mysql` feature supplies one MySQL-protocol driver for both products. `DatabaseBackend::MySql` identifies that driver family, not the server product. The verified server matrix is MySQL 8.0 and MariaDB 11.4; other versions and vendor-specific behavior are not implied. MySQL-family DDL may implicitly commit. MongoDB (6.6.2) and the consolidated compatibility matrix (6.6.3) remain pending.
 
 ### 6.6.2 Document database: MongoDB
 - [ ] Add a maintained MongoDB Rust-driver adapter separately from SQLx `AnyPool`; MongoDB must not be described as a SQL engine.

@@ -508,8 +508,14 @@ impl From<sqlx::migrate::MigrateError> for DatabaseError {
 
 #[cfg(test)]
 mod tests {
-    use super::{DatabaseBackend, DatabaseConfig, DatabaseError, DatabasePool};
-    use std::{path::PathBuf, time::Duration};
+    use super::{
+        validate_migration_dialect, DatabaseBackend, DatabaseConfig, DatabaseError, DatabasePool,
+    };
+    use std::{
+        fs,
+        path::PathBuf,
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
 
     fn sqlite_migrations() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -558,6 +564,42 @@ mod tests {
                 .with_acquire_timeout(Duration::ZERO)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn migration_dialect_marker_is_required_and_backend_specific() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "rustflow-dialect-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let marker = directory.join(".rustflow-dialect");
+
+        // Legacy SQLite/PostgreSQL directories without markers remain compatible.
+        assert!(validate_migration_dialect(DatabaseBackend::Sqlite, &directory).is_ok());
+        assert!(validate_migration_dialect(DatabaseBackend::Postgres, &directory).is_ok());
+        assert!(validate_migration_dialect(DatabaseBackend::MySql, &directory).is_err());
+
+        fs::write(&marker, "sqlite\n").unwrap();
+        assert!(validate_migration_dialect(DatabaseBackend::Sqlite, &directory).is_ok());
+        assert!(validate_migration_dialect(DatabaseBackend::Postgres, &directory).is_err());
+        assert!(validate_migration_dialect(DatabaseBackend::MySql, &directory).is_err());
+
+        fs::write(&marker, "postgres\n").unwrap();
+        assert!(validate_migration_dialect(DatabaseBackend::Postgres, &directory).is_ok());
+        assert!(validate_migration_dialect(DatabaseBackend::Sqlite, &directory).is_err());
+        assert!(validate_migration_dialect(DatabaseBackend::MySql, &directory).is_err());
+
+        fs::write(&marker, "mysql\n").unwrap();
+        assert!(validate_migration_dialect(DatabaseBackend::MySql, &directory).is_ok());
+        assert!(validate_migration_dialect(DatabaseBackend::Sqlite, &directory).is_err());
+        assert!(validate_migration_dialect(DatabaseBackend::Postgres, &directory).is_err());
+
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[tokio::test]
