@@ -1,6 +1,6 @@
 # ADR 0019: Public database support contract and verified engine matrix
 
-- Status: Proposed for Phase 6.6.3; acceptance requires the final PR head to pass all required checks.
+- Status: Verified on PR #57 code head `51ac4c212b3d6bf68483ee2ef8e28b5c3a75f421`; Rust 1.85/stable and all required checks passed. The PR's final documentation sync must retain green CI before merge.
 - Phase: 6.6.3 — Public support contract.
 - Related: ADR 0016 (SQLx pools and migrations), ADR 0017 (MySQL/MariaDB driver), ADR 0018 (MongoDB document adapter), `docs/DATABASE_SUPPORT_MATRIX.md`.
 
@@ -31,6 +31,8 @@ The earlier Phase 6.6.1 CI target was MySQL 8.0. The official MySQL release note
 - Change the CLI scaffold to claim generic query/migration portability: rejected; scaffolded examples should remain honest about their SQLite-specific SQL and migrations.
 
 ## Verification plan
+
+The exact code head `51ac4c212b3d6bf68483ee2ef8e28b5c3a75f421` passed the CI workflow on Rust stable and Rust 1.85, including the exact PostgreSQL/MySQL/MariaDB/SQLite/MongoDB runtime contracts, generated CLI tests, and documentation build, alongside WebAssembly, browser E2E/bundle budget, governance and dependency review. The final PR head after documentation/status updates must also pass these workflows before merge.
 
 The Phase 6.6.3 PR must run:
 
