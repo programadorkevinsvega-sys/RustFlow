@@ -88,6 +88,10 @@ La PR #47 se fusionó en `main` mediante squash en el commit `0a307e84bafabbc7df
 | <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> | No | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
 | Protección CSRF en mutaciones mediante cookies | Experimental, opt-in; requiere conectar middleware y proveer clave | [Formularios y validación](/guides/forms-validation/) |
 | Sesiones server-side y guards de acceso | Experimental, integrado en `main` (Fase 6.4); sin proveedor de usuarios ni persistencia durable | [Guía de sesiones](/guides/sessions-and-access/) |
+| Pool SQLx para SQLite/PostgreSQL | Experimental, disponible (Fase 6.5) | [Base de datos](/guides/database/); no incluye ORM |
+| MySQL y MariaDB | No disponibles; planificados para la Fase 6.6 | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
+| MongoDB | No disponible; adaptador documental planificado para la Fase 6.6 | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
+| ORM SQL / mapeo documental MongoDB | No disponible; planificado para la Fase 6.7 | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
 
 ## Cómo interpretar las pruebas
 
@@ -103,3 +107,20 @@ La PR #49 se fusionó mediante squash en el commit `d53036410fc0d51900acf0c59b52
 La implementación de la Fase 6.5 añade SQLx con pools configurables para SQLite/PostgreSQL, transacciones explícitas, mapeo seguro de errores HTTP, migraciones versionadas y rollback explícito cuando existan archivos `.down.sql`. El scaffold inicializa una pool, comprueba `/health/database`, aplica migraciones en desarrollo/test y ofrece `cargo run --bin migrate` como paso único de despliegue en producción. La guía técnica y la guía pública documentan pool sizing, consultas parametrizadas y responsabilidades de despliegue.
 
 La prueba de integración del CLI genera una aplicación y verifica validación, persistencia, verificación de contraseña, sesión/autenticación, CSRF, SSR y escape HTML. CI cubre Rust 1.85/stable, formato, Clippy, pruebas, documentación, WASM, Browser E2E, gobernanza, dependencias y build del sitio. Las APIs son experimentales: no hay ORM, capa genérica de repositorios, sesiones SQL durables ni proveedor de usuarios. La revisión de despliegue y seguridad de producción continúa siendo una responsabilidad de la aplicación.
+
+## Fase 6.6 — Motores de base de datos adicionales (planificada)
+
+Esta fase tiene como objetivo añadir MySQL y MariaDB como motores relacionales y MongoDB mediante un adaptador documental independiente. Requiere seleccionar drivers compatibles con la política de MSRV, definir configuración y mapeo de errores, probar transacciones/migraciones en los motores SQL, definir el ciclo de índices/colecciones para MongoDB y ejecutar pruebas de integración reproducibles. **Nada de esto está implementado actualmente**; SQLite y PostgreSQL siguen siendo los únicos motores disponibles en la Fase 6.5.
+
+## Fase 6.7 — ORM SQL y mapeo documental (planificada)
+
+La fase se divide en subfases para mantener contratos separados:
+
+- **6.7.1 — Arquitectura y contrato de modelos:** metadatos tipados, claves, conversión de tipos, errores y un ADR antes de fijar la API pública.
+- **6.7.2 — ORM SQL:** operaciones CRUD, filtros y consultas parametrizadas para SQLite, PostgreSQL, MySQL y MariaDB, con diferencias de dialecto explícitas.
+- **6.7.3 — Mapeador documental/ODM:** modelos BSON, colecciones, IDs y operaciones de documentos para MongoDB; no reutiliza semántica SQL.
+- **6.7.4 — Relaciones y carga:** relaciones SQL y estrategias de carga sin N+1, con referencias/embebidos de MongoDB definidos por separado.
+- **6.7.5 — CLI, ejemplos y documentación:** evolucionar el generador `model` tras aceptar el contrato y demostrar CRUD de extremo a extremo.
+- **6.7.6 — Calidad y compatibilidad:** pruebas por motor, compile-fail, seguridad de consultas, MSRV, rendimiento medido y límites documentados.
+
+Estas subfases son objetivos pendientes, no funcionalidades publicadas. La Fase 6.7 solo podrá cerrarse con una aplicación CRUD generada, ejemplos reproducibles y CI para los motores declarados compatibles.

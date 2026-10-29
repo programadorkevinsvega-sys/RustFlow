@@ -37,6 +37,10 @@ Esta página es un índice de disponibilidad, no una promesa de compatibilidad e
 | Server actions | No disponible | No forma parte del servidor actual. |
 | Pool SQLx para SQLite/PostgreSQL y consultas parametrizadas | Experimental en la Fase 6.5 | `DatabaseConfig`, `DatabasePool` y reexport de `rustflow_server::sqlx`; no hay ORM ni capa de repositorios. [Guía de base de datos](/guides/database/). |
 | Transacciones y migraciones SQLx | Experimental en la Fase 6.5 | `begin_transaction`, `run_migrations`, `rollback_migrations_to`; rollback explícito y condicionado a archivos `.down.sql`. [Guía de base de datos](/guides/database/). |
+| MySQL y MariaDB | Planificado, no disponible (Fase 6.6) | Requiere driver, configuración, compatibilidad de dialecto y CI de integración. |
+| MongoDB | Planificado, no disponible (Fase 6.6) | Requiere un adaptador documental separado de SQLx `AnyPool`. |
+| ORM SQL para SQLite/PostgreSQL/MySQL/MariaDB | Planificado, no disponible (Fase 6.7) | No hay modelos, derives ni constructor de consultas ORM en la API actual. |
+| Mapeo documental/ODM para MongoDB | Planificado, no disponible (subfase 6.7.3) | Contrato BSON/documentos separado del ORM SQL. |
 
 ## SSR, layouts e interacción cliente
 

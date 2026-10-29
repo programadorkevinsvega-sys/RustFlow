@@ -322,7 +322,71 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 
 **Implementation in PR #51:** SQLx `AnyPool` supports SQLite/PostgreSQL, pool settings resolve through `AppConfig::setting`, transactions expose explicit commit/rollback, HTTP error mapping avoids leaking driver messages, and SQLx applies versioned migrations with opt-in rollback. The generated CLI integration test builds a generated application and verifies its database health route, validation, login/password verification, session/auth guards, CSRF-protected CRUD, persisted results, SSR output, and HTML escaping. SQLite migrations/transactions/CRUD and a PostgreSQL service smoke test also run in CI. The API remains experimental; no ORM, generic repository abstraction, MySQL support, or database-backed sessions are included.
 
-**Exit gate:** covered by the generated CLI integration test, with repeatable CI coverage on Rust stable and Rust 1.85. The Phase 6.5 implementation criteria are satisfied; production deployment/security hardening, an ORM, MySQL support, and durable database-backed sessions remain outside this phase.
+**Exit gate:** covered by the generated CLI integration test, with repeatable CI coverage on Rust stable and Rust 1.85. The Phase 6.5 implementation criteria are satisfied for SQLite and PostgreSQL. Additional engines (MySQL, MariaDB, and MongoDB) are planned for Phase 6.6; the SQL ORM and MongoDB document-mapping layer are planned for Phase 6.7. These are roadmap targets only and are not implemented by the Phase 6.5 closure. Production deployment/security hardening and durable database-backed sessions remain separate concerns.
+
+## Phase 6.6 — Additional database engines (planned)
+
+**Status: planned.** This phase adds support for engines beyond the SQLite/PostgreSQL baseline from Phase 6.5. The current documentation-only roadmap change does not add drivers, dependencies, configuration, or runtime support.
+
+### 6.6.1 Relational engines: MySQL and MariaDB
+- [ ] Select a maintained driver/configuration strategy that fits RustFlow's MSRV and dependency policy.
+- [ ] Add explicit connection URL validation and configuration for MySQL and MariaDB; document which schemes and server versions are supported after verification.
+- [ ] Verify pool lifecycle, parameter binding, transactions, error mapping, and connection failure behavior for each engine.
+- [ ] Define and test migration directory/dialect expectations; do not assume SQLite/PostgreSQL SQL is portable without verification.
+- [ ] Add disposable MySQL and MariaDB CI services or equivalent reproducible integration environments.
+
+### 6.6.2 Document database: MongoDB
+- [ ] Add a maintained MongoDB Rust-driver adapter separately from SQLx `AnyPool`; MongoDB must not be described as a SQL engine.
+- [ ] Define MongoDB connection/client configuration, timeouts, BSON serialization/deserialization, and safe error mapping.
+- [ ] Define the migration/bootstrap contract for collections and indexes; do not reuse SQL migrations as if they applied to MongoDB.
+- [ ] Add repeatable integration tests against a disposable MongoDB service for connect, CRUD, indexes, and failure paths.
+
+### 6.6.3 Public support contract
+- [ ] Publish a verified engine/version matrix, including the Rust/MSRV compatibility of each driver.
+- [ ] Document which APIs are relational/shared and which are engine-specific; do not promise identical SQL behavior across engines.
+- [ ] Update configuration examples, technical/public docs, generated-app tests, and CI evidence.
+
+**Exit gate:** SQLite, PostgreSQL, MySQL, MariaDB, and MongoDB each have an explicit verified support contract and reproducible integration coverage. SQL engines have correct engine-specific tests/migration expectations; MongoDB has its own document and index lifecycle contract. Merely adding a dependency does not close this phase.
+
+## Phase 6.7 — ORM and model persistence (planned)
+
+**Status: planned.** This phase builds a typed model/persistence experience on the verified engine adapters from Phase 6.5/6.6. The term **SQL ORM** applies only to SQLite, PostgreSQL, MySQL, and MariaDB. MongoDB is document-oriented and belongs to the separate document-mapping/ODM subphase below; it must not be forced into a SQL query or relational model.
+
+### 6.7.1 Model contract and architecture
+- [ ] Record an ADR for model metadata, primary keys, nullable/defaulted fields, type mapping, error behavior, and the boundary between shared APIs and engine-specific capabilities.
+- [ ] Define a typed model trait/metadata contract and compile-time diagnostics before stabilizing public syntax.
+- [ ] Preserve escape hatches for raw, parameterized queries and engine-specific SQL; avoid a hidden global database singleton.
+- [ ] Define how transactions and model operations compose without hiding commit/rollback behavior.
+
+### 6.7.2 SQL ORM core
+- [ ] Add model derives or equivalent typed metadata for SQLite, PostgreSQL, MySQL, and MariaDB.
+- [ ] Implement typed row decoding and core CRUD operations: find/by-primary-key, insert, update, and delete.
+- [ ] Build safe parameterized filters, projections, sorting, limits, and pagination with explicit dialect handling.
+- [ ] Test nullable fields, missing rows, unique constraints, type conversion, transaction composition, and failure cases on every supported SQL engine.
+- [ ] Document migration compatibility and the cases where separate dialect-specific migration files are required.
+
+### 6.7.3 MongoDB document mapper / ODM
+- [ ] Define a distinct document model contract based on BSON, collections, document IDs, and MongoDB filter/update operations.
+- [ ] Implement typed document serialization and CRUD without presenting SQL constructs as portable to MongoDB.
+- [ ] Document index management, embedded documents versus references, and transaction/session limitations according to verified driver/server capabilities.
+- [ ] Add compile-time and integration tests for BSON type mapping, missing fields, IDs, updates, and error paths.
+
+### 6.7.4 Relations and loading behavior
+- [ ] Define SQL relationships and foreign-key behavior only after the core SQL ORM contract is stable.
+- [ ] Avoid N+1 behavior in documented relation-loading strategies and test query counts where practical.
+- [ ] Keep MongoDB embedding/referencing semantics in the ODM contract instead of pretending they are relational joins.
+
+### 6.7.5 CLI, generated applications, and documentation
+- [ ] Evolve `rustflow generate model` only after the model contract is accepted; keep the current generator's plain-struct behavior until then.
+- [ ] Add a generated CRUD application that proves validation, persistence, transactions, authorization/CSRF integration, and rendered output using the supported ORM surface.
+- [ ] Document real examples and limits in `docs/`, README, and `website/src/content/docs`; keep examples matched to the public API.
+
+### 6.7.6 Quality and compatibility gate
+- [ ] Run unit, compile-fail, integration, and query-safety tests across the supported SQL engines and MongoDB.
+- [ ] Measure representative CRUD/query overhead and document methodology before making performance claims.
+- [ ] Review dependencies, MSRV, security, API stability, and failure behavior before labeling any ORM/ODM surface stable.
+
+**Exit gate:** a generated CRUD example uses the typed SQL ORM on SQLite, PostgreSQL, MySQL, and MariaDB and the separate typed document API on MongoDB, with repeatable integration tests, documented limitations, and examples matching the implemented APIs. This target does not claim that an ORM or ODM exists today.
 
 ## Phase 7 — Core framework completeness
 
