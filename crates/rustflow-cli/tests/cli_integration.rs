@@ -408,8 +408,8 @@ fn creates_a_project_and_generates_all_five_file_types_without_overwrite() {
     }
     let generated_readme = fs::read_to_string(project.join("README.md")).unwrap();
     assert!(generated_readme.contains("docs/DATABASE_SUPPORT_MATRIX.md"));
-    assert!(generated_readme.contains("does not make portables the placeholders"));
-    assert!(generated_readme.contains("MongoDB uses a separate document API"));
+    assert!(generated_readme.contains("no hace portables los placeholders"));
+    assert!(generated_readme.contains("MongoDB usa una API documental independiente"));
     let generated_ignore = fs::read_to_string(project.join(".gitignore")).unwrap();
     assert!(generated_ignore.contains(".env.*"));
     assert!(generated_ignore.contains("!.env.example"));
