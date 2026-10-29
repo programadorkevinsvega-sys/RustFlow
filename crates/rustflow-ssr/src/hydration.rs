@@ -208,10 +208,8 @@ mod tests {
         assert_eq!(first, second);
         assert_eq!(first.as_str(), r#"{"a":[true,null],"z":1}"#);
 
-        let nested = HydrationData::from_json(
-            r#"{"z":{"y":2,"b":3},"a":[{"z":0,"c":1}]}"#,
-        )
-        .expect("valid nested JSON");
+        let nested = HydrationData::from_json(r#"{"z":{"y":2,"b":3},"a":[{"z":0,"c":1}]}"#)
+            .expect("valid nested JSON");
         assert_eq!(
             nested.as_str(),
             r#"{"a":[{"c":1,"z":0}],"z":{"b":3,"y":2}}"#
