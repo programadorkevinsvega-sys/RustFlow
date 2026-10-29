@@ -586,7 +586,7 @@ mod tests {
 
     #[test]
     fn config_redacts_uri_and_rejects_invalid_values() {
-        let uri = "***localhost:27017/test?authSource=admin";
+        let uri = "mongodb://user:secret-password@localhost:27017/test?authSource=admin";
         let config = MongoConfig::new(uri, "test").expect("valid configuration");
         let debug = format!("{config:?}");
         assert!(!debug.contains(uri));
