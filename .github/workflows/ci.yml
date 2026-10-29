@@ -125,18 +125,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
 
-      - name: Resolve Cargo lockfile for Phase 6.6.2 (temporary bootstrap)
-        shell: bash
-        run: |
-          set +e
-          cargo check -p rustflow-server --all-features
-          status=$?
-          set -e
-          echo "RUSTFLOW_LOCKFILE_BEGIN"
-          cat Cargo.lock
-          echo "RUSTFLOW_LOCKFILE_END"
-          exit "$status"
-
       - name: Check formatting
         run: cargo fmt --all -- --check
 

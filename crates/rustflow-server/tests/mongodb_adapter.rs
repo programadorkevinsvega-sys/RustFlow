@@ -4,7 +4,7 @@ use std::{
 };
 
 use http::StatusCode;
-use mongodb_driver::bson::{doc, oid::ObjectId, Document};
+use rustflow_server::mongodb_driver::bson::{doc, oid::ObjectId, Document};
 use rustflow_server::{
     DocumentBootstrap, DocumentIndex, MongoConfig, MongoDatabase, MongoError,
     from_bson_document, to_bson_document,
@@ -192,7 +192,7 @@ async fn mongodb_7045_real_server_contract() {
         .expect("list collection indexes");
     assert!(index_names.iter().any(|name| name == "email_unique"));
 
-    let count: i64 = database
+    let count = database
         .run_with_timeout(collection.count_documents(doc! { "_id": profile.id }))
         .await
         .expect("count inserted document");
@@ -202,7 +202,7 @@ async fn mongodb_7045_real_server_contract() {
         .run_with_timeout(collection.delete_one(doc! { "_id": profile.id }))
         .await
         .expect("delete document");
-    let deleted_count: i64 = database
+    let deleted_count = database
         .run_with_timeout(collection.count_documents(doc! { "_id": profile.id }))
         .await
         .expect("verify delete");

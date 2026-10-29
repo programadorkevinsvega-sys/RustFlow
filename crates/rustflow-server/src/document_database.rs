@@ -11,7 +11,7 @@ use std::{
 };
 
 use http::StatusCode;
-use mongodb_driver::{
+use crate::mongodb_driver::{
     bson::{self, doc, Document},
     options::{ClientOptions, IndexOptions},
     Client, Collection, Database, IndexModel,
@@ -374,7 +374,7 @@ impl MongoDatabase {
     /// are not included in the adapter's Display or Debug output.
     pub async fn run_with_timeout<T, F>(&self, operation: F) -> Result<T, MongoError>
     where
-        F: Future<Output = Result<T, mongodb_driver::error::Error>>,
+        F: Future<Output = Result<T, crate::mongodb_driver::error::Error>>,
     {
         tokio::time::timeout(self.operation_timeout, operation)
             .await
@@ -457,17 +457,17 @@ pub enum MongoError {
     /// Configuration is missing, invalid, or uses unsupported values.
     InvalidConfiguration(&'static str),
     /// The URI could not be parsed or driver options could not be constructed.
-    InvalidUri(mongodb_driver::error::Error),
+    InvalidUri(crate::mongodb_driver::error::Error),
     /// Client setup or connectivity failed.
-    Connect(mongodb_driver::error::Error),
+    Connect(crate::mongodb_driver::error::Error),
     /// A native MongoDB operation failed.
-    Operation(mongodb_driver::error::Error),
+    Operation(crate::mongodb_driver::error::Error),
     /// A MongoDB collection/index bootstrap operation failed.
-    Bootstrap(mongodb_driver::error::Error),
+    Bootstrap(crate::mongodb_driver::error::Error),
     /// Rust-to-BSON serialization failed.
-    Serialization(mongodb_driver::bson::ser::Error),
+    Serialization(crate::mongodb_driver::bson::ser::Error),
     /// BSON-to-Rust deserialization failed.
-    Deserialization(mongodb_driver::bson::de::Error),
+    Deserialization(crate::mongodb_driver::bson::de::Error),
     /// A configured connect or operation timeout elapsed.
     Timeout,
     /// Bootstrap completed without the expected declared index being reported.
@@ -504,10 +504,10 @@ impl MongoError {
     }
 }
 
-fn is_duplicate_key(error: &mongodb_driver::error::Error) -> bool {
+fn is_duplicate_key(error: &crate::mongodb_driver::error::Error) -> bool {
     matches!(
         error.kind.as_ref(),
-        mongodb_driver::error::ErrorKind::Command(command) if command.code == 11000
+        crate::mongodb_driver::error::ErrorKind::Command(command) if command.code == 11000
     )
 }
 
@@ -568,7 +568,7 @@ impl StdError for MongoError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mongodb_driver::bson::oid::ObjectId;
+    use crate::mongodb_driver::bson::oid::ObjectId;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize, PartialEq)]
