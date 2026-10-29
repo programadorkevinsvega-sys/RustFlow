@@ -46,17 +46,18 @@ use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
 pub use page::HtmlPage;
 pub use proxy::{ClientAddressPolicy, IpNetwork};
+pub use sessions::{
+    AccessPolicy, AccessPolicyError, AuthIdentity, InMemorySessionStore, PasswordHash, RolePolicy,
+    SameSite, SessionContext, SessionCookieConfig, SessionError, SessionId, SessionManager,
+    SessionStore, require_authentication, require_permission,
+};
 use serde::{Serialize, de::DeserializeOwned};
 pub use tls::tls_server_config_from_pem;
 use tokio::net::TcpListener;
 use tower::limit::GlobalConcurrencyLimitLayer;
 use tracing::Instrument;
 pub use validation::{ValidateInput, ValidationErrors};
-pub use sessions::{
-    require_authentication, require_permission, AccessPolicy, AccessPolicyError, AuthIdentity,
-    InMemorySessionStore, PasswordHash, RolePolicy, SameSite, SessionContext,
-    SessionCookieConfig, SessionError, SessionId, SessionManager, SessionStore,
-};
+
 
 use rustflow::components::{ComponentRegistry, SharedComponentCatalog};
 use rustflow_view::{Element, View};
@@ -1368,7 +1369,11 @@ impl Application {
     {
         let path = path.into();
         self.route(method, path.clone(), handler)?;
-        self.route_middleware(method, path, sessions::require_permission(permission, policy))?;
+        self.route_middleware(
+            method,
+            path,
+            sessions::require_permission(permission, policy),
+        )?;
         Ok(self)
     }
 
