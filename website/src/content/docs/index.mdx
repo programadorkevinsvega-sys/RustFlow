@@ -30,7 +30,7 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 - [8. Añadir navegación progresiva](/guides/navigation/): historial, enlaces elegibles y formularios GET.
 - [9. Validar formularios del servidor](/guides/forms-validation/): extracción tipada, validación, errores 422, CSRF optativo y redirección local segura.
 - [10. Sesiones y control de acceso](/guides/sessions-and-access/): cookies host-only, rotación, guards previos al handler y políticas de acceso.
-- [11. Conectar una base de datos](/guides/database/): SQLx, pool SQLite/PostgreSQL, transacciones y migraciones versionadas.
+- [11. Conectar una base de datos](/guides/database/): SQLx para motores SQL y un adaptador documental MongoDB separado; transacciones y migraciones versionadas solo para SQL.
 - [12. Construir una página de producto](/tutorials/product-page/): conectar rutas, props, catálogo SSR y layouts.
 - [13. Construir una API JSON](/tutorials/json-api/): comprobar query strings, parámetros de ruta y cuerpo JSON con `curl`.
 - [14. Crear una UI interactiva](/tutorials/reactive-todo/): estado, eventos, listas con claves y limpieza en el navegador.
@@ -51,7 +51,7 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 | Validar entradas de formulario/JSON/query y responder con errores 422 | [Formularios y validación](/guides/forms-validation/) |
 | Proteger mutaciones autenticadas por cookie frente a CSRF (opt-in) | [Formularios y validación](/guides/forms-validation/) |
 | Añadir sesiones y guards previos al handler | [Sesiones y control de acceso](/guides/sessions-and-access/) |
-| Persistir datos con consultas parametrizadas y transacciones | [Base de datos y migraciones](/guides/database/) |
+| Persistir datos con consultas SQL parametrizadas o documentos BSON de MongoDB | [Base de datos y migraciones](/guides/database/) |
 | Aplicar o revertir migraciones versionadas | [Base de datos y migraciones](/guides/database/) |
 | Denegar permisos sin una política explícita | [Sesiones y control de acceso](/guides/sessions-and-access/) |
 | Evitar redirecciones externas después de enviar un formulario | [Formularios y validación](/guides/forms-validation/) |
