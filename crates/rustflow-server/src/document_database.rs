@@ -6,7 +6,7 @@
 use std::{
     error::Error as StdError,
     fmt,
-    future::Future,
+    future::IntoFuture,
     time::Duration,
 };
 
@@ -374,9 +374,9 @@ impl MongoDatabase {
     /// are not included in the adapter's Display or Debug output.
     pub async fn run_with_timeout<T, F>(&self, operation: F) -> Result<T, MongoError>
     where
-        F: Future<Output = Result<T, crate::mongodb_driver::error::Error>>,
+        F: IntoFuture<Output = Result<T, crate::mongodb_driver::error::Error>>,
     {
-        tokio::time::timeout(self.operation_timeout, operation)
+        tokio::time::timeout(self.operation_timeout, operation.into_future())
             .await
             .map_err(|_| MongoError::Timeout)?
             .map_err(MongoError::Operation)
@@ -586,6 +586,7 @@ mod tests {
     }
 
     #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
     struct WrongType {
         count: i32,
     }
