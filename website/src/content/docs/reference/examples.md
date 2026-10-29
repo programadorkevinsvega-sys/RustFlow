@@ -54,6 +54,18 @@ Tutorial: [Interfaz reactiva de tareas](/tutorials/reactive-todo/). Guías: [Est
 
 La composición SSR con catálogo compartido y layout está en [`crates/rustflow-server/examples/basic.rs`](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow-server/examples/basic.rs) y [`product_page.rs`](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow-server/examples/product_page.rs). Para JSON sigue el [tutorial de API JSON](/tutorials/json-api/). Para UI reactiva de navegador usa [`examples/browser/src/app.rs`](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/examples/browser/src/app.rs), no el scaffold de servidor.
 
+## 4. Formularios y validación del servidor
+
+La guía de [Formularios y validación](/guides/forms-validation/) contiene ejemplos de extracción tipada de formularios URL-encoded, validación con `ValidateInput`, errores HTTP 422 separados por campo y formulario, protección CSRF optativa para mutaciones que usan cookies y redirección segura de retorno. También explica los estados 400, 413 y 415 y los límites de la API.
+
+No hay todavía un servidor de demostración independiente dedicado a formularios; no confundas los fragmentos de la guía con una app ejecutable completa. El contrato de red se prueba en la suite de integración TCP canónica:
+
+~~~sh
+cargo test -p rustflow-server --test http_integration
+~~~
+
+Esa suite incluye `real_tcp_typed_forms_validate_and_return_structured_errors`, `real_tcp_rejects_oversized_payloads_before_handler_execution`, `real_tcp_csrf_middleware_requires_a_valid_cookie_and_matching_token` y `real_tcp_redirect_back_accepts_same_origin_and_falls_back_for_external_referers`. El archivo fuente está en [`http_integration.rs`](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow-server/tests/http_integration.rs).
+
 ## Verificación compartida
 
 Desde la raíz del repositorio puedes ejecutar `cargo test --workspace --all-features`. Para comprobar lint, formato y documentación Rust, consulta [Probar y depurar aplicaciones](/guides/testing/). Para disponibilidad y límites por API, usa [Referencia de disponibilidad de API](/reference/api-status/).

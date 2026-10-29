@@ -104,12 +104,27 @@ El token firmado expira después de ocho horas. cookie_header configura HttpOnly
 
 Aplica el middleware a los endpoints que dependen de cookies de autenticación, no indiscriminadamente a rutas ajenas a ese modelo. La autorización del recurso debe verificarse en el handler/caso de uso protegido.
 
+Para un formulario HTML tradicional, el campo `_csrf` debe contener el token que emitió el servidor y debe insertarse con escape de atributo HTML. Este fragmento es la forma del formulario, no una plantilla RustFlow lista para ejecutarse; reemplaza el valor ilustrativo en el renderizado de tu aplicación:
+
+~~~html
+<form method="post" action="/profile">
+  <input type="hidden" name="_csrf" value="TOKEN_EMITIDO_POR_EL_SERVIDOR">
+  <label for="email">Correo</label>
+  <input id="email" name="email" type="email" required>
+  <label for="age">Edad</label>
+  <input id="age" name="age" type="number" min="0" max="255" required>
+  <button type="submit">Guardar</button>
+</form>
+~~~
+
+El envío debe llevar también la cookie `rustflow_csrf` configurada por el servidor. No dejes el texto de ejemplo como token real ni aceptes un token proveniente de entrada de usuario sin la verificación del middleware.
+
 ## 4. Redirige de vuelta sin abrir redirecciones externas
 
 Tras aceptar una mutación, Request::redirect_back("/profile") usa la ruta de Referer solo cuando el origen coincide con la petición actual. Si falta, es inválido o apunta a otro origen, redirige al fallback local. El fallback debe empezar por una sola barra, por ejemplo /profile; no uses valores del cuerpo del usuario como destino de redirección.
 
 ## 5. Qué comprobar
 
-Las pruebas deben cubrir entradas válidas, errores de campo/formulario, content-types no admitidos, datos inesperados, payloads demasiado grandes, tokens ausentes/incompatibles, tokens firmados válidos y Referer externo. Consulta el contrato técnico en HTTP_SERVER.md y el checklist de estado del proyecto.
+Las pruebas deben cubrir entradas válidas, errores de campo/formulario, content-types no admitidos, datos inesperados, payloads demasiado grandes, tokens ausentes/incompatibles, tokens firmados válidos y Referer externo. La suite de integración TCP canónica se ejecuta desde la raíz con `cargo test -p rustflow-server --test http_integration`; cubre el contrato de red real del servidor. Para toda la verificación del workspace, consulta [Probar y depurar aplicaciones](/guides/testing/). Consulta también el contrato técnico en [HTTP_SERVER.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/HTTP_SERVER.md) y el [estado del proyecto](/project-status/).
 
 Sesiones, login, autorización integrada, almacenamiento, bases de datos, uploads y server actions no forman parte de esta fase. RustFlow sigue siendo un prototipo pre-1.0.

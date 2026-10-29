@@ -28,10 +28,11 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 - [6. Renderizar HTML en servidor](/guides/ssr/): escape, documentos completos, catálogo e hidratación optativa.
 - [7. Compartir estructura con layouts](/guides/layouts/): composición de páginas y datos públicos.
 - [8. Añadir navegación progresiva](/guides/navigation/): historial, enlaces elegibles y formularios GET.
-- [9. Construir una página de producto](/tutorials/product-page/): conectar rutas, props, catálogo SSR y layouts.
-- [10. Construir una API JSON](/tutorials/json-api/): comprobar query strings, parámetros de ruta y cuerpo JSON con `curl`.
-- [11. Crear una UI interactiva](/tutorials/reactive-todo/): estado, eventos, listas con claves y limpieza en el navegador.
-- [12. Probar el proyecto](/guides/testing/): ejecutar tests Rust, integración HTTP y Playwright E2E.
+- [9. Validar formularios del servidor](/guides/forms-validation/): extracción tipada, validación, errores 422, CSRF optativo y redirección local segura.
+- [10. Construir una página de producto](/tutorials/product-page/): conectar rutas, props, catálogo SSR y layouts.
+- [11. Construir una API JSON](/tutorials/json-api/): comprobar query strings, parámetros de ruta y cuerpo JSON con `curl`.
+- [12. Crear una UI interactiva](/tutorials/reactive-todo/): estado, eventos, listas con claves y limpieza en el navegador.
+- [13. Probar el proyecto](/guides/testing/): ejecutar tests Rust, integración HTTP y Playwright E2E.
 
 ## Elige un caso de uso
 
@@ -45,6 +46,9 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 | Una página HTML desde el servidor | [Guía SSR](/guides/ssr/) |
 | Varias páginas con encabezado y pie compartidos | [Layouts](/guides/layouts/) y [página de producto](/tutorials/product-page/) |
 | Enlaces cliente y formularios GET compatibles | [Navegación y formularios](/guides/navigation/) |
+| Validar entradas de formulario/JSON/query y responder con errores 422 | [Formularios y validación](/guides/forms-validation/) |
+| Proteger mutaciones autenticadas por cookie frente a CSRF (opt-in) | [Formularios y validación](/guides/forms-validation/) |
+| Evitar redirecciones externas después de enviar un formulario | [Formularios y validación](/guides/forms-validation/) |
 | Errores, límites de recursos y límites de seguridad | [Errores y seguridad](/guides/errors-and-security/) |
 | Saber qué demo ejecutar | [Catálogo de ejemplos](/reference/examples/) |
 
@@ -53,6 +57,7 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 - Sitios de contenido y prototipos SSR con vistas estructurales, documentos HTML y páginas de error.
 - Interfaces WASM interactivas con señales, efectos, componentes, eventos, listas keyed y limpieza.
 - Servicios HTTP con rutas, parámetros, query/JSON, middleware, grupos, respuestas y límites configurables.
+- Endpoints que extraen y validan formularios, JSON y query tipados, devuelven errores 422 estructurados y pueden proteger mutaciones mediante CSRF optativo.
 - Páginas compuestas con un catálogo de componentes compartido, datos de ruta explícitos y layouts anidados.
 - Navegación de cliente optativa y mejora progresiva de formularios GET compatibles, conservando el comportamiento nativo cuando la interacción no es compatible.
 
