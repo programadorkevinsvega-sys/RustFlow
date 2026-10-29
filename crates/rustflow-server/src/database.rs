@@ -454,8 +454,7 @@ impl DatabaseError {
                 StatusCode::SERVICE_UNAVAILABLE,
                 "Database temporarily unavailable",
             ),
-            Some(sqlx::Error::Database(error)) if is_unique_constraint_error(error.as_ref()) =>
-            {
+            Some(sqlx::Error::Database(error)) if is_unique_constraint_error(error.as_ref()) => {
                 HttpError::new(
                     StatusCode::CONFLICT,
                     "A record with those values already exists",
