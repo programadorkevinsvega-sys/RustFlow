@@ -111,15 +111,16 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .expect("read server version");
     if server.is_mariadb() {
         assert!(
-            server_version.to_ascii_lowercase().contains("mariadb"),
-            "MariaDB job connected to unexpected server version: {server_version}"
+            server_version.starts_with("11.4.13-MariaDB"),
+            "MariaDB support contract expects 11.4.13, received: {server_version}"
         );
     } else {
         assert!(
-            !server_version.to_ascii_lowercase().contains("mariadb"),
-            "MySQL job must exercise MySQL, received: {server_version}"
+            server_version.starts_with("8.4.13"),
+            "MySQL support contract expects 8.4.13 LTS, received: {server_version}"
         );
     }
+    println!("verified database service version: {server_version}");
 
     // CI gives each engine its own disposable database. Reset the fixture state so a
     // developer can repeat the same test against a dedicated local test database.
