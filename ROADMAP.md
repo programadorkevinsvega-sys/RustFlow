@@ -326,7 +326,7 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 
 ## Phase 6.6 — Additional database engines (in progress)
 
-**Status: in progress.** Phase 6.6.1 and the migration-marker unit test passed every required workflow on PR head `3e97b580cc86fdd3b0307724c54a45efe0a9209f` under Rust 1.85 and stable. The MySQL 8.0 and MariaDB 11.4 real-server contracts passed independently on both toolchains. Phase 6.6 remains in progress because subphase 6.6.3 (the consolidated compatibility matrix) is still pending. Phase 6.6.1 was merged into main as commit 48a491d660c71005b58ed88a4f6a7e8ba3390c9d (PR #54). Phase 6.6.2 is under implementation/review in PR #55; its criteria remain unchecked until the final PR head has passing evidence.
+**Status: in progress.** Phase 6.6.1 was merged into `main` as commit `48a491d660c71005b58ed88a4f6a7e8ba3390c9d` (PR #54); its MySQL 8.0 and MariaDB 11.4 real-server contracts passed under Rust 1.85 and stable. Phase 6.6.2 was merged into `main` as commit `e3ceb86d757bb7aa1a07e16a1e21b462adb69841` (PR #55). The final PR head `8c1a33c261769bd731f00c371bac17a569611c68` passed CI on Rust stable and Rust 1.85, including real MongoDB/MySQL/MariaDB integration, as well as documentation, governance, dependency review, WebAssembly, and browser E2E/bundle checks. Phase 6.6 remains in progress because subphase 6.6.3 (the consolidated compatibility matrix) is still pending.
 
 ### 6.6.1 Relational engines: MySQL and MariaDB
 - [x] Select and document the SQLx driver/configuration strategy compatible with RustFlow's Rust 1.85 MSRV and dependency policy.
@@ -335,13 +335,13 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [x] Define and test migration directory/dialect expectations without assuming DDL portability or full migration atomicity.
 - [x] Run disposable MySQL 8.0 and MariaDB 11.4 integration services on Rust 1.85 and stable.
 
-**Implementation and limitations:** SQLx 0.8.6's `mysql` feature supplies one MySQL-protocol driver for both products. `DatabaseBackend::MySql` identifies that driver family, not the server product. The verified server matrix is MySQL 8.0 and MariaDB 11.4; other versions and vendor-specific behavior are not implied. MySQL-family DDL may implicitly commit. MongoDB (6.6.2) and the consolidated compatibility matrix (6.6.3) remain pending.
+**Implementation and limitations:** SQLx 0.8.6's `mysql` feature supplies one MySQL-protocol driver for both products. `DatabaseBackend::MySql` identifies that driver family, not the server product. The verified server matrix is MySQL 8.0 and MariaDB 11.4; other versions and vendor-specific behavior are not implied. MySQL-family DDL may implicitly commit. MongoDB (6.6.2) is implemented through a separate experimental document adapter verified against MongoDB 7.0.45; the consolidated compatibility matrix (6.6.3) remains pending.
 
 ### 6.6.2 Document database: MongoDB
-- [ ] Add a maintained MongoDB Rust-driver adapter separately from SQLx `AnyPool`; MongoDB must not be described as a SQL engine.
-- [ ] Define MongoDB connection/client configuration, timeouts, BSON serialization/deserialization, and safe error mapping.
-- [ ] Define the migration/bootstrap contract for collections and indexes; do not reuse SQL migrations as if they applied to MongoDB.
-- [ ] Add repeatable integration tests against a disposable MongoDB service for connect, CRUD, indexes, and failure paths.
+- [x] Add a maintained MongoDB Rust-driver adapter separately from SQLx `AnyPool`; MongoDB must not be described as a SQL engine.
+- [x] Define MongoDB connection/client configuration, timeouts, BSON serialization/deserialization, and safe error mapping.
+- [x] Define the migration/bootstrap contract for collections and indexes; do not reuse SQL migrations as if they applied to MongoDB.
+- [x] Add repeatable integration tests against a disposable MongoDB service for connect, CRUD, indexes, and failure paths.
 
 ### 6.6.3 Public support contract
 - [ ] Publish a verified engine/version matrix, including the Rust/MSRV compatibility of each driver.
