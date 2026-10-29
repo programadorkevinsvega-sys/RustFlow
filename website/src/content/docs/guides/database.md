@@ -5,6 +5,25 @@ description: Configura SQLx para motores relacionales y el adaptador documental 
 
 La integración SQLx de RustFlow es experimental y pre-1.0. Proporciona configuración de pool, transacciones explícitas, ejecución/reversión de migraciones y mapeo seguro de errores. No es un ORM: las entidades y las consultas siguen siendo código de la aplicación.
 
+## Contrato de modelos de la Phase 6.7.1
+
+La subfase 6.7.1 introduce un contrato experimental de metadatos para modelos relacionales, documentado en [ADR 0020](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0020-orm-model-contract.md) y en la [matriz propuesta de tipos](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/ORM_MODEL_CONTRACT.md). La arquitectura seleccionada es Data Mapper: los modelos describen tablas y campos, y las operaciones de persistencia reciben el contexto de base de datos explícitamente.
+
+~~~rust
+#[derive(rustflow::Model)]
+#[model(table = "user_profiles")]
+struct UserProfile {
+    #[model(primary_key, generated)]
+    id: i64,
+    #[model(column = "display_name")]
+    name: String,
+    #[model(default)]
+    nickname: Option<String>,
+}
+~~~
+
+Este derive publica metadatos estáticos y diagnósticos de atributos; **no ejecuta SQL, no decodifica filas y no implementa CRUD**. El query builder, los codecs comprobados por motor, las relaciones y la carga por lotes siguen pendientes en las subfases posteriores. SQL ORM incluye SQLite, PostgreSQL, MySQL y MariaDB. MongoDB mantiene su adaptador BSON separado y tendrá su propio ODM; no utiliza estas tablas ni el query builder SQL.
+
 ## 1. Configurar el pool
 
 La integración relacional de RustFlow usa SQLx 0.8.6 mediante `AnyPool`; MySQL y MariaDB comparten el driver `mysql`, así que `DatabaseBackend::MySql` identifica la familia del driver, no el producto servidor. La fase 6.6.2 añadió el adaptador documental MongoDB independiente de SQLx y está fusionada en `main` mediante PR #55 (`e3ceb86d757bb7aa1a07e16a1e21b462adb69841`). La fase 6.6.3 establece los targets de compatibilidad actuales, el MSRV y qué garantías son compartidas frente a específicas por motor. Consulta también la [matriz técnica de compatibilidad](/guides/database/#matriz-de-versiones-verificadas) y el [contrato detallado de versiones](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/DATABASE_SUPPORT_MATRIX.md).
