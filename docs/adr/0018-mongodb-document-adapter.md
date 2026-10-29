@@ -1,6 +1,6 @@
 # ADR 0018: MongoDB document adapter
 
-- Status: Implemented on PR #55; final acceptance depends on the required checks for the final PR head.
+- Status: Accepted; merged into `main` in PR #55 as `e3ceb86d757bb7aa1a07e16a1e21b462adb69841` after all required final-head checks passed.
 - Phase: 6.6.2 — Document database: MongoDB.
 - Related: ADR 0013 (configuration contract), ADR 0016 (SQLx database pools and migrations), ADR 0017 (MySQL/MariaDB driver).
 
@@ -32,7 +32,7 @@ RustFlow currently exposes experimental SQLx pools and SQL migrations for relati
 
 CI provisions a disposable authenticated mongo:7.0.45 service, passes RUSTFLOW_TEST_MONGODB_URI to integration tests, and runs the explicit mongodb_adapter integration target under Rust 1.85 and stable. The contract checks connection and server version, redaction, bounded failure to connect, authentication failure where URI credentials are present, CRUD, nested/optional BSON, unique indexes, duplicate-key classification, repeatable bootstrap, and resource cleanup. When run locally without RUSTFLOW_TEST_MONGODB_URI, the integration target may skip with an explicit message; in CI, a missing URI fails the test.
 
-A workflow definition is not evidence that its check passed. Record the exact final PR head and the actual Rust, documentation, website, governance, dependency review, WASM, browser E2E/bundle and MongoDB integration results before marking this ADR or the roadmap criteria accepted.
+Final verification evidence: PR #55 head `8c1a33c261769bd731f00c371bac17a569611c68` passed the CI workflow on Rust stable and Rust 1.85, including the explicit MongoDB 7.0.45 integration contract and MySQL 8.0/MariaDB 11.4 contracts. The documentation site, governance checks, dependency review, WebAssembly target check, and browser E2E/bundle workflow also passed for that exact head. The PR was merged into `main` as `e3ceb86d757bb7aa1a07e16a1e21b462adb69841`. Phase 6.6.3 and Phase 6.7 remain separate roadmap work.
 
 ## Consequences and limitations
 
