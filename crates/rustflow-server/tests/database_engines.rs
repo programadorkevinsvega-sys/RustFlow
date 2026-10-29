@@ -6,7 +6,6 @@ use std::{
 
 use http::StatusCode;
 use rustflow_server::{DatabaseBackend, DatabaseConfig, DatabaseError, DatabasePool};
-use sqlx::Row;
 
 #[derive(Clone, Copy)]
 enum ExpectedServer {
@@ -198,14 +197,14 @@ async fn run_contract(url: &str, server: ExpectedServer) {
     commit.commit().await.expect("commit transaction");
 
     let rolled_back_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM rustflow_phase661_items WHERE value = ?")
+        sqlx::query_scalar("SELECT CAST(COUNT(*) AS SIGNED) FROM rustflow_phase661_items WHERE value = ?")
             .bind("rolled-back")
             .fetch_one(database.pool())
             .await
             .expect("count rolled back rows");
     assert_eq!(rolled_back_count, 0);
     let committed_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM rustflow_phase661_items WHERE value = ?")
+        sqlx::query_scalar("SELECT CAST(COUNT(*) AS SIGNED) FROM rustflow_phase661_items WHERE value = ?")
             .bind("committed")
             .fetch_one(database.pool())
             .await
@@ -224,7 +223,7 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .await
         .expect("revert migration using down SQL");
     let table_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM information_schema.tables
+        "SELECT CAST(COUNT(*) AS SIGNED) FROM information_schema.tables
          WHERE table_schema = DATABASE() AND table_name = 'rustflow_phase661_items'",
     )
     .fetch_one(database.pool())
@@ -235,7 +234,7 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .run_migrations(&migrations)
         .await
         .expect("reapply migration");
-    let empty_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM rustflow_phase661_items")
+    let empty_count: i64 = sqlx::query_scalar("SELECT CAST(COUNT(*) AS SIGNED) FROM rustflow_phase661_items")
         .fetch_one(database.pool())
         .await
         .expect("count after reapply");
