@@ -521,6 +521,14 @@ impl Response {
         self
     }
 
+    /// Append a response header without replacing other values under the same name.
+    ///
+    /// This is useful for repeatable headers such as Set-Cookie.
+    pub fn with_appended_header(mut self, name: HeaderName, value: HeaderValue) -> Self {
+        self.headers.append(name, value);
+        self
+    }
+
     /// Return the status code.
     pub fn status_code(&self) -> StatusCode {
         self.status

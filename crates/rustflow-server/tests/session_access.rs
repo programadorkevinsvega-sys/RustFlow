@@ -93,14 +93,33 @@ fn header<'a>(response: &'a str, name: &str) -> Option<&'a str> {
         })
 }
 fn cookie_pair(response: &str, name: &str) -> String {
-    let pair = header(response, "set-cookie")
-        .expect("Set-Cookie")
+    let prefix = format!("{name}=");
+    response
+        .lines()
+        .take_while(|line| !line.is_empty())
+        .filter_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            key.eq_ignore_ascii_case("set-cookie").then_some(value.trim())
+        })
+        .find(|value| value.starts_with(&prefix))
+        .expect("Set-Cookie for requested cookie")
         .split(';')
         .next()
-        .expect("pair")
-        .to_owned();
-    assert!(pair.starts_with(&format!("{name}=")));
-    pair
+        .expect("cookie pair")
+        .to_owned()
+}
+
+fn cookie_header(response: &str, name: &str) -> &str {
+    let prefix = format!("{name}=");
+    response
+        .lines()
+        .take_while(|line| !line.is_empty())
+        .filter_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            key.eq_ignore_ascii_case("set-cookie").then_some(value.trim())
+        })
+        .find(|value| value.starts_with(&prefix))
+        .expect("Set-Cookie for requested cookie")
 }
 
 #[tokio::test]
@@ -167,7 +186,10 @@ async fn tcp_sessions_rotate_guards_authorize_and_preserve_csrf() {
         session
             .authenticate(identity)
             .map_err(|_| HttpError::internal_server_error())?;
-        Ok(Response::text("signed in"))
+        Ok(Response::text("signed in").with_header(
+            http::header::SET_COOKIE,
+            http::HeaderValue::from_static("app_state=login; Path=/; SameSite=Lax"),
+        ))
     })
     .expect("login");
     app.route_middleware(HttpMethod::Post, "/login", csrf.clone().middleware())
@@ -251,9 +273,13 @@ async fn tcp_sessions_rotate_guards_authorize_and_preserve_csrf() {
         session_cookie, pre_auth_cookie,
         "login must rotate the pre-authentication ID"
     );
-    let session_set_cookie = header(&login, "set-cookie")
-        .expect("session cookie")
-        .to_ascii_lowercase();
+    let set_cookie_count = login
+        .lines()
+        .filter(|line| line.to_ascii_lowercase().starts_with("set-cookie:"))
+        .count();
+    assert!(set_cookie_count >= 2, "session middleware must not replace the handler cookie");
+    assert!(cookie_header(&login, "app_state").contains("app_state=login"));
+    let session_set_cookie = cookie_header(&login, "rustflow_session").to_ascii_lowercase();
     assert!(session_set_cookie.contains("httponly"));
     assert!(session_set_cookie.contains("samesite=lax"));
     assert!(session_set_cookie.contains("max-age="));
