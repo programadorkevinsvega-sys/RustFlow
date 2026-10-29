@@ -35,7 +35,8 @@ const PASSWORD_OUTPUT_BYTES: usize = 32;
 pub struct SessionId(String);
 
 impl SessionId {
-    /// Generate a cryptographically random identifier for a session store adapter.\n    pub fn generate() -> Result<Self, SessionError> {
+    /// Generate a cryptographically random identifier for a session store adapter.
+    pub fn generate() -> Result<Self, SessionError> {
         let mut bytes = [0_u8; SESSION_ID_BYTES];
         SystemRandom::new()
             .fill(&mut bytes)
@@ -477,7 +478,7 @@ impl SessionManager {
                             .map_err(|_| HttpError::internal_server_error())?;
                         let header = session_cookie_header(&manager.cookie, &id, expiry, now)
                             .map_err(|_| HttpError::internal_server_error())?;
-                        response = response.with_header(SET_COOKIE, header);
+                        response = response.with_appended_header(SET_COOKIE, header);
                     }
                 }
                 Ok(response)
@@ -1057,7 +1058,10 @@ fn valid_policy_label(label: &str) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b':'))
 }
-#[derive(Debug, Clone, Copy)]\nstruct CookieParseError;\n\nfn find_cookie<'a>(header: &'a str, name: &str) -> Result<Option<&'a str>, CookieParseError> {
+#[derive(Debug, Clone, Copy)]
+struct CookieParseError;
+
+fn find_cookie<'a>(header: &'a str, name: &str) -> Result<Option<&'a str>, CookieParseError> {
     let mut found = None;
     for part in header.split(';') {
         let Some((cookie_name, value)) = part.trim().split_once('=') else {
