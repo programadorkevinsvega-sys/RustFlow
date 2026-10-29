@@ -1,10 +1,10 @@
 //! SQLx-backed database connections, transactions, error mapping, and migrations.
 //!
 //! RustFlow deliberately exposes SQLx instead of introducing an ORM. All application
-//! queries should be parameterized. SQLite and PostgreSQL are the supported backends
-//! in this phase; the AnyPool selects the driver from the URL scheme.
+//! queries should be parameterized. SQLite, PostgreSQL, MySQL, and MariaDB use the
+//! runtime-generic AnyPool; MariaDB is reached through SQLx's MySQL protocol driver.
 
-use std::{error::Error, fmt, path::Path, sync::Once, time::Duration};
+use std::{error::Error, fmt, path::Path, str::FromStr, sync::Once, time::Duration};
 
 use http::StatusCode;
 use sqlx::{
@@ -24,6 +24,8 @@ pub enum DatabaseBackend {
     Sqlite,
     /// PostgreSQL database.
     Postgres,
+    /// MySQL protocol driver, also used for compatible MariaDB servers.
+    MySql,
 }
 
 /// Configuration for a SQLx connection pool.
@@ -54,7 +56,7 @@ impl fmt::Debug for DatabaseConfig {
 }
 
 impl DatabaseConfig {
-    /// Validate a SQLite or PostgreSQL URL and choose conservative pool defaults.
+    /// Validate a supported SQLx URL and choose conservative pool defaults.
     pub fn new(url: impl Into<String>) -> Result<Self, DatabaseError> {
         let url = url.into();
         if url.is_empty() || url.chars().any(char::is_control) {
@@ -67,9 +69,16 @@ impl DatabaseConfig {
             DatabaseBackend::Sqlite
         } else if url.starts_with("postgres://") || url.starts_with("postgresql://") {
             DatabaseBackend::Postgres
+        } else if url.starts_with("mysql://") {
+            // Parse the URL before accepting it so malformed MySQL/MariaDB settings fail
+            // as configuration errors instead of being deferred to pool initialization.
+            sqlx::mysql::MySqlConnectOptions::from_str(&url).map_err(|_| {
+                DatabaseError::InvalidConfiguration("invalid MySQL/MariaDB connection URL")
+            })?;
+            DatabaseBackend::MySql
         } else {
             return Err(DatabaseError::InvalidConfiguration(
-                "supported database URL schemes are sqlite:, postgres://, and postgresql://",
+                "supported database URL schemes are sqlite:, postgres://, postgresql://, and mysql:// (MySQL/MariaDB)",
             ));
         };
 
@@ -200,6 +209,38 @@ impl DatabaseConfig {
     }
 }
 
+fn validate_migration_dialect(
+    backend: DatabaseBackend,
+    directory: &Path,
+) -> Result<(), DatabaseError> {
+    let marker_path = directory.join(".rustflow-dialect");
+    let dialect = match backend {
+        DatabaseBackend::Sqlite => "sqlite",
+        DatabaseBackend::Postgres => "postgres",
+        DatabaseBackend::MySql => "mysql",
+    };
+
+    match std::fs::read_to_string(&marker_path) {
+        Ok(value) if value.trim() == dialect => Ok(()),
+        Ok(_) => Err(DatabaseError::InvalidConfiguration(
+            "migration directory dialect marker does not match the configured database backend",
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            if backend == DatabaseBackend::MySql {
+                Err(DatabaseError::InvalidConfiguration(
+                    "MySQL/MariaDB migration directories require .rustflow-dialect containing mysql",
+                ))
+            } else {
+                // Existing SQLite/PostgreSQL migration directories remain compatible.
+                Ok(())
+            }
+        }
+        Err(_) => Err(DatabaseError::InvalidConfiguration(
+            "could not read migration dialect marker",
+        )),
+    }
+}
+
 fn parse_positive_u32(name: &'static str, value: &str) -> Result<u32, DatabaseError> {
     let parsed = value.parse::<u32>().map_err(|_| {
         DatabaseError::InvalidConfiguration(match name {
@@ -226,7 +267,7 @@ fn parse_positive_u32(name: &'static str, value: &str) -> Result<u32, DatabaseEr
     Ok(parsed)
 }
 
-/// A cloneable SQLx pool for the supported SQLite and PostgreSQL backends.
+/// A cloneable SQLx pool for supported SQLite, PostgreSQL, and MySQL-protocol backends.
 ///
 /// The pool is a database resource, not an ORM or model layer. Share it with request
 /// handlers by using `Arc<DatabasePool>` and issue parameterized queries through `pool()`.
@@ -300,9 +341,13 @@ impl DatabasePool {
     /// Apply pending SQLx migrations from a directory.
     ///
     /// Re-applying an already-current directory is safe: SQLx tracks versions and
-    /// checksums in _sqlx_migrations, rejecting edits to applied migrations.
+    /// checksums in _sqlx_migrations, rejecting edits to applied migrations. MySQL-family
+    /// directories must contain `.rustflow-dialect` with the value `mysql` so an unmarked
+    /// SQLite/PostgreSQL directory is not accidentally applied to those servers.
     pub async fn run_migrations(&self, directory: impl AsRef<Path>) -> Result<(), DatabaseError> {
-        let migrator = Migrator::new(directory.as_ref())
+        let directory = directory.as_ref();
+        validate_migration_dialect(self.backend, directory)?;
+        let migrator = Migrator::new(directory)
             .await
             .map_err(DatabaseError::Migration)?;
         migrator
@@ -326,7 +371,9 @@ impl DatabasePool {
                 "migration rollback target cannot be negative",
             ));
         }
-        let migrator = Migrator::new(directory.as_ref())
+        let directory = directory.as_ref();
+        validate_migration_dialect(self.backend, directory)?;
+        let migrator = Migrator::new(directory)
             .await
             .map_err(DatabaseError::Migration)?;
         migrator
@@ -410,7 +457,7 @@ impl DatabaseError {
             Some(sqlx::Error::Database(error))
                 if error
                     .code()
-                    .is_some_and(|code| matches!(code.as_ref(), "23505" | "1555" | "2067")) =>
+                    .is_some_and(|code| matches!(code.as_ref(), "23505" | "1555" | "2067" | "1062")) =>
             {
                 HttpError::new(
                     StatusCode::CONFLICT,
@@ -479,7 +526,14 @@ mod tests {
             DatabaseConfig::new("sqlite::memory:").unwrap().backend(),
             DatabaseBackend::Sqlite
         );
-        assert!(DatabaseConfig::new("mysql://localhost/app").is_err());
+        assert_eq!(
+            DatabaseConfig::new("mysql://user:password@localhost/app")
+                .unwrap()
+                .backend(),
+            DatabaseBackend::MySql
+        );
+        assert!(DatabaseConfig::new("mysql://[invalid/app").is_err());
+        assert!(DatabaseConfig::new("mariadb://localhost/app").is_err());
         assert!(DatabaseConfig::new("not-a-url").is_err());
     }
 

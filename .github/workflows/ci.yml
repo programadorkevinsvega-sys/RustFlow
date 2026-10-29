@@ -60,8 +60,38 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: rustflow_test
+          MYSQL_USER: rustflow
+          MYSQL_PASSWORD: rustflow
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: rustflow_test
+          MARIADB_USER: rustflow
+          MARIADB_PASSWORD: rustflow
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     env:
       RUSTFLOW_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/rustflow_test
+      RUSTFLOW_TEST_MYSQL_URL: mysql://rustflow:rustflow@127.0.0.1:3306/rustflow_test
+      RUSTFLOW_TEST_MARIADB_URL: mysql://rustflow:rustflow@127.0.0.1:3307/rustflow_test
     strategy:
       fail-fast: false
       matrix:
@@ -89,6 +119,9 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace --all-features
+
+      - name: Run MySQL and MariaDB integration contracts explicitly
+        run: cargo test -p rustflow-server --test database_engines -- --test-threads=1
 
       - name: Install and smoke-test the CLI
         if: matrix.toolchain == 'stable'
