@@ -400,7 +400,13 @@ fn creates_a_project_and_generates_all_five_file_types_without_overwrite() {
     assert!(env_example.contains("SQL placeholders and migrations are engine-specific"));
     assert!(env_example.contains("MongoConfig/MongoDatabase"));
     assert!(env_example.contains("mongodb:// URI"));
-    for forbidden in ["PASSWORD=", "TOKEN=", "SECRET_KEY=", "user:password", "root:root"] {
+    for forbidden in [
+        "PASSWORD=",
+        "TOKEN=",
+        "SECRET_KEY=",
+        "user:password",
+        "root:root",
+    ] {
         assert!(
             !env_example.contains(forbidden),
             "unsafe value in .env.example: {forbidden}"
