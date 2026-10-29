@@ -4,13 +4,7 @@
 //! queries should be parameterized. SQLite and PostgreSQL are the supported backends
 //! in this phase; the AnyPool selects the driver from the URL scheme.
 
-use std::{
-    error::Error,
-    fmt,
-    path::Path,
-    sync::Once,
-    time::Duration,
-};
+use std::{error::Error, fmt, path::Path, sync::Once, time::Duration};
 
 use http::StatusCode;
 use sqlx::{
@@ -95,11 +89,9 @@ impl DatabaseConfig {
     /// Optional settings are RUSTFLOW_DATABASE_MAX_CONNECTIONS,
     /// RUSTFLOW_DATABASE_MIN_CONNECTIONS, and RUSTFLOW_DATABASE_ACQUIRE_TIMEOUT_SECS.
     pub fn from_app_config(config: &AppConfig) -> Result<Self, DatabaseError> {
-        let configured_url = config
-            .setting("RUSTFLOW_DATABASE_URL")
-            .map_err(|_| DatabaseError::InvalidConfiguration(
-                "could not resolve RUSTFLOW_DATABASE_URL",
-            ))?;
+        let configured_url = config.setting("RUSTFLOW_DATABASE_URL").map_err(|_| {
+            DatabaseError::InvalidConfiguration("could not resolve RUSTFLOW_DATABASE_URL")
+        })?;
 
         let url = match configured_url {
             Some(url) if !url.is_empty() => url,
@@ -116,18 +108,22 @@ impl DatabaseConfig {
         let mut database = Self::new(url)?;
         if let Some(value) = config
             .setting("RUSTFLOW_DATABASE_MAX_CONNECTIONS")
-            .map_err(|_| DatabaseError::InvalidConfiguration(
-                "could not resolve RUSTFLOW_DATABASE_MAX_CONNECTIONS",
-            ))?
+            .map_err(|_| {
+                DatabaseError::InvalidConfiguration(
+                    "could not resolve RUSTFLOW_DATABASE_MAX_CONNECTIONS",
+                )
+            })?
         {
             let parsed = parse_positive_u32("RUSTFLOW_DATABASE_MAX_CONNECTIONS", &value)?;
             database = database.with_max_connections(parsed)?;
         }
         if let Some(value) = config
             .setting("RUSTFLOW_DATABASE_MIN_CONNECTIONS")
-            .map_err(|_| DatabaseError::InvalidConfiguration(
-                "could not resolve RUSTFLOW_DATABASE_MIN_CONNECTIONS",
-            ))?
+            .map_err(|_| {
+                DatabaseError::InvalidConfiguration(
+                    "could not resolve RUSTFLOW_DATABASE_MIN_CONNECTIONS",
+                )
+            })?
         {
             let parsed = value.parse::<u32>().map_err(|_| {
                 DatabaseError::InvalidConfiguration(
@@ -138,9 +134,11 @@ impl DatabaseConfig {
         }
         if let Some(value) = config
             .setting("RUSTFLOW_DATABASE_ACQUIRE_TIMEOUT_SECS")
-            .map_err(|_| DatabaseError::InvalidConfiguration(
-                "could not resolve RUSTFLOW_DATABASE_ACQUIRE_TIMEOUT_SECS",
-            ))?
+            .map_err(|_| {
+                DatabaseError::InvalidConfiguration(
+                    "could not resolve RUSTFLOW_DATABASE_ACQUIRE_TIMEOUT_SECS",
+                )
+            })?
         {
             let parsed = parse_positive_u32("RUSTFLOW_DATABASE_ACQUIRE_TIMEOUT_SECS", &value)?;
             database = database.with_acquire_timeout(Duration::from_secs(u64::from(parsed)))?;
@@ -303,10 +301,7 @@ impl DatabasePool {
     ///
     /// Re-applying an already-current directory is safe: SQLx tracks versions and
     /// checksums in _sqlx_migrations, rejecting edits to applied migrations.
-    pub async fn run_migrations(
-        &self,
-        directory: impl AsRef<Path>,
-    ) -> Result<(), DatabaseError> {
+    pub async fn run_migrations(&self, directory: impl AsRef<Path>) -> Result<(), DatabaseError> {
         let migrator = Migrator::new(directory.as_ref())
             .await
             .map_err(DatabaseError::Migration)?;
@@ -357,7 +352,7 @@ impl DatabaseTransaction {
     /// Use SQLx parameterized queries against this connection, then explicitly commit
     /// or roll back. Dropping an uncommitted transaction requests a rollback.
     pub fn connection(&mut self) -> &mut AnyConnection {
-        &mut *self.inner
+        &mut self.inner
     }
 
     /// Commit all operations in this transaction.
@@ -413,9 +408,9 @@ impl DatabaseError {
                 "Database temporarily unavailable",
             ),
             Some(sqlx::Error::Database(error))
-                if error.code().is_some_and(|code| {
-                    matches!(code.as_ref(), "23505" | "1555" | "2067")
-                }) =>
+                if error
+                    .code()
+                    .is_some_and(|code| matches!(code.as_ref(), "23505" | "1555" | "2067")) =>
             {
                 HttpError::new(
                     StatusCode::CONFLICT,
@@ -490,18 +485,24 @@ mod tests {
 
     #[test]
     fn pool_builder_rejects_inconsistent_bounds_and_zero_timeout() {
-        assert!(DatabaseConfig::new("sqlite::memory:")
-            .unwrap()
-            .with_max_connections(0)
-            .is_err());
-        assert!(DatabaseConfig::new("sqlite::memory:")
-            .unwrap()
-            .with_min_connections(11)
-            .is_err());
-        assert!(DatabaseConfig::new("sqlite::memory:")
-            .unwrap()
-            .with_acquire_timeout(Duration::ZERO)
-            .is_err());
+        assert!(
+            DatabaseConfig::new("sqlite::memory:")
+                .unwrap()
+                .with_max_connections(0)
+                .is_err()
+        );
+        assert!(
+            DatabaseConfig::new("sqlite::memory:")
+                .unwrap()
+                .with_min_connections(11)
+                .is_err()
+        );
+        assert!(
+            DatabaseConfig::new("sqlite::memory:")
+                .unwrap()
+                .with_acquire_timeout(Duration::ZERO)
+                .is_err()
+        );
     }
 
     #[tokio::test]
@@ -527,7 +528,10 @@ mod tests {
             .unwrap();
         assert_eq!(count, 1);
 
-        database.rollback_migrations_to(&migrations, 0).await.unwrap();
+        database
+            .rollback_migrations_to(&migrations, 0)
+            .await
+            .unwrap();
         database.run_migrations(&migrations).await.unwrap();
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM rustflow_audit_items")
             .fetch_one(database.pool())
@@ -543,12 +547,10 @@ mod tests {
             .with_max_connections(1)
             .unwrap();
         let database = DatabasePool::connect(&config).await.unwrap();
-        sqlx::query(
-            "CREATE TABLE transaction_items (id INTEGER PRIMARY KEY, value TEXT NOT NULL)",
-        )
-        .execute(database.pool())
-        .await
-        .unwrap();
+        sqlx::query("CREATE TABLE transaction_items (id INTEGER PRIMARY KEY, value TEXT NOT NULL)")
+            .execute(database.pool())
+            .await
+            .unwrap();
 
         let mut transaction = database.begin_transaction().await.unwrap();
         sqlx::query("INSERT INTO transaction_items (value) VALUES (?)")

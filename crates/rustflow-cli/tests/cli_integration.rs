@@ -155,7 +155,13 @@ fn creates_a_project_and_generates_all_five_file_types_without_overwrite() {
     assert!(env_example.contains("RUSTFLOW_PORT=3000"));
     assert!(env_example.contains("RUSTFLOW_DATABASE_URL=sqlite://rustflow.db?mode=rwc"));
     assert!(env_example.contains("RUSTFLOW_DATABASE_MAX_CONNECTIONS=10"));
-    for forbidden in ["PASSWORD=", "TOKEN=", "SECRET_KEY=", "postgres://", "postgresql://"] {
+    for forbidden in [
+        "PASSWORD=",
+        "TOKEN=",
+        "SECRET_KEY=",
+        "postgres://",
+        "postgresql://",
+    ] {
         assert!(
             !env_example.contains(forbidden),
             "unsafe variable in .env.example: {forbidden}"
@@ -367,9 +373,7 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
     let mut health_stream = TcpStream::connect(("127.0.0.1", port))
         .expect("connect to generated database health route");
     health_stream
-        .write_all(
-            b"GET /health/database HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-        )
+        .write_all(b"GET /health/database HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
         .unwrap();
     let mut health_bytes = Vec::new();
     health_stream.read_to_end(&mut health_bytes).unwrap();

@@ -41,19 +41,21 @@ use axum::{
 use bytes::Bytes;
 pub use config::{AppConfig, AppEnvironment, ConfigError};
 pub use csrf::{CsrfError, CsrfProtection, CsrfToken};
-pub use database::{DatabaseBackend, DatabaseConfig, DatabaseError, DatabasePool, DatabaseTransaction};
+pub use database::{
+    DatabaseBackend, DatabaseConfig, DatabaseError, DatabasePool, DatabaseTransaction,
+};
 pub use group::RouteGroup;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
 pub use page::HtmlPage;
 pub use proxy::{ClientAddressPolicy, IpNetwork};
 use serde::{Serialize, de::DeserializeOwned};
-pub use sqlx;
 pub use sessions::{
     AccessPolicy, AccessPolicyError, AuthIdentity, InMemorySessionStore, PasswordHash, RolePolicy,
     SameSite, SessionContext, SessionCookieConfig, SessionError, SessionId, SessionManager,
     SessionStore, require_authentication, require_permission,
 };
+pub use sqlx;
 pub use tls::tls_server_config_from_pem;
 use tokio::net::TcpListener;
 use tower::limit::GlobalConcurrencyLimitLayer;
@@ -582,6 +584,11 @@ struct ValidationErrorBody {
 }
 
 impl HttpError {
+    /// Return the HTTP status that this error will emit.
+    pub fn status_code(&self) -> StatusCode {
+        self.status
+    }
+
     /// Create an error with an explicit client-facing status and message.
     pub fn new(status: StatusCode, public_message: impl Into<String>) -> Self {
         Self {
