@@ -310,6 +310,8 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [ ] Use maintained password hashing and cryptographic libraries.
 - [ ] Test fixation, CSRF, privilege escalation, and access boundaries.
 
+**Estado en revisión:** la rama feat/phase-6-4-sessions-access-control incorpora el contrato de sesión, el adaptador en memoria, guards, políticas y hashing de contraseñas, además de pruebas y guías. Los criterios permanecen sin marcar hasta que la CI obligatoria pase en el HEAD final y se revise el diff. La persistencia de base de datos sigue reservada para 6.5.
+
 ### 6.5 Database and migrations
 - [ ] Integrate SQLx and configurable connection pools.
 - [ ] Add transaction helpers and error mapping.

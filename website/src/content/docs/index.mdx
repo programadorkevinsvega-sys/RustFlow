@@ -29,6 +29,7 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 - [7. Compartir estructura con layouts](/guides/layouts/): composición de páginas y datos públicos.
 - [8. Añadir navegación progresiva](/guides/navigation/): historial, enlaces elegibles y formularios GET.
 - [9. Validar formularios del servidor](/guides/forms-validation/): extracción tipada, validación, errores 422, CSRF optativo y redirección local segura.
+- [10. Sesiones y control de acceso](/guides/sessions-and-access/): cookies host-only, rotación, guards previos al handler y políticas de acceso.
 - [10. Construir una página de producto](/tutorials/product-page/): conectar rutas, props, catálogo SSR y layouts.
 - [11. Construir una API JSON](/tutorials/json-api/): comprobar query strings, parámetros de ruta y cuerpo JSON con `curl`.
 - [12. Crear una UI interactiva](/tutorials/reactive-todo/): estado, eventos, listas con claves y limpieza en el navegador.
@@ -48,6 +49,8 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 | Enlaces cliente y formularios GET compatibles | [Navegación y formularios](/guides/navigation/) |
 | Validar entradas de formulario/JSON/query y responder con errores 422 | [Formularios y validación](/guides/forms-validation/) |
 | Proteger mutaciones autenticadas por cookie frente a CSRF (opt-in) | [Formularios y validación](/guides/forms-validation/) |
+| Añadir sesiones y guards previos al handler | [Sesiones y control de acceso](/guides/sessions-and-access/) |
+| Denegar permisos sin una política explícita | [Sesiones y control de acceso](/guides/sessions-and-access/) |
 | Evitar redirecciones externas después de enviar un formulario | [Formularios y validación](/guides/forms-validation/) |
 | Errores, límites de recursos y límites de seguridad | [Errores y seguridad](/guides/errors-and-security/) |
 | Saber qué demo ejecutar | [Catálogo de ejemplos](/reference/examples/) |
@@ -65,7 +68,7 @@ El [catálogo de ejemplos](/reference/examples/) conecta cada caso con un archiv
 
 ## Lo que no debes asumir
 
-El CLI es experimental y genera un servidor nativo; no ofrece hot reload, un bundle browser automático ni persistencia. La configuración de la Fase 6.2 valida únicamente perfil, host y puerto, y producción requiere variables del proceso. `use_memo`, `use_ref`, `use_context`, sesiones/autenticación integradas, server actions, persistencia y una receta de despliegue de producción siguen pendientes. La Fase 6.3 añade APIs experimentales para validación tipada, middleware CSRF optativo y redirección segura de retorno; consulta la [guía de formularios](/guides/forms-validation/). El callback de navegación cliente no es un router general y la mejora de formularios no procesa cargas de archivos ni mutaciones. Consulta [Estado del proyecto](/project-status/) y [referencia de disponibilidad de API](/reference/api-status/).
+El CLI es experimental y genera un servidor nativo; no ofrece hot reload, un bundle browser automático ni persistencia. La configuración de la Fase 6.2 valida únicamente perfil, host y puerto, y producción requiere variables del proceso. `use_memo`, `use_ref` y `use_context` siguen pendientes. Las sesiones/autenticación de la Fase 6.4 están en revisión y son experimentales; el adaptador en memoria no ofrece persistencia. Server actions, persistencia de base de datos y una receta de despliegue de producción siguen pendientes. La Fase 6.3 añade APIs experimentales para validación tipada, middleware CSRF optativo y redirección segura de retorno; consulta la [guía de formularios](/guides/forms-validation/). El callback de navegación cliente no es un router general y la mejora de formularios no procesa cargas de archivos ni mutaciones. Consulta [Estado del proyecto](/project-status/) y [referencia de disponibilidad de API](/reference/api-status/).
 
 ## Si ya conoces React
 

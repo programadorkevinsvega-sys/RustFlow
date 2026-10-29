@@ -180,3 +180,8 @@ Phase 0.2 was marked complete in ROADMAP.md after its scope baseline and initial
 ### CLI Fase 6.1 (alcance experimental)
 
 El CLI de desarrollo genera un scaffold de servidor, delega `dev` y `build` a Cargo, y crea componentes/páginas/controladores/modelos/migraciones estructurales. Las dependencias Git del scaffold quedan fijadas a la revisión fuente del CLI. Los modelos no son entidades ORM y las migraciones no se ejecutan. La Fase 6.2 añade una configuración experimental limitada al perfil, host y puerto, con variables del proceso obligatorias en producción. La Fase 6.3 introduce extracción tipada, validación de formularios, errores de campo/formulario, CSRF optativo para mutaciones autenticadas por cookies y redirección de retorno segura; siguen fuera de alcance las sesiones, la autenticación/autorización integradas y la persistencia.
+
+
+## Current implementation note — Phase 6.4 (under review)
+
+The current Phase 6.4 proposal adds experimental server-side sessions, host-only secure cookies, pre-handler authentication guards, default-deny authorization policies, and password hashing through ring. The included memory adapter is volatile and process-local, not production persistence. Credential verification, user-provider integration, role assignment, OAuth/OIDC, MFA, account recovery and brute-force protection are not included. Database adapters, migrations and durable persistence remain part of Phase 6.5. This implementation is not considered complete until the required PR checks pass on the final head.

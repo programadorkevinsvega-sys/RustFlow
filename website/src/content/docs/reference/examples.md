@@ -73,3 +73,8 @@ Desde la raíz del repositorio puedes ejecutar `cargo test --workspace --all-fea
 ## Lo que los ejemplos no proporcionan
 
 Los datos del catálogo de productos y de la lista de tareas no son persistentes. No hay una demo canónica que incluya una base de datos, autenticación, sesiones, autorización, CSRF, pagos o server actions. No extrapoles esos casos desde un ejemplo de SSR, una ruta JSON o una interfaz de navegador.
+
+
+## Sesiones y rutas protegidas — Fase 6.4 en revisión
+
+La guía [Sesiones, autenticación y autorización](/guides/sessions-and-access/) muestra la API experimental, rotación, guards antes del handler, políticas deny-by-default e integración CSRF de login/logout. No hay proveedor de usuarios ni adaptador persistente. Comando de prueba de integración: cargo test -p rustflow-server --test session_access.

@@ -44,6 +44,14 @@ Handlers are async closures that return `Result<Response, HttpError>`. Route han
 
 Use `Response::text`, `Response::html`, `Response::json`, `Response::redirect`, `Response::file_download`, or `Response::status`. `Response::html` emits the supplied string as-is, so it must only receive trusted/escaped content. Prefer `html_view` for structural fragments without components. For a complete document use `html_document(title, lang, &view)`; for local callbacks the helper is `html_document_with_components`, while concurrent HTTP handlers should use `html_document_with_shared_components` with a startup-built `SharedComponentCatalog`.
 
+## Sessions, identity, and authorization
+
+The experimental Phase 6.4 API provides SessionManager, SessionContext and the SessionStore contract. The default cookie is host-only __Host-rustflow_session with Secure, HttpOnly, SameSite=Lax, Path=/, no Domain, and Max-Age derived from server-side expiry. Plain HTTP requires the explicit SessionCookieConfig::development() policy, which must never be used in production.
+
+Install sessions.middleware() before guards. Use route_protected or route_authorized to check access before the handler. A missing identity returns 401, an authorization denial returns 403, and storage/policy failures return a generic 500. Missing policies and permission rules deny by default. Identity and roles are read from server-side session records only.
+
+InMemorySessionStore is volatile, process-local, and does not coordinate instances. A durable adapter and database transaction/migration policy belong to Phase 6.5. The application must verify credentials before calling SessionContext::authenticate. OAuth/OIDC, MFA, account recovery, rate limiting and user-provider integration are not implemented. Sessions do not replace CSRF: keep CsrfProtection on cookie-authenticated mutating routes, including login/logout. See the public sessions guide and ADR 0015.
+
 ## Resource limits
 
 Defaults cap buffered request bodies at 1 MiB, allow up to 256 concurrent requests, and time out body reads/handlers after 30 seconds. These are initial defaults, not a substitute for reverse-proxy, TLS, deployment, rate-limit, or application-specific protections. Use `Application::with_config(ServerConfig::new()...)` to change them.
