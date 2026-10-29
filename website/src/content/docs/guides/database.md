@@ -7,7 +7,7 @@ La integración SQLx de RustFlow es experimental y pre-1.0. Proporciona configur
 
 ## 1. Configurar el pool
 
-Los únicos motores habilitados actualmente son SQLite y PostgreSQL. MySQL, MariaDB y MongoDB no están soportados por el código actual. El esquema de URL selecciona el driver SQLx para SQLite/PostgreSQL; MongoDB necesitará un adaptador independiente porque trabaja con documentos BSON, no SQL.
+El código de la rama de revisión añade SQLite, PostgreSQL y el driver de protocolo MySQL de SQLx mediante `AnyPool`. Las URLs `mysql://` son compartidas por MySQL y MariaDB; `DatabaseBackend::MySql` identifica el driver y no detecta el producto servidor. CI está configurada para probar MySQL 8.0 y MariaDB 11.4 por separado; el soporte sigue bajo revisión hasta que pasen sus checks. MongoDB aún no está implementado y necesitará un adaptador documental independiente porque trabaja con BSON, no SQL.
 
 ~~~rust
 use rustflow_server::{AppConfig, DatabaseConfig, DatabasePool};
@@ -27,7 +27,7 @@ Configuración opcional del pool:
 | RUSTFLOW_DATABASE_MIN_CONNECTIONS | 0 | Conexiones retenidas como mínimo |
 | RUSTFLOW_DATABASE_ACQUIRE_TIMEOUT_SECS | 10 | Tiempo máximo esperando una conexión |
 
-Para desarrollo local puede usarse sqlite://rustflow.db?mode=rwc. Para PostgreSQL, configura un URL de conexión válido en el entorno local o en el gestor de secretos del despliegue; nunca guardes credenciales reales en el repositorio. RustFlow evita incluir el URL en la salida Debug de DatabaseConfig.
+Para desarrollo local puede usarse `sqlite://rustflow.db?mode=rwc`. Para PostgreSQL, MySQL o MariaDB configura una URL válida desde el entorno local o el gestor de secretos del despliegue; nunca guardes credenciales reales en el repositorio. Las URLs de `DatabaseConfig` se omiten en su salida `Debug`. Para MySQL y MariaDB usa el esquema `mysql://`; `mariadb://` no está admitido.
 
 ## 2. Consultas parametrizadas
 
@@ -90,6 +90,15 @@ El target representa la versión a la que se desea volver. Solo se revierten mig
 
 La aplicación generada aplica migraciones automáticamente en desarrollo/test. En producción, ejecuta cargo run --bin migrate una vez en el paso de despliegue antes de actualizar múltiples réplicas.
 
+
+### Migraciones específicas de MySQL/MariaDB
+
+SQLx no convierte automáticamente DDL entre motores. Mantén migraciones separadas cuando difieran la sintaxis, los tipos o funciones específicas del proveedor. Cada directorio de migración de MySQL/MariaDB debe contener `.rustflow-dialect` con el valor `mysql`; RustFlow valida este marcador antes de aplicar o revertir migraciones. Los directorios SQLite/PostgreSQL existentes sin marcador siguen siendo compatibles.
+
+Algunas operaciones DDL de MySQL-family hacen commits implícitos; no asumas atomicidad total para una migración fallida. Ensaya recuperación contra el servidor de destino y prefiere migraciones correctivas hacia delante en producción.
+
+Para ejecutar la suite de integración local, configura dos bases desechables con `RUSTFLOW_TEST_MYSQL_URL` y `RUSTFLOW_TEST_MARIADB_URL`, y ejecuta `cargo test -p rustflow-server --test database_engines -- --test-threads=1`. Fuera de CI cada caso se omite cuando falta su URL; en CI, la ausencia es un error.
+
 ## 5. Errores de base de datos
 
 DatabaseError::to_http_error traduce fallos conocidos a mensajes públicos genéricos:
@@ -111,11 +120,11 @@ Las migraciones de producción deben ejecutarse como un paso coordinado, antes d
 
 ## Límites actuales
 
-Esta fase no introduce ORM, modelos ActiveRecord, un repositorio genérico, generación de modelos SQL ni soporte MySQL/MariaDB o MongoDB. Las APIs de base de datos son experimentales; sesiones y autorización siguen siendo contratos separados. InMemorySessionStore continúa siendo volátil y local al proceso.
+Esta integración no introduce ORM, modelos ActiveRecord, repositorio genérico, generación de modelos SQL ni adaptador MongoDB. MySQL/MariaDB está bajo revisión en la subfase 6.6.1; las subfases 6.6.2/6.6.3 siguen pendientes. Las APIs de base de datos son experimentales; sesiones y autorización siguen siendo contratos separados. InMemorySessionStore continúa siendo volátil y local al proceso.
 
 ## Roadmap de persistencia (planificado, no disponible)
 
-- **Fase 6.6:** añadir soporte verificado para MySQL y MariaDB como motores relacionales y un adaptador independiente para MongoDB. La implementación, dependencias, configuración y pruebas aún están pendientes.
+- **Fase 6.6.1:** el driver SQLx `mysql` y los contratos de integración para MySQL 8.0/MariaDB 11.4 están en revisión. No se declara aceptado hasta pasar la CI obligatoria. Las subfases 6.6.2 (adaptador MongoDB) y 6.6.3 (matriz consolidada) siguen pendientes.
 - **Fase 6.7:** crear un ORM SQL maduro para SQLite, PostgreSQL, MySQL y MariaDB. MongoDB tendrá una subfase separada de mapeo documental/ODM maduro; no se presentará como SQL ni se forzarán relaciones SQL sobre colecciones de documentos. La fase no se cerrará con un ORM mínimo de solo CRUD: el diseño, consultas tipadas, relaciones/carga eficiente, transacciones, mapeo de tipos, diagnósticos y CI deben satisfacer el contrato completo aceptado antes de declarar el hito terminado.
 
 Consulta el [roadmap completo](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) para criterios de aceptación. Estos hitos planificados no describen capacidades disponibles en la rama actual.
