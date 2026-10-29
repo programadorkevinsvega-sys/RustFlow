@@ -81,7 +81,7 @@ impl AppConfig {
 
     /// Resolve one non-secret setting using the same precedence as AppConfig.
     ///
-    /// In development/test, values are read from .env, then .env.<profile>, then the
+    /// In development/test, values are read from `.env`, then `.env.<profile>`, then the
     /// process environment. In production, only the process environment is consulted.
     /// Callers must not log returned values because settings may contain credentials.
     pub fn setting(&self, key: &str) -> Result<Option<String>, ConfigError> {

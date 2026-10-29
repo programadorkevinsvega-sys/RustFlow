@@ -229,7 +229,7 @@ fn parse_positive_u32(name: &'static str, value: &str) -> Result<u32, DatabaseEr
 /// A cloneable SQLx pool for the supported SQLite and PostgreSQL backends.
 ///
 /// The pool is a database resource, not an ORM or model layer. Share it with request
-/// handlers by using Arc<DatabasePool> and issue parameterized queries through pool().
+/// handlers by using `Arc<DatabasePool>` and issue parameterized queries through `pool()`.
 #[derive(Clone)]
 pub struct DatabasePool {
     pool: AnyPool,
