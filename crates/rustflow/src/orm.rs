@@ -48,6 +48,33 @@
 //!     id: i64,
 //! }
 //! ~~~
+//!
+//! ~~~compile_fail
+//! #[derive(rustflow::Model)]
+//! struct NullableKey {
+//!     #[model(primary_key)]
+//!     id: Option<i64>,
+//! }
+//! ~~~
+//!
+//! ~~~compile_fail
+//! #[derive(rustflow::Model)]
+//! struct DuplicateColumn {
+//!     #[model(primary_key)]
+//!     id: i64,
+//!     #[model(column = "id")]
+//!     external_id: i64,
+//! }
+//! ~~~
+//!
+//! ~~~compile_fail
+//! #[derive(rustflow::Model)]
+//! #[model(table = "user; DROP TABLE users")]
+//! struct UnsafeIdentifier {
+//!     #[model(primary_key)]
+//!     id: i64,
+//! }
+//! ~~~
 
 /// Logical Rust type categories recognized by the metadata derive.
 ///
