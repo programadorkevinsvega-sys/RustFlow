@@ -92,7 +92,7 @@ When running locally outside CI, a test skips if its corresponding URL is absent
 
 MongoDB is document-oriented and uses its own adapter, independent of SQLx, AnyPool, SQL transactions, and SQL migrations. The current API is experimental and exposes the official driver's native collection API rather than an ODM.
 
-The official MongoDB Rust driver is pinned to =3.6.0 because that release retains the repository's Rust 1.85 MSRV. Re-evaluate the pin during dependency/security reviews before upgrading; newer driver lines can raise the MSRV. The initial CI server contract is MongoDB 8.0.
+The official MongoDB Rust driver is pinned to =3.6.0 because that release retains the repository's Rust 1.85 MSRV. Re-evaluate the pin during dependency/security reviews before upgrading; newer driver lines can raise the MSRV. The initial CI server contract is MongoDB 7.0.45.
 
 ### Configuration
 
@@ -134,7 +134,7 @@ The adapter does not add an ODM, model derives, a portable query builder, SQL-li
 
 ## Roadmap status
 
-Subphase 6.6.1 was merged into `main` as commit `48a491d660c71005b58ed88a4f6a7e8ba3390c9d` (PR #54). Previously recorded exact-head CI evidence covered MySQL 8.0, MariaDB 11.4, Rust 1.85/stable, and the required quality gates. Phase 6.6.2 is introduced in PR #55 with a separate MongoDB document adapter and a real MongoDB 8.0 integration contract. Phase 6.6 remains in progress until subphase 6.6.3 publishes the verified engine/version matrix.
+Subphase 6.6.1 was merged into `main` as commit `48a491d660c71005b58ed88a4f6a7e8ba3390c9d` (PR #54). Previously recorded exact-head CI evidence covered MySQL 8.0, MariaDB 11.4, Rust 1.85/stable, and the required quality gates. Phase 6.6.2 is introduced in PR #55 with a separate MongoDB document adapter and a real MongoDB 7.0.45 integration contract. Phase 6.6 remains in progress until subphase 6.6.3 publishes the verified engine/version matrix.
 
 Phase 6.7 is planned to deliver a mature, cohesive typed SQL ORM for SQLite, PostgreSQL, MySQL, and MariaDB, plus a separate mature document-mapping/ODM API for MongoDB. This is not a CRUD-only MVP target. The subphases organize implementation work; they do not permit Phase 6.7 to close until model metadata/type mapping, a composable query builder, relations and explicit efficient loading, transaction/error semantics, derive diagnostics, driver-specific behavior, generated-app examples, and CI-backed integration coverage meet the full acceptance gate. An ADR must select the architectural pattern, dependency strategy, and mandatory/excluded feature matrix before the public contract is fixed. These capabilities are not implemented or stabilized yet.
 

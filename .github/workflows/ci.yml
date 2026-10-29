@@ -89,7 +89,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
       mongodb:
-        image: mongo:8.0
+        image: mongo:7.0.45
         env:
           MONGO_INITDB_ROOT_USERNAME: root
           MONGO_INITDB_ROOT_PASSWORD: root

@@ -10,7 +10,7 @@ RustFlow currently exposes experimental SQLx pools and SQL migrations for relati
 
 ## Decision
 
-- Use the official MongoDB Rust driver, pinned to 3.6.0. The selected release declares Rust 1.85 as its MSRV and is Apache-2.0 licensed. The exact pin, minimal feature selection, and lockfile make resolution reproducible. Review driver security advisories during dependency review; an upgrade that raises the MSRV must be coordinated through the workspace policy rather than silently changing RustFlow's minimum version.
+- Use the official MongoDB Rust driver, pinned to 3.6.0. The selected release declares Rust 1.85 as its MSRV and is Apache-2.0 licensed. The exact pin, minimal feature selection, and lockfile make resolution reproducible. MongoDB 7.0.45 was selected as the explicit CI server patch (the latest 7.0 patch listed for October 13, 2026) instead of the 8.0 image line because the GitHub-hosted runner's kernel caused the 8.0 image to refuse startup before CI tests could run. Review driver security advisories during dependency review; an upgrade that raises the MSRV must be coordinated through the workspace policy rather than silently changing RustFlow's minimum version.
 - Keep the adapter in rustflow-server::document_database, separately from database.rs, SQLx AnyPool, DatabaseBackend, SQL transaction helpers, and SQL migrations.
 - Expose a small experimental boundary: MongoConfig, MongoDatabase, native typed Collection<T> handles, run_with_timeout, BSON conversion helpers, DocumentBootstrap, DocumentIndex, and MongoError.
 - Keep collection operations native to MongoDB. Do not add an ODM, model derives, a cross-engine query builder, or portable relational semantics in Phase 6.6.2.
@@ -30,7 +30,7 @@ RustFlow currently exposes experimental SQLx pools and SQL migrations for relati
 
 ## Verification and CI
 
-CI provisions a disposable authenticated mongo:8.0 service, passes RUSTFLOW_TEST_MONGODB_URI to integration tests, and runs the explicit mongodb_adapter integration target under Rust 1.85 and stable. The contract checks connection and server version, redaction, bounded failure to connect, authentication failure where URI credentials are present, CRUD, nested/optional BSON, unique indexes, duplicate-key classification, repeatable bootstrap, and resource cleanup. When run locally without RUSTFLOW_TEST_MONGODB_URI, the integration target may skip with an explicit message; in CI, a missing URI fails the test.
+CI provisions a disposable authenticated mongo:7.0.45 service, passes RUSTFLOW_TEST_MONGODB_URI to integration tests, and runs the explicit mongodb_adapter integration target under Rust 1.85 and stable. The contract checks connection and server version, redaction, bounded failure to connect, authentication failure where URI credentials are present, CRUD, nested/optional BSON, unique indexes, duplicate-key classification, repeatable bootstrap, and resource cleanup. When run locally without RUSTFLOW_TEST_MONGODB_URI, the integration target may skip with an explicit message; in CI, a missing URI fails the test.
 
 A workflow definition is not evidence that its check passed. Record the exact final PR head and the actual Rust, documentation, website, governance, dependency review, WASM, browser E2E/bundle and MongoDB integration results before marking this ADR or the roadmap criteria accepted.
 

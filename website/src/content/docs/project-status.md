@@ -112,7 +112,7 @@ La prueba de integración del CLI genera una aplicación y verifica validación,
 
 La subfase 6.6.1 quedó integrada en `main` mediante PR #54 y el commit `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`. Usa el driver SQLx `mysql` mediante `AnyPool`; la evidencia de CI cubre MySQL 8.0 y MariaDB 11.4 por separado. `DatabaseBackend::MySql` representa el driver compartido, no identifica el producto servidor. Las URLs usan `mysql://` y las migraciones de esa familia requieren `.rustflow-dialect` con `mysql`.
 
-La subfase 6.6.2 añade en PR #55 un adaptador MongoDB independiente de SQLx, configuración y timeout, BSON, acceso CRUD a colecciones nativas, bootstrap de colecciones/índices y mapeo seguro de errores. La CI debe comprobar estos contratos contra MongoDB 8.0 antes de dar por aceptada la subfase. La 6.6.3 (matriz consolidada de compatibilidad) sigue pendiente. La fase 6.6 no implementa el ORM/ODM maduro planeado para 6.7.
+La subfase 6.6.2 añade en PR #55 un adaptador MongoDB independiente de SQLx, configuración y timeout, BSON, acceso CRUD a colecciones nativas, bootstrap de colecciones/índices y mapeo seguro de errores. La CI debe comprobar estos contratos contra MongoDB 7.0.45 antes de dar por aceptada la subfase. La 6.6.3 (matriz consolidada de compatibilidad) sigue pendiente. La fase 6.6 no implementa el ORM/ODM maduro planeado para 6.7.
 
 ## Fase 6.7 — ORM SQL y mapeo documental (planificada)
 

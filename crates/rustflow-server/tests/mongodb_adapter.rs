@@ -61,7 +61,7 @@ fn invalid_password_uri(uri: &str) -> Option<String> {
 }
 
 #[tokio::test]
-async fn mongodb_80_real_server_contract() {
+async fn mongodb_7045_real_server_contract() {
     let Some(uri) = test_uri() else {
         eprintln!("Skipping MongoDB integration test outside CI: RUSTFLOW_TEST_MONGODB_URI is unset");
         return;
@@ -94,8 +94,8 @@ async fn mongodb_80_real_server_contract() {
         .get_str("version")
         .expect("buildInfo contains a server version");
     assert!(
-        version.starts_with("8."),
-        "CI contract expects MongoDB 8.0, got {version}"
+        version == "7.0.45",
+        "CI contract expects MongoDB 7.0.45, got {version}"
     );
 
     let collection_name = "profiles";

@@ -7,7 +7,7 @@ La integración SQLx de RustFlow es experimental y pre-1.0. Proporciona configur
 
 ## 1. Configurar el pool
 
-La PR #54 añadió SQLite, PostgreSQL y el driver de protocolo MySQL de SQLx mediante `AnyPool`; fue fusionada en `main` con el commit `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`. Las URLs `mysql://` son compartidas por MySQL y MariaDB, y `DatabaseBackend::MySql` identifica el driver, no el producto servidor. La fase 6.6.2 introduce un adaptador documental MongoDB separado de SQLx. El contrato inicial de integración usa MongoDB 8.0 y debe verificarse con los checks del PR #55.
+La PR #54 añadió SQLite, PostgreSQL y el driver de protocolo MySQL de SQLx mediante `AnyPool`; fue fusionada en `main` con el commit `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`. Las URLs `mysql://` son compartidas por MySQL y MariaDB, y `DatabaseBackend::MySql` identifica el driver, no el producto servidor. La fase 6.6.2 introduce un adaptador documental MongoDB separado de SQLx. El contrato inicial de integración usa MongoDB 7.0.45 y debe verificarse con los checks del PR #55.
 
 ~~~rust
 use rustflow_server::{AppConfig, DatabaseConfig, DatabasePool};
@@ -133,7 +133,7 @@ database.bootstrap(&bootstrap).await?;
 
 DocumentBootstrap prepara una colección si falta, crea índices declarados (incluidos los únicos) y comprueba que los nombres estén presentes. Puede repetirse con declaraciones sin cambios; no borra colecciones o índices, ni sustituye un índice incompatible, y no es un sistema de migraciones documentales. Los errores de BSON y del driver se conservan como fuentes para diagnóstico confiable, pero Display, Debug y los mensajes HTTP no imprimen URI ni mensajes internos sensibles. Solo el código de MongoDB 11000 se trata como conflicto HTTP 409.
 
-La API es experimental. Esta fase no implementa ODM, derives de modelos, relaciones SQL, un query builder portátil ni migraciones/transacciones propias. La implementación y el contrato inicial de CI para MongoDB 8.0 están en PR #55; la matriz completa de motores pertenece a la subfase 6.6.3.
+La API es experimental. Esta fase no implementa ODM, derives de modelos, relaciones SQL, un query builder portátil ni migraciones/transacciones propias. La implementación y el contrato inicial de CI para MongoDB 7.0.45 están en PR #55; la matriz completa de motores pertenece a la subfase 6.6.3.
 
 ## 5. Errores de base de datos
 
