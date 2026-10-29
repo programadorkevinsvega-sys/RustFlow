@@ -277,7 +277,7 @@ async fn run_contract(url: &str, server: ExpectedServer) {
 }
 
 #[tokio::test]
-async fn mysql_80_support_contract() {
+async fn mysql_8413_support_contract() {
     let Some(url) = configured_url(ExpectedServer::MySql) else {
         eprintln!("Skipping MySQL integration test outside CI: RUSTFLOW_TEST_MYSQL_URL is unset");
         return;
@@ -286,7 +286,7 @@ async fn mysql_80_support_contract() {
 }
 
 #[tokio::test]
-async fn mariadb_114_support_contract() {
+async fn mariadb_11413_support_contract() {
     let Some(url) = configured_url(ExpectedServer::MariaDb) else {
         eprintln!(
             "Skipping MariaDB integration test outside CI: RUSTFLOW_TEST_MARIADB_URL is unset"
