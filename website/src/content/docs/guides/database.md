@@ -7,7 +7,7 @@ La integración SQLx de RustFlow es experimental y pre-1.0. Proporciona configur
 
 ## 1. Configurar el pool
 
-Los motores actualmente habilitados son SQLite y PostgreSQL. El esquema de la URL selecciona el controlador. MySQL no está habilitado.
+Los únicos motores habilitados actualmente son SQLite y PostgreSQL. MySQL, MariaDB y MongoDB no están soportados por el código actual. El esquema de URL selecciona el driver SQLx para SQLite/PostgreSQL; MongoDB necesitará un adaptador independiente porque trabaja con documentos BSON, no SQL.
 
 ~~~rust
 use rustflow_server::{AppConfig, DatabaseConfig, DatabasePool};
@@ -111,6 +111,13 @@ Las migraciones de producción deben ejecutarse como un paso coordinado, antes d
 
 ## Límites actuales
 
-Esta fase no introduce ORM, modelos ActiveRecord, un repositorio genérico, generación de modelos SQL ni soporte MySQL. Las APIs de base de datos son experimentales; sesiones y autorización siguen siendo contratos separados. InMemorySessionStore continúa siendo volátil y local al proceso.
+Esta fase no introduce ORM, modelos ActiveRecord, un repositorio genérico, generación de modelos SQL ni soporte MySQL/MariaDB o MongoDB. Las APIs de base de datos son experimentales; sesiones y autorización siguen siendo contratos separados. InMemorySessionStore continúa siendo volátil y local al proceso.
+
+## Roadmap de persistencia (planificado, no disponible)
+
+- **Fase 6.6:** añadir soporte verificado para MySQL y MariaDB como motores relacionales y un adaptador independiente para MongoDB. La implementación, dependencias, configuración y pruebas aún están pendientes.
+- **Fase 6.7:** crear un ORM SQL tipado para SQLite, PostgreSQL, MySQL y MariaDB. MongoDB tendrá una subfase separada de mapeo documental/ODM; no se presentará como SQL ni se forzarán relaciones SQL sobre colecciones de documentos.
+
+Consulta el [roadmap completo](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) para criterios de aceptación. Estos hitos planificados no describen capacidades disponibles en la rama actual.
 
 Para el alcance completo, consulta la documentación técnica de SQLx y migraciones (docs/DATABASES.md), la referencia de disponibilidad de API (/reference/api-status/) y el roadmap (ROADMAP.md).
