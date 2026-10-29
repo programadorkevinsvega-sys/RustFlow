@@ -17,7 +17,7 @@ use ring::{pbkdf2, rand::{SecureRandom, SystemRandom}};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
-use crate::{HttpError, Middleware, Next, Request, Response};
+use crate::{HttpError, Middleware, Next, Request};
 
 const SESSION_ID_BYTES: usize = 32;
 const SESSION_ID_HEX_LEN: usize = SESSION_ID_BYTES * 2;
@@ -724,6 +724,7 @@ fn hex_nibble(byte: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Response;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     fn request_with_session(session: Option<SessionContext>) -> Request {
