@@ -350,31 +350,44 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 
 ## Phase 6.7 — ORM and model persistence (planned)
 
-**Status: planned.** This phase builds a typed model/persistence experience on the verified engine adapters from Phase 6.5/6.6. The term **SQL ORM** applies only to SQLite, PostgreSQL, MySQL, and MariaDB. MongoDB is document-oriented and belongs to the separate document-mapping/ODM subphase below; it must not be forced into a SQL query or relational model.
+**Status: planned.** This phase targets a **mature, cohesive ORM from the outset**, not a minimal ORM/MVP that is declared complete and incrementally grows afterward. The term **SQL ORM** applies only to SQLite, PostgreSQL, MySQL, and MariaDB. MongoDB is document-oriented and belongs to the separate document-mapping/ODM subphase below; it must not be forced into a SQL query or relational model.
+
+**Mandatory maturity rule:** the subphases below organize architecture and implementation work; they are not permission to ship or close Phase 6.7 as a CRUD-only ORM. Phase 6.7 cannot be marked complete until the complete public contract, query builder, relationships/loading, transaction semantics, type mapping, diagnostics, cross-engine behavior, documentation, and quality gates in this phase are implemented and verified together. Design the API and dependency boundaries for this full target before coding begins. Reuse proven, maintained foundations where appropriate rather than reinventing SQL dialect generation or database drivers. An ADR must select the ORM pattern and dependency strategy before the public API is fixed. The goal is a maintainable, well-tested ORM, not a feature-for-feature clone of another framework; any excluded capability must be explicitly listed in the accepted contract instead of left ambiguous.
 
 ### 6.7.1 Model contract and architecture
-- [ ] Record an ADR for model metadata, primary keys, nullable/defaulted fields, type mapping, error behavior, and the boundary between shared APIs and engine-specific capabilities.
-- [ ] Define a typed model trait/metadata contract and compile-time diagnostics before stabilizing public syntax.
-- [ ] Preserve escape hatches for raw, parameterized queries and engine-specific SQL; avoid a hidden global database singleton.
-- [ ] Define how transactions and model operations compose without hiding commit/rollback behavior.
+- [ ] Record an ADR that compares maintained foundations and selects the architectural pattern (for example, Active Record or Data Mapper), dependency boundaries, and trade-offs before fixing the public API.
+- [ ] Define model/table/column metadata, naming rules, primary keys (including the supported key shapes), nullable/default/generated fields, indexes/constraints, and type conversion.
+- [ ] Publish a type-support matrix for integers, booleans, text, bytes, decimals/numerics, UUIDs, timestamps/time zones, enums, JSON, nullable values, and engine-specific types where supported.
+- [ ] Define a typed model contract and derive/proc-macro diagnostics with compile-fail tests for invalid attributes, unsupported fields, and conflicting declarations.
+- [ ] Specify insert/update/delete semantics, returned/generated values, dirty-state or unit-of-work behavior appropriate to the chosen pattern, model lifecycle hooks if included, and safe error behavior.
+- [ ] Preserve an explicit escape hatch for raw, parameterized SQL and engine-specific capabilities; never interpolate user values into SQL or rely on a hidden global database singleton.
+- [ ] Define how transactions and model operations compose, including rollback behavior and how partial failures are represented.
+- [ ] Establish the mandatory versus explicitly excluded feature matrix in the ADR; do not leave the maturity target open-ended.
 
 ### 6.7.2 SQL ORM core
-- [ ] Add model derives or equivalent typed metadata for SQLite, PostgreSQL, MySQL, and MariaDB.
-- [ ] Implement typed row decoding and core CRUD operations: find/by-primary-key, insert, update, and delete.
-- [ ] Build safe parameterized filters, projections, sorting, limits, and pagination with explicit dialect handling.
-- [ ] Test nullable fields, missing rows, unique constraints, type conversion, transaction composition, and failure cases on every supported SQL engine.
-- [ ] Document migration compatibility and the cases where separate dialect-specific migration files are required.
+- [ ] Implement typed model mapping/derives and row decoding for SQLite, PostgreSQL, MySQL, and MariaDB against the Phase 6.6 verified adapters.
+- [ ] Implement complete core CRUD plus bulk insert/update/delete where semantically supported, with explicit handling of generated keys, defaults, affected-row counts, missing records, and unique/foreign-key conflicts.
+- [ ] Provide a composable, typed query builder for projections, aliases, predicates, nested AND/OR expressions, comparisons, NULL checks, IN, LIKE, ordering, distinct, limits/offset pagination, and documented support for joins, grouping/aggregates, HAVING and subqueries.
+- [ ] Define eager/relation loading as part of the complete ORM contract, with explicit load strategies and query-count tests; do not introduce silent lazy I/O that hides database work.
+- [ ] Support parameterized execution throughout. Identifiers and query fragments must be validated/constructed through safe typed APIs; values from callers must always be bound parameters.
+- [ ] Provide explicit APIs for dialect-specific operations (such as upsert/RETURNING) where support differs, and document capability detection rather than pretending all engines behave identically.
+- [ ] Integrate model operations with explicit transactions, including rollback on errors, and test bulk operations, conflict paths, and partial failure semantics.
+- [ ] Maintain a tested type-mapping matrix per supported SQL engine, including NULLs, JSON, timestamps, numeric/decimal, UUID and generated/default values where supported.
+- [ ] Integrate with the existing migration strategy without implying that migrations are portable across dialects; document and test per-engine migration directories when needed.
 
 ### 6.7.3 MongoDB document mapper / ODM
-- [ ] Define a distinct document model contract based on BSON, collections, document IDs, and MongoDB filter/update operations.
-- [ ] Implement typed document serialization and CRUD without presenting SQL constructs as portable to MongoDB.
-- [ ] Document index management, embedded documents versus references, and transaction/session limitations according to verified driver/server capabilities.
-- [ ] Add compile-time and integration tests for BSON type mapping, missing fields, IDs, updates, and error paths.
+- [ ] Define and document a separate typed document model/derive contract based on BSON, collections, `_id`, serializers/deserializers, and MongoDB's own query/update operators.
+- [ ] Implement CRUD, bulk operations where supported, projections, sorting, pagination, and aggregation capabilities supported by the selected driver, without presenting SQL constructs as portable to MongoDB.
+- [ ] Define index creation/verification, unique indexes, embedded documents versus references, and explicit handling of missing/null/default fields.
+- [ ] Specify session/transaction behavior and server/replica-set constraints from verified driver/server capabilities; do not claim parity with SQL transactions without evidence.
+- [ ] Provide safe filters and typed APIs while preserving a documented escape hatch for driver-native operations.
+- [ ] Add compile-time and integration tests for BSON type mapping, IDs, missing fields, nested documents, updates, indexes, duplicate keys, and failure paths.
 
 ### 6.7.4 Relations and loading behavior
-- [ ] Define SQL relationships and foreign-key behavior only after the core SQL ORM contract is stable.
-- [ ] Avoid N+1 behavior in documented relation-loading strategies and test query counts where practical.
-- [ ] Keep MongoDB embedding/referencing semantics in the ODM contract instead of pretending they are relational joins.
+- [ ] Implement and test SQL `belongs_to`/many-to-one, one-to-one, one-to-many, and many-to-many relationships, including join-table metadata and foreign-key behavior.
+- [ ] Support explicit eager/batch loading for SQL relations, nested loads within the documented scope, and predictable relation ordering; add query-count tests to guard against N+1 regressions.
+- [ ] Define relation mutation semantics, transaction requirements, and behavior when related records are missing or constraints fail.
+- [ ] Keep MongoDB embedding/referencing and document population semantics in the ODM contract; do not emulate relational joins where MongoDB does not provide them.
 
 ### 6.7.5 CLI, generated applications, and documentation
 - [ ] Evolve `rustflow generate model` only after the model contract is accepted; keep the current generator's plain-struct behavior until then.
@@ -382,11 +395,14 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 - [ ] Document real examples and limits in `docs/`, README, and `website/src/content/docs`; keep examples matched to the public API.
 
 ### 6.7.6 Quality and compatibility gate
-- [ ] Run unit, compile-fail, integration, and query-safety tests across the supported SQL engines and MongoDB.
-- [ ] Measure representative CRUD/query overhead and document methodology before making performance claims.
-- [ ] Review dependencies, MSRV, security, API stability, and failure behavior before labeling any ORM/ODM surface stable.
+- [ ] Run unit, compile-fail, property/model-based where useful, integration, and query-safety tests across all supported SQL engines and MongoDB.
+- [ ] Exercise migrations, connection loss/timeouts, pool exhaustion, transaction rollback, constraint violations, concurrent writes, and engine-version differences in repeatable CI.
+- [ ] Measure representative CRUD, relationship-loading, bulk-operation and query-builder overhead; document reproducible methodology and avoid unsupported performance claims.
+- [ ] Review dependency maintenance, Rust 1.85/stable MSRV policy, security advisories, feature combinations, API diagnostics, and failure behavior before claiming maturity.
+- [ ] Keep database engine behavior and unsupported operations explicit in docs; verify every documented example against the actual public API.
+- [ ] Add a complete generated application demonstrating models, relationships, validation, transaction composition, filtering/pagination, and secure HTTP integration.
 
-**Exit gate:** a generated CRUD example uses the typed SQL ORM on SQLite, PostgreSQL, MySQL, and MariaDB and the separate typed document API on MongoDB, with repeatable integration tests, documented limitations, and examples matching the implemented APIs. This target does not claim that an ORM or ODM exists today.
+**Maturity gate (all mandatory):** Phase 6.7 cannot close at a CRUD-only or prototype state. A generated application must prove the supported SQL ORM contract on SQLite, PostgreSQL, MySQL, and MariaDB and the separate mature document API on MongoDB. Model mapping, query building, relationships/loading, transaction/error semantics, integration tests, compile-fail diagnostics, documentation and CI must all pass together. Any feature intentionally excluded from the mature target must be named in the accepted ADR and shown as an explicit limitation; subphase completion alone does not mean the ORM/ODM is ready or complete.
 
 ## Phase 7 — Core framework completeness
 

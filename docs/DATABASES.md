@@ -69,7 +69,7 @@ The generated CLI scaffold applies migrations automatically only in development/
 
 Phase 6.6 is planned to add verified MySQL and MariaDB support through a relational driver path, plus a separate MongoDB adapter. MongoDB is document-oriented and must not be routed through SQLx `AnyPool`; its connection configuration, BSON mapping, indexes, and collection lifecycle need their own contract. All three adapters remain unavailable until their implementation and integration tests are merged.
 
-Phase 6.7 is planned to add a typed SQL ORM for SQLite, PostgreSQL, MySQL, and MariaDB. MongoDB is in scope for that milestone only through a separate document-mapping/ODM subphase, not through the SQL ORM. Model derives, query builders, relations, CLI integration, and the final API shape are not implemented or stabilized yet.
+Phase 6.7 is planned to deliver a mature, cohesive typed SQL ORM for SQLite, PostgreSQL, MySQL, and MariaDB, plus a separate mature document-mapping/ODM API for MongoDB. This is not a CRUD-only MVP target. The subphases organize implementation work; they do not permit Phase 6.7 to close until model metadata/type mapping, a composable query builder, relations and explicit efficient loading, transaction/error semantics, derive diagnostics, driver-specific behavior, generated-app examples, and CI-backed integration coverage meet the full acceptance gate. An ADR must select the architectural pattern, dependency strategy, and mandatory/excluded feature matrix before the public contract is fixed. These capabilities are not implemented or stabilized yet.
 
 ## Testing
 

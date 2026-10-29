@@ -116,7 +116,7 @@ Esta fase no introduce ORM, modelos ActiveRecord, un repositorio genérico, gene
 ## Roadmap de persistencia (planificado, no disponible)
 
 - **Fase 6.6:** añadir soporte verificado para MySQL y MariaDB como motores relacionales y un adaptador independiente para MongoDB. La implementación, dependencias, configuración y pruebas aún están pendientes.
-- **Fase 6.7:** crear un ORM SQL tipado para SQLite, PostgreSQL, MySQL y MariaDB. MongoDB tendrá una subfase separada de mapeo documental/ODM; no se presentará como SQL ni se forzarán relaciones SQL sobre colecciones de documentos.
+- **Fase 6.7:** crear un ORM SQL maduro para SQLite, PostgreSQL, MySQL y MariaDB. MongoDB tendrá una subfase separada de mapeo documental/ODM maduro; no se presentará como SQL ni se forzarán relaciones SQL sobre colecciones de documentos. La fase no se cerrará con un ORM mínimo de solo CRUD: el diseño, consultas tipadas, relaciones/carga eficiente, transacciones, mapeo de tipos, diagnósticos y CI deben satisfacer el contrato completo aceptado antes de declarar el hito terminado.
 
 Consulta el [roadmap completo](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) para criterios de aceptación. Estos hitos planificados no describen capacidades disponibles en la rama actual.
 
