@@ -38,10 +38,16 @@ fn configured_url(server: ExpectedServer) -> Option<String> {
     match env::var(server.url_variable()) {
         Ok(url) if !url.is_empty() => Some(url),
         Ok(_) if env::var("CI").is_ok_and(|value| value == "true") => {
-            panic!("{} must be set to run database integration tests in CI", server.url_variable());
+            panic!(
+                "{} must be set to run database integration tests in CI",
+                server.url_variable()
+            );
         }
         Err(_) if env::var("CI").is_ok_and(|value| value == "true") => {
-            panic!("{} must be set to run database integration tests in CI", server.url_variable());
+            panic!(
+                "{} must be set to run database integration tests in CI",
+                server.url_variable()
+            );
         }
         _ => None,
     }
@@ -60,15 +66,17 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .with_max_connections(2)
         .expect("valid pool size");
     assert_eq!(config.backend(), DatabaseBackend::MySql);
-    assert!(!format!("{config:?}").contains(url), "Debug must redact the URL");
+    assert!(
+        !format!("{config:?}").contains(url),
+        "Debug must redact the URL"
+    );
 
     // Check an unavailable endpoint and rejected credentials without exposing either URL.
-    let unavailable = DatabaseConfig::new(
-        "mysql://rustflow_invalid:invalid-password@127.0.0.1:1/rustflow_test",
-    )
-    .expect("valid-shaped MySQL URL")
-    .with_acquire_timeout(Duration::from_secs(2))
-    .expect("positive timeout");
+    let unavailable =
+        DatabaseConfig::new("mysql://rustflow_invalid:invalid-password@127.0.0.1:1/rustflow_test")
+            .expect("valid-shaped MySQL URL")
+            .with_acquire_timeout(Duration::from_secs(2))
+            .expect("positive timeout");
     assert!(
         tokio::time::timeout(Duration::from_secs(3), DatabasePool::connect(&unavailable))
             .await
@@ -82,9 +90,8 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .split_once('/')
         .expect("database path in integration URL");
     let host_and_port = authority.rsplit('@').next().expect("host and port");
-    let bad_credentials = format!(
-        "mysql://rustflow_invalid:invalid-password@{host_and_port}/{database_and_options}"
-    );
+    let bad_credentials =
+        format!("mysql://rustflow_invalid:invalid-password@{host_and_port}/{database_and_options}");
     let bad_config = DatabaseConfig::new(bad_credentials)
         .expect("well-formed URL with deliberately invalid credentials")
         .with_acquire_timeout(Duration::from_secs(3))
@@ -127,8 +134,14 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .expect("reset migration metadata");
 
     let migrations = fixtures(server.migration_directory());
-    database.run_migrations(&migrations).await.expect("first migration run");
-    database.run_migrations(&migrations).await.expect("repeat migration run");
+    database
+        .run_migrations(&migrations)
+        .await
+        .expect("first migration run");
+    database
+        .run_migrations(&migrations)
+        .await
+        .expect("repeat migration run");
 
     let injection_like_value = "name'); DROP TABLE rustflow_phase661_items; --";
     sqlx::query("INSERT INTO rustflow_phase661_items (value) VALUES (?)")
@@ -136,13 +149,12 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .execute(database.pool())
         .await
         .expect("parameterized insert");
-    let selected: String = sqlx::query_scalar(
-        "SELECT value FROM rustflow_phase661_items WHERE value = ?",
-    )
-    .bind(injection_like_value)
-    .fetch_one(database.pool())
-    .await
-    .expect("read bound value");
+    let selected: String =
+        sqlx::query_scalar("SELECT value FROM rustflow_phase661_items WHERE value = ?")
+            .bind(injection_like_value)
+            .fetch_one(database.pool())
+            .await
+            .expect("read bound value");
     assert_eq!(selected, injection_like_value);
 
     sqlx::query("UPDATE rustflow_phase661_items SET value = ? WHERE value = ?")
@@ -157,10 +169,16 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .await
         .expect_err("unique constraint must reject duplicate");
     let mapped_error: DatabaseError = duplicate_error.into();
-    assert_eq!(mapped_error.to_http_error().status_code(), StatusCode::CONFLICT);
+    assert_eq!(
+        mapped_error.to_http_error().status_code(),
+        StatusCode::CONFLICT
+    );
     assert!(std::error::Error::source(&mapped_error).is_some());
 
-    let mut rollback = database.begin_transaction().await.expect("begin rollback transaction");
+    let mut rollback = database
+        .begin_transaction()
+        .await
+        .expect("begin rollback transaction");
     sqlx::query("INSERT INTO rustflow_phase661_items (value) VALUES (?)")
         .bind("rolled-back")
         .execute(rollback.connection())
@@ -168,7 +186,10 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .expect("write in rollback transaction");
     rollback.rollback().await.expect("rollback transaction");
 
-    let mut commit = database.begin_transaction().await.expect("begin commit transaction");
+    let mut commit = database
+        .begin_transaction()
+        .await
+        .expect("begin commit transaction");
     sqlx::query("INSERT INTO rustflow_phase661_items (value) VALUES (?)")
         .bind("committed")
         .execute(commit.connection())
@@ -176,21 +197,19 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .expect("write in commit transaction");
     commit.commit().await.expect("commit transaction");
 
-    let rolled_back_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM rustflow_phase661_items WHERE value = ?",
-    )
-    .bind("rolled-back")
-    .fetch_one(database.pool())
-    .await
-    .expect("count rolled back rows");
+    let rolled_back_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM rustflow_phase661_items WHERE value = ?")
+            .bind("rolled-back")
+            .fetch_one(database.pool())
+            .await
+            .expect("count rolled back rows");
     assert_eq!(rolled_back_count, 0);
-    let committed_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM rustflow_phase661_items WHERE value = ?",
-    )
-    .bind("committed")
-    .fetch_one(database.pool())
-    .await
-    .expect("count committed rows");
+    let committed_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM rustflow_phase661_items WHERE value = ?")
+            .bind("committed")
+            .fetch_one(database.pool())
+            .await
+            .expect("count committed rows");
     assert_eq!(committed_count, 1);
 
     let deleted = sqlx::query("DELETE FROM rustflow_phase661_items WHERE value = ?")
@@ -212,12 +231,14 @@ async fn run_contract(url: &str, server: ExpectedServer) {
     .await
     .expect("check rolled-back table");
     assert_eq!(table_count, 0);
-    database.run_migrations(&migrations).await.expect("reapply migration");
-    let empty_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM rustflow_phase661_items")
-            .fetch_one(database.pool())
-            .await
-            .expect("count after reapply");
+    database
+        .run_migrations(&migrations)
+        .await
+        .expect("reapply migration");
+    let empty_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM rustflow_phase661_items")
+        .fetch_one(database.pool())
+        .await
+        .expect("count after reapply");
     assert_eq!(empty_count, 0);
 
     let failed_dir = env::temp_dir().join(format!(
@@ -229,8 +250,7 @@ async fn run_contract(url: &str, server: ExpectedServer) {
             .as_nanos()
     ));
     fs::create_dir_all(&failed_dir).expect("create failing migration directory");
-    fs::write(failed_dir.join(".rustflow-dialect"), "mysql\n")
-        .expect("write dialect marker");
+    fs::write(failed_dir.join(".rustflow-dialect"), "mysql\n").expect("write dialect marker");
     for name in [
         "0001_create_phase661_items.up.sql",
         "0001_create_phase661_items.down.sql",
@@ -266,7 +286,9 @@ async fn mysql_80_support_contract() {
 #[tokio::test]
 async fn mariadb_114_support_contract() {
     let Some(url) = configured_url(ExpectedServer::MariaDb) else {
-        eprintln!("Skipping MariaDB integration test outside CI: RUSTFLOW_TEST_MARIADB_URL is unset");
+        eprintln!(
+            "Skipping MariaDB integration test outside CI: RUSTFLOW_TEST_MARIADB_URL is unset"
+        );
         return;
     };
     run_contract(&url, ExpectedServer::MariaDb).await;
