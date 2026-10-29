@@ -196,19 +196,21 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .expect("write in commit transaction");
     commit.commit().await.expect("commit transaction");
 
-    let rolled_back_count: i64 =
-        sqlx::query_scalar("SELECT CAST(COUNT(*) AS SIGNED) FROM rustflow_phase661_items WHERE value = ?")
-            .bind("rolled-back")
-            .fetch_one(database.pool())
-            .await
-            .expect("count rolled back rows");
+    let rolled_back_count: i64 = sqlx::query_scalar(
+        "SELECT CAST(COUNT(*) AS SIGNED) FROM rustflow_phase661_items WHERE value = ?",
+    )
+    .bind("rolled-back")
+    .fetch_one(database.pool())
+    .await
+    .expect("count rolled back rows");
     assert_eq!(rolled_back_count, 0);
-    let committed_count: i64 =
-        sqlx::query_scalar("SELECT CAST(COUNT(*) AS SIGNED) FROM rustflow_phase661_items WHERE value = ?")
-            .bind("committed")
-            .fetch_one(database.pool())
-            .await
-            .expect("count committed rows");
+    let committed_count: i64 = sqlx::query_scalar(
+        "SELECT CAST(COUNT(*) AS SIGNED) FROM rustflow_phase661_items WHERE value = ?",
+    )
+    .bind("committed")
+    .fetch_one(database.pool())
+    .await
+    .expect("count committed rows");
     assert_eq!(committed_count, 1);
 
     let deleted = sqlx::query("DELETE FROM rustflow_phase661_items WHERE value = ?")
@@ -234,10 +236,11 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .run_migrations(&migrations)
         .await
         .expect("reapply migration");
-    let empty_count: i64 = sqlx::query_scalar("SELECT CAST(COUNT(*) AS SIGNED) FROM rustflow_phase661_items")
-        .fetch_one(database.pool())
-        .await
-        .expect("count after reapply");
+    let empty_count: i64 =
+        sqlx::query_scalar("SELECT CAST(COUNT(*) AS SIGNED) FROM rustflow_phase661_items")
+            .fetch_one(database.pool())
+            .await
+            .expect("count after reapply");
     assert_eq!(empty_count, 0);
 
     let failed_dir = env::temp_dir().join(format!(
