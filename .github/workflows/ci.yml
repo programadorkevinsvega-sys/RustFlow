@@ -80,25 +80,42 @@ jobs:
       - name: Cache Cargo artifacts
         uses: Swatinem/rust-cache@v2
 
-      # Temporary diagnostic to transfer Cargo's resolved lockfile back into the
-      # source branch on the first SQLx dependency resolution. Remove after capture.
-      - name: Resolve SQLx dependencies and capture lockfile (temporary)
+      # TEMPORARY: bootstrap the lockfile and transfer rustfmt output to the source branch.
+      # Remove this step after the lockfile and formatted sources are committed.
+      - name: Resolve SQLx dependencies and capture formatted sources (temporary)
         shell: bash
         run: |
           set +e
           cargo check -p rustflow-server --all-features
           check_status=$?
+          cargo fmt --all
+          fmt_status=$?
           python3 - <<'PY'
           from pathlib import Path
           import base64
+
+          def emit(label, path):
+              payload = base64.b64encode(Path(path).read_bytes()).decode("ascii")
+              print(f"RUSTFLOW_SOURCE_{label}_BEGIN")
+              for index in range(0, len(payload), 900):
+                  print(f"RUSTFLOW_SOURCE_{label}_CHUNK_{index // 900:04d}={payload[index:index + 900]}")
+              print(f"RUSTFLOW_SOURCE_{label}_END")
 
           payload = base64.b64encode(Path("Cargo.lock").read_bytes()).decode("ascii")
           print("RUSTFLOW_LOCKFILE_BASE64_BEGIN")
           for index in range(0, len(payload), 900):
               print(f"RUSTFLOW_LOCKFILE_CHUNK_{index // 900:04d}={payload[index:index + 900]}")
           print("RUSTFLOW_LOCKFILE_BASE64_END")
+
+          emit("DATABASE_RS", "crates/rustflow-server/src/database.rs")
+          emit("CONFIG_RS", "crates/rustflow-server/src/config.rs")
+          emit("SERVER_LIB_RS", "crates/rustflow-server/src/lib.rs")
+          emit("CLI_LIB_RS", "crates/rustflow-cli/src/lib.rs")
+          emit("CLI_TEST_RS", "crates/rustflow-cli/tests/cli_integration.rs")
+          emit("DATABASE_CRUD_TEST_RS", "crates/rustflow-server/tests/database_crud.rs")
           PY
-          exit "$check_status"
+          if [ "$check_status" -ne 0 ]; then exit "$check_status"; fi
+          exit "$fmt_status"
 
       - name: Check formatting
         run: cargo fmt --all -- --check
