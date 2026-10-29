@@ -79,6 +79,32 @@ impl AppConfig {
         SocketAddr::new(self.host, self.port)
     }
 
+    /// Resolve one non-secret setting using the same precedence as AppConfig.
+    ///
+    /// In development/test, values are read from `.env`, then `.env.<profile>`, then the
+    /// process environment. In production, only the process environment is consulted.
+    /// Callers must not log returned values because settings may contain credentials.
+    pub fn setting(&self, key: &str) -> Result<Option<String>, ConfigError> {
+        if !valid_env_key(key) {
+            return Err(ConfigError("invalid setting name".to_owned()));
+        }
+
+        let process_environment = env::vars().collect::<BTreeMap<_, _>>();
+        if self.environment == AppEnvironment::Production {
+            return Ok(process_environment.get(key).cloned());
+        }
+
+        let working_directory = env::current_dir().map_err(|error| {
+            ConfigError(format!("could not determine current directory: {error}"))
+        })?;
+        let mut values = read_env_file(&working_directory.join(".env"))?;
+        values.extend(read_env_file(
+            &working_directory.join(format!(".env.{}", self.environment.as_str())),
+        )?);
+        values.extend(process_environment);
+        Ok(values.get(key).cloned())
+    }
+
     fn from_sources(
         process_environment: &BTreeMap<String, String>,
         working_directory: &Path,

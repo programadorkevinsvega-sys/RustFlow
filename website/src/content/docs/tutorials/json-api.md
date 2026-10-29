@@ -78,6 +78,6 @@ El ejemplo completo es la fuente de verdad para los imports, tipos y firmas exac
 
 ## Límites del ejemplo
 
-La tabla y las respuestas del servidor básico son estáticas. RustFlow aún no proporciona persistencia integrada, ORM, migraciones ni server actions. El servidor sí expone APIs experimentales separadas para CSRF, sesiones e identidad/guards, pero este ejemplo no las conecta ni implementa un proveedor de usuarios o un flujo completo de autenticación. Añadir esas capacidades no consiste únicamente en cambiar el tipo pasado a `request.json`.
+La tabla y las respuestas del servidor básico son estáticas y este ejemplo no usa una base de datos. En la rama de la Fase 6.5 está disponible una integración SQLx experimental para pools SQLite/PostgreSQL, consultas parametrizadas, transacciones y migraciones; consulta [Base de datos y migraciones](/guides/database/). No hay ORM ni server actions. El servidor también expone APIs experimentales separadas para CSRF, sesiones e identidad/guards, pero este ejemplo no las conecta ni implementa un proveedor de usuarios o un flujo completo de autenticación. Añadir persistencia y autorización no consiste únicamente en cambiar el tipo pasado a `request.json`.
 
 Para respuestas HTML seguras, composición SSR y layouts, continúa con [Servidor HTTP](/guides/server/), [SSR](/guides/ssr/) y el [tutorial de página de producto](/tutorials/product-page/). Para la lista completa de demostraciones, consulta el [catálogo de ejemplos](/reference/examples/).

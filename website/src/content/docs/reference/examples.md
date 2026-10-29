@@ -72,9 +72,9 @@ Desde la raíz del repositorio puedes ejecutar `cargo test --workspace --all-fea
 
 ## Lo que los ejemplos no proporcionan
 
-Los datos del catálogo de productos y de la lista de tareas no son persistentes. No hay una demo canónica full-stack que integre una base de datos, proveedor de usuarios, flujo de autenticación completo, autorización de negocio, CSRF, pagos o server actions. Las primitivas experimentales de sesión/guards se documentan por separado, pero aún no existe una aplicación CRUD persistente completa. No extrapoles esas capacidades desde un ejemplo de SSR, una ruta JSON o una interfaz de navegador.
+Los datos del catálogo de productos y de la lista de tareas no son persistentes. La API SQLx experimental permite conectar una base SQLite/PostgreSQL y aplicar migraciones, pero todavía no hay una demo canónica full-stack que integre CRUD persistente, proveedor de usuarios, flujo de autenticación completo, autorización de negocio, CSRF y server actions. Consulta la [guía de base de datos](/guides/database/) para el contrato de pool/consultas/migraciones y las pruebas reproducibles. No extrapoles una aplicación full-stack terminada desde ejemplos aislados de SSR, JSON o browser.
 
 
 ## Sesiones y rutas protegidas — Fase 6.4 integrada en main
 
-La guía [Sesiones, autenticación y autorización](/guides/sessions-and-access/) muestra la API experimental, rotación, guards antes del handler, políticas deny-by-default e integración CSRF de login/logout. No hay proveedor de usuarios ni adaptador persistente. Comando de prueba de integración: cargo test -p rustflow-server --test session_access.
+La guía [Sesiones, autenticación y autorización](/guides/sessions-and-access/) muestra la API experimental, rotación, guards antes del handler, políticas deny-by-default e integración CSRF de login/logout. No hay proveedor de usuarios ni adaptador persistente para SessionStore. Para la nueva integración SQLx de datos de aplicación, consulta [Base de datos y migraciones](/guides/database/). Comandos de prueba: `cargo test -p rustflow-server --test session_access` y `cargo test -p rustflow-server database::`.

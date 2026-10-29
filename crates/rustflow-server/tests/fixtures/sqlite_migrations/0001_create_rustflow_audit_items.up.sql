@@ -1,0 +1,4 @@
+CREATE TABLE rustflow_audit_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE
+);

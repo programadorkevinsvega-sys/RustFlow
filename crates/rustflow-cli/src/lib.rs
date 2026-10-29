@@ -498,7 +498,7 @@ fn write_project_files(root: &Path, files: &[(PathBuf, String)]) -> Result<(), C
 
 fn scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
     let package_manifest = format!(
-        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.85\"\n\n[package.metadata.rustflow]\ntemplate = \"server\"\n\n[dependencies]\nrustflow = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\nrustflow-server = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\", \"net\"] }}\n"
+        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.85\"\ndefault-run = \"{name}\"\n\n[package.metadata.rustflow]\ntemplate = \"server\"\n\n[[bin]]\nname = \"migrate\"\npath = \"src/bin/migrate.rs\"\n\n[dependencies]\nrustflow = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\nrustflow-server = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\", \"net\"] }}\n"
     );
     vec![
         (PathBuf::from("Cargo.toml"), package_manifest),
@@ -508,18 +508,21 @@ fn scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
         ),
         (
             PathBuf::from(".env.example"),
-            "# Safe local defaults only; never put secrets in this file.\nRUSTFLOW_ENV=development\nRUSTFLOW_HOST=127.0.0.1\nRUSTFLOW_PORT=3000\n".to_owned(),
+            "# Safe local defaults only; never put secrets in this file.\nRUSTFLOW_ENV=development\nRUSTFLOW_HOST=127.0.0.1\nRUSTFLOW_PORT=3000\nRUSTFLOW_DATABASE_URL=sqlite://rustflow.db?mode=rwc\nRUSTFLOW_DATABASE_MAX_CONNECTIONS=10\nRUSTFLOW_DATABASE_MIN_CONNECTIONS=0\nRUSTFLOW_DATABASE_ACQUIRE_TIMEOUT_SECS=10\n".to_owned(),
         ),
         (
             PathBuf::from("README.md"),
             format!(
-                "# {name}\n\nAplicación de servidor generada con RustFlow. Las APIs son pre-1.0 y pueden cambiar.\n\n## Desarrollo\n\n```sh\nrustflow dev\n```\n\nLa configuración inicial es `127.0.0.1:3000`. Copia `.env.example` a `.env` si deseas cambiar los ajustes locales; consulta `docs/CONFIGURATION.md` para precedencia y perfiles. `rustflow dev` ejecuta Cargo una vez; no incluye supervisión de archivos ni hot reload.\n\n## Build\n\n```sh\nrustflow build --release\n```\n\n## Generadores\n\n```sh\nrustflow generate component ProductCard\nrustflow generate page about\nrustflow generate controller health\nrustflow generate model User\nrustflow generate migration create_users\n```\n\nLos generadores de Rust registran el módulo dentro de la sección gestionada de `src/**/mod.rs`. Si el archivo de índice no conserva sus marcadores, el comando se detiene sin reemplazarlo. Las migraciones son archivos SQL de ejemplo: RustFlow todavía no incluye ORM, conexión a base de datos ni ejecutor de migraciones.\n\nLas dependencias de RustFlow están fijadas a la revisión del repositorio desde la que se compiló este CLI. Para actualizar esa revisión, cambia deliberadamente las dependencias de Git y vuelve a probar el proyecto.\n"
+                "# {name}\n\nAplicación de servidor generada con RustFlow. Las APIs son pre-1.0 y pueden cambiar.\n\n## Desarrollo\n\n```sh\nrustflow dev\n```\n\nLa configuración inicial es `127.0.0.1:3000`. Copia `.env.example` a `.env` si deseas cambiar los ajustes locales; consulta `docs/CONFIGURATION.md` para precedencia y perfiles. `rustflow dev` ejecuta Cargo una vez; no incluye supervisión de archivos ni hot reload.\n\n## Build\n\n```sh\nrustflow build --release\n```\n\n## Generadores\n\n```sh\nrustflow generate component ProductCard\nrustflow generate page about\nrustflow generate controller health\nrustflow generate model User\nrustflow generate migration create_users\n```\n\nLos generadores de Rust registran el módulo dentro de la sección gestionada de `src/**/mod.rs`. Si el archivo de índice no conserva sus marcadores, el comando se detiene sin reemplazarlo. Las migraciones son archivos SQL que el ejecutor SQLx puede aplicar de forma explícita; no se ejecutan por el comando generate.\n\nLas dependencias de RustFlow están fijadas a la revisión del repositorio desde la que se compiló este CLI. Para actualizar esa revisión, cambia deliberadamente las dependencias de Git y vuelve a probar el proyecto.\n\nLa aplicación usa un pool SQLx configurable. En desarrollo/test aplica migraciones al iniciar; en producción ejecuta `cargo run --bin migrate` como paso de despliegue antes de arrancar varias instancias. Consulta docs/CONFIGURATION.md para definir RUSTFLOW_DATABASE_URL y los límites del pool.\n"
             ),
         ),
         (
             PathBuf::from("src/main.rs"),
-            r#"use std::error::Error;
-use rustflow_server::{AppConfig, Application};
+            r#"use std::{error::Error, sync::Arc};
+use rustflow_server::{
+    AppConfig, AppEnvironment, Application, DatabaseConfig, DatabaseError, DatabasePool,
+    Request, Response,
+};
 
 pub mod components;
 pub mod controllers;
@@ -530,7 +533,24 @@ pub mod pages;
 async fn main() -> Result<(), Box<dyn Error>> {
     let config = AppConfig::load()?;
     let address = config.socket_addr();
+    let database_config = DatabaseConfig::from_app_config(&config)?;
+    let database = Arc::new(DatabasePool::connect(&database_config).await?);
+    if config.environment != AppEnvironment::Production {
+        database.run_migrations("migrations").await?;
+    }
+
+    let database_probe = Arc::clone(&database);
     let mut app = Application::new();
+    app.get("/health/database", move |_request: Request| {
+        let database = Arc::clone(&database_probe);
+        async move {
+            rustflow_server::sqlx::query("SELECT 1")
+                .execute(database.pool())
+                .await
+                .map_err(|error| DatabaseError::from(error).to_http_error())?;
+            Ok(Response::text("ok"))
+        }
+    })?;
     app.get("/", controllers::home_controller::index)?;
     println!("RustFlow server listening on http://{address}");
     app.serve(address).await?;
@@ -566,6 +586,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
         (
             PathBuf::from("migrations/.gitkeep"),
             String::new(),
+        ),
+        (
+            PathBuf::from("src/bin/migrate.rs"),
+            r#"use std::error::Error;
+use rustflow_server::{AppConfig, DatabaseConfig, DatabasePool};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let config = AppConfig::load()?;
+    let database_config = DatabaseConfig::from_app_config(&config)?;
+    let database = DatabasePool::connect(&database_config).await?;
+    database.run_migrations("migrations").await?;
+    database.close().await;
+    println!("RustFlow database migrations completed.");
+    Ok(())
+}
+"#
+            .to_owned(),
         ),
     ]
 }
@@ -1026,7 +1064,7 @@ fn model_template(name: &str) -> String {
 fn migration_template(name: &str) -> String {
     let table = name.strip_prefix("create_").unwrap_or(name);
     format!(
-        "-- Plantilla estructural generada por RustFlow.\n-- No se ejecuta automáticamente: no hay runner de migraciones ni ORM integrado.\n-- Adapta el dialecto SQL y el esquema antes de usarla.\n\nCREATE TABLE IF NOT EXISTS {table} (\n    id INTEGER PRIMARY KEY,\n    name TEXT NOT NULL\n);\n"
+        "-- Plantilla SQL generada por RustFlow.\n-- Se aplica solo cuando la app ejecuta DatabasePool::run_migrations.\n-- Es irreversible porque no tiene archivo .down.sql; en producción prefiere una migración correctiva hacia delante.\n-- Revisa el dialecto del motor antes de aplicar.\n\nCREATE TABLE IF NOT EXISTS {table} (\n    id INTEGER PRIMARY KEY,\n    name TEXT NOT NULL\n);\n"
     )
 }
 
