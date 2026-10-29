@@ -42,16 +42,17 @@ use axum::{
 use bytes::Bytes;
 pub use config::{AppConfig, AppEnvironment, ConfigError};
 pub use csrf::{CsrfError, CsrfProtection, CsrfToken};
-pub use document_database::{
-    from_bson_document, to_bson_document, DocumentBootstrap, DocumentIndex, MongoConfig,
-    MongoDatabase, MongoError,
-};
 pub use database::{
     DatabaseBackend, DatabaseConfig, DatabaseError, DatabasePool, DatabaseTransaction,
+};
+pub use document_database::{
+    DocumentBootstrap, DocumentIndex, MongoConfig, MongoDatabase, MongoError, from_bson_document,
+    to_bson_document,
 };
 pub use group::RouteGroup;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
+pub use mongodb as mongodb_driver;
 pub use page::HtmlPage;
 pub use proxy::{ClientAddressPolicy, IpNetwork};
 use serde::{Serialize, de::DeserializeOwned};
@@ -60,7 +61,6 @@ pub use sessions::{
     SameSite, SessionContext, SessionCookieConfig, SessionError, SessionId, SessionManager,
     SessionStore, require_authentication, require_permission,
 };
-pub use mongodb as mongodb_driver;
 pub use sqlx;
 pub use tls::tls_server_config_from_pem;
 use tokio::net::TcpListener;

@@ -125,18 +125,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
 
-      - name: Format Rust source for inspection (temporary)
-        shell: bash
-        run: |
-          cargo fmt --all
-          echo "RUSTFLOW_FORMAT_MODULE_BEGIN"
-          cat crates/rustflow-server/src/document_database.rs
-          echo "RUSTFLOW_FORMAT_LIB_BEGIN"
-          cat crates/rustflow-server/src/lib.rs
-          echo "RUSTFLOW_FORMAT_TEST_BEGIN"
-          cat crates/rustflow-server/tests/mongodb_adapter.rs
-          echo "RUSTFLOW_FORMAT_FILES_END"
-
       - name: Check formatting
         run: cargo fmt --all -- --check
 

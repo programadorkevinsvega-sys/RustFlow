@@ -4,10 +4,10 @@ use std::{
 };
 
 use http::StatusCode;
-use rustflow_server::mongodb_driver::bson::{doc, oid::ObjectId, Document};
+use rustflow_server::mongodb_driver::bson::{Document, doc, oid::ObjectId};
 use rustflow_server::{
-    DocumentBootstrap, DocumentIndex, MongoConfig, MongoDatabase, MongoError,
-    from_bson_document, to_bson_document,
+    DocumentBootstrap, DocumentIndex, MongoConfig, MongoDatabase, MongoError, from_bson_document,
+    to_bson_document,
 };
 use serde::{Deserialize, Serialize};
 
@@ -63,7 +63,9 @@ fn invalid_password_uri(uri: &str) -> Option<String> {
 #[tokio::test]
 async fn mongodb_7045_real_server_contract() {
     let Some(uri) = test_uri() else {
-        eprintln!("Skipping MongoDB integration test outside CI: RUSTFLOW_TEST_MONGODB_URI is unset");
+        eprintln!(
+            "Skipping MongoDB integration test outside CI: RUSTFLOW_TEST_MONGODB_URI is unset"
+        );
         return;
     };
 
@@ -78,7 +80,10 @@ async fn mongodb_7045_real_server_contract() {
         .expect("valid operation timeout");
 
     let debug = format!("{config:?}");
-    assert!(!debug.contains(&uri), "MongoConfig Debug must redact the URI");
+    assert!(
+        !debug.contains(&uri),
+        "MongoConfig Debug must redact the URI"
+    );
     assert!(!debug.contains("root:root"), "credentials must be redacted");
 
     let database = MongoDatabase::connect(&config)
@@ -106,7 +111,10 @@ async fn mongodb_7045_real_server_contract() {
                 .expect("valid unique index"),
         )
         .expect("unique index declaration");
-    database.bootstrap(&bootstrap).await.expect("first bootstrap");
+    database
+        .bootstrap(&bootstrap)
+        .await
+        .expect("first bootstrap");
     database
         .bootstrap(&bootstrap)
         .await
@@ -218,13 +226,11 @@ async fn mongodb_7045_real_server_contract() {
             .expect("invalid credentials URI is syntactically valid")
             .with_server_selection_timeout(Duration::from_secs(3))
             .expect("valid timeout");
-        let bad_credentials = tokio::time::timeout(
-            Duration::from_secs(6),
-            MongoDatabase::connect(&bad_config),
-        )
-        .await
-        .expect("invalid credentials check is bounded")
-        .expect_err("invalid credentials must not connect");
+        let bad_credentials =
+            tokio::time::timeout(Duration::from_secs(6), MongoDatabase::connect(&bad_config))
+                .await
+                .expect("invalid credentials check is bounded")
+                .expect_err("invalid credentials must not connect");
         assert!(!format!("{bad_credentials}").contains("invalid-phase662-password"));
         assert!(!format!("{bad_credentials:?}").contains("invalid-phase662-password"));
     }
@@ -256,7 +262,10 @@ async fn mongodb_invalid_uri_and_unreachable_server_fail_with_bounded_timeout() 
         .await
         .expect("unreachable server check is bounded")
         .expect_err("unreachable server must fail");
-    assert_eq!(error.to_http_error().status_code(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        error.to_http_error().status_code(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
     assert!(!format!("{error:?}").contains("127.0.0.1:1"));
     assert!(!format!("{error}").contains("mongodb://"));
 }
@@ -264,7 +273,7 @@ async fn mongodb_invalid_uri_and_unreachable_server_fail_with_bounded_timeout() 
 #[test]
 fn integration_bson_helpers_accept_native_documents() {
     let source = doc! { "name": "Ada", "metadata": { "active": true } };
-    let copied: Document = from_bson_document(to_bson_document(&source).expect("serialize"))
-        .expect("deserialize");
+    let copied: Document =
+        from_bson_document(to_bson_document(&source).expect("serialize")).expect("deserialize");
     assert_eq!(copied, source);
 }

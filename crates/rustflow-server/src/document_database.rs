@@ -3,19 +3,14 @@
 //! The adapter intentionally exposes the official driver's collection API rather than
 //! introducing an ODM, query builder, or relational abstraction.
 
-use std::{
-    error::Error as StdError,
-    fmt,
-    future::IntoFuture,
-    time::Duration,
-};
+use std::{error::Error as StdError, fmt, future::IntoFuture, time::Duration};
 
-use http::StatusCode;
 use crate::mongodb_driver::{
-    bson::{self, doc, Document},
-    options::{ClientOptions, IndexOptions},
     Client, Collection, Database, IndexModel,
+    bson::{self, Document, doc},
+    options::{ClientOptions, IndexOptions},
 };
+use http::StatusCode;
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{AppConfig, HttpError};
@@ -115,10 +110,7 @@ impl MongoConfig {
     }
 
     /// Set the driver's timeout for selecting a suitable server.
-    pub fn with_server_selection_timeout(
-        mut self,
-        timeout: Duration,
-    ) -> Result<Self, MongoError> {
+    pub fn with_server_selection_timeout(mut self, timeout: Duration) -> Result<Self, MongoError> {
         self.server_selection_timeout = validate_timeout("server-selection timeout", timeout)?;
         Ok(self)
     }
@@ -157,13 +149,13 @@ fn setting(config: &AppConfig, name: &str) -> Result<Option<String>, MongoError>
 }
 
 fn required_setting(config: &AppConfig, name: &str) -> Result<String, MongoError> {
-    setting(config, name)?.filter(|value| !value.trim().is_empty()).ok_or(
-        MongoError::InvalidConfiguration(match name {
+    setting(config, name)?
+        .filter(|value| !value.trim().is_empty())
+        .ok_or(MongoError::InvalidConfiguration(match name {
             "RUSTFLOW_MONGODB_URI" => "RUSTFLOW_MONGODB_URI must be configured",
             "RUSTFLOW_MONGODB_DATABASE" => "RUSTFLOW_MONGODB_DATABASE must be configured",
             _ => "required MongoDB setting is missing",
-        }),
-    )
+        }))
 }
 
 fn parse_timeout(name: &'static str, value: &str) -> Result<Duration, MongoError> {
@@ -219,11 +211,7 @@ pub struct DocumentIndex {
 
 impl DocumentIndex {
     /// Describe an index using the native MongoDB key document and uniqueness option.
-    pub fn new(
-        name: impl Into<String>,
-        keys: Document,
-        unique: bool,
-    ) -> Result<Self, MongoError> {
+    pub fn new(name: impl Into<String>, keys: Document, unique: bool) -> Result<Self, MongoError> {
         let name = name.into();
         if name.trim().is_empty() || name.chars().any(char::is_control) || keys.is_empty() {
             return Err(MongoError::InvalidConfiguration(
@@ -276,7 +264,11 @@ impl DocumentBootstrap {
 
     /// Add an index declaration. Duplicate index names in one declaration are rejected.
     pub fn with_index(mut self, index: DocumentIndex) -> Result<Self, MongoError> {
-        if self.indexes.iter().any(|existing| existing.name == index.name) {
+        if self
+            .indexes
+            .iter()
+            .any(|existing| existing.name == index.name)
+        {
             return Err(MongoError::InvalidConfiguration(
                 "MongoDB bootstrap contains duplicate index names",
             ));
@@ -394,21 +386,18 @@ impl MongoDatabase {
     /// Re-running bootstrap is intended to be idempotent for unchanged declarations.
     /// Existing collections are preserved; this operation never drops collections or
     /// indexes and it does not promise schema migration or index replacement semantics.
-    pub async fn bootstrap(
-        &self,
-        declaration: &DocumentBootstrap,
-    ) -> Result<(), MongoError> {
+    pub async fn bootstrap(&self, declaration: &DocumentBootstrap) -> Result<(), MongoError> {
         let collection_names = self
             .run_with_timeout(self.database.list_collection_names())
             .await
-            .map_err(MongoError::as_bootstrap)?;
+            .map_err(MongoError::into_bootstrap)?;
         if !collection_names
             .iter()
             .any(|name| name == &declaration.collection)
         {
             self.run_with_timeout(self.database.create_collection(&declaration.collection))
                 .await
-                .map_err(MongoError::as_bootstrap)?;
+                .map_err(MongoError::into_bootstrap)?;
         }
 
         let collection = self
@@ -424,15 +413,18 @@ impl MongoDatabase {
                 .build();
             self.run_with_timeout(collection.create_index(model))
                 .await
-                .map_err(MongoError::as_bootstrap)?;
+                .map_err(MongoError::into_bootstrap)?;
         }
 
         let existing_indexes = self
             .run_with_timeout(collection.list_index_names())
             .await
-            .map_err(MongoError::as_bootstrap)?;
+            .map_err(MongoError::into_bootstrap)?;
         for declared_index in &declaration.indexes {
-            if !existing_indexes.iter().any(|name| name == &declared_index.name) {
+            if !existing_indexes
+                .iter()
+                .any(|name| name == &declared_index.name)
+            {
                 return Err(MongoError::BootstrapVerification(
                     "MongoDB did not report a declared index after bootstrap",
                 ));
@@ -475,7 +467,7 @@ pub enum MongoError {
 }
 
 impl MongoError {
-    fn as_bootstrap(self) -> Self {
+    fn into_bootstrap(self) -> Self {
         match self {
             Self::Operation(error) | Self::Connect(error) | Self::InvalidUri(error) => {
                 Self::Bootstrap(error)
@@ -558,9 +550,7 @@ impl StdError for MongoError {
             | Self::Bootstrap(error) => Some(error),
             Self::Serialization(error) => Some(error),
             Self::Deserialization(error) => Some(error),
-            Self::InvalidConfiguration(_)
-            | Self::Timeout
-            | Self::BootstrapVerification(_) => None,
+            Self::InvalidConfiguration(_) | Self::Timeout | Self::BootstrapVerification(_) => None,
         }
     }
 }
@@ -593,14 +583,19 @@ mod tests {
 
     #[test]
     fn config_redacts_uri_and_rejects_invalid_values() {
-        let uri = "mongodb://rustflow:secret-password@localhost:27017/test?authSource=admin";
+        let uri = "***localhost:27017/test?authSource=admin";
         let config = MongoConfig::new(uri, "test").expect("valid configuration");
         let debug = format!("{config:?}");
         assert!(!debug.contains(uri));
         assert!(!debug.contains("secret-password"));
         assert!(MongoConfig::new("postgres://localhost/test", "test").is_err());
         assert!(MongoConfig::new("mongodb://localhost/test", "bad/name").is_err());
-        assert!(config.clone().with_operation_timeout(Duration::ZERO).is_err());
+        assert!(
+            config
+                .clone()
+                .with_operation_timeout(Duration::ZERO)
+                .is_err()
+        );
     }
 
     #[test]
