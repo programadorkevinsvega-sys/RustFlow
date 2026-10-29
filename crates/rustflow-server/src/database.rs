@@ -455,9 +455,10 @@ impl DatabaseError {
                 "Database temporarily unavailable",
             ),
             Some(sqlx::Error::Database(error))
-                if error.code().is_some_and(|code| {
-                    matches!(code.as_ref(), "23505" | "1555" | "2067" | "1062")
-                }) =>
+                if error.is_unique_violation()
+                    || error.code().is_some_and(|code| {
+                        matches!(code.as_ref(), "23505" | "1555" | "2067")
+                    }) =>
             {
                 HttpError::new(
                     StatusCode::CONFLICT,
