@@ -1,6 +1,6 @@
 ---
 title: Base de datos, SQLx y migraciones
-description: Configura pools SQLite/PostgreSQL, ejecuta consultas parametrizadas, usa transacciones y aplica migraciones versionadas.
+description: Configura SQLx para motores relacionales y el adaptador documental MongoDB; consulta pools, transacciones, migraciones y límites de compatibilidad.
 ---
 
 La integración SQLx de RustFlow es experimental y pre-1.0. Proporciona configuración de pool, transacciones explícitas, ejecución/reversión de migraciones y mapeo seguro de errores. No es un ORM: las entidades y las consultas siguen siendo código de la aplicación.
@@ -158,7 +158,7 @@ Las migraciones de producción deben ejecutarse como un paso coordinado, antes d
 
 Esta integración SQLx no introduce ORM, modelos ActiveRecord, repositorio genérico ni generación de modelos SQL. MongoDB cuenta con un adaptador documental separado en la subfase 6.6.2; la matriz consolidada de compatibilidad de la subfase 6.6.3 continúa pendiente. Las APIs de base de datos son experimentales; sesiones y autorización siguen siendo contratos separados. InMemorySessionStore continúa siendo volátil y local al proceso.
 
-## Roadmap de persistencia (planificado, no disponible)
+## Roadmap de persistencia (subfases pendientes y fase 6.7 planificada)
 
 - **Fase 6.6.1:** integrada en `main` mediante PR #54; la matriz validada cubre MySQL 8.0/MariaDB 11.4. **Fase 6.6.2:** adaptador documental MongoDB integrado en `main` mediante PR #55; CI, integración MongoDB 7.0.45, Rust estable/Rust 1.85 y los gates de calidad pasaron en el HEAD final. **Fase 6.6.3:** matriz de compatibilidad consolidada pendiente.
 - **Fase 6.7:** crear un ORM SQL maduro para SQLite, PostgreSQL, MySQL y MariaDB. MongoDB tendrá una subfase separada de mapeo documental/ODM maduro; no se presentará como SQL ni se forzarán relaciones SQL sobre colecciones de documentos. La fase no se cerrará con un ORM mínimo de solo CRUD: el diseño, consultas tipadas, relaciones/carga eficiente, transacciones, mapeo de tipos, diagnósticos y CI deben satisfacer el contrato completo aceptado antes de declarar el hito terminado.
