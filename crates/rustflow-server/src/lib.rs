@@ -6,6 +6,7 @@
 mod config;
 mod csrf;
 mod database;
+mod document_database;
 mod group;
 mod page;
 mod proxy;
@@ -44,9 +45,14 @@ pub use csrf::{CsrfError, CsrfProtection, CsrfToken};
 pub use database::{
     DatabaseBackend, DatabaseConfig, DatabaseError, DatabasePool, DatabaseTransaction,
 };
+pub use document_database::{
+    DocumentBootstrap, DocumentIndex, MongoConfig, MongoDatabase, MongoError, from_bson_document,
+    to_bson_document,
+};
 pub use group::RouteGroup;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
+pub use mongodb as mongodb_driver;
 pub use page::HtmlPage;
 pub use proxy::{ClientAddressPolicy, IpNetwork};
 use serde::{Serialize, de::DeserializeOwned};

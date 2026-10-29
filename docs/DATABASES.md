@@ -11,7 +11,7 @@ The adapter enables SQLite, PostgreSQL, and the SQLx MySQL protocol driver throu
 - MySQL: `mysql://user:password@host:3306/database`.
 - MariaDB: the same `mysql://` URL and SQLx MySQL driver; `mariadb://` is not accepted by SQLx `AnyPool` driver selection.
 
-MySQL and MariaDB are represented by `DatabaseBackend::MySql` because a `mysql://` URL selects the driver and does not identify the responding server product. CI is configured to exercise MySQL 8.0 and MariaDB 11.4 separately; other server versions and vendor-specific SQL features are not implied. MongoDB remains a separate, unimplemented document adapter. SQL syntax, placeholders, migrations, and value support remain engine-specific. Bind user values rather than interpolating request data into SQL.
+MySQL and MariaDB are represented by `DatabaseBackend::MySql` because a `mysql://` URL selects the driver and does not identify the responding server product. CI is configured to exercise MySQL 8.0 and MariaDB 11.4 separately; other server versions and vendor-specific SQL features are not implied. MongoDB is implemented through a separate document adapter in Phase 6.6.2; it does not use SQLx `AnyPool` or SQL migrations. SQL syntax, placeholders, migrations, and value support remain engine-specific. Bind user values rather than interpolating request data into SQL.
 
 ## Configuration and connection pool
 
@@ -88,9 +88,53 @@ cargo test -p rustflow-server --test database_engines -- --test-threads=1
 
 When running locally outside CI, a test skips if its corresponding URL is absent. In CI, a missing URL is a failure, so the job cannot pass without explicitly running both server contracts.
 
+## MongoDB document adapter (Phase 6.6.2)
+
+MongoDB is document-oriented and uses its own adapter, independent of SQLx, AnyPool, SQL transactions, and SQL migrations. The current API is experimental and exposes the official driver's native collection API rather than an ODM.
+
+The official MongoDB Rust driver is pinned to =3.6.0 because that release retains the repository's Rust 1.85 MSRV. The DNS SRV resolver feature is intentionally disabled because its Hickory 0.25 dependency triggered a high-severity dependency-review advisory; only standard mongodb:// URIs are supported by this initial adapter. Re-evaluate the pin and optional features during dependency/security reviews. The initial CI server contract is MongoDB 7.0.45.
+
+### Configuration
+
+Required settings are RUSTFLOW_MONGODB_URI and RUSTFLOW_MONGODB_DATABASE. Optional settings, expressed in positive integer seconds, are RUSTFLOW_MONGODB_CONNECT_TIMEOUT_SECS, RUSTFLOW_MONGODB_SERVER_SELECTION_TIMEOUT_SECS, and RUSTFLOW_MONGODB_OPERATION_TIMEOUT_SECS. Defaults are 10 seconds for connection, 10 seconds for server selection, and 15 seconds for operations passed through MongoDatabase::run_with_timeout.
+
+MongoConfig::from_app_config follows AppConfig's existing precedence. In production, the URI and database name must come from process configuration; the adapter does not load dotenv files itself. The URI is redacted in Debug, and adapter error displays/public HTTP responses omit driver messages and credentials.
+
+~~~rust
+use rustflow_server::{AppConfig, MongoConfig, MongoDatabase};
+
+let app = AppConfig::load()?;
+let config = MongoConfig::from_app_config(&app)?;
+let database = MongoDatabase::connect(&config).await?;
+database.ping().await?;
+~~~
+
+### BSON, native CRUD, and indexes
+
+Use mongodb_driver::bson and MongoDatabase::collection<T> to work with the driver's native query/update operators and serde-compatible document types. Wrap network actions in run_with_timeout when they need RustFlow's configured operation bound.
+
+~~~rust
+use rustflow_server::{
+    DocumentBootstrap, DocumentIndex, MongoDatabase, mongodb_driver::bson::{doc, Document},
+};
+
+let notes = database.collection::<Document>("notes");
+database
+    .run_with_timeout(notes.insert_one(doc! { "title": "A note", "metadata": { "pinned": false } }))
+    .await?;
+
+let bootstrap = DocumentBootstrap::new("notes")?
+    .with_index(DocumentIndex::new("title_idx", doc! { "title": 1 }, false)?)?;
+database.bootstrap(&bootstrap).await?;
+~~~
+
+The bootstrap contract creates a missing collection, creates declared indexes (including explicitly unique indexes), and verifies declared index names. Re-running an unchanged declaration is intended to be idempotent. It does not drop resources, replace indexes, validate arbitrary document schemas, or implement versioned document migrations. A unique-index violation is mapped to HTTP 409 only when the MongoDB driver reports duplicate-key code 11000, including native write errors; other internal driver errors are not exposed in client-facing responses.
+
+The adapter does not add an ODM, model derives, a portable query builder, SQL-like relations, or transaction/migration abstractions. Those capabilities are outside Phase 6.6.2 and belong to the separate Phase 6.7 document-mapper/ODM contract.
+
 ## Roadmap status
 
-Subphase 6.6.1 is implemented on PR #54. On exact PR head `3e97b580cc86fdd3b0307724c54a45efe0a9209f`, MySQL 8.0 and MariaDB 11.4 integration contracts, workspace tests, migration-marker unit coverage, formatting, Clippy, rustdoc, Browser E2E/bundle size, WASM, website build, dependency review, and governance all passed under Rust 1.85 and stable. The PR remains open for review. Subphases 6.6.2/6.6.3 remain open; MongoDB needs its own document-oriented adapter.
+Subphase 6.6.1 was merged into `main` as commit `48a491d660c71005b58ed88a4f6a7e8ba3390c9d` (PR #54). Previously recorded exact-head CI evidence covered MySQL 8.0, MariaDB 11.4, Rust 1.85/stable, and the required quality gates. Phase 6.6.2 is introduced in PR #55 with a separate MongoDB document adapter and a real MongoDB 7.0.45 integration contract. Phase 6.6 remains in progress until subphase 6.6.3 publishes the verified engine/version matrix.
 
 Phase 6.7 is planned to deliver a mature, cohesive typed SQL ORM for SQLite, PostgreSQL, MySQL, and MariaDB, plus a separate mature document-mapping/ODM API for MongoDB. This is not a CRUD-only MVP target. The subphases organize implementation work; they do not permit Phase 6.7 to close until model metadata/type mapping, a composable query builder, relations and explicit efficient loading, transaction/error semantics, derive diagnostics, driver-specific behavior, generated-app examples, and CI-backed integration coverage meet the full acceptance gate. An ADR must select the architectural pattern, dependency strategy, and mandatory/excluded feature matrix before the public contract is fixed. These capabilities are not implemented or stabilized yet.
 
@@ -106,4 +150,4 @@ cargo test -p rustflow-server --all-features
 cargo test --workspace --all-features
 ~~~
 
-This feature does not include an ORM, a general model/query abstraction, migration generation by sqlx-cli, a MongoDB adapter, database-backed sessions, or a built-in repository layer. MySQL/MariaDB support is implemented experimentally on PR #54; the described contracts and required checks passed on PR head `3e97b580cc86fdd3b0307724c54a45efe0a9209f`. The PR remains open for review and merge. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.
+The SQL integration does not include an ORM, a general model/query abstraction, migration generation by sqlx-cli, database-backed sessions, or a built-in repository layer. MongoDB has its own separate experimental adapter contract. MySQL/MariaDB support is implemented experimentally on PR #54; the described contracts and required checks passed on PR head `3e97b580cc86fdd3b0307724c54a45efe0a9209f`. The PR remains open for review and merge. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.

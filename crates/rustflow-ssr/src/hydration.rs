@@ -75,8 +75,9 @@ impl HydrationData {
     /// cannot detect a secret that a caller deliberately places in the value.
     pub fn from_value(value: &Value) -> Result<Self, HydrationDataError> {
         validate_value(value)?;
-        let json =
-            serde_json::to_string(value).map_err(|_| HydrationDataError::SerializationFailed)?;
+        let normalized = normalize_value(value);
+        let json = serde_json::to_string(&normalized)
+            .map_err(|_| HydrationDataError::SerializationFailed)?;
         let serialized = escape_html_script_data(&json);
         if serialized.len() > MAX_SERIALIZED_BYTES {
             return Err(HydrationDataError::PayloadTooLarge {
@@ -92,6 +93,28 @@ impl HydrationData {
     /// fragment, does not create a script element, and does not imply client hydration support.
     pub fn as_str(&self) -> &str {
         &self.serialized
+    }
+}
+
+// Do not rely on serde_json::Map's feature-dependent iteration order. The MongoDB
+// adapter enables serde_json's preserve_order feature through Cargo feature unification,
+// but hydration payloads still need a stable canonical representation.
+fn normalize_value(value: &Value) -> Value {
+    match value {
+        Value::Array(values) => Value::Array(values.iter().map(normalize_value).collect()),
+        Value::Object(values) => {
+            let mut keys: Vec<_> = values.keys().collect();
+            keys.sort_unstable();
+
+            let mut normalized = serde_json::Map::new();
+            for key in keys {
+                if let Some(child) = values.get(key) {
+                    normalized.insert(key.clone(), normalize_value(child));
+                }
+            }
+            Value::Object(normalized)
+        }
+        _ => value.clone(),
     }
 }
 
@@ -184,6 +207,13 @@ mod tests {
 
         assert_eq!(first, second);
         assert_eq!(first.as_str(), r#"{"a":[true,null],"z":1}"#);
+
+        let nested = HydrationData::from_json(r#"{"z":{"y":2,"b":3},"a":[{"z":0,"c":1}]}"#)
+            .expect("valid nested JSON");
+        assert_eq!(
+            nested.as_str(),
+            r#"{"a":[{"c":1,"z":0}],"z":{"b":3,"y":2}}"#
+        );
     }
 
     #[test]
