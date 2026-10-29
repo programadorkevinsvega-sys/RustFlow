@@ -677,7 +677,9 @@ mod tests {
         let url = match std::env::var("RUSTFLOW_TEST_DATABASE_URL") {
             Ok(url) if !url.trim().is_empty() => url,
             _ if std::env::var("CI").is_ok_and(|value| value == "true") => {
-                panic!("RUSTFLOW_TEST_DATABASE_URL must be set to run the PostgreSQL contract in CI");
+                panic!(
+                    "RUSTFLOW_TEST_DATABASE_URL must be set to run the PostgreSQL contract in CI"
+                );
             }
             _ => return,
         };
