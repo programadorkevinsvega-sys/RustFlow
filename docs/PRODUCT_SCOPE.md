@@ -187,9 +187,11 @@ El CLI de desarrollo genera un scaffold de servidor, delega `dev` y `build` a Ca
 Phase 6.4 adds experimental server-side sessions, host-only secure cookies, pre-handler authentication guards, default-deny authorization policies and password hashing through `ring`. PR #49 is merged as `d53036410fc0d51900acf0c59b52c85f64cd1640`; the required PR checks and the post-merge CI runs passed. The included memory session adapter is volatile and process-local, not production persistence. Credential verification backed by an application-defined provider, trusted role assignment, OAuth/OIDC, MFA, account recovery and brute-force protection are not included. Phase 6.5 adds SQLx pools, explicit transactions and migrations for SQLite/PostgreSQL. The generated CLI integration test exercises validated CRUD, persistence, session/auth guards, CSRF, rendered pages and HTML escaping; the required CI checks passed on both supported Rust toolchains for the tested code head. ORM abstractions and durable database-backed sessions remain outside this slice.
 
 
-## Planned database expansion (not implemented)
+## Database expansion status — Phase 6.6.1 under review
 
-The Phase 6.5 database baseline is experimental SQLx support for SQLite and PostgreSQL, with explicit SQL queries and migrations; it does not include an ORM. The current roadmap now schedules additional database engines for Phase 6.6: MySQL and MariaDB as relational engines, plus MongoDB through an independent document-oriented adapter. Phase 6.7 plans a typed SQL ORM for SQLite, PostgreSQL, MySQL, and MariaDB, with a separate MongoDB document mapper/ODM subphase. These are future targets only: do not describe them as available, add dependencies, or mark roadmap criteria complete until code, tests, documentation, and CI evidence exist.
+Phase 6.5 established the experimental SQLx baseline for SQLite/PostgreSQL. The 6.6.1 review branch enables SQLx 0.8.6's `mysql` feature and extends the same `AnyPool` configuration/transaction boundary to the MySQL protocol used by MySQL and MariaDB. The connection scheme is `mysql://` for both products, and `DatabaseBackend::MySql` identifies the driver family rather than the server product. CI is configured to verify MySQL 8.0 and MariaDB 11.4 separately. Keep this subphase under review until the final PR head passes both real-server contracts and the repository's required checks; this is not a production-readiness statement.
+
+MongoDB remains planned for subphase 6.6.2 as an independent document-oriented adapter. The final compatibility matrix remains pending in 6.6.3. Phase 6.7's SQL ORM and MongoDB ODM remain unimplemented.
 
 
 ## Mandatory maturity target for Phase 6.7 (planned, not implemented)
