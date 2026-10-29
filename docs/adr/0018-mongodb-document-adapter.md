@@ -18,7 +18,7 @@ RustFlow currently exposes experimental SQLx pools and SQL migrations for relati
 - Default connect, server-selection, and wrapped operation timeouts to 10, 10, and 15 seconds. The driver has native connect/server-selection limits; RustFlow wraps driver action futures with the configured operation timeout. Consumers should use run_with_timeout for every operation whose overall duration must be bounded.
 - Use BSON's serde integration through helpers that preserve serialization/deserialization errors as error sources. Expose the native BSON module through rustflow_server::mongodb_driver::bson.
 - Define a repeatable bootstrap declaration for one collection and explicit indexes. The bootstrap creates the collection when absent, creates declared indexes, verifies names, and propagates errors. Unchanged declarations are intended to be idempotent. No automatic drop, index replacement, data migration, or SQL migration reuse is provided.
-- Map HTTP 409 only when the MongoDB driver reports command code 11000 (duplicate key). Connection and operation timeouts/connectivity use a safe unavailable response; other internal errors produce a generic 500. The original driver error remains available through Error::source, while Display and Debug omit its message and credentials.
+- Map HTTP 409 only when the MongoDB driver reports duplicate-key code 11000, whether surfaced as a command error or a write error. Connection and operation timeouts/connectivity use a safe unavailable response; other internal errors produce a generic 500. The original driver error remains available through Error::source, while Display and Debug omit its message and credentials.
 
 ## Alternatives considered
 

@@ -497,10 +497,13 @@ impl MongoError {
 }
 
 fn is_duplicate_key(error: &crate::mongodb_driver::error::Error) -> bool {
-    matches!(
-        error.kind.as_ref(),
-        crate::mongodb_driver::error::ErrorKind::Command(command) if command.code == 11000
-    )
+    match error.kind.as_ref() {
+        crate::mongodb_driver::error::ErrorKind::Command(command) => command.code == 11000,
+        crate::mongodb_driver::error::ErrorKind::Write(
+            crate::mongodb_driver::error::WriteFailure::WriteError(write_error),
+        ) => write_error.code == 11000,
+        _ => false,
+    }
 }
 
 impl fmt::Debug for MongoError {
