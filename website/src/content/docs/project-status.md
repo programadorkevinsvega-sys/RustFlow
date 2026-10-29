@@ -89,7 +89,7 @@ La PR #47 se fusionó en `main` mediante squash en el commit `0a307e84bafabbc7df
 | Protección CSRF en mutaciones mediante cookies | Experimental, opt-in; requiere conectar middleware y proveer clave | [Formularios y validación](/guides/forms-validation/) |
 | Sesiones server-side y guards de acceso | Experimental, integrado en `main` (Fase 6.4); sin proveedor de usuarios ni persistencia durable | [Guía de sesiones](/guides/sessions-and-access/) |
 | Pool SQLx para SQLite/PostgreSQL | Experimental, disponible (Fase 6.5) | [Base de datos](/guides/database/); no incluye ORM |
-| MySQL y MariaDB | No disponibles; planificados para la Fase 6.6 | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
+| MySQL y MariaDB | Experimental, en revisión (subfase 6.6.1) | Driver `mysql` compartido; aceptación pendiente de CI separada del PR. [Guía](/guides/database/) |
 | MongoDB | No disponible; adaptador documental planificado para la Fase 6.6 | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
 | ORM SQL / mapeo documental MongoDB | No disponible; planificado para la Fase 6.7 | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
 
@@ -108,9 +108,11 @@ La implementación de la Fase 6.5 añade SQLx con pools configurables para SQLit
 
 La prueba de integración del CLI genera una aplicación y verifica validación, persistencia, verificación de contraseña, sesión/autenticación, CSRF, SSR y escape HTML. CI cubre Rust 1.85/stable, formato, Clippy, pruebas, documentación, WASM, Browser E2E, gobernanza, dependencias y build del sitio. Las APIs son experimentales: no hay ORM, capa genérica de repositorios, sesiones SQL durables ni proveedor de usuarios. La revisión de despliegue y seguridad de producción continúa siendo una responsabilidad de la aplicación.
 
-## Fase 6.6 — Motores de base de datos adicionales (planificada)
+## Fase 6.6 — Motores de base de datos adicionales (en progreso)
 
-Esta fase tiene como objetivo añadir MySQL y MariaDB como motores relacionales y MongoDB mediante un adaptador documental independiente. Requiere seleccionar drivers compatibles con la política de MSRV, definir configuración y mapeo de errores, probar transacciones/migraciones en los motores SQL, definir el ciclo de índices/colecciones para MongoDB y ejecutar pruebas de integración reproducibles. **Nada de esto está implementado actualmente**; SQLite y PostgreSQL siguen siendo los únicos motores disponibles en la Fase 6.5.
+La subfase 6.6.1 añade a la rama de revisión el driver SQLx `mysql` para MySQL y MariaDB mediante `AnyPool`. Ambos productos se prueban por separado (MySQL 8.0 y MariaDB 11.4); el backend `DatabaseBackend::MySql` representa el driver compartido, no la identificación del producto servidor. Las URLs admitidas para estos servidores usan `mysql://`, y los directorios de migración requieren `.rustflow-dialect` con `mysql`.
+
+Los contratos reales de ambos motores, la prueba unitaria de marcadores de dialecto y todos los workflows obligatorios pasaron en el head `3e97b580cc86fdd3b0307724c54a45efe0a9209f` bajo Rust 1.85/stable; PR #54 sigue abierto para revisión y no se ha fusionado. La subfase 6.6.2 (adaptador documental MongoDB independiente) y 6.6.3 (matriz de compatibilidad) siguen pendientes. Esta fase no implementa el ORM de la 6.7.
 
 ## Fase 6.7 — ORM SQL y mapeo documental (planificada)
 

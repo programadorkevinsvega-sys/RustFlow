@@ -10,14 +10,14 @@ RustFlow already has an experimental HTTP server, typed request validation, CSRF
 
 ## Decision
 
-- Integrate SQLx 0.8.6 with runtime Tokio/Rustls support, SQLite, PostgreSQL, the runtime-generic Any driver and SQLx migrations. MySQL is not enabled.
+- Integrate SQLx 0.8.6 with runtime Tokio/Rustls support, SQLite, PostgreSQL, the runtime-generic Any driver and SQLx migrations. MySQL was deferred to Phase 6.6.1; the shared SQLx driver extension is implemented on PR #54 and its architectural rationale is recorded in ADR 0017.
 - Expose configurable DatabaseConfig and cloneable DatabasePool from rustflow-server. DatabaseConfig validates supported URL schemes, pool bounds and acquire timeout; its Debug representation redacts the connection URL.
 - Resolve RUSTFLOW_DATABASE_URL, max/min pool connections and acquire timeout using AppConfig precedence. Development/test may read dotenv files. Production reads database settings only from the process environment and requires an explicit database URL.
 - Re-export SQLx for explicit, parameterized queries. Do not introduce an ORM or invent a model/query abstraction before CRUD use cases establish its shape.
 - Provide an explicit transaction wrapper with access to the SQLx connection and consuming commit/rollback methods. Dropping an uncommitted transaction requests rollback.
 - Use SQLx's versioned migration table and checksums. Apply pending migrations explicitly from a directory. Revert only when corresponding .down.sql migrations exist and the caller explicitly requests a target version.
 - Translate common database outcomes into safe HTTP responses: row-not-found 404, recognized unique-constraint conflict 409, pool exhaustion 503 and otherwise generic 500. Do not expose SQL, driver errors or connection strings in response messages.
-- Keep SQLite and PostgreSQL integration coverage, including repeatable migration, rollback, parameterized writes and transaction behavior. Add a disposable PostgreSQL service to CI; never depend on a developer's database.
+- Keep SQLite/PostgreSQL integration coverage, including repeatable migrations, rollback, parameterized writes and transaction behavior. Phase 6.6.1 proposes separate disposable MySQL and MariaDB CI services; acceptance is gated on both real-server contracts passing.
 - Development/test scaffold startup can apply migrations. Production deployment runs migrations as a single ordered deployment step before changing application replicas; forward corrective migrations are preferred to risky production rollback.
 
 ## Alternatives considered
