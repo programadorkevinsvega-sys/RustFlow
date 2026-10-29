@@ -99,7 +99,8 @@ fn cookie_pair(response: &str, name: &str) -> String {
         .take_while(|line| !line.is_empty())
         .filter_map(|line| {
             let (key, value) = line.split_once(':')?;
-            key.eq_ignore_ascii_case("set-cookie").then_some(value.trim())
+            key.eq_ignore_ascii_case("set-cookie")
+                .then_some(value.trim())
         })
         .find(|value| value.starts_with(&prefix))
         .expect("Set-Cookie for requested cookie")
@@ -116,7 +117,8 @@ fn cookie_header(response: &str, name: &str) -> &str {
         .take_while(|line| !line.is_empty())
         .filter_map(|line| {
             let (key, value) = line.split_once(':')?;
-            key.eq_ignore_ascii_case("set-cookie").then_some(value.trim())
+            key.eq_ignore_ascii_case("set-cookie")
+                .then_some(value.trim())
         })
         .find(|value| value.starts_with(&prefix))
         .expect("Set-Cookie for requested cookie")
@@ -277,7 +279,10 @@ async fn tcp_sessions_rotate_guards_authorize_and_preserve_csrf() {
         .lines()
         .filter(|line| line.to_ascii_lowercase().starts_with("set-cookie:"))
         .count();
-    assert!(set_cookie_count >= 2, "session middleware must not replace the handler cookie");
+    assert!(
+        set_cookie_count >= 2,
+        "session middleware must not replace the handler cookie"
+    );
     assert!(cookie_header(&login, "app_state").contains("app_state=login"));
     let session_set_cookie = cookie_header(&login, "rustflow_session").to_ascii_lowercase();
     assert!(session_set_cookie.contains("httponly"));
