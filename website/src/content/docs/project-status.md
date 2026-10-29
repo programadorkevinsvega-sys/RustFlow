@@ -89,7 +89,7 @@ La PR #47 se fusionó en `main` mediante squash en el commit `0a307e84bafabbc7df
 | Protección CSRF en mutaciones mediante cookies | Experimental, opt-in; requiere conectar middleware y proveer clave | [Formularios y validación](/guides/forms-validation/) |
 | Sesiones server-side y guards de acceso | Experimental, integrado en `main` (Fase 6.4); sin proveedor de usuarios ni persistencia durable | [Guía de sesiones](/guides/sessions-and-access/) |
 | Pool SQLx para SQLite/PostgreSQL | Experimental, disponible (Fase 6.5) | [Base de datos](/guides/database/); no incluye ORM |
-| MySQL y MariaDB | Experimental, integrado (subfase 6.6.1) | Driver `mysql` de SQLx; CI documentada para MySQL 8.0/MariaDB 11.4. PR #54 integrada en `main`. [Guía](/guides/database/) |
+| MySQL y MariaDB | Experimental, integrados (subfase 6.6.1); matrix actual en verificación (6.6.3) | SQLx 0.8.6 driver `mysql`; contract targets MySQL 8.4.13 LTS/MariaDB 11.4.13 LTS, con version assertions en CI. [Guía](/guides/database/) · [Matriz](/guides/database/#matriz-de-versiones-verificadas) |
 | MongoDB | Adaptador documental experimental integrado en `main` (subfase 6.6.2, PR #55) | `MongoConfig`, `MongoDatabase`, colecciones nativas, BSON, bootstrap e índices; independiente de SQLx. CI final aprobada con Rust estable/1.85 e integración MongoDB 7.0.45. [Guía](/guides/database/) |
 | ORM SQL / mapeo documental MongoDB | No disponible; planificado para la Fase 6.7 | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
 
@@ -110,9 +110,9 @@ La prueba de integración del CLI genera una aplicación y verifica validación,
 
 ## Fase 6.6 — Motores de base de datos adicionales (en progreso)
 
-La subfase 6.6.1 quedó integrada en `main` mediante PR #54 y el commit `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`. Usa el driver SQLx `mysql` mediante `AnyPool`; la evidencia de CI cubre MySQL 8.0 y MariaDB 11.4 por separado. `DatabaseBackend::MySql` representa el driver compartido, no identifica el producto servidor. Las URLs usan `mysql://` y las migraciones de esa familia requieren `.rustflow-dialect` con `mysql`.
+La subfase 6.6.1 quedó integrada en `main` mediante PR #54 y el commit `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`; sus pruebas originales cubrieron MySQL 8.0 y MariaDB 11.4. Usa el driver SQLx `mysql` mediante `AnyPool`. `DatabaseBackend::MySql` representa el driver compartido, no identifica el producto servidor. Las URLs usan `mysql://` y las migraciones de esa familia requieren `.rustflow-dialect` con `mysql`. En la subfase 6.6.3 se actualiza el target público a MySQL 8.4.13 LTS y MariaDB 11.4.13 LTS.
 
-La subfase 6.6.2 quedó integrada en `main` mediante PR #55, con el commit `e3ceb86d757bb7aa1a07e16a1e21b462adb69841`. Añade un adaptador MongoDB independiente de SQLx, configuración y timeout, BSON, acceso CRUD a colecciones nativas, bootstrap de colecciones/índices y mapeo seguro de errores. El HEAD final `8c1a33c261769bd731f00c371bac17a569611c68` pasó CI en Rust estable y Rust 1.85 con integración MongoDB 7.0.45; también pasaron documentación, gobernanza, revisión de dependencias, WebAssembly y Browser E2E/bundle. La 6.6.3 (matriz consolidada de compatibilidad) sigue pendiente, por lo que la fase 6.6 permanece en progreso. La fase 6.6 no implementa el ORM/ODM maduro planeado para 6.7.
+La subfase 6.6.2 quedó integrada en `main` mediante PR #55, con el commit `e3ceb86d757bb7aa1a07e16a1e21b462adb69841`. Añade un adaptador MongoDB independiente de SQLx, configuración y timeout, BSON, acceso CRUD a colecciones nativas, bootstrap de colecciones/índices y mapeo seguro de errores. La CI de su HEAD final pasó con integración MongoDB 7.0.45 en Rust estable/1.85. La subfase 6.6.3 está fijando y validando el contrato público completo (SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS y MongoDB 7.0.45), incluida la compatibilidad de drivers/MSRV, configuración y pruebas del scaffold. La fase 6.6 permanece en progreso hasta que el HEAD final de 6.6.3 pase todos los checks. La fase 6.6 no implementa el ORM/ODM maduro planeado para 6.7.
 
 ## Fase 6.7 — ORM SQL y mapeo documental (planificada)
 
