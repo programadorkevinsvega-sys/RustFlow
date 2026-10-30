@@ -352,7 +352,7 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 
 ## Phase 6.7 — ORM and model persistence (in progress)
 
-**Status: in progress.** ADR 0020 now proposes **Data Mapper on SeaORM 1.1.20**, compatible by declared MSRV with Rust 1.85 and by dependency range with SQLx 0.8.6. SeaORM is the selected maintained entity/ActiveModel/query/relation foundation; SQLx remains the planned driver and migration layer. The existing RustFlow SQL adapter still exposes an AnyPool, whereas SeaORM needs backend-specific SQLx pools. No second pool may be created: Phase 6.7.2 must add the SeaORM dependency/facade and perform one explicit pre-1.0 connection-boundary migration together. This subphase publishes the decision, model contract and validator; it does not add the SeaORM dependency or make CRUD executable.
+**Status: in progress.** ADR 0020 accepts **Data Mapper on SeaORM 1.1.20**. Phase 6.7.2 is implementing the single-pool bridge: the phase branch adds SeaORM only to `rustflow-server`, replaces `AnyPool` with backend-specific SQLx pools, and constructs SeaORM connectors from those same typed pool handles. SQLx migrations and direct raw-SQL access use the matching typed pool; mixed ORM/raw operations are routed through SeaORM transactions. This is an implementation slice, not completion evidence: all 6.7.2 acceptance criteria remain open until model CRUD, query builder, relations/loaders, cross-engine type codecs, integration tests, security review and all quality gates pass. No second pool is permitted.
 
 This phase targets a **mature, cohesive SQL ORM from the outset**, not a CRUD-only ORM/MVP. The term **SQL ORM** applies only to SQLite, PostgreSQL, MySQL and MariaDB. MongoDB is document-oriented and belongs to a separate ODM subphase; it must not be forced into a SQL model, query builder, relationships or migration system. SeaORM is selected only for the SQL subsystem.
 
@@ -370,6 +370,9 @@ This phase targets a **mature, cohesive SQL ORM from the outset**, not a CRUD-on
 - [x] Run required checks on the final PR SHA: Rust 1.85/stable, workspace and database integrations, Rustdoc, WASM, Browser E2E/bundle, website, governance and dependency review. Keep the PR open for review; do not merge automatically.
 
 ### 6.7.2 SQL ORM core
+
+**Implementation status:** the typed SQLx/SeaORM shared-pool bridge and backend-checked accessors are present in the phase branch; the rest of this checklist remains pending. No criterion is marked complete until CI and runtime evidence support it.
+
 - [ ] Integrate SeaORM's backend-specific SQLx typed pools as the single shared pool for SQLite, PostgreSQL, MySQL and MariaDB; migrate the existing AnyPool/raw connection API deliberately without opening a second pool, preserving URL configuration, timeouts, secret redaction, SQLx migrations and parameterized raw SQL.
 - [ ] Implement checked runtime model mapping/row decoding and RustFlow wrappers over SeaORM entities/ActiveModels for SQLite, PostgreSQL, MySQL and MariaDB against the Phase 6.6 verified services.
 - [ ] Implement complete core CRUD plus bulk insert/update/delete where semantically supported, with explicit handling of generated keys, defaults, affected-row counts, missing records, and unique/foreign-key conflicts.

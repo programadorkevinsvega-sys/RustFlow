@@ -1,36 +1,44 @@
 ---
-title: Base de datos, SQLx y migraciones
-description: Configura SQLx para motores relacionales y el adaptador documental MongoDB; consulta pools, transacciones, migraciones y límites de compatibilidad.
+title: Base de datos, SeaORM, SQLx y migraciones
+description: Configura SeaORM sobre pools SQLx tipados compartidos, consultas parametrizadas, transacciones y migraciones; MongoDB conserva su adaptador documental separado.
 ---
 
-La capa de pools/migraciones que ya existe en RustFlow es experimental y pre-1.0. Usa SQLx 0.8.6 con AnyPool para consultas explícitas parametrizadas y migraciones. Por sí sola no es un ORM.
+La capa de base de datos de RustFlow continúa siendo experimental y pre-1.0. Phase 6.7.1 seleccionó **Data Mapper con SeaORM 1.1.20** y añadió el derive de validación <code>rustflow::ModelDiagnostics</code>. La implementación de Phase 6.7.2 conecta SeaORM en <code>rustflow-server</code> y sustituye el antiguo <code>AnyPool</code> por un pool SQLx tipado por backend.
+
+SeaORM se construye a partir de un clone del mismo pool SQLx; no se crea una segunda pool para la misma URL. La integración relacional cubre SQLite, PostgreSQL, MySQL y MariaDB. MongoDB conserva su adaptador documental independiente, con BSON, colecciones e índices; su ODM pertenece a la subfase 6.7.3.
+
+La subfase 6.7.2 sigue en curso. El puente de conexión y el acceso a transacciones compartidas están en la rama de implementación, pero no representan el cierre del contrato ORM. CRUD completo, query builder, relaciones y loaders, codecs por motor, pruebas de N+1, matriz de tipos y gates CI siguen siendo criterios de aceptación pendientes.
 
 ## Foundation seleccionado para SQL ORM
 
-RustFlow selecciona **Data Mapper con SeaORM 1.1.20** como foundation mantenido para el SQL ORM. En 6.7.1 está disponible el derive de validación <code>rustflow::ModelDiagnostics</code>, que comprueba el subconjunto de atributos previsto. El crate SeaORM y el facade <code>rustflow_server::orm</code> se incorporarán en 6.7.2 junto con la migración del pool; esta selección aún no habilita Entity/ActiveModel ni persistencia.
+RustFlow usa el patrón **Data Mapper** con SeaORM. Las entidades y modelos los genera SeaORM mediante <code>DeriveEntityModel</code>; <code>ModelDiagnostics</code> valida el subconjunto de metadatos de RustFlow, pero no reemplaza los derives de SeaORM.
 
 ~~~rust
 use rustflow::ModelDiagnostics;
+use rustflow_server::sea_orm::entity::prelude::*;
 
-#[derive(ModelDiagnostics)]
+#[derive(Clone, Debug, PartialEq, ModelDiagnostics, DeriveEntityModel)]
 #[sea_orm(table_name = "user_profiles")]
-struct UserProfile {
+pub struct Model {
     #[sea_orm(primary_key)]
-    id: i64,
-    display_name: String,
-    nickname: Option<String>,
+    pub id: i64,
+    pub display_name: String,
+    pub nickname: Option<String>,
 }
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
 ~~~
 
-Este ejemplo demuestra únicamente la validación de metadatos. La declaración completa con <code>DeriveEntityModel</code> y los tipos Entity/ActiveModel se habilitarán cuando SeaORM se integre en 6.7.2.
+El ejemplo representa el contrato de declaración de entidad. Para operaciones persistentes, pasa <code>database.orm()</code> o la transacción explícita a la API SeaORM. No agregues conexiones globales ni relaciones con carga perezosa oculta.
 
-Esto **no conecta todavía las operaciones ORM al pool actual**, no hace CRUD desde RustFlow, ni prueba codecs de runtime. SeaORM necesita pools SQLx tipados por backend, mientras que el adaptador existente expone AnyPool. La fase 6.7.2 debe migrar esa frontera de forma explícita, con un único pool compartido por ORM y SQL parametrizado; no se permite abrir un segundo pool para la misma URL. El ADR y la [matriz de tipos/operaciones](/guides/database/#foundation-seleccionado-para-sql-orm) registran el contrato propuesto y sus límites.
-
-El SQL ORM cubre SQLite, PostgreSQL, MySQL y MariaDB. MongoDB sigue siendo el adaptador documental BSON separado y recibirá su propio ODM en 6.7.3. No comparte derives, relaciones SQL ni query builder relacional.
+El SQL ORM cubre SQLite, PostgreSQL, MySQL y MariaDB. MongoDB sigue siendo el adaptador documental BSON separado y no comparte derives, relaciones SQL ni query builder relacional.
 
 ## 1. Configurar el pool
 
-La integración relacional de RustFlow usa SQLx 0.8.6 mediante `AnyPool`; MySQL y MariaDB comparten el driver `mysql`, así que `DatabaseBackend::MySql` identifica la familia del driver, no el producto servidor. La fase 6.6.2 añadió el adaptador documental MongoDB independiente de SQLx y está fusionada en `main` mediante PR #55 (`e3ceb86d757bb7aa1a07e16a1e21b462adb69841`). La fase 6.6.3 establece los targets de compatibilidad actuales, el MSRV y qué garantías son compartidas frente a específicas por motor. Consulta también la [matriz técnica de compatibilidad](/guides/database/#matriz-de-versiones-verificadas) y el [contrato detallado de versiones](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/DATABASE_SUPPORT_MATRIX.md).
+La capa SQL usa SQLx 0.8.6 con un pool tipado por backend y SeaORM 1.1.20 sobre el mismo pool. MySQL y MariaDB comparten el driver `mysql`, así que `DatabaseBackend::MySql` identifica la familia del driver, no el producto servidor. MongoDB conserva un adaptador independiente de SQL. Consulta la [matriz técnica de compatibilidad](/guides/database/#matriz-de-versiones-verificadas) y el [contrato detallado de versiones](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/DATABASE_SUPPORT_MATRIX.md).
 
 ## Matriz de versiones verificadas
 
@@ -68,41 +76,51 @@ Configuración opcional del pool:
 
 Para desarrollo local puede usarse `sqlite://rustflow.db?mode=rwc`. Para PostgreSQL, MySQL o MariaDB configura una URL válida desde el entorno local o el gestor de secretos del despliegue; nunca guardes credenciales reales en el repositorio. Las URLs de `DatabaseConfig` se omiten en su salida `Debug`. Para MySQL y MariaDB usa el esquema `mysql://`; `mariadb://` no está admitido.
 
-## 2. Consultas parametrizadas
+## 2. Acceso a SeaORM y SQLx tipado
 
-La pool expone el AnyPool de SQLx mediante database.pool(). Puedes utilizar rustflow_server::sqlx sin añadir otra dependencia directa en el scaffold generado.
+`DatabasePool::orm()` devuelve la conexión SeaORM compartida con el pool SQLx. Usa esa referencia para Entity, ActiveModel, QuerySelect y loaders; las operaciones reciben explícitamente la conexión.
 
-El siguiente ejemplo usa sintaxis de placeholders SQLite. El SQL puede variar entre motores, pero los valores recibidos del usuario deben enviarse como parámetros:
+~~~rust
+use rustflow_server::{AppConfig, DatabaseConfig, DatabasePool};
+
+let app = AppConfig::load()?;
+let config = DatabaseConfig::from_app_config(&app)?;
+let database = DatabasePool::connect(&config).await?;
+let orm_connection = database.orm();
+~~~
+
+Para SQLx directo, selecciona el accessor que corresponde al backend configurado. No existe un accessor genérico que convierta todos los motores en un mismo pool.
 
 ~~~rust
 use rustflow_server::{DatabaseConfig, DatabasePool, sqlx};
 
-let config = DatabaseConfig::new("sqlite://rustflow.db?mode=rwc")?
-    .with_max_connections(8)?;
+let config = DatabaseConfig::new("sqlite://rustflow.db?mode=rwc")?;
 let database = DatabasePool::connect(&config).await?;
-
+let pool = database.sqlx_sqlite_pool().expect("configured SQLite backend");
 let row = sqlx::query("SELECT id, title FROM notes WHERE id = ?")
     .bind(requested_id)
-    .fetch_one(database.pool())
+    .fetch_one(pool)
     .await?;
 ~~~
 
-No uses format! para insertar nombres, emails, IDs o texto del usuario dentro de una sentencia SQL. Los nombres de tabla/columna no suelen ser valores bindables; si necesitas elegirlos, usa una lista permitida definida por la aplicación.
+Los accessors disponibles son `sqlx_sqlite_pool()`, `sqlx_postgres_pool()` y `sqlx_mysql_pool()`; el último se utiliza tanto con MySQL como con MariaDB. El SQL y los placeholders siguen siendo específicos del motor: SQLite y MySQL/MariaDB suelen usar `?`, mientras PostgreSQL usa `$1`, `$2`, etc. No uses `format!` para interpolar datos del usuario. Para SQL parametrizado a través de SeaORM también existen `query_raw` y `execute_raw`.
 
-## 3. Transacciones
+## 3. Transacciones compartidas
 
-begin_transaction devuelve una transacción explícita. Ejecuta las consultas a través de transaction.connection() y confirma solo cuando la operación completa haya tenido éxito:
+`begin_transaction()` inicia una transacción SeaORM sobre el mismo pool. El acceso `transaction.connection()` implementa `ConnectionTrait`; así, las operaciones ORM y las sentencias SQL parametrizadas pueden participar en la misma transacción.
 
 ~~~rust
-let mut transaction = database.begin_transaction().await?;
-rustflow_server::sqlx::query("INSERT INTO notes (title) VALUES (?)")
-    .bind(validated_title)
-    .execute(transaction.connection())
+let transaction = database.begin_transaction().await?;
+transaction
+    .execute_raw(
+        "INSERT INTO notes (title) VALUES (?)",
+        [validated_title.into()],
+    )
     .await?;
 transaction.commit().await?;
 ~~~
 
-Llama transaction.rollback().await? si la operación debe descartarse. Una transacción abandonada solicita rollback al cerrarse. Mantén las transacciones cortas y no las conserves abiertas mientras esperas llamadas HTTP u otras operaciones que no sean de base de datos.
+Llama `rollback().await?` si la operación debe descartarse. Mantén las transacciones cortas y no las conserves abiertas durante llamadas HTTP u otras operaciones ajenas a la base de datos. Si se pierde la conexión mientras se confirma, el resultado del commit puede ser desconocido; no afirmes que el servidor realizó rollback.
 
 ## 4. Migraciones versionadas
 
@@ -140,7 +158,7 @@ Para ejecutar la suite de integración local, configura dos bases desechables co
 
 ## Adaptador documental MongoDB (fase 6.6.2)
 
-MongoDB no usa DatabasePool, SQLx AnyPool, SQL ni migraciones *.sql. RustFlow expone un límite documental separado con MongoConfig, MongoDatabase, BSON y los tipos nativos del driver oficial.
+MongoDB no usa DatabasePool, los pools SQLx tipados, SQL ni migraciones *.sql. RustFlow expone un límite documental separado con MongoConfig, MongoDatabase, BSON y los tipos nativos del driver oficial.
 
 Configura RUSTFLOW_MONGODB_URI (URI estándar mongodb://; URI SRV mongodb+srv:// no habilitada en esta versión por la revisión de seguridad de la dependencia DNS) y RUSTFLOW_MONGODB_DATABASE. Los timeouts opcionales en segundos son RUSTFLOW_MONGODB_CONNECT_TIMEOUT_SECS, RUSTFLOW_MONGODB_SERVER_SELECTION_TIMEOUT_SECS y RUSTFLOW_MONGODB_OPERATION_TIMEOUT_SECS. Los defaults son 10 s, 10 s y 15 s. MongoConfig::from_app_config respeta la política de configuración de RustFlow: en producción los valores vienen del entorno del proceso, no de archivos dotenv. La URI se redacta en Debug.
 
@@ -195,12 +213,13 @@ Las migraciones de producción deben ejecutarse como un paso coordinado, antes d
 
 ## Límites actuales
 
-Esta integración SQLx no introduce ORM, modelos ActiveRecord, repositorio genérico ni generación de modelos SQL. MongoDB cuenta con un adaptador documental separado en la subfase 6.6.2. La matriz de la subfase 6.6.3 quedó verificada en el code head `51ac4c212b3d6bf68483ee2ef8e28b5c3a75f421`: Rust estable/1.85, los cinco contratos de motor/runtime, CLI generado, rustdoc, WebAssembly, Browser E2E/bundle, sitio de documentación, gobernanza y revisión de dependencias pasaron. La evidencia se registra en [matriz técnica](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/DATABASE_SUPPORT_MATRIX.md) y el [roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md). Las APIs de base de datos siguen siendo experimentales; sesiones y autorización siguen siendo contratos separados. InMemorySessionStore continúa siendo volátil y local al proceso.
+El puente de conexión SeaORM/SQLx tipado y las transacciones compartidas ya están en implementación, pero Phase 6.7.2 todavía no está cerrada. Aún deben implementarse y verificarse CRUD/bulk, composición avanzada de consultas, relaciones y loaders explícitos, mapeo de tipos y NULL, pruebas de precisión/rangos en los cuatro motores, carga sin N+1 y evidencia de errores/commit ambiguo. MongoDB conserva su adaptador documental de la subfase 6.6.2; su ODM pertenece a Phase 6.7.3. Las APIs de base de datos siguen siendo experimentales; sesiones y autorización siguen siendo contratos separados. `InMemorySessionStore` continúa siendo volátil y local al proceso.
 
-## Roadmap de persistencia (subfases pendientes y fase 6.7 planificada)
+## Roadmap de persistencia
 
-- **Fase 6.6.1:** integrada en `main` mediante PR #54; las pruebas originales cubrieron MySQL 8.0/MariaDB 11.4. **Fase 6.6.2:** adaptador MongoDB integrado en `main` mediante PR #55; su CI de Rust estable/1.85 e integración MongoDB 7.0.45 pasaron. **Fase 6.6.3:** contrato público verificado en el code head `51ac4c212b3d6bf68483ee2ef8e28b5c3a75f421`: SQLite 3.46.0 bundled, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS y MongoDB 7.0.45. El head pasó CI en ambos toolchains y todos los gates; la Phase 6.6 se cierra al integrar este contrato y la documentación en `main`.
-- **Fase 6.7:** crear un ORM SQL maduro para SQLite, PostgreSQL, MySQL y MariaDB. MongoDB tendrá una subfase separada de mapeo documental/ODM maduro; no se presentará como SQL ni se forzarán relaciones SQL sobre colecciones de documentos. La fase no se cerrará con un ORM mínimo de solo CRUD: el diseño, consultas tipadas, relaciones/carga eficiente, transacciones, mapeo de tipos, diagnósticos y CI deben satisfacer el contrato completo aceptado antes de declarar el hito terminado.
+- **Phase 6.7.1:** cerrada y fusionada en PR #58; selecciona SeaORM 1.1.20 y define el contrato Data Mapper/ModelDiagnostics.
+- **Phase 6.7.2:** en implementación. El puente de pool tipado, la fachada SeaORM y las transacciones compartidas están en desarrollo; CRUD/query builder, relaciones, codecs, pruebas por motor y gates completos siguen pendientes.
+- **Phase 6.7.3 y posteriores:** ODM MongoDB separado, relaciones/mutaciones ampliadas, CLI/generated apps y quality gate. No se incluyen en esta subfase.
 
 Consulta el [roadmap completo](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) para criterios de aceptación. La Phase 6.6.2 ofrece un adaptador experimental disponible en `main`; la matriz consolidada de la fase 6.6 y la API ORM/ODM prevista en la fase 6.7 siguen pendientes.
 
