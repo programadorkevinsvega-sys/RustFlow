@@ -546,7 +546,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         async move {
             database.query_raw("SELECT 1", [])
                 .await
-                .map_err(DatabaseError::to_http_error)?;
+                .map_err(|error| error.to_http_error())?;
             Ok(Response::text("ok"))
         }
     })?;

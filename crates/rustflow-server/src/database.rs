@@ -845,7 +845,7 @@ mod tests {
         println!("verified PostgreSQL server version: {server_version}");
 
         let row = sqlx::query("SELECT CAST(1 AS BIGINT)")
-            .fetch_one(database.sqlx_sqlite_pool().expect("SQLite pool"))
+            .fetch_one(database.sqlx_postgres_pool().expect("PostgreSQL pool"))
             .await
             .unwrap();
         use sqlx::Row;
