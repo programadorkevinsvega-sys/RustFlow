@@ -1,6 +1,6 @@
 # SQLx, pools, transactions, and migrations (Phase 6.5)
 
-The existing database pool/configuration/migration API is experimental and pre-1.0. It re-exports SQLx and currently uses AnyPool for explicit parameterized SQL and SQLx migrations; it is not yet wired to model CRUD. Phase 6.7.1 adds SeaORM 1.1.20 as a server-only SQL ORM foundation and ModelDiagnostics validation derive. The facade is architectural scaffolding only until Phase 6.7.2 migrates the single connection boundary from AnyPool to backend-specific SQLx pools. Do not create a parallel pool for the same database. The MongoDB adapter remains separate.
+The existing database pool/configuration/migration API is experimental and pre-1.0. It re-exports SQLx and currently uses AnyPool for explicit parameterized SQL and SQLx migrations; it is not yet wired to model CRUD. Phase 6.7.1 selects SeaORM 1.1.20 and adds the validation-only ModelDiagnostics derive, without adding SeaORM as a dependency. Phase 6.7.2 must introduce the SeaORM server facade and migrate the single connection boundary from AnyPool to backend-specific SQLx pools in one change. Do not create a parallel pool for the same database. The MongoDB adapter remains separate.
 
 ## Supported engines
 

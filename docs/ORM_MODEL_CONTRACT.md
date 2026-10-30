@@ -1,6 +1,6 @@
 # ORM model and SQL type contract (Phase 6.7.1)
 
-**Status: proposed architecture contract for review.** This subphase adds the SeaORM 1.1.20 foundation, a RustFlow model-diagnostics derive and compile-time checks. It does not yet connect model CRUD to RustFlow's existing DatabasePool. The type/engine matrix below is the target contract, not completed runtime integration evidence; Phase 6.7.2 must prove it against the exact database services.
+**Status: proposed architecture contract for review.** This subphase selects SeaORM 1.1.20 and adds the RustFlow ModelDiagnostics validator plus compile-time checks. The SeaORM crate/facade is intentionally deferred to 6.7.2, where it will be introduced with the single typed-pool migration. No model CRUD is connected to RustFlow's existing DatabasePool. The type/engine matrix below is the target contract, not runtime evidence.
 
 ## Selected architecture and model declaration
 
@@ -109,9 +109,9 @@ MongoDB remains the separate document adapter introduced in Phase 6.6.2. Its 6.7
 
 ## 6.7.1 implementation boundary
 
-Implemented in this subphase: SeaORM 1.1.20 as a server-only dependency/facade; RustFlow's validation-only ModelDiagnostics derive paired with SeaORM's DeriveEntityModel; positive metadata tests; compile-fail rustdoc cases for unsupported entity attributes, nullable keys, misspelled field attributes and unsupported field types; model/operation/type/hook/transaction contract; ADR and public/technical documentation.
+Implemented in this subphase: the SeaORM 1.1.20 foundation decision; RustFlow's validation-only ModelDiagnostics derive for the SeaORM attribute subset; positive validator tests; compile-fail rustdoc cases for unsupported entity attributes, nullable keys and unsupported field types; model/operation/type/hook/transaction contract; ADR and public/technical documentation.
 
-Not implemented in this subphase: CRUD execution through RustFlow's current DatabasePool; a typed-pool bridge; runtime row codecs and cross-engine type evidence; RustFlow's integrated query execution API; RustFlow relation mutation/loading wrappers; ODM; automatic DDL or migrations. Those are tracked in the later mandatory subphases.
+Not implemented in this subphase: adding the SeaORM dependency/facade; CRUD execution through RustFlow's current DatabasePool; the typed-pool bridge; runtime row codecs and cross-engine type evidence; RustFlow's integrated query execution API; RustFlow relation mutation/loading wrappers; ODM; automatic DDL or migrations. Those are tracked in the later mandatory subphases.
 
 ## References
 

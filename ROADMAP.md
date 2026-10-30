@@ -352,7 +352,7 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 
 ## Phase 6.7 — ORM and model persistence (in progress)
 
-**Status: in progress.** ADR 0020 now proposes **Data Mapper on SeaORM 1.1.20**, compatible by declared MSRV with Rust 1.85 and by dependency range with SQLx 0.8.6. SeaORM is the maintained entity/ActiveModel/query/relation foundation; SQLx remains the driver and migration layer. The existing RustFlow SQL adapter still exposes an AnyPool, whereas SeaORM needs backend-specific SQLx pools. No second pool may be created: Phase 6.7.2 must make one explicit pre-1.0 connection-boundary migration. This subphase publishes the foundation and model diagnostics; it does not yet make CRUD executable through RustFlow's legacy DatabasePool.
+**Status: in progress.** ADR 0020 now proposes **Data Mapper on SeaORM 1.1.20**, compatible by declared MSRV with Rust 1.85 and by dependency range with SQLx 0.8.6. SeaORM is the selected maintained entity/ActiveModel/query/relation foundation; SQLx remains the planned driver and migration layer. The existing RustFlow SQL adapter still exposes an AnyPool, whereas SeaORM needs backend-specific SQLx pools. No second pool may be created: Phase 6.7.2 must add the SeaORM dependency/facade and perform one explicit pre-1.0 connection-boundary migration together. This subphase publishes the decision, model contract and validator; it does not add the SeaORM dependency or make CRUD executable.
 
 This phase targets a **mature, cohesive SQL ORM from the outset**, not a CRUD-only ORM/MVP. The term **SQL ORM** applies only to SQLite, PostgreSQL, MySQL and MariaDB. MongoDB is document-oriented and belongs to a separate ODM subphase; it must not be forced into a SQL model, query builder, relationships or migration system. SeaORM is selected only for the SQL subsystem.
 
@@ -360,7 +360,7 @@ This phase targets a **mature, cohesive SQL ORM from the outset**, not a CRUD-on
 
 ### 6.7.1 Model contract and architecture
 
-- [x] Compare maintained ORM foundations and select a concrete pattern/dependency strategy before fixing the model API. ADR 0020 proposes Data Mapper on SeaORM 1.1.20; the connection-boundary migration from AnyPool to one typed per-engine pool is a mandatory 6.7.2 gate.
+- [x] Compare maintained ORM foundations and select a concrete pattern/dependency strategy before fixing the model API. ADR 0020 selects Data Mapper on SeaORM 1.1.20 for adoption in 6.7.2; the dependency, facade and connection-boundary migration from AnyPool to one typed per-engine pool are a single mandatory 6.7.2 gate.
 - [x] Define model/entity/table/column metadata, safe naming, primary-key rules, nullability, defaults/generated values, custom types, constraints and migration boundaries.
 - [x] Publish an engine-specific type contract covering integer ranges, booleans, text, bytes, decimals, UUID, date/time/timestamps, enums, JSON, NULL and excluded vendor types. Matrix cells are target behavior, not claims of runtime codec verification.
 - [x] Add RustFlow ModelDiagnostics to validate the supported SeaORM entity/field attribute subset, including unknown/duplicate attributes, invalid identifiers, key conflicts, unsupported types and composite-key limits.

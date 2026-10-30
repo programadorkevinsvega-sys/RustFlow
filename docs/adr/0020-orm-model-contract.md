@@ -29,7 +29,7 @@ Although SeaORM places write methods on ActiveModel, its operation methods recei
 
 ### 2. Foundation: SeaORM 1.1.20, SQLx 0.8.6 and SeaQuery 0.32.x
 
-Use **SeaORM 1.1.20** as the SQL ORM foundation, pinned exactly in the workspace dependency declaration for this experimental adoption.
+Select **SeaORM 1.1.20** as the SQL ORM foundation. Do not add the dependency in 6.7.1: introduce the exact pin and server-only features in 6.7.2 together with the typed-pool migration, so Cargo.lock, dependency review and the one-pool connection contract land atomically.
 
 Verified upstream manifest facts for SeaORM 1.1.20:
 
@@ -39,7 +39,7 @@ Verified upstream manifest facts for SeaORM 1.1.20:
 - Its 1.1.x driver documentation describes the sqlx-mysql feature as supporting MySQL and MariaDB, alongside PostgreSQL and SQLite.
 - It supplies Entity/Model/ActiveModel derives, a composable query API, relation metadata, explicit transactions and relation loaders. The public loader API includes load_one, load_many and load_many_to_many.
 
-RustFlow enables only the server-side SeaORM features required by the current contract: macros; SQLx SQLite, PostgreSQL and MySQL; Tokio/Rustls; JSON; chrono; rust_decimal; bigdecimal; UUID; and time. SeaORM remains a dependency of rustflow-server only. It must not enter rustflow, rustflow-view, rustflow-dom, browser examples or the WASM dependency graph.
+The planned server-only SeaORM feature set for 6.7.2 is: macros; SQLx SQLite, PostgreSQL and MySQL; Tokio/Rustls; JSON; chrono; rust_decimal; bigdecimal; UUID; and time. When introduced, SeaORM must remain a dependency of rustflow-server only; it must not enter rustflow, rustflow-view, rustflow-dom, browser examples or the WASM dependency graph.
 
 SeaORM uses SeaQuery internally for SQL AST construction and backend rendering. Do not introduce a second custom SQL renderer or duplicate query-builder implementation. Use the SeaQuery version resolved through SeaORM's 0.32.x dependency range; keep the lockfile reproducible and record the resolved version during the final dependency review.
 
@@ -67,7 +67,7 @@ No duplicate pool, hidden pool or process-global connection is allowed. If the t
 
 ### 4. Model derive and metadata contract
 
-Use SeaORM's maintained DeriveEntityModel for actual entity/model/column/primary-key code generation. Add the RustFlow-owned ModelDiagnostics derive as a validation-only companion:
+Use SeaORM's maintained DeriveEntityModel for actual entity/model/column/primary-key code generation in 6.7.2. Phase 6.7.1 adds the RustFlow-owned ModelDiagnostics derive as a validation-only companion; the macro validates the declared SeaORM subset now but does not require or expand SeaORM itself:
 
 ~~~rust
 use rustflow::ModelDiagnostics;
@@ -187,7 +187,7 @@ MongoDB remains the separate document adapter introduced in Phase 6.6.2. Its fut
 
 ## Phase boundaries and exit gates
 
-- **6.7.1:** this ADR and the Data Mapper/foundation decision; model/metadata/type/operation/hook/transaction contract; ModelDiagnostics derive; positive and compile-fail tests; ORM facade; technical and public documentation updates; all relevant required checks green on the final PR SHA. It does not integrate CRUD into RustFlow's legacy AnyPool or close Phase 6.7.
+- **6.7.1:** this ADR and the Data Mapper/foundation decision; model/metadata/type/operation/hook/transaction contract; validation-only ModelDiagnostics derive; positive and compile-fail tests; technical and public documentation updates; all relevant required checks green on the final PR SHA. The SeaORM dependency/facade and typed pool are introduced together in 6.7.2. This phase does not integrate CRUD into RustFlow's legacy AnyPool or close Phase 6.7.
 - **6.7.2:** typed-pool bridge to SeaORM without a second pool; migration and raw-SQL accessor evolution; checked runtime type codecs; query execution; CRUD/bulk operations; per-engine error classification; explicit transaction composition; real-service tests on the four SQL engines.
 - **6.7.3:** MongoDB's separate BSON document mapper/ODM, including native IDs, queries, update operators, indexes and MongoDB-specific transaction/session semantics.
 - **6.7.4:** relational associations, relation mutations, explicit eager/batch/nested loading, query-count and concurrency tests.
