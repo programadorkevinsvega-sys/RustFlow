@@ -584,6 +584,8 @@ impl DatabaseTransaction {
 pub enum DatabaseError {
     /// Invalid URL, pool sizing, timeout, or migration rollback configuration.
     InvalidConfiguration(&'static str),
+    /// An ORM operation was rejected before SQL execution because its model state was invalid.
+    InvalidModelState(&'static str),
     /// Initial typed-pool connection failed.
     Connect(sqlx::Error),
     /// A direct SQLx query or result-decoding operation failed.
@@ -601,6 +603,7 @@ impl DatabaseError {
         match self {
             Self::Connect(error) | Self::Query(error) => Some(error),
             Self::InvalidConfiguration(_)
+            | Self::InvalidModelState(_)
             | Self::OrmQuery(_)
             | Self::OrmTransaction(_)
             | Self::Migration(_) => None,
@@ -620,6 +623,9 @@ impl DatabaseError {
     /// exhaustion maps to 503, and everything else is a generic 500. Driver messages,
     /// SQL text, credentials, and connection URLs are never exposed to the caller.
     pub fn to_http_error(&self) -> HttpError {
+        if matches!(self, Self::InvalidModelState(_)) {
+            return HttpError::bad_request("Invalid model state");
+        }
         if let Some(error) = self.sqlx_error() {
             return match error {
                 sqlx::Error::RowNotFound => HttpError::not_found("Record not found"),
@@ -659,6 +665,7 @@ impl fmt::Display for DatabaseError {
             Self::InvalidConfiguration(message) => {
                 write!(formatter, "invalid database configuration: {message}")
             }
+            Self::InvalidModelState(message) => write!(formatter, "invalid ORM model state: {message}"),
             Self::Connect(_) => formatter.write_str("database connection failed"),
             Self::Query(_) | Self::OrmQuery(_) => formatter.write_str("database operation failed"),
             Self::OrmTransaction(_) => formatter.write_str("database transaction failed"),
@@ -673,7 +680,7 @@ impl Error for DatabaseError {
             Self::Connect(error) | Self::Query(error) => Some(error),
             Self::OrmQuery(error) | Self::OrmTransaction(error) => Some(error),
             Self::Migration(error) => Some(error),
-            Self::InvalidConfiguration(_) => None,
+            Self::InvalidConfiguration(_) | Self::InvalidModelState(_) => None,
         }
     }
 }
