@@ -873,6 +873,7 @@ fn validate_model_contract(input: &syn::DeriveInput) -> Result<(), syn::Error> {
         let mut auto_increment = None;
         let mut has_default_value = false;
         let mut has_default_expr = false;
+        let mut custom_type_mapping = false;
 
         for attr in field
             .attrs
@@ -923,8 +924,10 @@ fn validate_model_contract(input: &syn::DeriveInput) -> Result<(), syn::Error> {
                     }
                     "column_type" | "default_expr" | "enum_name" | "select_as" | "save_as" => {
                         let _: syn::LitStr = meta.value()?.parse()?;
-                        if name == "default_expr" {
-                            has_default_expr = true;
+                        match name.as_str() {
+                            "default_expr" => has_default_expr = true,
+                            "column_type" | "enum_name" => custom_type_mapping = true,
+                            _ => {}
                         }
                         Ok(())
                     }
@@ -981,7 +984,7 @@ fn validate_model_contract(input: &syn::DeriveInput) -> Result<(), syn::Error> {
                 "choose either default_value or default_expr, not both",
             ));
         }
-        validate_model_field_type(base_type)?;
+        validate_model_field_type(base_type, custom_type_mapping)?;
 
         if !seen_columns.insert(column_name.clone()) {
             return Err(syn::Error::new_spanned(
@@ -1050,7 +1053,10 @@ fn model_option_inner(ty: &syn::Type) -> Result<(&syn::Type, bool), syn::Error> 
     Ok((inner, true))
 }
 
-fn validate_model_field_type(ty: &syn::Type) -> Result<(), syn::Error> {
+fn validate_model_field_type(
+    ty: &syn::Type,
+    custom_type_mapping: bool,
+) -> Result<(), syn::Error> {
     let syn::Type::Path(path) = ty else {
         return Err(syn::Error::new_spanned(
             ty,
@@ -1078,13 +1084,62 @@ fn validate_model_field_type(ty: &syn::Type) -> Result<(), syn::Error> {
             ));
         };
         let is_bytes = args.args.len() == 1
-            && matches!(args.args.first(), Some(syn::GenericArgument::Type(syn::Type::Path(inner))) if inner.path.segments.last().is_some_and(|item| item.ident == "u8"));
+            && matches!(
+                args.args.first(),
+                Some(syn::GenericArgument::Type(syn::Type::Path(inner)))
+                    if inner.path.segments.last().is_some_and(|item| item.ident == "u8")
+            );
         if !is_bytes {
             return Err(syn::Error::new_spanned(
                 ty,
                 "only Vec<u8> is supported by the portable SQL model contract; PostgreSQL arrays require a separate opt-in",
             ));
         }
+        return Ok(());
+    }
+
+    // Keep the portable, feature-enabled type surface explicit. Qualified paths
+    // such as uuid::Uuid and chrono::NaiveDateTime are recognized by their final
+    // type segment. Custom SeaORM ValueType / ActiveEnum implementations require
+    // an explicit column_type or enum_name attribute.
+    let supported = matches!(
+        name.as_str(),
+        "bool"
+            | "char"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "f32"
+            | "f64"
+            | "String"
+            | "Uuid"
+            | "Json"
+            | "Decimal"
+            | "BigDecimal"
+            | "Date"
+            | "Time"
+            | "DateTime"
+            | "DateTimeWithTimeZone"
+            | "DateTimeUtc"
+            | "DateTimeLocal"
+            | "NaiveDate"
+            | "NaiveTime"
+            | "NaiveDateTime"
+            | "PrimitiveDateTime"
+            | "OffsetDateTime"
+    );
+    if !supported && !custom_type_mapping {
+        return Err(syn::Error::new_spanned(
+            ty,
+            format!(
+                "unsupported SQL model field type {name:?}; use a documented SeaORM type or declare an explicit enum_name / column_type mapping with a SeaORM ValueType implementation"
+            ),
+        ));
     }
     Ok(())
 }
@@ -1230,6 +1285,34 @@ mod model_diagnostics_tests {
                 .to_string()
                 .contains("nested Option")
         );
+    }
+
+    #[test]
+    fn rejects_unmapped_types_unless_an_explicit_seaorm_mapping_is_declared() {
+        let unsupported = r#"
+            #[sea_orm(table_name = "users")]
+            struct Model {
+                #[sea_orm(primary_key)]
+                id: i64,
+                address: std::net::IpAddr,
+            }
+        "#;
+        let custom_enum = r#"
+            #[sea_orm(table_name = "users")]
+            struct Model {
+                #[sea_orm(primary_key)]
+                id: i64,
+                #[sea_orm(enum_name = "UserStatus")]
+                status: UserStatus,
+            }
+        "#;
+        assert!(
+            validate(unsupported)
+                .unwrap_err()
+                .to_string()
+                .contains("unsupported SQL model field type")
+        );
+        assert!(validate(custom_enum).is_ok());
     }
 
     #[test]
