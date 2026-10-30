@@ -8,12 +8,12 @@ mod csrf;
 mod database;
 mod document_database;
 mod group;
+pub mod orm;
 mod page;
 mod proxy;
 mod sessions;
 mod tls;
 mod validation;
-pub mod orm;
 
 use std::{
     collections::{HashMap, HashSet},

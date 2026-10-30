@@ -751,7 +751,6 @@ fn compile_error(error: ParseError) -> TokenStream {
     .collect()
 }
 
-
 /// Validate a SeaORM entity declaration before SeaORM generates it.
 ///
 /// This derive is validation-only. Pair it with SeaORM's DeriveEntityModel;
@@ -801,7 +800,11 @@ fn validate_model_contract(input: &syn::DeriveInput) -> Result<(), syn::Error> {
 
     let mut model_options = std::collections::HashSet::new();
     let mut table_name = None;
-    for attr in input.attrs.iter().filter(|attr| attr.path().is_ident("sea_orm")) {
+    for attr in input
+        .attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("sea_orm"))
+    {
         attr.parse_nested_meta(|meta| {
             let name = meta.path.get_ident().map(ToString::to_string).ok_or_else(|| {
                 meta.error("qualified SeaORM model attributes are not supported")
@@ -857,7 +860,10 @@ fn validate_model_contract(input: &syn::DeriveInput) -> Result<(), syn::Error> {
     let mut auto_increment_key = false;
     let mut seen_columns = std::collections::HashSet::new();
     for field in fields {
-        let field_ident = field.ident.as_ref().expect("named fields were checked above");
+        let field_ident = field
+            .ident
+            .as_ref()
+            .expect("named fields were checked above");
         let field_name = field_ident.to_string().trim_start_matches("r#").to_owned();
         let mut seen_attrs = std::collections::HashSet::new();
         let mut column_name = rust_field_to_snake_case(&field_name);
@@ -868,11 +874,19 @@ fn validate_model_contract(input: &syn::DeriveInput) -> Result<(), syn::Error> {
         let mut has_default_value = false;
         let mut has_default_expr = false;
 
-        for attr in field.attrs.iter().filter(|attr| attr.path().is_ident("sea_orm")) {
+        for attr in field
+            .attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("sea_orm"))
+        {
             attr.parse_nested_meta(|meta| {
-                let name = meta.path.get_ident().map(ToString::to_string).ok_or_else(|| {
-                    meta.error("qualified SeaORM field attributes are not supported")
-                })?;
+                let name = meta
+                    .path
+                    .get_ident()
+                    .map(ToString::to_string)
+                    .ok_or_else(|| {
+                        meta.error("qualified SeaORM field attributes are not supported")
+                    })?;
                 if !seen_attrs.insert(name.clone()) {
                     return Err(meta.error(format!(
                         "duplicate SeaORM field attribute {name:?} on {field_name:?}"
@@ -929,7 +943,12 @@ fn validate_model_contract(input: &syn::DeriveInput) -> Result<(), syn::Error> {
         }
 
         if ignored {
-            if primary_key || nullable_marker || auto_increment.is_some() || has_default_value || has_default_expr {
+            if primary_key
+                || nullable_marker
+                || auto_increment.is_some()
+                || has_default_value
+                || has_default_expr
+            {
                 return Err(syn::Error::new_spanned(
                     field_ident,
                     "a field marked ignore cannot also declare key, nullability, auto-increment or default metadata",
@@ -1001,13 +1020,19 @@ fn model_option_inner(ty: &syn::Type) -> Result<(&syn::Type, bool), syn::Error> 
         ));
     };
     let Some(segment) = path.path.segments.last() else {
-        return Err(syn::Error::new_spanned(ty, "could not determine model field type"));
+        return Err(syn::Error::new_spanned(
+            ty,
+            "could not determine model field type",
+        ));
     };
     if segment.ident != "Option" {
         return Ok((ty, false));
     }
     let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
-        return Err(syn::Error::new_spanned(ty, "Option fields must contain exactly one type"));
+        return Err(syn::Error::new_spanned(
+            ty,
+            "Option fields must contain exactly one type",
+        ));
     };
     if args.args.len() != 1 {
         return Err(syn::Error::new_spanned(ty, "Option fields must contain exactly one type"));
@@ -1015,7 +1040,8 @@ fn model_option_inner(ty: &syn::Type) -> Result<(&syn::Type, bool), syn::Error> 
     let Some(syn::GenericArgument::Type(inner)) = args.args.first() else {
         return Err(syn::Error::new_spanned(ty, "Option fields must contain exactly one type"));
     };
-    if matches!(inner, syn::Type::Path(inner_path) if inner_path.path.segments.last().is_some_and(|item| item.ident == "Option")) {
+    if matches!(inner, syn::Type::Path(inner_path) if inner_path.path.segments.last().is_some_and(|item| item.ident == "Option"))
+    {
         return Err(syn::Error::new_spanned(
             ty,
             "nested Option<Option<T>> is not supported; use a single Option<T>",
@@ -1026,10 +1052,16 @@ fn model_option_inner(ty: &syn::Type) -> Result<(&syn::Type, bool), syn::Error> 
 
 fn validate_model_field_type(ty: &syn::Type) -> Result<(), syn::Error> {
     let syn::Type::Path(path) = ty else {
-        return Err(syn::Error::new_spanned(ty, "unsupported SQL model field type syntax"));
+        return Err(syn::Error::new_spanned(
+            ty,
+            "unsupported SQL model field type syntax",
+        ));
     };
     let Some(segment) = path.path.segments.last() else {
-        return Err(syn::Error::new_spanned(ty, "could not determine SQL model field type"));
+        return Err(syn::Error::new_spanned(
+            ty,
+            "could not determine SQL model field type",
+        ));
     };
     let name = segment.ident.to_string();
     if matches!(name.as_str(), "isize" | "usize") {
@@ -1075,7 +1107,9 @@ fn rust_field_to_snake_case(value: &str) -> String {
                 && (chars[index - 1].is_ascii_lowercase()
                     || chars[index - 1].is_ascii_digit()
                     || (chars[index - 1].is_ascii_uppercase()
-                        && chars.get(index + 1).is_some_and(|next| next.is_ascii_lowercase())));
+                        && chars
+                            .get(index + 1)
+                            .is_some_and(|next| next.is_ascii_lowercase())));
             if !output.is_empty() && boundary {
                 output.push('_');
             }
@@ -1118,7 +1152,12 @@ mod model_diagnostics_tests {
             #[sea_orm(table_name = "users", unknown_option = true)]
             struct Model { #[sea_orm(primary_key)] id: i64 }
         "#;
-        assert!(validate(source).unwrap_err().to_string().contains("unknown SeaORM entity attribute"));
+        assert!(
+            validate(source)
+                .unwrap_err()
+                .to_string()
+                .contains("unknown SeaORM entity attribute")
+        );
     }
 
     #[test]
@@ -1132,7 +1171,12 @@ mod model_diagnostics_tests {
                 name: String,
             }
         "#;
-        assert!(validate(source).unwrap_err().to_string().contains("unknown SeaORM field attribute"));
+        assert!(
+            validate(source)
+                .unwrap_err()
+                .to_string()
+                .contains("unknown SeaORM field attribute")
+        );
     }
 
     #[test]
@@ -1145,8 +1189,18 @@ mod model_diagnostics_tests {
             #[sea_orm(table_name = "users")]
             struct Model { name: String }
         "#;
-        assert!(validate(nullable).unwrap_err().to_string().contains("cannot be nullable"));
-        assert!(validate(missing).unwrap_err().to_string().contains("at least one"));
+        assert!(
+            validate(nullable)
+                .unwrap_err()
+                .to_string()
+                .contains("cannot be nullable")
+        );
+        assert!(
+            validate(missing)
+                .unwrap_err()
+                .to_string()
+                .contains("at least one")
+        );
     }
 
     #[test]
@@ -1164,8 +1218,18 @@ mod model_diagnostics_tests {
             #[sea_orm(table_name = "users")]
             struct Model { #[sea_orm(primary_key)] id: Option<Option<i64>> }
         "#;
-        assert!(validate(duplicate).unwrap_err().to_string().contains("duplicate SQL column"));
-        assert!(validate(nested).unwrap_err().to_string().contains("nested Option"));
+        assert!(
+            validate(duplicate)
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate SQL column")
+        );
+        assert!(
+            validate(nested)
+                .unwrap_err()
+                .to_string()
+                .contains("nested Option")
+        );
     }
 
     #[test]
@@ -1188,6 +1252,11 @@ mod model_diagnostics_tests {
                 #[sea_orm(primary_key)] m: i64,
             }
         "#;
-        assert!(validate(too_many).unwrap_err().to_string().contains("limited to 12"));
+        assert!(
+            validate(too_many)
+                .unwrap_err()
+                .to_string()
+                .contains("limited to 12")
+        );
     }
 }

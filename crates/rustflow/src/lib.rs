@@ -36,7 +36,7 @@ pub mod reactivity;
 #[doc = "    rustflow::view! { <div>\"text\"</span> }"]
 #[doc = "}"]
 #[doc = "```"]
-pub use rustflow_macros::{component, view, ModelDiagnostics};
+pub use rustflow_macros::{ModelDiagnostics, component, view};
 
 /// Common imports for authoring RustFlow reactive views and components.
 pub mod prelude {

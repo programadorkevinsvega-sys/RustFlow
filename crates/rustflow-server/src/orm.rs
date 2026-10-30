@@ -104,8 +104,8 @@
 //! migrations. MongoDB remains the separate BSON/document adapter and is not exposed
 //! by this SQL ORM facade.
 
-pub use sea_orm::*;
 pub use sea_orm::entity::prelude::*;
+pub use sea_orm::*;
 
 #[cfg(test)]
 mod tests {
