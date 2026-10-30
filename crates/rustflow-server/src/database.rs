@@ -16,7 +16,7 @@ use sqlx::{
     postgres::PgPoolOptions, sqlite::SqlitePoolOptions,
 };
 
-use crate::{AppConfig, AppEnvironment, HttpError};
+use crate::{AppConfig, AppEnvironment, HttpError, orm::EntityRepository};
 
 /// Database backend selected by a validated connection URL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -383,6 +383,15 @@ impl DatabasePool {
     pub fn orm(&self) -> &DatabaseConnection {
         &self.orm
     }
+    /// Create a typed repository bound to this database's shared SeaORM connection.
+    ///
+    /// The repository borrows the existing connection; it never opens another pool.
+    pub fn entity<E>(&self) -> EntityRepository<'_, E, DatabaseConnection>
+    where
+        E: sea_orm::EntityTrait,
+    {
+        EntityRepository::new(&self.orm)
+    }
 
     /// Return which SQLx driver this pool uses.
     pub fn backend(&self) -> DatabaseBackend {
@@ -515,6 +524,13 @@ impl DatabaseTransaction {
     /// Borrow the SeaORM transaction for ORM or ConnectionTrait operations.
     pub fn connection(&self) -> &SeaOrmTransaction {
         &self.inner
+    }
+    /// Create a typed repository whose operations participate in this transaction.
+    pub fn entity<E>(&self) -> EntityRepository<'_, E, SeaOrmTransaction>
+    where
+        E: sea_orm::EntityTrait,
+    {
+        EntityRepository::new(&self.inner)
     }
 
     /// Execute parameterized raw SQL inside this transaction.

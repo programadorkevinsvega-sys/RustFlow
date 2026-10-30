@@ -6,6 +6,7 @@
 mod config;
 mod csrf;
 mod database;
+pub mod orm;
 mod document_database;
 mod group;
 mod page;
@@ -56,6 +57,7 @@ pub use mongodb as mongodb_driver;
 pub use page::HtmlPage;
 pub use proxy::{ClientAddressPolicy, IpNetwork};
 pub use sea_orm;
+pub use orm::EntityRepository;
 use serde::{Serialize, de::DeserializeOwned};
 pub use sessions::{
     AccessPolicy, AccessPolicyError, AuthIdentity, InMemorySessionStore, PasswordHash, RolePolicy,
