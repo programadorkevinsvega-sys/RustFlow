@@ -5,31 +5,26 @@ description: Configura SQLx para motores relacionales y el adaptador documental 
 
 La capa de pools/migraciones que ya existe en RustFlow es experimental y pre-1.0. Usa SQLx 0.8.6 con AnyPool para consultas explícitas parametrizadas y migraciones. Por sí sola no es un ORM.
 
-## Foundation del SQL ORM de Phase 6.7.1
+## Foundation seleccionado para SQL ORM
 
-RustFlow selecciona **Data Mapper con SeaORM 1.1.20** como foundation mantenido para el SQL ORM. El facade experimental está en <code>rustflow_server::orm</code>; SeaORM genera Entity, Model, ActiveModel, Column y PrimaryKey. El derive <code>rustflow::ModelDiagnostics</code> valida el subconjunto de atributos usado por RustFlow antes de <code>DeriveEntityModel</code>.
+RustFlow selecciona **Data Mapper con SeaORM 1.1.20** como foundation mantenido para el SQL ORM. En 6.7.1 está disponible el derive de validación <code>rustflow::ModelDiagnostics</code>, que comprueba el subconjunto de atributos previsto. El crate SeaORM y el facade <code>rustflow_server::orm</code> se incorporarán en 6.7.2 junto con la migración del pool; esta selección aún no habilita Entity/ActiveModel ni persistencia.
 
 ~~~rust
 use rustflow::ModelDiagnostics;
-use rustflow_server::orm as sea_orm;
-use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, ModelDiagnostics, DeriveEntityModel)]
+#[derive(ModelDiagnostics)]
 #[sea_orm(table_name = "user_profiles")]
-pub struct Model {
+struct UserProfile {
     #[sea_orm(primary_key)]
-    pub id: i64,
-    pub display_name: String,
-    pub nickname: Option<String>,
+    id: i64,
+    display_name: String,
+    nickname: Option<String>,
 }
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
-
-impl ActiveModelBehavior for ActiveModel {}
 ~~~
 
-Esto **no conecta todavía las operaciones ORM al pool actual**, no hace CRUD desde RustFlow, ni prueba codecs de runtime. SeaORM necesita pools SQLx tipados por backend, mientras que el adaptador existente expone AnyPool. La fase 6.7.2 debe migrar esa frontera de forma explícita, con un único pool compartido por ORM y SQL parametrizado; no se permite abrir un segundo pool para la misma URL. El ADR y la [matriz de tipos/operaciones](/guides/database/#contrato-de-modelos-de-la-phase-671) registran el contrato propuesto y sus límites.
+Este ejemplo demuestra únicamente la validación de metadatos. La declaración completa con <code>DeriveEntityModel</code> y los tipos Entity/ActiveModel se habilitarán cuando SeaORM se integre en 6.7.2.
+
+Esto **no conecta todavía las operaciones ORM al pool actual**, no hace CRUD desde RustFlow, ni prueba codecs de runtime. SeaORM necesita pools SQLx tipados por backend, mientras que el adaptador existente expone AnyPool. La fase 6.7.2 debe migrar esa frontera de forma explícita, con un único pool compartido por ORM y SQL parametrizado; no se permite abrir un segundo pool para la misma URL. El ADR y la [matriz de tipos/operaciones](/guides/database/#foundation-seleccionado-para-sql-orm) registran el contrato propuesto y sus límites.
 
 El SQL ORM cubre SQLite, PostgreSQL, MySQL y MariaDB. MongoDB sigue siendo el adaptador documental BSON separado y recibirá su propio ODM en 6.7.3. No comparte derives, relaciones SQL ni query builder relacional.
 
