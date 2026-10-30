@@ -367,7 +367,7 @@ This phase targets a **mature, cohesive SQL ORM from the outset**, not a CRUD-on
 - [x] Add positive metadata tests and compile-fail rustdoc examples; define ActiveModel state, generated-value, write, hook, error and transaction/partial-failure semantics.
 - [x] Define the parameterized SQL escape hatch and explicit SQL ORM/MongoDB ODM boundary.
 - [x] Update the technical ADR/model contract and public database guide/status to reflect the chosen foundation and its real limits.
-- [ ] Complete all required checks on the final PR SHA; keep the PR open for review and do not merge automatically.
+- [x] Run required checks on the final PR SHA: Rust 1.85/stable, workspace and database integrations, Rustdoc, WASM, Browser E2E/bundle, website, governance and dependency review. Keep the PR open for review; do not merge automatically.
 
 ### 6.7.2 SQL ORM core
 - [ ] Integrate SeaORM's backend-specific SQLx typed pools as the single shared pool for SQLite, PostgreSQL, MySQL and MariaDB; migrate the existing AnyPool/raw connection API deliberately without opening a second pool, preserving URL configuration, timeouts, secret redaction, SQLx migrations and parameterized raw SQL.
