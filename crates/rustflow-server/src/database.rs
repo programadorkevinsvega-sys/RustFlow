@@ -485,7 +485,9 @@ impl DatabasePool {
         }
         let directory = directory.as_ref();
         validate_migration_dialect(self.backend, directory)?;
-        let migrator = Migrator::new(directory).await.map_err(DatabaseError::Migration)?;
+        let migrator = Migrator::new(directory)
+            .await
+            .map_err(DatabaseError::Migration)?;
         let result = match &self.pool {
             DatabaseDriverPool::Sqlite(pool) => migrator.undo(pool, target_version).await,
             DatabaseDriverPool::Postgres(pool) => migrator.undo(pool, target_version).await,
@@ -619,9 +621,7 @@ impl DatabaseError {
             };
         }
         match self.orm_error() {
-            Some(sea_orm::DbErr::RecordNotFound(_)) => {
-                HttpError::not_found("Record not found")
-            }
+            Some(sea_orm::DbErr::RecordNotFound(_)) => HttpError::not_found("Record not found"),
             Some(sea_orm::DbErr::ConnectionAcquire(
                 sea_orm::ConnAcquireErr::Timeout | sea_orm::ConnAcquireErr::ConnectionClosed,
             )) => HttpError::new(
