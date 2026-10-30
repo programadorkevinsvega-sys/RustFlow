@@ -180,7 +180,10 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .await
         .expect("begin rollback transaction");
     rollback
-        .execute_raw("INSERT INTO rustflow_phase661_items (value) VALUES (?)", ["rolled-back".into()])
+        .execute_raw(
+            "INSERT INTO rustflow_phase661_items (value) VALUES (?)",
+            ["rolled-back".into()],
+        )
         .await
         .expect("write in rollback transaction");
     rollback.rollback().await.expect("rollback transaction");
@@ -190,7 +193,10 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .await
         .expect("begin commit transaction");
     commit
-        .execute_raw("INSERT INTO rustflow_phase661_items (value) VALUES (?)", ["committed".into()])
+        .execute_raw(
+            "INSERT INTO rustflow_phase661_items (value) VALUES (?)",
+            ["committed".into()],
+        )
         .await
         .expect("write in commit transaction");
     commit.commit().await.expect("commit transaction");

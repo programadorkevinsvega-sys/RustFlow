@@ -8,15 +8,12 @@ use std::{error::Error, fmt, path::Path, str::FromStr, time::Duration};
 
 use http::StatusCode;
 use sea_orm::{
-    ConnectionTrait, DatabaseConnection, DatabaseTransaction as SeaOrmTransaction,
-    QueryResult, Statement, TransactionTrait, Value,
+    ConnectionTrait, DatabaseConnection, DatabaseTransaction as SeaOrmTransaction, QueryResult,
+    Statement, TransactionTrait, Value,
 };
 use sqlx::{
-    MySqlPool, PgPool, SqlitePool,
-    mysql::MySqlPoolOptions,
-    migrate::Migrator,
-    postgres::PgPoolOptions,
-    sqlite::SqlitePoolOptions,
+    MySqlPool, PgPool, SqlitePool, migrate::Migrator, mysql::MySqlPoolOptions,
+    postgres::PgPoolOptions, sqlite::SqlitePoolOptions,
 };
 
 use crate::{AppConfig, AppEnvironment, HttpError};
@@ -339,9 +336,15 @@ impl DatabasePool {
         };
 
         let orm = match &pool {
-            DatabaseDriverPool::Sqlite(pool) => sea_orm::SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone()),
-            DatabaseDriverPool::Postgres(pool) => sea_orm::SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone()),
-            DatabaseDriverPool::MySql(pool) => sea_orm::SqlxMySqlConnector::from_sqlx_mysql_pool(pool.clone()),
+            DatabaseDriverPool::Sqlite(pool) => {
+                sea_orm::SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone())
+            }
+            DatabaseDriverPool::Postgres(pool) => {
+                sea_orm::SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone())
+            }
+            DatabaseDriverPool::MySql(pool) => {
+                sea_orm::SqlxMySqlConnector::from_sqlx_mysql_pool(pool.clone())
+            }
         };
 
         Ok(Self {
@@ -409,8 +412,11 @@ impl DatabasePool {
         sql: &str,
         values: impl IntoIterator<Item = Value>,
     ) -> Result<u64, DatabaseError> {
-        let statement = Statement::from_sql_and_values(self.orm.get_database_backend(), sql, values);
-        self.orm.execute(statement).await
+        let statement =
+            Statement::from_sql_and_values(self.orm.get_database_backend(), sql, values);
+        self.orm
+            .execute(statement)
+            .await
             .map(|result| result.rows_affected())
             .map_err(DatabaseError::OrmQuery)
     }
@@ -421,8 +427,12 @@ impl DatabasePool {
         sql: &str,
         values: impl IntoIterator<Item = Value>,
     ) -> Result<Vec<QueryResult>, DatabaseError> {
-        let statement = Statement::from_sql_and_values(self.orm.get_database_backend(), sql, values);
-        self.orm.query_all(statement).await.map_err(DatabaseError::OrmQuery)
+        let statement =
+            Statement::from_sql_and_values(self.orm.get_database_backend(), sql, values);
+        self.orm
+            .query_all(statement)
+            .await
+            .map_err(DatabaseError::OrmQuery)
     }
 
     /// Begin a transaction on the shared connection pool.
@@ -430,7 +440,11 @@ impl DatabasePool {
     /// Both ORM operations and parameterized raw statements executed through the returned
     /// transaction use the same database transaction.
     pub async fn begin_transaction(&self) -> Result<DatabaseTransaction, DatabaseError> {
-        let inner = self.orm.begin().await.map_err(DatabaseError::OrmTransaction)?;
+        let inner = self
+            .orm
+            .begin()
+            .await
+            .map_err(DatabaseError::OrmTransaction)?;
         Ok(DatabaseTransaction { inner })
     }
 
@@ -443,7 +457,9 @@ impl DatabasePool {
     pub async fn run_migrations(&self, directory: impl AsRef<Path>) -> Result<(), DatabaseError> {
         let directory = directory.as_ref();
         validate_migration_dialect(self.backend, directory)?;
-        let migrator = Migrator::new(directory).await.map_err(DatabaseError::Migration)?;
+        let migrator = Migrator::new(directory)
+            .await
+            .map_err(DatabaseError::Migration)?;
         let result = match &self.pool {
             DatabaseDriverPool::Sqlite(pool) => migrator.run(pool).await,
             DatabaseDriverPool::Postgres(pool) => migrator.run(pool).await,
@@ -463,7 +479,9 @@ impl DatabasePool {
         target_version: i64,
     ) -> Result<(), DatabaseError> {
         if target_version < 0 {
-            return Err(DatabaseError::InvalidConfiguration("migration rollback target cannot be negative"));
+            return Err(DatabaseError::InvalidConfiguration(
+                "migration rollback target cannot be negative",
+            ));
         }
         let directory = directory.as_ref();
         validate_migration_dialect(self.backend, directory)?;
@@ -503,8 +521,11 @@ impl DatabaseTransaction {
         sql: &str,
         values: impl IntoIterator<Item = Value>,
     ) -> Result<u64, DatabaseError> {
-        let statement = Statement::from_sql_and_values(self.inner.get_database_backend(), sql, values);
-        self.inner.execute(statement).await
+        let statement =
+            Statement::from_sql_and_values(self.inner.get_database_backend(), sql, values);
+        self.inner
+            .execute(statement)
+            .await
             .map(|result| result.rows_affected())
             .map_err(DatabaseError::OrmTransaction)
     }
@@ -515,18 +536,28 @@ impl DatabaseTransaction {
         sql: &str,
         values: impl IntoIterator<Item = Value>,
     ) -> Result<Vec<QueryResult>, DatabaseError> {
-        let statement = Statement::from_sql_and_values(self.inner.get_database_backend(), sql, values);
-        self.inner.query_all(statement).await.map_err(DatabaseError::OrmTransaction)
+        let statement =
+            Statement::from_sql_and_values(self.inner.get_database_backend(), sql, values);
+        self.inner
+            .query_all(statement)
+            .await
+            .map_err(DatabaseError::OrmTransaction)
     }
 
     /// Commit all operations in this transaction.
     pub async fn commit(self) -> Result<(), DatabaseError> {
-        self.inner.commit().await.map_err(DatabaseError::OrmTransaction)
+        self.inner
+            .commit()
+            .await
+            .map_err(DatabaseError::OrmTransaction)
     }
 
     /// Roll back all operations in this transaction.
     pub async fn rollback(self) -> Result<(), DatabaseError> {
-        self.inner.rollback().await.map_err(DatabaseError::OrmTransaction)
+        self.inner
+            .rollback()
+            .await
+            .map_err(DatabaseError::OrmTransaction)
     }
 }
 
@@ -551,7 +582,10 @@ impl DatabaseError {
     fn sqlx_error(&self) -> Option<&sqlx::Error> {
         match self {
             Self::Connect(error) | Self::Query(error) => Some(error),
-            Self::InvalidConfiguration(_) | Self::OrmQuery(_) | Self::OrmTransaction(_) | Self::Migration(_) => None,
+            Self::InvalidConfiguration(_)
+            | Self::OrmQuery(_)
+            | Self::OrmTransaction(_)
+            | Self::Migration(_) => None,
         }
     }
 
@@ -576,19 +610,28 @@ impl DatabaseError {
                     "Database temporarily unavailable",
                 ),
                 sqlx::Error::Database(error) if is_unique_constraint_error(error.as_ref()) => {
-                    HttpError::new(StatusCode::CONFLICT, "A record with those values already exists")
+                    HttpError::new(
+                        StatusCode::CONFLICT,
+                        "A record with those values already exists",
+                    )
                 }
                 _ => HttpError::internal_server_error(),
             };
         }
         match self.orm_error() {
-            Some(sea_orm::DbErr::RecordNotFound(_)) => HttpError::not_found("Record not found"),
+            Some(sea_orm::DbErr::RecordNotFound(_)) => {
+                HttpError::not_found("Record not found")
+            }
             Some(sea_orm::DbErr::ConnectionAcquire(
                 sea_orm::ConnAcquireErr::Timeout | sea_orm::ConnAcquireErr::ConnectionClosed,
-            )) => HttpError::new(StatusCode::SERVICE_UNAVAILABLE, "Database temporarily unavailable"),
-            Some(error) if is_orm_unique_constraint_error(error) => {
-                HttpError::new(StatusCode::CONFLICT, "A record with those values already exists")
-            }
+            )) => HttpError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Database temporarily unavailable",
+            ),
+            Some(error) if is_orm_unique_constraint_error(error) => HttpError::new(
+                StatusCode::CONFLICT,
+                "A record with those values already exists",
+            ),
             _ => HttpError::internal_server_error(),
         }
     }
@@ -597,7 +640,9 @@ impl DatabaseError {
 impl fmt::Display for DatabaseError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidConfiguration(message) => write!(formatter, "invalid database configuration: {message}"),
+            Self::InvalidConfiguration(message) => {
+                write!(formatter, "invalid database configuration: {message}")
+            }
             Self::Connect(_) => formatter.write_str("database connection failed"),
             Self::Query(_) | Self::OrmQuery(_) => formatter.write_str("database operation failed"),
             Self::OrmTransaction(_) => formatter.write_str("database transaction failed"),
@@ -624,7 +669,9 @@ fn is_unique_constraint_error(error: &dyn sqlx::error::DatabaseError) -> bool {
 
 fn is_orm_unique_constraint_error(error: &sea_orm::DbErr) -> bool {
     let runtime_error = match error {
-        sea_orm::DbErr::Conn(error) | sea_orm::DbErr::Exec(error) | sea_orm::DbErr::Query(error) => error,
+        sea_orm::DbErr::Conn(error)
+        | sea_orm::DbErr::Exec(error)
+        | sea_orm::DbErr::Query(error) => error,
         _ => return false,
     };
     matches!(
@@ -805,7 +852,10 @@ mod tests {
 
         let mut transaction = database.begin_transaction().await.unwrap();
         transaction
-            .execute_raw("INSERT INTO transaction_items (value) VALUES (?)", ["discarded".into()])
+            .execute_raw(
+                "INSERT INTO transaction_items (value) VALUES (?)",
+                ["discarded".into()],
+            )
             .await
             .unwrap();
         transaction.rollback().await.unwrap();

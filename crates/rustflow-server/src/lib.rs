@@ -55,13 +55,13 @@ use http_body_util::LengthLimitError;
 pub use mongodb as mongodb_driver;
 pub use page::HtmlPage;
 pub use proxy::{ClientAddressPolicy, IpNetwork};
+pub use sea_orm;
 use serde::{Serialize, de::DeserializeOwned};
 pub use sessions::{
     AccessPolicy, AccessPolicyError, AuthIdentity, InMemorySessionStore, PasswordHash, RolePolicy,
     SameSite, SessionContext, SessionCookieConfig, SessionError, SessionId, SessionManager,
     SessionStore, require_authentication, require_permission,
 };
-pub use sea_orm;
 pub use sqlx;
 pub use tls::tls_server_config_from_pem;
 use tokio::net::TcpListener;
