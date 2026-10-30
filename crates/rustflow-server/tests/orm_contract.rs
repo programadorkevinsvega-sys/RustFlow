@@ -2,7 +2,7 @@ use std::env;
 
 use rustflow_server::{
     DatabaseBackend, DatabaseConfig, DatabasePool,
-    orm::{load_many, load_one},
+    orm::{load_many, load_many_to_many, load_one},
     sea_orm::{
         ActiveValue::{NotSet, Set},
         ColumnTrait, Condition, EntityTrait, JoinType, QueryFilter, QueryOrder, QuerySelect,
@@ -33,6 +33,8 @@ mod entities {
             Notes,
             #[sea_orm(has_one = "super::profile::Entity")]
             Profile,
+            #[sea_orm(has_many = "super::account_tag::Entity")]
+            AccountTags,
         }
 
         impl Related<super::note::Entity> for Entity {
@@ -44,6 +46,16 @@ mod entities {
         impl Related<super::profile::Entity> for Entity {
             fn to() -> RelationDef {
                 Relation::Profile.def()
+            }
+        }
+
+        impl Related<super::tag::Entity> for Entity {
+            fn to() -> RelationDef {
+                super::account_tag::Relation::Tag.def()
+            }
+
+            fn via() -> Option<RelationDef> {
+                Some(Relation::AccountTags.def())
             }
         }
 
@@ -75,6 +87,70 @@ mod entities {
         impl Related<super::account::Entity> for Entity {
             fn to() -> RelationDef {
                 Relation::Account.def()
+            }
+        }
+
+        impl ActiveModelBehavior for ActiveModel {}
+    }
+
+
+    pub mod tag {
+        use rustflow_server::sea_orm::entity::prelude::*;
+
+        #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+        #[sea_orm(table_name = "rustflow_orm_tags")]
+        pub struct Model {
+            #[sea_orm(primary_key)]
+            pub id: i64,
+            pub name: String,
+        }
+
+        #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+        pub enum Relation {
+            #[sea_orm(has_many = "super::account_tag::Entity")]
+            AccountTags,
+        }
+
+        impl ActiveModelBehavior for ActiveModel {}
+    }
+
+    pub mod account_tag {
+        use rustflow_server::sea_orm::entity::prelude::*;
+
+        #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+        #[sea_orm(table_name = "rustflow_orm_account_tags")]
+        pub struct Model {
+            #[sea_orm(primary_key)]
+            pub id: i64,
+            pub account_id: i64,
+            pub tag_id: i64,
+        }
+
+        #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+        pub enum Relation {
+            #[sea_orm(
+                belongs_to = "super::account::Entity",
+                from = "Column::AccountId",
+                to = "super::account::Column::Id"
+            )]
+            Account,
+            #[sea_orm(
+                belongs_to = "super::tag::Entity",
+                from = "Column::TagId",
+                to = "super::tag::Column::Id"
+            )]
+            Tag,
+        }
+
+        impl Related<super::account::Entity> for Entity {
+            fn to() -> RelationDef {
+                Relation::Account.def()
+            }
+        }
+
+        impl Related<super::tag::Entity> for Entity {
+            fn to() -> RelationDef {
+                Relation::Tag.def()
             }
         }
 
@@ -128,6 +204,14 @@ fn integration_url(variable: &str) -> Option<String> {
 }
 
 async fn create_schema(database: &DatabasePool) {
+    database
+        .execute_raw("DROP TABLE IF EXISTS rustflow_orm_account_tags", [])
+        .await
+        .expect("drop account tags table");
+    database
+        .execute_raw("DROP TABLE IF EXISTS rustflow_orm_tags", [])
+        .await
+        .expect("drop tags table");
     database
         .execute_raw("DROP TABLE IF EXISTS rustflow_orm_notes", [])
         .await
@@ -210,6 +294,30 @@ async fn create_schema(database: &DatabasePool) {
         .execute_raw(&profiles, [])
         .await
         .expect("create profiles table");
+    let tags = format!(
+        "CREATE TABLE rustflow_orm_tags (
+            id {note_id},
+            name VARCHAR(100) NOT NULL UNIQUE
+        )"
+    );
+    let account_tags = format!(
+        "CREATE TABLE rustflow_orm_account_tags (
+            id {note_id},
+            account_id BIGINT NOT NULL,
+            tag_id BIGINT NOT NULL,
+            UNIQUE (account_id, tag_id),
+            FOREIGN KEY (account_id) REFERENCES rustflow_orm_accounts(id) ON DELETE CASCADE,
+            FOREIGN KEY (tag_id) REFERENCES rustflow_orm_tags(id) ON DELETE CASCADE
+        )"
+    );
+    database
+        .execute_raw(&tags, [])
+        .await
+        .expect("create tags table");
+    database
+        .execute_raw(&account_tags, [])
+        .await
+        .expect("create account tags table");
 }
 
 async fn exercise_orm(database: &DatabasePool) {
@@ -246,6 +354,44 @@ async fn exercise_orm(database: &DatabasePool) {
     assert_eq!(first.metadata["level"], 3);
     assert_eq!(first.checksum, [0, 1, 2, 255]);
     assert_eq!(second.alias, None);
+
+    let first_tag = database
+        .entity::<entities::tag::Entity>()
+        .insert(entities::tag::ActiveModel {
+            name: Set("language".to_owned()),
+            ..Default::default()
+        })
+        .await
+        .expect("insert first tag");
+    let second_tag = database
+        .entity::<entities::tag::Entity>()
+        .insert(entities::tag::ActiveModel {
+            name: Set("history".to_owned()),
+            ..Default::default()
+        })
+        .await
+        .expect("insert second tag");
+    let account_tags = database.entity::<entities::account_tag::Entity>();
+    account_tags
+        .insert_many([
+            entities::account_tag::ActiveModel {
+                account_id: Set(first.id),
+                tag_id: Set(first_tag.id),
+                ..Default::default()
+            },
+            entities::account_tag::ActiveModel {
+                account_id: Set(first.id),
+                tag_id: Set(second_tag.id),
+                ..Default::default()
+            },
+            entities::account_tag::ActiveModel {
+                account_id: Set(second.id),
+                tag_id: Set(second_tag.id),
+                ..Default::default()
+            },
+        ])
+        .await
+        .expect("bulk insert many-to-many junction rows");
 
     database
         .entity::<entities::profile::Entity>()
@@ -341,6 +487,20 @@ async fn exercise_orm(database: &DatabasePool) {
         Some("Analytical engine notes")
     );
     assert!(profiles[1].is_none());
+
+    let loaded_tags = load_many_to_many(
+        &parents,
+        entities::tag::Entity,
+        entities::account_tag::Entity,
+        database.orm(),
+    )
+    .await
+    .expect("batch load many-to-many tags");
+    assert_eq!(loaded_tags.len(), 2);
+    assert_eq!(loaded_tags[0].len(), 2);
+    assert_eq!(loaded_tags[1].len(), 1);
+    assert_eq!(loaded_tags[0][0].id, first_tag.id);
+    assert_eq!(loaded_tags[0][1].id, second_tag.id);
 
     let grouped: Vec<(i64, i64)> = entities::note::Entity::find()
         .select_only()
@@ -584,5 +744,77 @@ async fn batch_loader_executes_one_related_query_for_many_parents() {
         query_log.len(),
         1,
         "batch loading must issue one related query for the whole parent slice"
+    );
+}
+
+#[tokio::test]
+async fn many_to_many_loader_uses_two_queries_for_many_parents() {
+    use rustflow_server::sea_orm::{DbBackend, MockDatabase};
+
+    let database = MockDatabase::new(DbBackend::Sqlite)
+        .append_query_results([vec![
+            entities::account_tag::Model {
+                id: 1,
+                account_id: 10,
+                tag_id: 20,
+            },
+            entities::account_tag::Model {
+                id: 2,
+                account_id: 10,
+                tag_id: 21,
+            },
+            entities::account_tag::Model {
+                id: 3,
+                account_id: 11,
+                tag_id: 21,
+            },
+        ]])
+        .append_query_results([vec![
+            entities::tag::Model {
+                id: 20,
+                name: "language".to_owned(),
+            },
+            entities::tag::Model {
+                id: 21,
+                name: "history".to_owned(),
+            },
+        ]])
+        .into_connection();
+    let parents = vec![
+        entities::account::Model {
+            id: 10,
+            email: "one@example.test".to_owned(),
+            enabled: true,
+            alias: None,
+            metadata: serde_json::json!({}),
+            checksum: vec![],
+        },
+        entities::account::Model {
+            id: 11,
+            email: "two@example.test".to_owned(),
+            enabled: true,
+            alias: None,
+            metadata: serde_json::json!({}),
+            checksum: vec![],
+        },
+    ];
+
+    let loaded = load_many_to_many(
+        &parents,
+        entities::tag::Entity,
+        entities::account_tag::Entity,
+        &database,
+    )
+    .await
+    .expect("batch load many-to-many relation");
+    assert_eq!(loaded.len(), 2);
+    assert_eq!(loaded[0].len(), 2);
+    assert_eq!(loaded[1].len(), 1);
+
+    let query_log = database.into_transaction_log();
+    assert_eq!(
+        query_log.len(),
+        2,
+        "many-to-many loading should issue one junction and one target query for the whole batch"
     );
 }
