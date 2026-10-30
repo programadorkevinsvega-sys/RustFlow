@@ -1,6 +1,6 @@
 # SQLx, pools, transactions, and migrations (Phase 6.5)
 
-The database API is experimental and pre-1.0. RustFlow re-exports SQLx from rustflow_server::sqlx and provides a small pool/configuration/migration boundary. It is not an ORM: models remain ordinary Rust types, queries are explicit, and SQL dialect differences remain the application's responsibility.
+The existing database pool/configuration/migration API is experimental and pre-1.0. It re-exports SQLx and currently uses AnyPool for explicit parameterized SQL and SQLx migrations; it is not yet wired to model CRUD. Phase 6.7.1 adds SeaORM 1.1.20 as a server-only SQL ORM foundation and ModelDiagnostics validation derive. The facade is architectural scaffolding only until Phase 6.7.2 migrates the single connection boundary from AnyPool to backend-specific SQLx pools. Do not create a parallel pool for the same database. The MongoDB adapter remains separate.
 
 ## Supported engines
 

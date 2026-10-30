@@ -3,26 +3,35 @@ title: Base de datos, SQLx y migraciones
 description: Configura SQLx para motores relacionales y el adaptador documental MongoDB; consulta pools, transacciones, migraciones y límites de compatibilidad.
 ---
 
-La integración SQLx de RustFlow es experimental y pre-1.0. Proporciona configuración de pool, transacciones explícitas, ejecución/reversión de migraciones y mapeo seguro de errores. No es un ORM: las entidades y las consultas siguen siendo código de la aplicación.
+La capa de pools/migraciones que ya existe en RustFlow es experimental y pre-1.0. Usa SQLx 0.8.6 con AnyPool para consultas explícitas parametrizadas y migraciones. Por sí sola no es un ORM.
 
-## Contrato de modelos de la Phase 6.7.1
+## Foundation del SQL ORM de Phase 6.7.1
 
-La subfase 6.7.1 introduce un contrato experimental de metadatos para modelos relacionales, documentado en [ADR 0020](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0020-orm-model-contract.md) y en la [matriz propuesta de tipos](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/ORM_MODEL_CONTRACT.md). La arquitectura seleccionada es Data Mapper: los modelos describen tablas y campos, y las operaciones de persistencia reciben el contexto de base de datos explícitamente.
+RustFlow selecciona **Data Mapper con SeaORM 1.1.20** como foundation mantenido para el SQL ORM. El facade experimental está en <code>rustflow_server::orm</code>; SeaORM genera Entity, Model, ActiveModel, Column y PrimaryKey. El derive <code>rustflow::ModelDiagnostics</code> valida el subconjunto de atributos usado por RustFlow antes de <code>DeriveEntityModel</code>.
 
 ~~~rust
-#[derive(rustflow::Model)]
-#[model(table = "user_profiles")]
-struct UserProfile {
-    #[model(primary_key, generated)]
-    id: i64,
-    #[model(column = "display_name")]
-    name: String,
-    #[model(default)]
-    nickname: Option<String>,
+use rustflow::ModelDiagnostics;
+use rustflow_server::orm as sea_orm;
+use sea_orm::entity::prelude::*;
+
+#[derive(Clone, Debug, PartialEq, ModelDiagnostics, DeriveEntityModel)]
+#[sea_orm(table_name = "user_profiles")]
+pub struct Model {
+    #[sea_orm(primary_key)]
+    pub id: i64,
+    pub display_name: String,
+    pub nickname: Option<String>,
 }
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
 ~~~
 
-Este derive publica metadatos estáticos y diagnósticos de atributos; **no ejecuta SQL, no decodifica filas y no implementa CRUD**. El query builder, los codecs comprobados por motor, las relaciones y la carga por lotes siguen pendientes en las subfases posteriores. SQL ORM incluye SQLite, PostgreSQL, MySQL y MariaDB. MongoDB mantiene su adaptador BSON separado y tendrá su propio ODM; no utiliza estas tablas ni el query builder SQL.
+Esto **no conecta todavía las operaciones ORM al pool actual**, no hace CRUD desde RustFlow, ni prueba codecs de runtime. SeaORM necesita pools SQLx tipados por backend, mientras que el adaptador existente expone AnyPool. La fase 6.7.2 debe migrar esa frontera de forma explícita, con un único pool compartido por ORM y SQL parametrizado; no se permite abrir un segundo pool para la misma URL. El ADR y la [matriz de tipos/operaciones](/guides/database/#contrato-de-modelos-de-la-phase-671) registran el contrato propuesto y sus límites.
+
+El SQL ORM cubre SQLite, PostgreSQL, MySQL y MariaDB. MongoDB sigue siendo el adaptador documental BSON separado y recibirá su propio ODM en 6.7.3. No comparte derives, relaciones SQL ni query builder relacional.
 
 ## 1. Configurar el pool
 

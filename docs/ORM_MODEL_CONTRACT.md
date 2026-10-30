@@ -1,83 +1,118 @@
-# ORM model metadata and SQL type contract (Phase 6.7.1)
+# ORM model and SQL type contract (Phase 6.7.1)
 
-**Status: architecture contract for review; runtime ORM mapping is not yet implemented.** The following table specifies intended representations and required checks. It is not a claim that current RustFlow can persist these types. Phase 6.7.1 publishes model metadata only.
+**Status: proposed architecture contract for review.** This subphase adds the SeaORM 1.1.20 foundation, a RustFlow model-diagnostics derive and compile-time checks. It does not yet connect model CRUD to RustFlow's existing DatabasePool. The type/engine matrix below is the target contract, not completed runtime integration evidence; Phase 6.7.2 must prove it against the exact database services.
 
-## Model identity and metadata
+## Selected architecture and model declaration
 
-- A model is a Rust struct with named fields. By default, its table name is the struct name converted to snake_case and each column name is the field identifier. The table/column attributes override those defaults.
-- Table and column identifiers must match the ASCII grammar <code>[A-Za-z_][A-Za-z0-9_]*</code>. They are identifiers, not SQL fragments. Query rendering must quote them for the selected dialect; values must never go through identifier interpolation.
-- One or more fields may declare a primary key, allowing composite keys. A key field cannot be nullable. A keyless view must explicitly declare read-only and is never writable.
-- <code>Option&lt;T&gt;</code> is the sole nullable marker. Nested Option and reference fields are unsupported. SQL NULL decoded into a non-nullable field is an error, not a default value.
-- A generated field is database-owned and its actual value must be retrieved after a successful write when supported. A default field declares a database default. Those markers are mutually exclusive in this contract. A normal model value does not track “not set”; the future insert payload must distinguish set, omit and use-default states.
-- Models must have named fields and no generic parameters initially. Duplicate/unknown attributes, duplicate column names, invalid identifiers, unsupported types, missing primary keys on writable models, or nullable keys are compile-time errors.
-- Indexes, unique constraints, foreign keys and check constraints stay with schema/migrations in 6.7.1. The derive does not create DDL.
-- Metadata is a compile-time static description. It does not query the live schema, generate migrations or guarantee that an existing table matches the model.
+RustFlow selects a Data Mapper architecture backed by SeaORM 1.1.20. A model is a data value; it does not contain a connection. SeaORM generates its Entity, Model, ActiveModel, Column and PrimaryKey types. The application passes a connection or explicit transaction to operations.
+
+~~~rust
+use rustflow::ModelDiagnostics;
+use rustflow_server::orm as sea_orm;
+use sea_orm::entity::prelude::*;
+
+#[derive(Clone, Debug, PartialEq, ModelDiagnostics, DeriveEntityModel)]
+#[sea_orm(table_name = "user_profiles")]
+pub struct Model {
+    #[sea_orm(primary_key)]
+    pub id: i64,
+    pub display_name: String,
+    pub nickname: Option<String>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+~~~
+
+In a real application, each entity belongs in its own Rust module. <code>ModelDiagnostics</code> is RustFlow validation only. <code>DeriveEntityModel</code> from SeaORM generates the entity/model API and metadata. SeaORM's <code>ActiveModelBehavior</code> provides opt-in lifecycle hooks.
+
+## Entity and field metadata
+
+- A writable entity is a named-field, non-generic Rust struct and must declare an explicit <code>#[sea_orm(table_name = "...")]</code>.
+- Table, schema and column identifiers must match the simple ASCII identifier grammar <code>[A-Za-z_][A-Za-z0-9_]*</code>. They are identifiers, not SQL fragments. The future query renderer quotes them for each dialect.
+- SeaORM converts Rust field names to SQL column names using its rename rules. <code>column_name</code> overrides an individual name; <code>rename_all</code> controls the entity's field naming convention.
+- One or more fields may be primary keys. The supported composite-key arity is at most 12 fields, the limit exposed by the selected SeaORM API. Composite keys must declare <code>auto_increment = false</code>.
+- A single auto-increment primary key is supported where the engine and column type provide it. A primary key cannot be nullable.
+- <code>Option<T></code> is the only portable nullability wrapper. <code>Option<Option<T>></code>, references, tuple/array fields, <code>isize</code> and <code>usize</code> are rejected. SQL NULL decoded into a non-nullable field is an error, not a default value.
+- SeaORM's supported metadata includes <code>nullable</code>, <code>default_value</code>, <code>default_expr</code>, <code>auto_increment</code>, <code>indexed</code>, <code>unique</code>, <code>ignore</code>, <code>column_type</code>, <code>enum_name</code>, <code>select_as</code> and <code>save_as</code>. RustFlow rejects unknown and duplicate attributes in its supported subset. Conflicting default declarations and invalid identifier values are rejected.
+- A custom enum requires an explicit SeaORM enum mapping and a type implementing the matching SeaORM <code>ActiveEnum</code>/<code>ValueType</code> contract. A custom column type requires an explicit <code>column_type</code> mapping and a matching <code>ValueType</code> implementation.
+- Index/unique/column metadata does not execute DDL. Foreign-key and check constraints remain in engine-specific SQLx migration files. A model derive does not prove that a live table matches the declared entity.
+- Keyless read views are not writable SeaORM entities in the first RustFlow contract. Use query-specific DTOs/selection types for projections without a persistent primary key.
 
 ## Rust logical-type matrix
 
-Every cell is an **intended contract**, not tested runtime support. Checked means the ORM must reject out-of-range or invalid conversions rather than wrap, truncate or panic.
+The table defines the target contract and expected engine-specific treatment. It is not a declaration that RustFlow's runtime codecs have already passed the required integration tests.
 
-| Rust type/category | SQLite 3.46.0 | PostgreSQL 16.15 | MySQL 8.4.13 LTS | MariaDB 11.4.13 LTS | Contract / limitations |
+| Rust logical type | SQLite 3.46.0 | PostgreSQL 16.15 | MySQL 8.4.13 LTS | MariaDB 11.4.13 LTS | Required behavior / limitations |
 |---|---|---|---|---|---|
-| Signed integers i8/i16/i32/i64 | INTEGER, signed 64-bit storage | SMALLINT / INTEGER / BIGINT by declared width | TINYINT / SMALLINT / INT / BIGINT | TINYINT / SMALLINT / INT / BIGINT | Checked narrowing on decode; overflow behavior is not assumed identical. |
-| Unsigned integers u8/u16/u32 | INTEGER, checked range | Signed integer storage, checked range | Unsigned type where supported | Unsigned type where supported | Values beyond target signed range are rejected on SQLite/PostgreSQL. |
-| u64 | Excluded from portable numeric persistence | Excluded when exceeding signed BIGINT range | UNSIGNED BIGINT can represent full range | UNSIGNED BIGINT can represent full range | Metadata can classify it, but no portable representation exists across all four engines. Runtime mapping must reject unsupported values; never unwrap or cast with loss. |
-| Floating point f32/f64 | REAL / floating-point semantics | REAL / DOUBLE PRECISION | FLOAT / DOUBLE | FLOAT / DOUBLE | Not exact decimal arithmetic; Decimal must never silently map to f64. |
-| Boolean | INTEGER 0/1 convention; CHECK is explicit DDL | BOOLEAN | BOOLEAN / TINYINT(1) representation | BOOLEAN alias / TINYINT representation | Decoder accepts only documented representations; arbitrary nonzero is not automatically true. |
-| String | TEXT | TEXT / VARCHAR | TEXT / VARCHAR | TEXT / VARCHAR | Encoding and collation depend on schema/engine. |
-| Bytes Vec&lt;u8&gt; | BLOB | BYTEA | BLOB family, sized to schema | BLOB family, sized to schema | Size limits remain engine-specific. |
-| Decimal / BigDecimal | No portable numeric implementation in the first codec; storing text alone does not preserve numeric SQL semantics | NUMERIC exact decimal | DECIMAL exact fixed-precision decimal | DECIMAL exact fixed-precision decimal | Portable query arithmetic excluded until SQLite strategy is tested; never pass through f64. |
-| UUID | Canonical lowercase hyphenated TEXT | Native UUID | CHAR(36) canonical representation | CHAR(36) canonical representation | No binary/text reinterpretation; invalid values fail decoding. Runtime encoding pending. |
-| Date | ISO-8601 YYYY-MM-DD TEXT | DATE | DATE | DATE | Strict calendar validation. |
-| Time | Canonical time TEXT | TIME | TIME | TIME | Fractional precision is engine-specific and must be declared; no silent precision loss. |
-| Timestamp without timezone | ISO-8601 TEXT with no-zone convention | TIMESTAMP WITHOUT TIME ZONE | DATETIME(6) | DATETIME(6) | Wall-clock time, not an instant. Local timezone types are excluded. |
-| Timestamp with timezone / instant | ISO-8601 UTC TEXT ending in Z | TIMESTAMPTZ, normalized to UTC at API boundary | DATETIME(6) stored/returned under explicit UTC convention | DATETIME(6) stored/returned under explicit UTC convention | MySQL-family DATETIME does not preserve zone; normalize explicitly and test timezone/session settings. |
-| Enum | TEXT label | TEXT by default; native PG enum excluded unless explicit dialect capability | VARCHAR/TEXT label | VARCHAR/TEXT label | Stable explicit labels, not Rust discriminants or Debug output. Unknown labels fail decoding. |
-| JSON | TEXT; validity enforcement is schema-specific | JSONB by default | JSON | JSON alias/LONGTEXT behavior requires MariaDB-specific validation | JSON semantics/number representation/operators are not promised identical. |
-| Nullable Option&lt;T&gt; | SQL NULL | SQL NULL | SQL NULL | SQL NULL | None maps to NULL only for nullable columns; NULL into T is a decode error. |
-| Arrays/ranges/spatial/vendor-specific | Excluded from baseline | Excluded unless explicit feature/tests | Excluded unless explicit feature/tests | Excluded unless explicit feature/tests | Require explicit extension/type mapping, never automatic inference. |
+| Signed integers i8/i16/i32/i64 | SQLite INTEGER storage | SMALLINT / INTEGER / BIGINT | TINYINT / SMALLINT / INT / BIGINT | TINYINT / SMALLINT / INT / BIGINT | Checked narrowing on decode; reject overflow, never wrap. Exact DDL width remains schema-specific. |
+| Unsigned integers u8/u16/u32 | INTEGER with range check | Signed integer representation with checked range | Unsigned integer types where defined | Unsigned integer types where defined | Reject values outside backend-supported ranges. |
+| u64 | Signed INTEGER range only | Signed BIGINT range only | UNSIGNED BIGINT may represent full range | UNSIGNED BIGINT may represent full range | Cross-engine API must reject values above i64::MAX on SQLite/PostgreSQL; no silent cast. |
+| Floating point f32/f64 | REAL | REAL / DOUBLE PRECISION | FLOAT / DOUBLE | FLOAT / DOUBLE | Approximate values; never substitute for exact decimal arithmetic. |
+| Boolean | INTEGER 0/1 representation | BOOLEAN | BOOLEAN/TINYINT representation | BOOLEAN alias/TINYINT representation | Decode only documented backend representations; arbitrary nonzero is not automatically true. |
+| String / text | TEXT | TEXT / VARCHAR | TEXT / VARCHAR | TEXT / VARCHAR | Character set and collation depend on schema/server configuration. |
+| Bytes Vec<u8> | BLOB | BYTEA | BLOB family | BLOB family | Binary data is not a string; enforce engine/schema size limits. PostgreSQL arrays are a separate opt-in. |
+| Decimal / BigDecimal | Exact numeric behavior requires explicit SQLite codec tests; native arithmetic is not yet promised | NUMERIC/DECIMAL | DECIMAL exact precision/scale | DECIMAL exact precision/scale | Never route through f64. Reject precision/scale loss; support is gated on engine-specific codec tests. |
+| UUID | Explicit canonical text/binary representation required | Native UUID | Explicit canonical text/binary representation required | Explicit canonical text/binary representation required | Do not silently reinterpret byte order or text format. Runtime mapping must round-trip exact values. |
+| Date | Explicit text/integer representation | DATE | DATE | DATE | Strict calendar validation and documented encoding. |
+| Time | Explicit text/integer representation | TIME | TIME | TIME | Fractional precision is bounded by the server column type; reject or document loss explicitly. |
+| Timestamp without timezone | Explicit text/integer representation | TIMESTAMP WITHOUT TIME ZONE | DATETIME | DATETIME | Wall-clock time, not an instant. Never silently attach a local timezone. |
+| Timestamp with timezone / instant | Normalize to UTC using documented representation | TIMESTAMPTZ | DATETIME/TIMESTAMP under explicit UTC/session convention | DATETIME/TIMESTAMP under explicit UTC/session convention | MySQL-family types do not preserve arbitrary source timezone. Normalize and test session behavior. |
+| Enum | Stable text labels | Stable text labels by default; native PG enum is explicit | Stable text labels or explicit native enum capability | Stable text labels or explicit native enum capability | Persist explicit labels, not Rust discriminants or Debug output. Unknown labels fail decode. |
+| JSON | Text representation; validity/query functions depend on SQLite build/schema | JSON/JSONB | JSON | JSON alias/text semantics differ by product | JSON number representation and operators are not assumed portable. |
+| Nullable Option<T> | SQL NULL | SQL NULL | SQL NULL | SQL NULL | None maps to NULL only for nullable columns; NULL for T is a decode error. |
+| Arrays/ranges/spatial/vendor-specific | Excluded unless explicitly enabled/tested | Excluded unless explicitly enabled/tested | Excluded unless explicitly enabled/tested | Excluded unless explicitly enabled/tested | No automatic portability inference; use a documented per-engine extension. |
 
-## CRUD, generated values and mutation state
+## ActiveModel state and operation semantics
 
-The selected Data Mapper design keeps model data separate from persistence.
+SeaORM's ActiveModel has three field states:
 
-- **Insert:** receives explicit insert values, including per-column set/omit/use-default state. Database-generated fields are omitted from submitted values. Success returns a new model with values actually returned by the database or safely identified by the driver. It cannot fabricate generated timestamps/defaults that it did not read.
-- **Update:** targets the full primary key or an explicitly built predicate. It returns affected-row information and, when supported/requested, a new model snapshot. The caller's model is never mutated in place. Missing/stale records are not silently treated as success.
-- **Delete:** targets the full primary key or an explicit safe predicate and returns affected-row information. No rows affected is distinct from query/connection failure.
-- **Read one/many:** decoding validates nullability and range. Unknown columns may be ignored only for an explicitly projected partial model; full-model decode rejects missing required fields or incompatible data.
-- **Defaults/generated fields:** defaults are not guessed in Rust. RETURNING differs (PostgreSQL, SQLite 3.46, MySQL and MariaDB); model operations negotiate per-engine behavior and may do a documented follow-up read when safe. Failure returns an error, not a success-shaped model.
-- **State/concurrency:** no Active Record dirty state, identity map, lifecycle hook or Unit of Work. Ordinary updates are last-write-wins unless a later opt-in version-column contract is implemented and tested.
-- **Transactions:** multi-step operations take an explicit transaction context. Caller chooses commit/rollback; operation failure propagates without implicit commit. Connection loss during commit can leave outcome unknown and must be reported as such.
-- **Errors:** distinguish invalid metadata, value encode/decode, not found, constraint (unique/foreign key/check), pool/connection, query, concurrency and transaction failures. Public messages redact credentials and URLs and do not expose raw SQL/parameter values.
-- **SQL escape hatch:** permit parameterized raw SQL and explicitly named engine-specific operations. Dynamic identifiers and user values may not be concatenated into SQL.
-- **Schema/migrations:** retain SQLx migration management. Metadata does not auto-create/alter the schema, generate migrations or promise full rollback for MySQL/MariaDB DDL.
+- <code>NotSet</code>: the field is omitted from the write payload; the database may apply a default or generated value.
+- <code>Set(value)</code>: the field is explicitly written.
+- <code>Unchanged(value)</code>: the value was copied from a Model and has not been marked as modified. An insert may include it; an update omits it.
 
-## Derive attributes added in 6.7.1
+This is per-field write state, not a process-global identity map or session-wide unit of work. Model operations consume/return values rather than secretly mutating the caller's original Model.
 
-Example:
+- **Insert:** receives explicit insert values. NotSet fields are omitted. Success returns the resulting Model with fields actually returned or subsequently read from the database. RustFlow must not invent generated timestamps, UUIDs or defaults that were never observed.
+- **Update:** uses the complete primary key to target one entity, or an explicitly built predicate for bulk updates. Only Set non-key fields are written by an ActiveModel update; NotSet and Unchanged fields are omitted. Missing key values must be checked by RustFlow's safe wrapper and returned as a typed error rather than reaching a lower-level builder panic.
+- **Delete:** targets the complete primary key or an explicitly built safe predicate and returns affected-row information. Zero affected rows is distinct from connection/query failure.
+- **Read one/many:** validates type conversion and nullability. Partial projections should use explicit selected types, not silently construct a full Model with missing required columns.
+- **Generated values/defaults:** single auto-increment key behavior is engine-specific. PostgreSQL and SQLite support RETURNING; MySQL-family behavior is not assumed equivalent. SeaORM's <code>mariadb-use-returning</code> feature is disabled for both products because the shared MySQL backend cannot safely enable MariaDB-only behavior without also enabling it for MySQL. Any follow-up read is explicit and tested.
+- **Bulk operations:** supported methods and partial-failure behavior must be documented per engine; a bulk write is not assumed atomic outside an explicit transaction.
 
-~~~
-#[derive(rustflow::Model)]
-#[model(table = "user_profiles")]
-struct UserProfile {
-    #[model(primary_key, generated)]
-    id: i64,
-    #[model(column = "display_name")]
-    name: String,
-    #[model(default)]
-    nickname: Option<String>,
-}
-~~~
+## Hooks, transactions and partial failures
 
-Supported model attributes: <code>table = "identifier"</code> and <code>read_only</code>. Supported field attributes: <code>column = "identifier"</code>, <code>primary_key</code>, <code>generated</code>, <code>default</code>, and <code>sql_type = "enum"</code> for a custom enum field. Unknown keys are errors. Attribute strings cannot contain SQL expressions.
+SeaORM ActiveModelBehavior provides hooks with the following order:
 
-## Deliberately not implemented in 6.7.1
+1. <code>before_save</code> before insert/update.
+2. <code>after_save</code> only after a write succeeded and a resulting Model was obtained.
+3. <code>before_delete</code> before delete.
+4. <code>after_delete</code> after delete succeeded.
 
-- CRUD, row decoding/encoding, value binding, query execution and automatic DDL/migrations.
-- Relation definitions, eager/batch loaders and query-count guarantees.
-- Runtime codecs for UUID, Decimal, JSON, temporal values or optional Rust crates.
-- Optimistic locking, lifecycle hooks, Unit of Work and hidden dirty tracking.
-- MongoDB document derives/ODM.
-- Production-ready ORM status or a claim of identical behavior across SQL engines.
+Hooks receive the same explicit connection/transaction argument and may return an error. An <code>after_save</code>/<code>after_delete</code> error can happen after the SQL statement succeeded. Without a caller-supplied transaction, the database change may already be committed; the hook error is not an automatic rollback. If the complete hook-plus-write operation must be atomic, the caller wraps it in an explicit transaction.
 
-These remain pending until their subphases have executable tests against the pinned versions. A logical type recognized by the metadata derive is not thereby a verified runtime capability.
+Operations that need multi-statement atomicity receive a transaction explicitly. A callback error triggers rollback; successful callback completion attempts commit. Failed commit is returned as an error. Connection loss during commit can leave the server outcome unknown; callers need reconciliation/idempotency rather than a false rollback guarantee. MySQL/MariaDB DDL may implicitly commit and is not made atomic by a transaction wrapper.
+
+## Errors and security
+
+Runtime errors must distinguish invalid metadata, invalid input/state, encode/decode, not found, unique/foreign-key/check constraints, connection/pool, query, concurrency and transaction outcomes. Public messages and Debug representations redact connection URLs/passwords and do not reveal raw SQL or bound secrets.
+
+All caller-supplied values are bound parameters. Raw SQL is an explicit escape hatch built with a Statement and bound values or a typed SQLx pool/connection from the one shared pool. SQL identifiers and fragments must be generated from validated metadata/typed expressions. Unprepared SQL is limited to trusted static migration/administrative SQL and never request data.
+
+## SQL ORM / MongoDB ODM boundary
+
+The SQL ORM covers only SQLite, PostgreSQL, MySQL and MariaDB. It uses relational entities, SQL expressions, explicit SQL transactions and engine-specific SQLx migration directories.
+
+MongoDB remains the separate document adapter introduced in Phase 6.6.2. Its 6.7.3 ODM contract owns BSON/document models, _id, serializers/deserializers, collection/index lifecycle, document filters/updates and MongoDB-native session/transaction constraints. SQL model derives, joins, relations and SQL migrations do not imply MongoDB behavior.
+
+## 6.7.1 implementation boundary
+
+Implemented in this subphase: SeaORM 1.1.20 as a server-only dependency/facade; RustFlow's validation-only ModelDiagnostics derive paired with SeaORM's DeriveEntityModel; positive metadata tests; compile-fail rustdoc cases for unsupported entity attributes, nullable keys, misspelled field attributes and unsupported field types; model/operation/type/hook/transaction contract; ADR and public/technical documentation.
+
+Not implemented in this subphase: CRUD execution through RustFlow's current DatabasePool; a typed-pool bridge; runtime row codecs and cross-engine type evidence; RustFlow's integrated query execution API; RustFlow relation mutation/loading wrappers; ODM; automatic DDL or migrations. Those are tracked in the later mandatory subphases.
+
+## References
+
+See [ADR 0020](adr/0020-orm-model-contract.md) for the verified foundation comparison, pool migration, design trade-offs and official upstream links. See [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md) for current RustFlow service versions and existing SQLx/MongoDB evidence.

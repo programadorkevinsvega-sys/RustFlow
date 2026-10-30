@@ -72,7 +72,7 @@ La PR #47 se fusionó en `main` mediante squash en el commit `0a307e84bafabbc7df
 
 ### Fase 6.7.1 — Contrato de modelos y arquitectura
 
-La propuesta de ADR 0020 selecciona Data Mapper para SQL y SeaQuery 0.32.7 como foundation del AST/renderizado, manteniendo SQLx 0.8.6 y el límite independiente de MongoDB. El derive experimental de modelos publica metadatos estáticos y diagnósticos; **no proporciona persistencia SQL**. CRUD, codificación/decodificación, ejecución del query builder, relaciones y carga eficiente siguen pendientes. La Phase 6.7 completa no está cerrada y no se considerará completa con CRUD mínimo.
+ADR 0020 propone Data Mapper sobre SeaORM 1.1.20 como foundation SQL compatible con el MSRV Rust 1.85 y SQLx 0.8.6. RustFlow añade <code>ModelDiagnostics</code> como validación del derive de SeaORM. El facade experimental está en <code>rustflow_server::orm</code>. **No hay todavía persistencia CRUD integrada con el pool SQLx existente**: SeaORM requiere pools tipados por backend y la adaptación del AnyPool actual, sin duplicar pools, está reservada obligatoriamente para 6.7.2. La matriz de tipos es un contrato objetivo; los codecs deben probarse por motor. MongoDB conserva su propio adaptador y ODM separado. Phase 6.7 sigue incompleta y no se cerrará con un CRUD mínimo.
 
 ## Matriz rápida: ¿qué puedes hacer?
 
