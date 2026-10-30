@@ -6,9 +6,9 @@
 use std::marker::PhantomData;
 
 use sea_orm::{
-    ActiveModelBehavior, ActiveModelTrait, ConnectionTrait, DeleteMany, DeleteResult,
-    EntityTrait, InsertResult, IntoActiveModel, LoaderTrait, ModelTrait, PrimaryKeyTrait,
-    Related, Select, UpdateMany,
+    ActiveModelBehavior, ActiveModelTrait, ConnectionTrait, DeleteMany, DeleteResult, EntityTrait,
+    InsertResult, IntoActiveModel, LoaderTrait, ModelTrait, PrimaryKeyTrait, Related, Select,
+    UpdateMany,
 };
 
 use crate::database::DatabaseError;
@@ -55,12 +55,18 @@ where
 
     /// Execute a SELECT builder and decode complete entity models.
     pub async fn all(&self, query: Select<E>) -> Result<Vec<E::Model>, DatabaseError> {
-        query.all(self.connection).await.map_err(DatabaseError::OrmQuery)
+        query
+            .all(self.connection)
+            .await
+            .map_err(DatabaseError::OrmQuery)
     }
 
     /// Execute a SELECT builder and decode at most one complete entity model.
     pub async fn one(&self, query: Select<E>) -> Result<Option<E::Model>, DatabaseError> {
-        query.one(self.connection).await.map_err(DatabaseError::OrmQuery)
+        query
+            .one(self.connection)
+            .await
+            .map_err(DatabaseError::OrmQuery)
     }
 
     /// Find one model by its complete primary key.
@@ -78,10 +84,7 @@ where
     }
 
     /// Insert an ActiveModel and return the database-observed Model.
-    pub async fn insert(
-        &self,
-        active_model: E::ActiveModel,
-    ) -> Result<E::Model, DatabaseError>
+    pub async fn insert(&self, active_model: E::ActiveModel) -> Result<E::Model, DatabaseError>
     where
         E::ActiveModel: ActiveModelBehavior + Send,
         E::Model: IntoActiveModel<E::ActiveModel>,
@@ -93,10 +96,7 @@ where
     }
 
     /// Update one ActiveModel by its complete primary key.
-    pub async fn update(
-        &self,
-        active_model: E::ActiveModel,
-    ) -> Result<E::Model, DatabaseError>
+    pub async fn update(&self, active_model: E::ActiveModel) -> Result<E::Model, DatabaseError>
     where
         E::ActiveModel: ActiveModelTrait<Entity = E> + ActiveModelBehavior + Send,
         E::Model: IntoActiveModel<E::ActiveModel>,
@@ -113,10 +113,7 @@ where
     }
 
     /// Insert if the generated primary key is NotSet; otherwise update the model.
-    pub async fn save(
-        &self,
-        active_model: E::ActiveModel,
-    ) -> Result<E::ActiveModel, DatabaseError>
+    pub async fn save(&self, active_model: E::ActiveModel) -> Result<E::ActiveModel, DatabaseError>
     where
         E::ActiveModel: ActiveModelBehavior + Send,
         E::Model: IntoActiveModel<E::ActiveModel>,
@@ -128,10 +125,7 @@ where
     }
 
     /// Delete one ActiveModel by its complete primary key.
-    pub async fn delete(
-        &self,
-        active_model: E::ActiveModel,
-    ) -> Result<DeleteResult, DatabaseError>
+    pub async fn delete(&self, active_model: E::ActiveModel) -> Result<DeleteResult, DatabaseError>
     where
         E::ActiveModel: ActiveModelTrait<Entity = E> + ActiveModelBehavior + Send,
     {

@@ -6,9 +6,9 @@
 mod config;
 mod csrf;
 mod database;
-pub mod orm;
 mod document_database;
 mod group;
+pub mod orm;
 mod page;
 mod proxy;
 mod sessions;
@@ -54,10 +54,10 @@ pub use group::RouteGroup;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
 pub use mongodb as mongodb_driver;
+pub use orm::EntityRepository;
 pub use page::HtmlPage;
 pub use proxy::{ClientAddressPolicy, IpNetwork};
 pub use sea_orm;
-pub use orm::EntityRepository;
 use serde::{Serialize, de::DeserializeOwned};
 pub use sessions::{
     AccessPolicy, AccessPolicyError, AuthIdentity, InMemorySessionStore, PasswordHash, RolePolicy,

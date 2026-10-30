@@ -665,7 +665,9 @@ impl fmt::Display for DatabaseError {
             Self::InvalidConfiguration(message) => {
                 write!(formatter, "invalid database configuration: {message}")
             }
-            Self::InvalidModelState(message) => write!(formatter, "invalid ORM model state: {message}"),
+            Self::InvalidModelState(message) => {
+                write!(formatter, "invalid ORM model state: {message}")
+            }
             Self::Connect(_) => formatter.write_str("database connection failed"),
             Self::Query(_) | Self::OrmQuery(_) => formatter.write_str("database operation failed"),
             Self::OrmTransaction(_) => formatter.write_str("database transaction failed"),
