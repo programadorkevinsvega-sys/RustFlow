@@ -350,24 +350,28 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 
 **Exit gate:** SQLite, PostgreSQL, MySQL, MariaDB, and MongoDB each have an explicit verified support contract and reproducible integration coverage. SQL engines have correct engine-specific tests/migration expectations; MongoDB has its own document and index lifecycle contract. Merely adding a dependency does not close this phase.
 
-## Phase 6.7 — ORM and model persistence (planned)
+## Phase 6.7 — ORM and model persistence (in progress)
 
-**Status: planned.** This phase targets a **mature, cohesive ORM from the outset**, not a minimal ORM/MVP that is declared complete and incrementally grows afterward. The term **SQL ORM** applies only to SQLite, PostgreSQL, MySQL, and MariaDB. MongoDB is document-oriented and belongs to the separate document-mapping/ODM subphase below; it must not be forced into a SQL query or relational model.
+**Status: in progress.** ADR 0020 now proposes **Data Mapper on SeaORM 1.1.20**, compatible by declared MSRV with Rust 1.85 and by dependency range with SQLx 0.8.6. SeaORM is the selected maintained entity/ActiveModel/query/relation foundation; SQLx remains the planned driver and migration layer. The existing RustFlow SQL adapter still exposes an AnyPool, whereas SeaORM needs backend-specific SQLx pools. No second pool may be created: Phase 6.7.2 must add the SeaORM dependency/facade and perform one explicit pre-1.0 connection-boundary migration together. This subphase publishes the decision, model contract and validator; it does not add the SeaORM dependency or make CRUD executable.
 
-**Mandatory maturity rule:** the subphases below organize architecture and implementation work; they are not permission to ship or close Phase 6.7 as a CRUD-only ORM. Phase 6.7 cannot be marked complete until the complete public contract, query builder, relationships/loading, transaction semantics, type mapping, diagnostics, cross-engine behavior, documentation, and quality gates in this phase are implemented and verified together. Design the API and dependency boundaries for this full target before coding begins. Reuse proven, maintained foundations where appropriate rather than reinventing SQL dialect generation or database drivers. An ADR must select the ORM pattern and dependency strategy before the public API is fixed. The goal is a maintainable, well-tested ORM, not a feature-for-feature clone of another framework; any excluded capability must be explicitly listed in the accepted contract instead of left ambiguous.
+This phase targets a **mature, cohesive SQL ORM from the outset**, not a CRUD-only ORM/MVP. The term **SQL ORM** applies only to SQLite, PostgreSQL, MySQL and MariaDB. MongoDB is document-oriented and belongs to a separate ODM subphase; it must not be forced into a SQL model, query builder, relationships or migration system. SeaORM is selected only for the SQL subsystem.
+
+**Mandatory maturity rule:** Phase 6.7 cannot close until the public model contract, query builder, relationships/loading, transactions/errors, checked type mapping, diagnostics, four-engine behavior, MongoDB's independent ODM, generated applications, documentation and quality gates are implemented and verified together. The subphases organize the implementation; they do not reduce the final maturity target. See [ADR 0020](docs/adr/0020-orm-model-contract.md) and [ORM_MODEL_CONTRACT.md](docs/ORM_MODEL_CONTRACT.md).
 
 ### 6.7.1 Model contract and architecture
-- [ ] Record an ADR that compares maintained foundations and selects the architectural pattern (for example, Active Record or Data Mapper), dependency boundaries, and trade-offs before fixing the public API.
-- [ ] Define model/table/column metadata, naming rules, primary keys (including the supported key shapes), nullable/default/generated fields, indexes/constraints, and type conversion.
-- [ ] Publish a type-support matrix for integers, booleans, text, bytes, decimals/numerics, UUIDs, timestamps/time zones, enums, JSON, nullable values, and engine-specific types where supported.
-- [ ] Define a typed model contract and derive/proc-macro diagnostics with compile-fail tests for invalid attributes, unsupported fields, and conflicting declarations.
-- [ ] Specify insert/update/delete semantics, returned/generated values, dirty-state or unit-of-work behavior appropriate to the chosen pattern, model lifecycle hooks if included, and safe error behavior.
-- [ ] Preserve an explicit escape hatch for raw, parameterized SQL and engine-specific capabilities; never interpolate user values into SQL or rely on a hidden global database singleton.
-- [ ] Define how transactions and model operations compose, including rollback behavior and how partial failures are represented.
-- [ ] Establish the mandatory versus explicitly excluded feature matrix in the ADR; do not leave the maturity target open-ended.
+
+- [x] Compare maintained ORM foundations and select a concrete pattern/dependency strategy before fixing the model API. ADR 0020 selects Data Mapper on SeaORM 1.1.20 for adoption in 6.7.2; the dependency, facade and connection-boundary migration from AnyPool to one typed per-engine pool are a single mandatory 6.7.2 gate.
+- [x] Define model/entity/table/column metadata, safe naming, primary-key rules, nullability, defaults/generated values, custom types, constraints and migration boundaries.
+- [x] Publish an engine-specific type contract covering integer ranges, booleans, text, bytes, decimals, UUID, date/time/timestamps, enums, JSON, NULL and excluded vendor types. Matrix cells are target behavior, not claims of runtime codec verification.
+- [x] Add RustFlow ModelDiagnostics to validate the supported SeaORM entity/field attribute subset, including unknown/duplicate attributes, invalid identifiers, key conflicts, unsupported types and composite-key limits.
+- [x] Add positive metadata tests and compile-fail rustdoc examples; define ActiveModel state, generated-value, write, hook, error and transaction/partial-failure semantics.
+- [x] Define the parameterized SQL escape hatch and explicit SQL ORM/MongoDB ODM boundary.
+- [x] Update the technical ADR/model contract and public database guide/status to reflect the chosen foundation and its real limits.
+- [x] Run required checks on the final PR SHA: Rust 1.85/stable, workspace and database integrations, Rustdoc, WASM, Browser E2E/bundle, website, governance and dependency review. Keep the PR open for review; do not merge automatically.
 
 ### 6.7.2 SQL ORM core
-- [ ] Implement typed model mapping/derives and row decoding for SQLite, PostgreSQL, MySQL, and MariaDB against the Phase 6.6 verified adapters.
+- [ ] Integrate SeaORM's backend-specific SQLx typed pools as the single shared pool for SQLite, PostgreSQL, MySQL and MariaDB; migrate the existing AnyPool/raw connection API deliberately without opening a second pool, preserving URL configuration, timeouts, secret redaction, SQLx migrations and parameterized raw SQL.
+- [ ] Implement checked runtime model mapping/row decoding and RustFlow wrappers over SeaORM entities/ActiveModels for SQLite, PostgreSQL, MySQL and MariaDB against the Phase 6.6 verified services.
 - [ ] Implement complete core CRUD plus bulk insert/update/delete where semantically supported, with explicit handling of generated keys, defaults, affected-row counts, missing records, and unique/foreign-key conflicts.
 - [ ] Provide a composable, typed query builder for projections, aliases, predicates, nested AND/OR expressions, comparisons, NULL checks, IN, LIKE, ordering, distinct, limits/offset pagination, and documented support for joins, grouping/aggregates, HAVING and subqueries.
 - [ ] Define eager/relation loading as part of the complete ORM contract, with explicit load strategies and query-count tests; do not introduce silent lazy I/O that hides database work.

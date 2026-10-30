@@ -749,3 +749,714 @@ fn compile_error(error: ParseError) -> TokenStream {
     .into_iter()
     .collect()
 }
+
+/// Validate a SeaORM entity declaration before SeaORM generates it.
+///
+/// This derive is validation-only. Pair it with SeaORM's DeriveEntityModel;
+/// SeaORM remains responsible for entity metadata, query generation, codecs,
+/// relations and persistence.
+#[proc_macro_derive(ModelDiagnostics, attributes(sea_orm))]
+pub fn derive_model_diagnostics(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    match validate_model_contract(&input) {
+        Ok(()) => TokenStream::new(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+fn validate_model_contract(input: &syn::DeriveInput) -> Result<(), syn::Error> {
+    let ident = &input.ident;
+    if !input.generics.params.is_empty() || input.generics.where_clause.is_some() {
+        return Err(syn::Error::new_spanned(
+            &input.generics,
+            "RustFlow SQL models currently require a non-generic struct",
+        ));
+    }
+
+    let fields = match &input.data {
+        syn::Data::Struct(data) => match &data.fields {
+            syn::Fields::Named(fields) => &fields.named,
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    ident,
+                    "RustFlow SQL models require a struct with named fields",
+                ));
+            }
+        },
+        syn::Data::Enum(_) => {
+            return Err(syn::Error::new_spanned(
+                ident,
+                "DeriveEntityModel must be applied to a named-field struct, not an enum",
+            ));
+        }
+        syn::Data::Union(_) => {
+            return Err(syn::Error::new_spanned(
+                ident,
+                "RustFlow SQL models cannot be unions",
+            ));
+        }
+    };
+
+    let mut model_options = std::collections::HashSet::new();
+    let mut table_name = None;
+    for attr in input
+        .attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("sea_orm"))
+    {
+        attr.parse_nested_meta(|meta| {
+            let name = meta.path.get_ident().map(ToString::to_string).ok_or_else(|| {
+                meta.error("qualified SeaORM model attributes are not supported")
+            })?;
+            if !model_options.insert(name.clone()) {
+                return Err(meta.error(format!("duplicate SeaORM model attribute {name:?}")));
+            }
+            match name.as_str() {
+                "table_name" => {
+                    let value: syn::LitStr = meta.value()?.parse()?;
+                    if !is_safe_orm_identifier(&value.value()) {
+                        return Err(syn::Error::new(
+                            value.span(),
+                            "table_name must be a simple ASCII SQL identifier ([A-Za-z_][A-Za-z0-9_]*)",
+                        ));
+                    }
+                    table_name = Some(value.value());
+                    Ok(())
+                }
+                "schema_name" => {
+                    let value: syn::LitStr = meta.value()?.parse()?;
+                    if !is_safe_orm_identifier(&value.value()) {
+                        return Err(syn::Error::new(
+                            value.span(),
+                            "schema_name must be a simple ASCII SQL identifier",
+                        ));
+                    }
+                    Ok(())
+                }
+                "comment" | "rename_all" => {
+                    let _: syn::LitStr = meta.value()?.parse()?;
+                    Ok(())
+                }
+                "table_iden" => {
+                    if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
+                        return Err(meta.error("table_iden does not take a value"));
+                    }
+                    Ok(())
+                }
+                _ => Err(meta.error(format!("unknown SeaORM entity attribute {name:?}"))),
+            }
+        })?;
+    }
+
+    if table_name.is_none() {
+        return Err(syn::Error::new_spanned(
+            ident,
+            "RustFlow SQL entities require #[sea_orm(table_name = \"...\")]",
+        ));
+    }
+
+    let mut primary_keys = 0usize;
+    let mut auto_increment_key = false;
+    let mut non_autoincrement_primary_keys = 0usize;
+    let mut seen_columns = std::collections::HashSet::new();
+    for field in fields {
+        let field_ident = field
+            .ident
+            .as_ref()
+            .expect("named fields were checked above");
+        let field_name = field_ident.to_string().trim_start_matches("r#").to_owned();
+        let mut seen_attrs = std::collections::HashSet::new();
+        let mut column_name = rust_field_to_snake_case(&field_name);
+        let mut primary_key = false;
+        let mut nullable_marker = false;
+        let mut ignored = false;
+        let mut auto_increment = None;
+        let mut has_default_value = false;
+        let mut has_default_expr = false;
+        let mut custom_type_mapping = false;
+
+        for attr in field
+            .attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("sea_orm"))
+        {
+            attr.parse_nested_meta(|meta| {
+                let name = meta
+                    .path
+                    .get_ident()
+                    .map(ToString::to_string)
+                    .ok_or_else(|| {
+                        meta.error("qualified SeaORM field attributes are not supported")
+                    })?;
+                if !seen_attrs.insert(name.clone()) {
+                    return Err(meta.error(format!(
+                        "duplicate SeaORM field attribute {name:?} on {field_name:?}"
+                    )));
+                }
+                match name.as_str() {
+                    "primary_key" | "nullable" | "indexed" | "unique" | "ignore" => {
+                        if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
+                            return Err(meta.error(format!("{name} does not take a value")));
+                        }
+                        match name.as_str() {
+                            "primary_key" => primary_key = true,
+                            "nullable" => nullable_marker = true,
+                            "ignore" => ignored = true,
+                            _ => {}
+                        }
+                        Ok(())
+                    }
+                    "auto_increment" => {
+                        let value: syn::LitBool = meta.value()?.parse()?;
+                        auto_increment = Some(value.value());
+                        Ok(())
+                    }
+                    "column_name" => {
+                        let value: syn::LitStr = meta.value()?.parse()?;
+                        if !is_safe_orm_identifier(&value.value()) {
+                            return Err(syn::Error::new(
+                                value.span(),
+                                "column_name must be a simple ASCII SQL identifier",
+                            ));
+                        }
+                        column_name = value.value();
+                        Ok(())
+                    }
+                    "column_type" | "default_expr" | "enum_name" | "select_as" | "save_as" => {
+                        let _: syn::LitStr = meta.value()?.parse()?;
+                        match name.as_str() {
+                            "default_expr" => has_default_expr = true,
+                            "column_type" | "enum_name" => custom_type_mapping = true,
+                            _ => {}
+                        }
+                        Ok(())
+                    }
+                    "default_value" | "comment" => {
+                        let _: syn::Lit = meta.value()?.parse()?;
+                        if name == "default_value" {
+                            has_default_value = true;
+                        }
+                        Ok(())
+                    }
+                    _ => Err(meta.error(format!(
+                        "unknown SeaORM field attribute {name:?} on {field_name:?}"
+                    ))),
+                }
+            })?;
+        }
+
+        if ignored {
+            if primary_key
+                || nullable_marker
+                || auto_increment.is_some()
+                || has_default_value
+                || has_default_expr
+            {
+                return Err(syn::Error::new_spanned(
+                    field_ident,
+                    "a field marked ignore cannot also declare key, nullability, auto-increment or default metadata",
+                ));
+            }
+            continue;
+        }
+
+        let (base_type, option_nullable) = model_option_inner(&field.ty)?;
+        let nullable = option_nullable || nullable_marker;
+        if primary_key {
+            primary_keys += 1;
+            if nullable {
+                return Err(syn::Error::new_spanned(
+                    field_ident,
+                    "a primary-key field cannot be nullable; use a non-Option type without #[sea_orm(nullable)]",
+                ));
+            }
+            match auto_increment {
+                Some(true) => auto_increment_key = true,
+                Some(false) => non_autoincrement_primary_keys += 1,
+                None => {}
+            }
+        } else if auto_increment.is_some() {
+            return Err(syn::Error::new_spanned(
+                field_ident,
+                "auto_increment is only valid on a primary-key field",
+            ));
+        }
+
+        if has_default_value && has_default_expr {
+            return Err(syn::Error::new_spanned(
+                field_ident,
+                "choose either default_value or default_expr, not both",
+            ));
+        }
+        validate_model_field_type(base_type, custom_type_mapping)?;
+
+        if !seen_columns.insert(column_name.clone()) {
+            return Err(syn::Error::new_spanned(
+                field_ident,
+                format!("duplicate SQL column mapping {column_name:?}"),
+            ));
+        }
+    }
+
+    if primary_keys == 0 {
+        return Err(syn::Error::new_spanned(
+            ident,
+            "a writable SQL entity requires at least one #[sea_orm(primary_key)] field; keyless views must use a read-only query DTO instead",
+        ));
+    }
+    if primary_keys > 12 {
+        return Err(syn::Error::new_spanned(
+            ident,
+            "composite primary keys are limited to 12 fields by the selected SeaORM version",
+        ));
+    }
+    if primary_keys > 1 && auto_increment_key {
+        return Err(syn::Error::new_spanned(
+            ident,
+            "composite primary keys cannot declare auto_increment = true",
+        ));
+    }
+    if primary_keys > 1 && non_autoincrement_primary_keys != primary_keys {
+        return Err(syn::Error::new_spanned(
+            ident,
+            "each composite primary-key field must explicitly declare auto_increment = false",
+        ));
+    }
+    Ok(())
+}
+
+fn model_option_inner(ty: &syn::Type) -> Result<(&syn::Type, bool), syn::Error> {
+    let syn::Type::Path(path) = ty else {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "model fields must use owned value types; references, tuples and arrays are not supported",
+        ));
+    };
+    let Some(segment) = path.path.segments.last() else {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "could not determine model field type",
+        ));
+    };
+    if segment.ident != "Option" {
+        return Ok((ty, false));
+    }
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "Option fields must contain exactly one type",
+        ));
+    };
+    if args.args.len() != 1 {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "Option fields must contain exactly one type",
+        ));
+    }
+    let Some(syn::GenericArgument::Type(inner)) = args.args.first() else {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "Option fields must contain exactly one type",
+        ));
+    };
+    if matches!(inner, syn::Type::Path(inner_path) if inner_path.path.segments.last().is_some_and(|item| item.ident == "Option"))
+    {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "nested Option<Option<T>> is not supported; use a single Option<T>",
+        ));
+    }
+    Ok((inner, true))
+}
+
+fn validate_model_field_type(ty: &syn::Type, custom_type_mapping: bool) -> Result<(), syn::Error> {
+    let syn::Type::Path(path) = ty else {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "unsupported SQL model field type syntax",
+        ));
+    };
+    let Some(segment) = path.path.segments.last() else {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "could not determine SQL model field type",
+        ));
+    };
+    let name = segment.ident.to_string();
+    if matches!(name.as_str(), "isize" | "usize") {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "isize/usize are architecture-width types; use a fixed-width integer",
+        ));
+    }
+    if name == "Vec" {
+        let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "only Vec<u8> is supported for portable SQL byte fields",
+            ));
+        };
+        let is_bytes = args.args.len() == 1
+            && matches!(
+                args.args.first(),
+                Some(syn::GenericArgument::Type(syn::Type::Path(inner)))
+                    if inner.path.segments.last().is_some_and(|item| item.ident == "u8")
+            );
+        if !is_bytes {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "only Vec<u8> is supported by the portable SQL model contract; PostgreSQL arrays require a separate opt-in",
+            ));
+        }
+        return Ok(());
+    }
+
+    if name == "DateTime" {
+        let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "DateTime requires an explicit Utc or FixedOffset timezone type",
+            ));
+        };
+        if args.args.len() != 1 {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "DateTime requires exactly one timezone type parameter",
+            ));
+        }
+        let Some(syn::GenericArgument::Type(syn::Type::Path(timezone))) = args.args.first() else {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "DateTime timezone must be Utc or FixedOffset",
+            ));
+        };
+        let timezone_name = timezone
+            .path
+            .segments
+            .last()
+            .map(|part| part.ident.to_string())
+            .unwrap_or_default();
+        match timezone_name.as_str() {
+            "Utc" | "FixedOffset" => {}
+            "Local" => {
+                return Err(syn::Error::new_spanned(
+                    ty,
+                    "DateTime<Local> is not portable; use DateTime<Utc> or DateTime<FixedOffset>",
+                ));
+            }
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    ty,
+                    "DateTime timezone must be Utc or FixedOffset; other timezone types are unsupported",
+                ));
+            }
+        }
+    }
+
+    // Keep the portable, feature-enabled type surface explicit. Qualified paths
+    // such as uuid::Uuid and chrono::NaiveDateTime are recognized by their final
+    // type segment. Custom SeaORM ValueType / ActiveEnum implementations require
+    // an explicit column_type or enum_name attribute.
+    let supported = matches!(
+        name.as_str(),
+        "bool"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "f32"
+            | "f64"
+            | "String"
+            | "Uuid"
+            | "Json"
+            | "Decimal"
+            | "BigDecimal"
+            | "Date"
+            | "Time"
+            | "DateTime"
+            | "NaiveDate"
+            | "NaiveTime"
+            | "NaiveDateTime"
+            | "PrimitiveDateTime"
+            | "OffsetDateTime"
+    );
+    if !supported && !custom_type_mapping {
+        return Err(syn::Error::new_spanned(
+            ty,
+            format!(
+                "unsupported SQL model field type {name:?}; use a documented SeaORM type or declare an explicit enum_name / column_type mapping with a SeaORM ValueType implementation"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn is_safe_orm_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn rust_field_to_snake_case(value: &str) -> String {
+    let chars = value.chars().collect::<Vec<_>>();
+    let mut output = String::new();
+    for (index, ch) in chars.iter().copied().enumerate() {
+        if ch.is_ascii_uppercase() {
+            let boundary = index > 0
+                && (chars[index - 1].is_ascii_lowercase()
+                    || chars[index - 1].is_ascii_digit()
+                    || (chars[index - 1].is_ascii_uppercase()
+                        && chars
+                            .get(index + 1)
+                            .is_some_and(|next| next.is_ascii_lowercase())));
+            if !output.is_empty() && boundary {
+                output.push('_');
+            }
+            output.push(ch.to_ascii_lowercase());
+        } else {
+            output.push(ch);
+        }
+    }
+    output
+}
+
+#[cfg(test)]
+mod model_diagnostics_tests {
+    use super::validate_model_contract;
+
+    fn validate(source: &str) -> Result<(), syn::Error> {
+        let input = syn::parse_str::<syn::DeriveInput>(source).expect("test model parses");
+        validate_model_contract(&input)
+    }
+
+    #[test]
+    fn accepts_composite_primary_key_and_nullable_fields() {
+        let source = r#"
+            #[sea_orm(table_name = "tenant_items")]
+            struct Model {
+                #[sea_orm(primary_key, auto_increment = false)]
+                tenant_id: i64,
+                #[sea_orm(primary_key, auto_increment = false)]
+                item_id: i64,
+                display_name: String,
+                nickname: Option<String>,
+            }
+        "#;
+        assert!(validate(source).is_ok());
+    }
+
+    #[test]
+    fn rejects_unknown_entity_attributes() {
+        let source = r#"
+            #[sea_orm(table_name = "users", unknown_option = true)]
+            struct Model { #[sea_orm(primary_key)] id: i64 }
+        "#;
+        assert!(
+            validate(source)
+                .unwrap_err()
+                .to_string()
+                .contains("unknown SeaORM entity attribute")
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_field_attributes() {
+        let source = r#"
+            #[sea_orm(table_name = "users")]
+            struct Model {
+                #[sea_orm(primary_key)]
+                id: i64,
+                #[sea_orm(primari_key)]
+                name: String,
+            }
+        "#;
+        assert!(
+            validate(source)
+                .unwrap_err()
+                .to_string()
+                .contains("unknown SeaORM field attribute")
+        );
+    }
+
+    #[test]
+    fn rejects_nullable_or_missing_primary_keys() {
+        let nullable = r#"
+            #[sea_orm(table_name = "users")]
+            struct Model { #[sea_orm(primary_key)] id: Option<i64> }
+        "#;
+        let missing = r#"
+            #[sea_orm(table_name = "users")]
+            struct Model { name: String }
+        "#;
+        assert!(
+            validate(nullable)
+                .unwrap_err()
+                .to_string()
+                .contains("cannot be nullable")
+        );
+        assert!(
+            validate(missing)
+                .unwrap_err()
+                .to_string()
+                .contains("at least one")
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_columns_and_nested_options() {
+        let duplicate = r#"
+            #[sea_orm(table_name = "users")]
+            struct Model {
+                #[sea_orm(primary_key)]
+                id: i64,
+                #[sea_orm(column_name = "id")]
+                external_id: i64,
+            }
+        "#;
+        let nested = r#"
+            #[sea_orm(table_name = "users")]
+            struct Model { #[sea_orm(primary_key)] id: Option<Option<i64>> }
+        "#;
+        assert!(
+            validate(duplicate)
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate SQL column")
+        );
+        assert!(
+            validate(nested)
+                .unwrap_err()
+                .to_string()
+                .contains("nested Option")
+        );
+    }
+
+    #[test]
+    fn rejects_unmapped_types_unless_an_explicit_seaorm_mapping_is_declared() {
+        let unsupported = r#"
+            #[sea_orm(table_name = "users")]
+            struct Model {
+                #[sea_orm(primary_key)]
+                id: i64,
+                address: std::net::IpAddr,
+            }
+        "#;
+        let custom_enum = r#"
+            #[sea_orm(table_name = "users")]
+            struct Model {
+                #[sea_orm(primary_key)]
+                id: i64,
+                #[sea_orm(enum_name = "UserStatus")]
+                status: UserStatus,
+            }
+        "#;
+        assert!(
+            validate(unsupported)
+                .unwrap_err()
+                .to_string()
+                .contains("unsupported SQL model field type")
+        );
+        assert!(validate(custom_enum).is_ok());
+    }
+
+    #[test]
+    fn rejects_composite_keys_without_explicit_non_autoincrement_markers() {
+        let missing_marker = r#"
+            #[sea_orm(table_name = "tenant_items")]
+            struct Model {
+                #[sea_orm(primary_key, auto_increment = false)]
+                tenant_id: i64,
+                #[sea_orm(primary_key)]
+                item_id: i64,
+            }
+        "#;
+        let generated_marker = r#"
+            #[sea_orm(table_name = "tenant_items")]
+            struct Model {
+                #[sea_orm(primary_key, auto_increment = false)]
+                tenant_id: i64,
+                #[sea_orm(primary_key, auto_increment = true)]
+                item_id: i64,
+            }
+        "#;
+        assert!(
+            validate(missing_marker)
+                .unwrap_err()
+                .to_string()
+                .contains("each composite primary-key field")
+        );
+        assert!(
+            validate(generated_marker)
+                .unwrap_err()
+                .to_string()
+                .contains("composite primary keys cannot declare auto_increment = true")
+        );
+    }
+
+    #[test]
+    fn rejects_local_or_unspecified_datetime_timezones() {
+        let local = r#"
+            #[sea_orm(table_name = "events")]
+            struct Model {
+                #[sea_orm(primary_key)]
+                id: i64,
+                occurred_at: chrono::DateTime<chrono::Local>,
+            }
+        "#;
+        let unspecified = r#"
+            #[sea_orm(table_name = "events")]
+            struct Model {
+                #[sea_orm(primary_key)]
+                id: i64,
+                occurred_at: chrono::DateTime,
+            }
+        "#;
+        assert!(
+            validate(local)
+                .unwrap_err()
+                .to_string()
+                .contains("DateTime<Local> is not portable")
+        );
+        assert!(
+            validate(unspecified)
+                .unwrap_err()
+                .to_string()
+                .contains("DateTime requires an explicit Utc or FixedOffset")
+        );
+    }
+
+    #[test]
+    fn rejects_key_shapes_that_the_selected_foundation_cannot_represent() {
+        let too_many = r#"
+            #[sea_orm(table_name = "wide_key")]
+            struct Model {
+                #[sea_orm(primary_key)] a: i64,
+                #[sea_orm(primary_key)] b: i64,
+                #[sea_orm(primary_key)] c: i64,
+                #[sea_orm(primary_key)] d: i64,
+                #[sea_orm(primary_key)] e: i64,
+                #[sea_orm(primary_key)] f: i64,
+                #[sea_orm(primary_key)] g: i64,
+                #[sea_orm(primary_key)] h: i64,
+                #[sea_orm(primary_key)] i: i64,
+                #[sea_orm(primary_key)] j: i64,
+                #[sea_orm(primary_key)] k: i64,
+                #[sea_orm(primary_key)] l: i64,
+                #[sea_orm(primary_key)] m: i64,
+            }
+        "#;
+        assert!(
+            validate(too_many)
+                .unwrap_err()
+                .to_string()
+                .contains("limited to 12")
+        );
+    }
+}

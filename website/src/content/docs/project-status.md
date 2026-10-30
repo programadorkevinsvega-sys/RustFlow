@@ -70,6 +70,10 @@ CsrfProtection ofrece middleware optativo basado en tokens firmados y expiran en
 
 La PR #47 se fusionó en `main` mediante squash en el commit `0a307e84bafabbc7dfaa5d4e361723b82fce042e`. Los checks requeridos pasaron en el HEAD final de la PR antes de la fusión, incluidos Rust 1.85/stable, WASM, E2E de navegador y presupuesto del bundle, build del sitio, gobernanza y revisión de dependencias. Esto confirma la verificación del HEAD de la PR; la consulta de estados combinados del commit de merge no devolvió estados individuales, así que no se afirma una ejecución post-merge verificada. Consulta la [guía de formularios y validación](/guides/forms-validation/).
 
+### Fase 6.7.1 — Contrato de modelos y arquitectura
+
+ADR 0020 selecciona Data Mapper sobre SeaORM 1.1.20 como foundation SQL compatible con el MSRV Rust 1.85 y SQLx 0.8.6. RustFlow añade <code>ModelDiagnostics</code> como derive de validación, sin incorporar todavía SeaORM al grafo de dependencias. El crate/facade y la persistencia se añadirán en 6.7.2 junto con la transición del AnyPool a un único pool tipado por backend. La matriz de tipos es un contrato objetivo; los codecs deben probarse por motor. MongoDB conserva su propio adaptador y ODM separado. Phase 6.7 sigue incompleta y no se cerrará con un CRUD mínimo.
+
 ## Matriz rápida: ¿qué puedes hacer?
 
 | Tarea | ¿Disponible hoy? | Qué leer |

@@ -1,6 +1,6 @@
 # SQLx, pools, transactions, and migrations (Phase 6.5)
 
-The database API is experimental and pre-1.0. RustFlow re-exports SQLx from rustflow_server::sqlx and provides a small pool/configuration/migration boundary. It is not an ORM: models remain ordinary Rust types, queries are explicit, and SQL dialect differences remain the application's responsibility.
+The existing database pool/configuration/migration API is experimental and pre-1.0. It re-exports SQLx and currently uses AnyPool for explicit parameterized SQL and SQLx migrations; it is not yet wired to model CRUD. Phase 6.7.1 selects SeaORM 1.1.20 and adds the validation-only ModelDiagnostics derive, without adding SeaORM as a dependency. Phase 6.7.2 must introduce the SeaORM server facade and migrate the single connection boundary from AnyPool to backend-specific SQLx pools in one change. Do not create a parallel pool for the same database. The MongoDB adapter remains separate.
 
 ## Supported engines
 
@@ -150,4 +150,4 @@ cargo test -p rustflow-server --all-features
 cargo test --workspace --all-features
 ~~~
 
-The SQL integration does not include an ORM, a general model/query abstraction, migration generation by sqlx-cli, database-backed sessions, or a built-in repository layer. MongoDB has its own separate experimental adapter contract, merged in PR #55 as `e3ceb86d757bb7aa1a07e16a1e21b462adb69841`. MySQL/MariaDB support was introduced in PR #54 as `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`; Phase 6.6.3 now retests the maintained MySQL 8.4.13 LTS and MariaDB 11.4.13 LTS lines alongside PostgreSQL 16.15, SQLite 3.46.0, and MongoDB 7.0.45. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.
+The SQL integration still does not include executable ORM persistence, runtime query abstraction, migration generation by sqlx-cli, database-backed sessions, or a built-in repository layer. Phase 6.7.1 adds only experimental compile-time model metadata via the Data Mapper derive; see [ADR 0020](adr/0020-orm-model-contract.md) and [the model/type contract](ORM_MODEL_CONTRACT.md). CRUD, typed codecs, query execution, relationships and loading remain unimplemented until later subphases. MongoDB has its own separate experimental adapter contract, merged in PR #55 as `e3ceb86d757bb7aa1a07e16a1e21b462adb69841`. MySQL/MariaDB support was introduced in PR #54 as `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`; Phase 6.6.3 now retests the maintained MySQL 8.4.13 LTS and MariaDB 11.4.13 LTS lines alongside PostgreSQL 16.15, SQLite 3.46.0, and MongoDB 7.0.45. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.
