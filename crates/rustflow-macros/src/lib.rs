@@ -2,8 +2,6 @@
 
 use proc_macro::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
 
-use quote::quote;
-
 /// Mark a Rust function as a RustFlow component authoring function.
 ///
 /// The function remains an ordinary typed Rust function; its result can be
@@ -752,387 +750,271 @@ fn compile_error(error: ParseError) -> TokenStream {
     .collect()
 }
 
-#[derive(Default)]
-struct ModelAttrs {
-    table: Option<String>,
-    read_only: bool,
-}
 
-#[derive(Default)]
-struct FieldAttrs {
-    column: Option<String>,
-    primary_key: bool,
-    generated: bool,
-    has_default: bool,
-    sql_type: Option<String>,
-}
-
-struct ModelField {
-    field_name: String,
-    column_name: String,
-    rust_type: &'static str,
-    nullable: bool,
-    primary_key: bool,
-    generated: bool,
-    has_default: bool,
-}
-
-/// Derive static table and column metadata for a SQL Data Mapper model.
+/// Validate a SeaORM entity declaration before SeaORM generates it.
 ///
-/// The derive does not generate SQL, row decoders or persistence methods.
-#[proc_macro_derive(Model, attributes(model))]
-pub fn derive_model(input: TokenStream) -> TokenStream {
+/// This derive is validation-only. Pair it with SeaORM's DeriveEntityModel;
+/// SeaORM remains responsible for entity metadata, query generation, codecs,
+/// relations and persistence.
+#[proc_macro_derive(ModelDiagnostics, attributes(sea_orm))]
+pub fn derive_model_diagnostics(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    match expand_model(&input) {
-        Ok(output) => output,
+    match validate_model_contract(&input) {
+        Ok(()) => TokenStream::new(),
         Err(error) => error.to_compile_error().into(),
     }
 }
 
-fn expand_model(input: &syn::DeriveInput) -> Result<TokenStream, syn::Error> {
-    let struct_name = &input.ident;
+fn validate_model_contract(input: &syn::DeriveInput) -> Result<(), syn::Error> {
+    let ident = &input.ident;
     if !input.generics.params.is_empty() || input.generics.where_clause.is_some() {
         return Err(syn::Error::new_spanned(
             &input.generics,
-            "Model metadata currently supports only non-generic structs",
+            "RustFlow SQL models currently require a non-generic struct",
         ));
     }
 
-    let model_attrs = parse_model_attrs(&input.attrs)?;
     let fields = match &input.data {
         syn::Data::Struct(data) => match &data.fields {
             syn::Fields::Named(fields) => &fields.named,
             _ => {
                 return Err(syn::Error::new_spanned(
-                    struct_name,
-                    "Model metadata requires a struct with named fields",
+                    ident,
+                    "RustFlow SQL models require a struct with named fields",
                 ));
             }
         },
         syn::Data::Enum(_) => {
             return Err(syn::Error::new_spanned(
-                struct_name,
-                "Model metadata cannot be derived for an enum; mark enum fields with #[model(sql_type = \"enum\")]",
+                ident,
+                "DeriveEntityModel must be applied to a named-field struct, not an enum",
             ));
         }
         syn::Data::Union(_) => {
             return Err(syn::Error::new_spanned(
-                struct_name,
-                "Model metadata cannot be derived for a union",
+                ident,
+                "RustFlow SQL models cannot be unions",
             ));
         }
     };
 
-    let table_name = model_attrs
-        .table
-        .unwrap_or_else(|| rust_type_to_snake_case(&struct_name.to_string()));
-    if !is_safe_sql_identifier(&table_name) {
+    let mut model_options = std::collections::HashSet::new();
+    let mut table_name = None;
+    for attr in input.attrs.iter().filter(|attr| attr.path().is_ident("sea_orm")) {
+        attr.parse_nested_meta(|meta| {
+            let name = meta.path.get_ident().map(ToString::to_string).ok_or_else(|| {
+                meta.error("qualified SeaORM model attributes are not supported")
+            })?;
+            if !model_options.insert(name.clone()) {
+                return Err(meta.error(format!("duplicate SeaORM model attribute {name:?}")));
+            }
+            match name.as_str() {
+                "table_name" => {
+                    let value: syn::LitStr = meta.value()?.parse()?;
+                    if !is_safe_orm_identifier(&value.value()) {
+                        return Err(syn::Error::new(
+                            value.span(),
+                            "table_name must be a simple ASCII SQL identifier ([A-Za-z_][A-Za-z0-9_]*)",
+                        ));
+                    }
+                    table_name = Some(value.value());
+                    Ok(())
+                }
+                "schema_name" => {
+                    let value: syn::LitStr = meta.value()?.parse()?;
+                    if !is_safe_orm_identifier(&value.value()) {
+                        return Err(syn::Error::new(
+                            value.span(),
+                            "schema_name must be a simple ASCII SQL identifier",
+                        ));
+                    }
+                    Ok(())
+                }
+                "comment" | "rename_all" => {
+                    let _: syn::LitStr = meta.value()?.parse()?;
+                    Ok(())
+                }
+                "table_iden" => {
+                    if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
+                        return Err(meta.error("table_iden does not take a value"));
+                    }
+                    Ok(())
+                }
+                _ => Err(meta.error(format!("unknown SeaORM entity attribute {name:?}"))),
+            }
+        })?;
+    }
+
+    if table_name.is_none() {
         return Err(syn::Error::new_spanned(
-            struct_name,
-            "model table name must be an ASCII SQL identifier matching [A-Za-z_][A-Za-z0-9_]*",
+            ident,
+            "RustFlow SQL entities require #[sea_orm(table_name = \"...\")]",
         ));
     }
 
-    let mut model_fields = Vec::new();
+    let mut primary_keys = 0usize;
+    let mut auto_increment_key = false;
     let mut seen_columns = std::collections::HashSet::new();
     for field in fields {
-        let field_ident = field.ident.as_ref().ok_or_else(|| {
-            syn::Error::new_spanned(field, "Model metadata requires named fields")
-        })?;
+        let field_ident = field.ident.as_ref().expect("named fields were checked above");
         let field_name = field_ident.to_string().trim_start_matches("r#").to_owned();
-        let attrs = parse_field_attrs(&field.attrs)?;
-        let column_name = attrs.column.unwrap_or_else(|| field_name.clone());
+        let mut seen_attrs = std::collections::HashSet::new();
+        let mut column_name = rust_field_to_snake_case(&field_name);
+        let mut primary_key = false;
+        let mut nullable_marker = false;
+        let mut ignored = false;
+        let mut auto_increment = None;
+        let mut has_default_value = false;
+        let mut has_default_expr = false;
 
-        if !is_safe_sql_identifier(&column_name) {
+        for attr in field.attrs.iter().filter(|attr| attr.path().is_ident("sea_orm")) {
+            attr.parse_nested_meta(|meta| {
+                let name = meta.path.get_ident().map(ToString::to_string).ok_or_else(|| {
+                    meta.error("qualified SeaORM field attributes are not supported")
+                })?;
+                if !seen_attrs.insert(name.clone()) {
+                    return Err(meta.error(format!(
+                        "duplicate SeaORM field attribute {name:?} on {field_name:?}"
+                    )));
+                }
+                match name.as_str() {
+                    "primary_key" | "nullable" | "indexed" | "unique" | "ignore" => {
+                        if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
+                            return Err(meta.error(format!("{name} does not take a value")));
+                        }
+                        match name.as_str() {
+                            "primary_key" => primary_key = true,
+                            "nullable" => nullable_marker = true,
+                            "ignore" => ignored = true,
+                            _ => {}
+                        }
+                        Ok(())
+                    }
+                    "auto_increment" => {
+                        let value: syn::LitBool = meta.value()?.parse()?;
+                        auto_increment = Some(value.value());
+                        Ok(())
+                    }
+                    "column_name" => {
+                        let value: syn::LitStr = meta.value()?.parse()?;
+                        if !is_safe_orm_identifier(&value.value()) {
+                            return Err(syn::Error::new(
+                                value.span(),
+                                "column_name must be a simple ASCII SQL identifier",
+                            ));
+                        }
+                        column_name = value.value();
+                        Ok(())
+                    }
+                    "column_type" | "default_expr" | "enum_name" | "select_as" | "save_as" => {
+                        let _: syn::LitStr = meta.value()?.parse()?;
+                        if name == "default_expr" {
+                            has_default_expr = true;
+                        }
+                        Ok(())
+                    }
+                    "default_value" | "comment" => {
+                        let _: syn::Lit = meta.value()?.parse()?;
+                        if name == "default_value" {
+                            has_default_value = true;
+                        }
+                        Ok(())
+                    }
+                    _ => Err(meta.error(format!(
+                        "unknown SeaORM field attribute {name:?} on {field_name:?}"
+                    ))),
+                }
+            })?;
+        }
+
+        if ignored {
+            if primary_key || nullable_marker || auto_increment.is_some() || has_default_value || has_default_expr {
+                return Err(syn::Error::new_spanned(
+                    field_ident,
+                    "a field marked ignore cannot also declare key, nullability, auto-increment or default metadata",
+                ));
+            }
+            continue;
+        }
+
+        let (base_type, option_nullable) = model_option_inner(&field.ty)?;
+        let nullable = option_nullable || nullable_marker;
+        if primary_key {
+            primary_keys += 1;
+            if nullable {
+                return Err(syn::Error::new_spanned(
+                    field_ident,
+                    "a primary-key field cannot be nullable; use a non-Option type without #[sea_orm(nullable)]",
+                ));
+            }
+            auto_increment_key |= auto_increment.unwrap_or(false);
+        } else if auto_increment.is_some() {
             return Err(syn::Error::new_spanned(
                 field_ident,
-                "model column name must be an ASCII SQL identifier matching [A-Za-z_][A-Za-z0-9_]*",
+                "auto_increment is only valid on a primary-key field",
             ));
         }
+
+        if has_default_value && has_default_expr {
+            return Err(syn::Error::new_spanned(
+                field_ident,
+                "choose either default_value or default_expr, not both",
+            ));
+        }
+        validate_model_field_type(base_type)?;
+
         if !seen_columns.insert(column_name.clone()) {
             return Err(syn::Error::new_spanned(
                 field_ident,
-                format!("duplicate model column mapping {column_name:?}"),
+                format!("duplicate SQL column mapping {column_name:?}"),
             ));
         }
-
-        let (base_type, nullable) = unwrap_option(&field.ty)?;
-        if attrs.primary_key && nullable {
-            return Err(syn::Error::new_spanned(
-                field_ident,
-                "a primary-key field cannot be nullable; use a non-Option type",
-            ));
-        }
-        if attrs.generated && attrs.has_default {
-            return Err(syn::Error::new_spanned(
-                field_ident,
-                "model field cannot combine generated and default; choose one metadata contract",
-            ));
-        }
-
-        let inferred_type = infer_logical_type(base_type)?;
-        let rust_type = match (attrs.sql_type.as_deref(), inferred_type) {
-            (Some("enum"), None) => "Enum",
-            (Some("enum"), Some(_)) => {
-                return Err(syn::Error::new_spanned(
-                    field_ident,
-                    "sql_type = \"enum\" is only for custom enum field types and cannot override a built-in mapping",
-                ));
-            }
-            (Some(other), _) => {
-                return Err(syn::Error::new_spanned(
-                    field_ident,
-                    format!(
-                        "unsupported model sql_type {other:?}; only \"enum\" is defined in this contract"
-                    ),
-                ));
-            }
-            (None, Some(name)) => name,
-            (None, None) => {
-                return Err(syn::Error::new_spanned(
-                    &field.ty,
-                    "unsupported model field type; use a supported scalar type or mark a custom enum with #[model(sql_type = \"enum\")]",
-                ));
-            }
-        };
-
-        model_fields.push(ModelField {
-            field_name,
-            column_name,
-            rust_type,
-            nullable,
-            primary_key: attrs.primary_key,
-            generated: attrs.generated,
-            has_default: attrs.has_default,
-        });
     }
 
-    if model_fields.iter().all(|field| !field.primary_key) && !model_attrs.read_only {
+    if primary_keys == 0 {
         return Err(syn::Error::new_spanned(
-            struct_name,
-            "Model requires at least one #[model(primary_key)] field; add #[model(read_only)] only for a keyless view",
+            ident,
+            "a writable SQL entity requires at least one #[sea_orm(primary_key)] field; keyless views must use a read-only query DTO instead",
         ));
     }
-
-    let table_literal = syn::LitStr::new(&table_name, struct_name.span());
-    let columns = model_fields
-        .iter()
-        .map(|field| {
-            let field_name = syn::LitStr::new(&field.field_name, struct_name.span());
-            let column_name = syn::LitStr::new(&field.column_name, struct_name.span());
-            let rust_type = match field.rust_type {
-                "Bool" => quote!(::rustflow::orm::RustType::Bool),
-                "I8" => quote!(::rustflow::orm::RustType::I8),
-                "I16" => quote!(::rustflow::orm::RustType::I16),
-                "I32" => quote!(::rustflow::orm::RustType::I32),
-                "I64" => quote!(::rustflow::orm::RustType::I64),
-                "U8" => quote!(::rustflow::orm::RustType::U8),
-                "U16" => quote!(::rustflow::orm::RustType::U16),
-                "U32" => quote!(::rustflow::orm::RustType::U32),
-                "U64" => quote!(::rustflow::orm::RustType::U64),
-                "F32" => quote!(::rustflow::orm::RustType::F32),
-                "F64" => quote!(::rustflow::orm::RustType::F64),
-                "String" => quote!(::rustflow::orm::RustType::String),
-                "Bytes" => quote!(::rustflow::orm::RustType::Bytes),
-                "Decimal" => quote!(::rustflow::orm::RustType::Decimal),
-                "Uuid" => quote!(::rustflow::orm::RustType::Uuid),
-                "Date" => quote!(::rustflow::orm::RustType::Date),
-                "Time" => quote!(::rustflow::orm::RustType::Time),
-                "Timestamp" => quote!(::rustflow::orm::RustType::Timestamp),
-                "TimestampWithTimeZone" => {
-                    quote!(::rustflow::orm::RustType::TimestampWithTimeZone)
-                }
-                "Json" => quote!(::rustflow::orm::RustType::Json),
-                "Enum" => quote!(::rustflow::orm::RustType::Enum),
-                _ => {
-                    return Err(syn::Error::new(
-                        struct_name.span(),
-                        "internal model type mapping is incomplete",
-                    ));
-                }
-            };
-            let nullable = field.nullable;
-            let primary_key = field.primary_key;
-            let generated = field.generated;
-            let has_default = field.has_default;
-            Ok(quote! {
-                ::rustflow::orm::ColumnMetadata {
-                    field_name: #field_name,
-                    column_name: #column_name,
-                    rust_type: #rust_type,
-                    nullable: #nullable,
-                    primary_key: #primary_key,
-                    generated: #generated,
-                    has_default: #has_default,
-                }
-            })
-        })
-        .collect::<Result<Vec<_>, syn::Error>>()?;
-
-    let primary_keys = model_fields
-        .iter()
-        .filter(|field| field.primary_key)
-        .map(|field| syn::LitStr::new(&field.column_name, struct_name.span()))
-        .collect::<Vec<_>>();
-    let read_only = model_attrs.read_only;
-
-    Ok(quote! {
-        impl ::rustflow::orm::ModelMetadata for #struct_name {
-            const TABLE_NAME: &'static str = #table_literal;
-            const COLUMNS: &'static [::rustflow::orm::ColumnMetadata] = &[#(#columns),*];
-            const PRIMARY_KEY_COLUMNS: &'static [&'static str] = &[#(#primary_keys),*];
-            const READ_ONLY: bool = #read_only;
-        }
+    if primary_keys > 12 {
+        return Err(syn::Error::new_spanned(
+            ident,
+            "composite primary keys are limited to 12 fields by the selected SeaORM version",
+        ));
     }
-    .into())
+    if primary_keys > 1 && auto_increment_key {
+        return Err(syn::Error::new_spanned(
+            ident,
+            "composite primary keys cannot declare auto_increment = true",
+        ));
+    }
+    Ok(())
 }
 
-fn parse_model_attrs(attrs: &[syn::Attribute]) -> Result<ModelAttrs, syn::Error> {
-    let mut options = ModelAttrs::default();
-    let mut seen = std::collections::HashSet::new();
-    for attr in attrs.iter().filter(|attr| attr.path().is_ident("model")) {
-        attr.parse_nested_meta(|meta| {
-            let name = meta
-                .path
-                .get_ident()
-                .map(ToString::to_string)
-                .unwrap_or_else(|| "qualified".to_owned());
-            if !seen.insert(name.clone()) {
-                return Err(meta.error(format!("duplicate model attribute {name:?}")));
-            }
-            match name.as_str() {
-                "table" => {
-                    let value: syn::LitStr = meta.value()?.parse()?;
-                    if !is_safe_sql_identifier(&value.value()) {
-                        return Err(syn::Error::new(
-                            value.span(),
-                            "table name must be an ASCII SQL identifier matching [A-Za-z_][A-Za-z0-9_]*",
-                        ));
-                    }
-                    options.table = Some(value.value());
-                    Ok(())
-                }
-                "read_only" => {
-                    if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
-                        return Err(meta.error("read_only does not take a value"));
-                    }
-                    options.read_only = true;
-                    Ok(())
-                }
-                _ => Err(meta.error(format!("unknown model attribute {name:?}"))),
-            }
-        })?;
-    }
-    Ok(options)
-}
-
-fn parse_field_attrs(attrs: &[syn::Attribute]) -> Result<FieldAttrs, syn::Error> {
-    let mut options = FieldAttrs::default();
-    let mut seen = std::collections::HashSet::new();
-    for attr in attrs.iter().filter(|attr| attr.path().is_ident("model")) {
-        attr.parse_nested_meta(|meta| {
-            let name = meta
-                .path
-                .get_ident()
-                .map(ToString::to_string)
-                .unwrap_or_else(|| "qualified".to_owned());
-            if !seen.insert(name.clone()) {
-                return Err(meta.error(format!("duplicate model field attribute {name:?}")));
-            }
-            match name.as_str() {
-                "column" => {
-                    let value: syn::LitStr = meta.value()?.parse()?;
-                    if !is_safe_sql_identifier(&value.value()) {
-                        return Err(syn::Error::new(
-                            value.span(),
-                            "column name must be an ASCII SQL identifier matching [A-Za-z_][A-Za-z0-9_]*",
-                        ));
-                    }
-                    options.column = Some(value.value());
-                    Ok(())
-                }
-                "primary_key" => {
-                    if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
-                        return Err(meta.error("primary_key does not take a value"));
-                    }
-                    options.primary_key = true;
-                    Ok(())
-                }
-                "generated" => {
-                    if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
-                        return Err(meta.error("generated does not take a value"));
-                    }
-                    options.generated = true;
-                    Ok(())
-                }
-                "default" => {
-                    if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
-                        return Err(meta.error("default does not take a value"));
-                    }
-                    options.has_default = true;
-                    Ok(())
-                }
-                "sql_type" => {
-                    let value: syn::LitStr = meta.value()?.parse()?;
-                    options.sql_type = Some(value.value());
-                    Ok(())
-                }
-                _ => Err(meta.error(format!("unknown model field attribute {name:?}"))),
-            }
-        })?;
-    }
-    Ok(options)
-}
-
-fn unwrap_option(ty: &syn::Type) -> Result<(&syn::Type, bool), syn::Error> {
-    let syn::Type::Path(type_path) = ty else {
+fn model_option_inner(ty: &syn::Type) -> Result<(&syn::Type, bool), syn::Error> {
+    let syn::Type::Path(path) = ty else {
         return Err(syn::Error::new_spanned(
             ty,
-            "model fields must use owned, supported Rust value types",
+            "model fields must use owned value types; references, tuples and arrays are not supported",
         ));
     };
-    if type_path.qself.is_some() {
-        return Err(syn::Error::new_spanned(
-            ty,
-            "qualified-self field types are not supported in model metadata",
-        ));
-    }
-    let Some(last) = type_path.path.segments.last() else {
-        return Err(syn::Error::new_spanned(
-            ty,
-            "could not resolve model field type",
-        ));
+    let Some(segment) = path.path.segments.last() else {
+        return Err(syn::Error::new_spanned(ty, "could not determine model field type"));
     };
-    if last.ident != "Option" {
+    if segment.ident != "Option" {
         return Ok((ty, false));
     }
-    let syn::PathArguments::AngleBracketed(arguments) = &last.arguments else {
-        return Err(syn::Error::new_spanned(
-            ty,
-            "Option model fields require one type parameter",
-        ));
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return Err(syn::Error::new_spanned(ty, "Option fields must contain exactly one type"));
     };
-    let mut type_arguments = arguments.args.iter().filter_map(|argument| {
-        if let syn::GenericArgument::Type(inner) = argument {
-            Some(inner)
-        } else {
-            None
-        }
-    });
-    let Some(inner) = type_arguments.next() else {
-        return Err(syn::Error::new_spanned(
-            ty,
-            "Option model fields require one type parameter",
-        ));
-    };
-    if type_arguments.next().is_some() || arguments.args.len() != 1 {
-        return Err(syn::Error::new_spanned(
-            ty,
-            "Option model fields require exactly one type parameter",
-        ));
+    if args.args.len() != 1 {
+        return Err(syn::Error::new_spanned(ty, "Option fields must contain exactly one type"));
     }
-    if matches!(inner, syn::Type::Path(path) if path.path.segments.last().is_some_and(|segment| segment.ident == "Option"))
-    {
+    let Some(syn::GenericArgument::Type(inner)) = args.args.first() else {
+        return Err(syn::Error::new_spanned(ty, "Option fields must contain exactly one type"));
+    };
+    if matches!(inner, syn::Type::Path(inner_path) if inner_path.path.segments.last().is_some_and(|item| item.ident == "Option")) {
         return Err(syn::Error::new_spanned(
             ty,
             "nested Option<Option<T>> is not supported; use a single Option<T>",
@@ -1141,142 +1023,170 @@ fn unwrap_option(ty: &syn::Type) -> Result<(&syn::Type, bool), syn::Error> {
     Ok((inner, true))
 }
 
-fn infer_logical_type(ty: &syn::Type) -> Result<Option<&'static str>, syn::Error> {
-    let syn::Type::Path(type_path) = ty else {
-        return Err(syn::Error::new_spanned(
-            ty,
-            "unsupported model field type syntax",
-        ));
+fn validate_model_field_type(ty: &syn::Type) -> Result<(), syn::Error> {
+    let syn::Type::Path(path) = ty else {
+        return Err(syn::Error::new_spanned(ty, "unsupported SQL model field type syntax"));
     };
-    if type_path.qself.is_some() {
+    let Some(segment) = path.path.segments.last() else {
+        return Err(syn::Error::new_spanned(ty, "could not determine SQL model field type"));
+    };
+    let name = segment.ident.to_string();
+    if matches!(name.as_str(), "isize" | "usize") {
         return Err(syn::Error::new_spanned(
             ty,
-            "qualified-self field types are not supported",
+            "isize/usize are architecture-width types; use a fixed-width integer",
         ));
     }
-    let Some(last) = type_path.path.segments.last() else {
-        return Err(syn::Error::new_spanned(
-            ty,
-            "could not resolve model field type",
-        ));
-    };
-    let name = last.ident.to_string();
-    let mapped = match name.as_str() {
-        "bool" => Some("Bool"),
-        "i8" => Some("I8"),
-        "i16" => Some("I16"),
-        "i32" => Some("I32"),
-        "i64" => Some("I64"),
-        "u8" => Some("U8"),
-        "u16" => Some("U16"),
-        "u32" => Some("U32"),
-        "u64" => Some("U64"),
-        "f32" => Some("F32"),
-        "f64" => Some("F64"),
-        "String" => Some("String"),
-        "Decimal" | "BigDecimal" => Some("Decimal"),
-        "Uuid" => Some("Uuid"),
-        "NaiveDate" | "Date" => Some("Date"),
-        "NaiveTime" | "Time" => Some("Time"),
-        "NaiveDateTime" | "PrimitiveDateTime" => Some("Timestamp"),
-        "OffsetDateTime" => Some("TimestampWithTimeZone"),
-        "Value" => Some("Json"),
-        "isize" | "usize" => {
+    if name == "Vec" {
+        let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
             return Err(syn::Error::new_spanned(
                 ty,
-                "isize/usize are architecture-width types; use fixed-width database fields",
+                "only Vec<u8> is supported for portable SQL byte fields",
+            ));
+        };
+        let is_bytes = args.args.len() == 1
+            && matches!(args.args.first(), Some(syn::GenericArgument::Type(syn::Type::Path(inner))) if inner.path.segments.last().is_some_and(|item| item.ident == "u8"));
+        if !is_bytes {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "only Vec<u8> is supported by the portable SQL model contract; PostgreSQL arrays require a separate opt-in",
             ));
         }
-        "Vec" => {
-            let syn::PathArguments::AngleBracketed(arguments) = &last.arguments else {
-                return Err(syn::Error::new_spanned(
-                    ty,
-                    "only Vec<u8> is supported for a byte field",
-                ));
-            };
-            let inner = arguments.args.iter().next();
-            if arguments.args.len() == 1
-                && matches!(inner, Some(syn::GenericArgument::Type(syn::Type::Path(inner))) if inner.path.segments.last().is_some_and(|segment| segment.ident == "u8"))
-            {
-                Some("Bytes")
-            } else {
-                return Err(syn::Error::new_spanned(
-                    ty,
-                    "only Vec<u8> is supported for a byte field",
-                ));
-            }
-        }
-        "DateTime" => {
-            let syn::PathArguments::AngleBracketed(arguments) = &last.arguments else {
-                return Err(syn::Error::new_spanned(
-                    ty,
-                    "DateTime requires Utc or FixedOffset timezone type",
-                ));
-            };
-            let inner = arguments.args.iter().find_map(|argument| {
-                if let syn::GenericArgument::Type(inner) = argument {
-                    Some(inner)
-                } else {
-                    None
-                }
-            });
-            let zone = match inner {
-                Some(syn::Type::Path(path)) => path
-                    .path
-                    .segments
-                    .last()
-                    .map(|segment| segment.ident.to_string()),
-                _ => None,
-            };
-            match zone.as_deref() {
-                Some("Utc") | Some("FixedOffset") => Some("TimestampWithTimeZone"),
-                Some("Local") => {
-                    return Err(syn::Error::new_spanned(
-                        ty,
-                        "DateTime<Local> is not portable; use Utc or FixedOffset",
-                    ));
-                }
-                _ => {
-                    return Err(syn::Error::new_spanned(
-                        ty,
-                        "DateTime requires Utc or FixedOffset; other timezone types are unsupported",
-                    ));
-                }
-            }
-        }
-        _ => None,
-    };
-    Ok(mapped)
+    }
+    Ok(())
 }
 
-fn is_safe_sql_identifier(value: &str) -> bool {
+fn is_safe_orm_identifier(value: &str) -> bool {
     let mut chars = value.chars();
     let Some(first) = chars.next() else {
         return false;
     };
     (first == '_' || first.is_ascii_alphabetic())
-        && chars.all(|character| character == '_' || character.is_ascii_alphanumeric())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
-fn rust_type_to_snake_case(value: &str) -> String {
+fn rust_field_to_snake_case(value: &str) -> String {
     let chars = value.chars().collect::<Vec<_>>();
     let mut output = String::new();
-    for (index, character) in chars.iter().copied().enumerate() {
-        if character.is_ascii_uppercase() {
+    for (index, ch) in chars.iter().copied().enumerate() {
+        if ch.is_ascii_uppercase() {
             let boundary = index > 0
                 && (chars[index - 1].is_ascii_lowercase()
                     || chars[index - 1].is_ascii_digit()
                     || (chars[index - 1].is_ascii_uppercase()
-                        && chars
-                            .get(index + 1)
-                            .is_some_and(|next| next.is_ascii_lowercase())));
+                        && chars.get(index + 1).is_some_and(|next| next.is_ascii_lowercase())));
             if !output.is_empty() && boundary {
                 output.push('_');
             }
-            output.push(character.to_ascii_lowercase());
+            output.push(ch.to_ascii_lowercase());
         } else {
-            output.push(character);
+            output.push(ch);
         }
     }
     output
+}
+
+#[cfg(test)]
+mod model_diagnostics_tests {
+    use super::validate_model_contract;
+
+    fn validate(source: &str) -> Result<(), syn::Error> {
+        let input = syn::parse_str::<syn::DeriveInput>(source).expect("test model parses");
+        validate_model_contract(&input)
+    }
+
+    #[test]
+    fn accepts_composite_primary_key_and_nullable_fields() {
+        let source = r#"
+            #[sea_orm(table_name = "tenant_items")]
+            struct Model {
+                #[sea_orm(primary_key, auto_increment = false)]
+                tenant_id: i64,
+                #[sea_orm(primary_key, auto_increment = false)]
+                item_id: i64,
+                display_name: String,
+                nickname: Option<String>,
+            }
+        "#;
+        assert!(validate(source).is_ok());
+    }
+
+    #[test]
+    fn rejects_unknown_entity_attributes() {
+        let source = r#"
+            #[sea_orm(table_name = "users", unknown_option = true)]
+            struct Model { #[sea_orm(primary_key)] id: i64 }
+        "#;
+        assert!(validate(source).unwrap_err().to_string().contains("unknown SeaORM entity attribute"));
+    }
+
+    #[test]
+    fn rejects_unknown_field_attributes() {
+        let source = r#"
+            #[sea_orm(table_name = "users")]
+            struct Model {
+                #[sea_orm(primary_key)]
+                id: i64,
+                #[sea_orm(primari_key)]
+                name: String,
+            }
+        "#;
+        assert!(validate(source).unwrap_err().to_string().contains("unknown SeaORM field attribute"));
+    }
+
+    #[test]
+    fn rejects_nullable_or_missing_primary_keys() {
+        let nullable = r#"
+            #[sea_orm(table_name = "users")]
+            struct Model { #[sea_orm(primary_key)] id: Option<i64> }
+        "#;
+        let missing = r#"
+            #[sea_orm(table_name = "users")]
+            struct Model { name: String }
+        "#;
+        assert!(validate(nullable).unwrap_err().to_string().contains("cannot be nullable"));
+        assert!(validate(missing).unwrap_err().to_string().contains("at least one"));
+    }
+
+    #[test]
+    fn rejects_duplicate_columns_and_nested_options() {
+        let duplicate = r#"
+            #[sea_orm(table_name = "users")]
+            struct Model {
+                #[sea_orm(primary_key)]
+                id: i64,
+                #[sea_orm(column_name = "id")]
+                external_id: i64,
+            }
+        "#;
+        let nested = r#"
+            #[sea_orm(table_name = "users")]
+            struct Model { #[sea_orm(primary_key)] id: Option<Option<i64>> }
+        "#;
+        assert!(validate(duplicate).unwrap_err().to_string().contains("duplicate SQL column"));
+        assert!(validate(nested).unwrap_err().to_string().contains("nested Option"));
+    }
+
+    #[test]
+    fn rejects_key_shapes_that_the_selected_foundation_cannot_represent() {
+        let too_many = r#"
+            #[sea_orm(table_name = "wide_key")]
+            struct Model {
+                #[sea_orm(primary_key)] a: i64,
+                #[sea_orm(primary_key)] b: i64,
+                #[sea_orm(primary_key)] c: i64,
+                #[sea_orm(primary_key)] d: i64,
+                #[sea_orm(primary_key)] e: i64,
+                #[sea_orm(primary_key)] f: i64,
+                #[sea_orm(primary_key)] g: i64,
+                #[sea_orm(primary_key)] h: i64,
+                #[sea_orm(primary_key)] i: i64,
+                #[sea_orm(primary_key)] j: i64,
+                #[sea_orm(primary_key)] k: i64,
+                #[sea_orm(primary_key)] l: i64,
+                #[sea_orm(primary_key)] m: i64,
+            }
+        "#;
+        assert!(validate(too_many).unwrap_err().to_string().contains("limited to 12"));
+    }
 }
