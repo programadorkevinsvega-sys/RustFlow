@@ -1124,8 +1124,7 @@ fn validate_model_field_type(ty: &syn::Type, custom_type_mapping: bool) -> Resul
                 "DateTime requires exactly one timezone type parameter",
             ));
         }
-        let Some(syn::GenericArgument::Type(syn::Type::Path(timezone))) = args.args.first()
-        else {
+        let Some(syn::GenericArgument::Type(syn::Type::Path(timezone))) = args.args.first() else {
             return Err(syn::Error::new_spanned(
                 ty,
                 "DateTime timezone must be Utc or FixedOffset",
