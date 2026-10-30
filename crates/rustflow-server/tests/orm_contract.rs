@@ -5,8 +5,8 @@ use rustflow_server::{
     orm::{load_many, load_one},
     sea_orm::{
         ActiveValue::{NotSet, Set},
-        ColumnTrait, Condition, EntityTrait, ExprTrait, JoinType, QueryFilter, QueryOrder,
-        QuerySelect, QueryTrait, RelationTrait, sea_query::Expr,
+        ColumnTrait, Condition, EntityTrait, JoinType, QueryFilter, QueryOrder, QuerySelect,
+        QueryTrait, RelationTrait, sea_query::Expr,
     },
 };
 
@@ -140,36 +140,35 @@ async fn create_schema(database: &DatabasePool) {
         .await
         .expect("drop accounts table");
 
-    let (account_id, enabled, alias, metadata, checksum, note_id, body) =
-        match database.backend() {
-            DatabaseBackend::Sqlite => (
-                "INTEGER PRIMARY KEY AUTOINCREMENT",
-                "BOOLEAN NOT NULL",
-                "TEXT NULL",
-                "JSON NOT NULL",
-                "BLOB NOT NULL",
-                "INTEGER PRIMARY KEY AUTOINCREMENT",
-                "TEXT NULL",
-            ),
-            DatabaseBackend::Postgres => (
-                "BIGSERIAL PRIMARY KEY",
-                "BOOLEAN NOT NULL",
-                "VARCHAR(255) NULL",
-                "JSONB NOT NULL",
-                "BYTEA NOT NULL",
-                "BIGSERIAL PRIMARY KEY",
-                "TEXT NULL",
-            ),
-            DatabaseBackend::MySql => (
-                "BIGINT AUTO_INCREMENT PRIMARY KEY",
-                "BOOLEAN NOT NULL",
-                "VARCHAR(255) NULL",
-                "JSON NOT NULL",
-                "LONGBLOB NOT NULL",
-                "BIGINT AUTO_INCREMENT PRIMARY KEY",
-                "TEXT NULL",
-            ),
-        };
+    let (account_id, enabled, alias, metadata, checksum, note_id, body) = match database.backend() {
+        DatabaseBackend::Sqlite => (
+            "INTEGER PRIMARY KEY AUTOINCREMENT",
+            "BOOLEAN NOT NULL",
+            "TEXT NULL",
+            "JSON NOT NULL",
+            "BLOB NOT NULL",
+            "INTEGER PRIMARY KEY AUTOINCREMENT",
+            "TEXT NULL",
+        ),
+        DatabaseBackend::Postgres => (
+            "BIGSERIAL PRIMARY KEY",
+            "BOOLEAN NOT NULL",
+            "VARCHAR(255) NULL",
+            "JSONB NOT NULL",
+            "BYTEA NOT NULL",
+            "BIGSERIAL PRIMARY KEY",
+            "TEXT NULL",
+        ),
+        DatabaseBackend::MySql => (
+            "BIGINT AUTO_INCREMENT PRIMARY KEY",
+            "BOOLEAN NOT NULL",
+            "VARCHAR(255) NULL",
+            "JSON NOT NULL",
+            "LONGBLOB NOT NULL",
+            "BIGINT AUTO_INCREMENT PRIMARY KEY",
+            "TEXT NULL",
+        ),
+    };
 
     let accounts = format!(
         "CREATE TABLE rustflow_orm_accounts (
@@ -310,10 +309,8 @@ async fn exercise_orm(database: &DatabasePool) {
     assert_eq!(matching.len(), 2);
 
     let joined = entities::account::Entity::find()
-        .join(
-            JoinType::LeftJoin,
-            entities::account::Relation::Notes.def(),
-        )
+        .join(JoinType::LeftJoin, entities::account::Relation::Notes.def())
+        .distinct()
         .all(database.orm())
         .await
         .expect("left join query");
@@ -338,7 +335,10 @@ async fn exercise_orm(database: &DatabasePool) {
         .await
         .expect("batch load one-to-one relation");
     assert_eq!(profiles.len(), 2);
-    assert_eq!(profiles[0].as_ref().map(|profile| profile.bio.as_str()), Some("Analytical engine notes"));
+    assert_eq!(
+        profiles[0].as_ref().map(|profile| profile.bio.as_str()),
+        Some("Analytical engine notes")
+    );
     assert!(profiles[1].is_none());
 
     let grouped: Vec<(i64, i64)> = entities::note::Entity::find()
@@ -378,13 +378,21 @@ async fn exercise_orm(database: &DatabasePool) {
         .exec(database.orm())
         .await
         .expect("bulk update");
-    assert_eq!(changed_rows.rows_affected, 2);
+    assert_eq!(changed_rows.rows_affected(), 2);
 
     let after_bulk_update = notes
-        .all(notes.select().filter(entities::note::Column::AccountId.eq(first.id)))
+        .all(
+            notes
+                .select()
+                .filter(entities::note::Column::AccountId.eq(first.id)),
+        )
         .await
         .expect("read bulk-updated notes");
-    assert!(after_bulk_update.iter().all(|note| note.title == "renamed note"));
+    assert!(
+        after_bulk_update
+            .iter()
+            .all(|note| note.title == "renamed note")
+    );
 
     let delete_rows = notes
         .delete_many()
@@ -420,7 +428,10 @@ async fn exercise_orm(database: &DatabasePool) {
         .expect("query rollback result");
     assert!(rolled_back.is_none());
 
-    let commit = database.begin_transaction().await.expect("begin commit transaction");
+    let commit = database
+        .begin_transaction()
+        .await
+        .expect("begin commit transaction");
     commit
         .entity::<entities::note::Entity>()
         .insert(entities::note::ActiveModel {
@@ -454,7 +465,10 @@ async fn exercise_orm(database: &DatabasePool) {
         })
         .await
         .expect_err("unique email must be rejected");
-    assert_eq!(duplicate.to_http_error().status_code(), http::StatusCode::CONFLICT);
+    assert_eq!(
+        duplicate.to_http_error().status_code(),
+        http::StatusCode::CONFLICT
+    );
 
     let removed = accounts
         .delete_by_id(second.id)
@@ -511,7 +525,6 @@ async fn mariadb_orm_contract() {
     let database = database_from_url(&url).await;
     exercise_orm(&database).await;
 }
-
 
 #[tokio::test]
 async fn batch_loader_executes_one_related_query_for_many_parents() {
