@@ -7,7 +7,7 @@ use rustflow_server::{
         ActiveValue::{NotSet, Set},
         ColumnTrait, Condition, EntityTrait, JoinType, QueryFilter, QueryOrder, QuerySelect,
         QueryTrait, RelationTrait,
-        sea_query::Expr,
+        sea_query::{Expr, ExprTrait},
     },
 };
 
@@ -373,13 +373,13 @@ async fn exercise_orm(database: &DatabasePool) {
         .update_many()
         .col_expr(
             entities::note::Column::Title,
-            Expr::val("renamed note".to_owned()),
+            Expr::val("renamed note".to_owned()).into(),
         )
         .filter(entities::note::Column::AccountId.eq(first.id))
         .exec(database.orm())
         .await
         .expect("bulk update");
-    assert_eq!(changed_rows.rows_affected(), 2);
+    assert_eq!(changed_rows.rows_affected, 2);
 
     let after_bulk_update = notes
         .all(
