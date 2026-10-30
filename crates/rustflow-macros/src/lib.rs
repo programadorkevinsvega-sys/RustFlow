@@ -1,7 +1,6 @@
 //! Procedural macros for RustFlow's constrained declarative view syntax.
 
 use proc_macro::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
-use syn::spanned::Spanned;
 
 /// Mark a Rust function as a RustFlow component authoring function.
 ///
