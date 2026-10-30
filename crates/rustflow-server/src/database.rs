@@ -4,7 +4,7 @@
 //! a clone of that same pool handle, so ORM queries, raw SQLx access, and migrations share
 //! one connection lifecycle and do not create competing pools. MariaDB uses SQLx's MySQL driver.
 
-use std::{error::Error, fmt, path::Path, str::FromStr, time::Duration};
+use std::{error::Error, fmt, path::Path, str::FromStr, sync::Arc, time::Duration};
 
 use http::StatusCode;
 use sea_orm::{
@@ -283,7 +283,7 @@ enum DatabaseDriverPool {
 #[derive(Clone)]
 pub struct DatabasePool {
     pool: DatabaseDriverPool,
-    orm: DatabaseConnection,
+    orm: Arc<DatabaseConnection>,
     backend: DatabaseBackend,
     max_connections: u32,
 }
@@ -349,7 +349,7 @@ impl DatabasePool {
 
         Ok(Self {
             pool,
-            orm,
+            orm: Arc::new(orm),
             backend: config.backend,
             max_connections: config.max_connections,
         })
@@ -381,7 +381,7 @@ impl DatabasePool {
 
     /// Access the SeaORM connection backed by the same SQLx pool.
     pub fn orm(&self) -> &DatabaseConnection {
-        &self.orm
+        self.orm.as_ref()
     }
     /// Create a typed repository bound to this database's shared SeaORM connection.
     ///
@@ -390,7 +390,7 @@ impl DatabasePool {
     where
         E: sea_orm::EntityTrait,
     {
-        EntityRepository::new(&self.orm)
+        EntityRepository::new(self.orm.as_ref())
     }
 
     /// Return which SQLx driver this pool uses.
