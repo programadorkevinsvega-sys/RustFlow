@@ -1,6 +1,6 @@
 # ORM model and SQL type contract (Phase 6.7.1)
 
-**Status: proposed architecture contract for review.** This subphase selects SeaORM 1.1.20 and adds the RustFlow ModelDiagnostics validator plus compile-time checks. The SeaORM crate/facade is intentionally deferred to 6.7.2, where it will be introduced with the single typed-pool migration. No model CRUD is connected to RustFlow's existing DatabasePool. The type/engine matrix below is the target contract, not runtime evidence.
+**Status: Phase 6.7.1 accepted; Phase 6.7.2 implementation in progress.** SeaORM 1.1.20 and the Data Mapper contract were selected in Phase 6.7.1. The Phase 6.7.2 branch adds the server-only SeaORM dependency/facade and replaces SQLx `AnyPool` with backend-specific typed pools shared by SQLx and SeaORM. This establishes the connection boundary, not completion of ORM runtime behavior: CRUD, relation loading, checked type codecs and the full four-engine integration matrix remain unverified. The type/engine matrix below is the target contract, not runtime evidence.
 
 ## Selected architecture and model declaration
 
@@ -116,3 +116,15 @@ Not implemented in this subphase: adding the SeaORM dependency/facade; CRUD exec
 ## References
 
 See [ADR 0020](adr/0020-orm-model-contract.md) for the verified foundation comparison, pool migration, design trade-offs and official upstream links. See [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md) for current RustFlow service versions and existing SQLx/MongoDB evidence.
+## 6.7.2 implementation boundary (in progress)
+
+The first implementation slice in the Phase 6.7.2 branch provides:
+
+- SeaORM 1.1.20 is added as a dependency of `rustflow-server` only, with SQLite, PostgreSQL and MySQL SQLx drivers and Tokio/Rustls.
+- `DatabasePool` owns one driver-specific SQLx pool (`SqlitePool`, `PgPool` or `MySqlPool`). The SeaORM `DatabaseConnection` is constructed from a clone of that exact pool handle; it does not open a second pool.
+- The existing configuration URL precedence, redaction, limits, acquire timeout and backend selection remain in RustFlow's `DatabaseConfig`.
+- Direct SQLx access is explicit through backend-checked accessors: `sqlx_sqlite_pool()`, `sqlx_postgres_pool()`, and `sqlx_mysql_pool()`.
+- `DatabasePool::orm()`, `query_raw`, `execute_raw`, and the SeaORM-backed `DatabaseTransaction` expose the shared connection to ORM and parameterized raw statements. SQLx migrations dispatch to the matching typed pool.
+- MongoDB remains separate and is not included in SeaORM or the browser/WASM graph.
+
+Still required before Phase 6.7.2 can be considered complete: model insert/update/delete and bulk behavior; composable filter/join/group/order/pagination/subquery/aggregate coverage; explicit relationship metadata and batched `load_one`/`load_many`/`load_many_to_many` behavior; N+1/query-count tests; runtime codecs and NULL/range/precision tests on SQLite, PostgreSQL, MySQL and MariaDB; mixed ORM/raw-SQL transaction tests with commit/rollback and ambiguous commit outcomes; diagnostics and typed error mapping; dependency-lock and RustSec review (including the SQLx MySQL/RSA advisory already recorded in ADR 0020); runnable technical and public-site examples; and all CI/MSRV/WASM/security gates. Do not mark the roadmap criterion complete based solely on the connection bridge.

@@ -1,6 +1,6 @@
 # ADR 0020: SQL ORM architecture, foundation and model contract
 
-- Status: Proposed for review with Phase 6.7.1; not yet accepted or merged.
+- Status: Accepted with Phase 6.7.1 (PR #58, merge commit `36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1`); Phase 6.7.2 implementation in progress.
 - Phase: 6.7.1 — Model contract and architecture.
 - Related: ADR 0016 (SQLx pools and migrations), ADR 0017 (MySQL/MariaDB driver), ADR 0018 (MongoDB document adapter), ADR 0019 (database support matrix), [ORM model contract](../ORM_MODEL_CONTRACT.md).
 
@@ -47,23 +47,13 @@ Keep SQLx 0.8.6 as the execution/driver and migration foundation. Do not introdu
 
 Do not enable SeaORM's mariadb-use-returning feature globally. SeaORM represents MySQL and MariaDB with the same MySQL backend family, so enabling a MariaDB-specific RETURNING path at compile time would also affect MySQL. For this adoption, leave the feature disabled and use SeaORM's non-RETURNING MySQL-family path until a runtime server-identity/capability strategy is separately designed and tested. Both MySQL 8.4.13 and MariaDB 11.4.13 require independent integration contracts before runtime support may be claimed.
 
-### 3. Existing AnyPool boundary and migration plan
+### 3. Existing AnyPool boundary and typed-pool bridge
 
-SeaORM 1.1.20 uses backend-specific SQLx pools (SqlitePool, PgPool and MySqlPool), not SQLx AnyPool. It exposes those typed pools through its DatabaseConnection accessors. An AnyPool cannot be passed directly as a SeaORM DatabaseConnection.
+SeaORM 1.1.20 uses backend-specific SQLx pools (`SqlitePool`, `PgPool` and `MySqlPool`), not SQLx `AnyPool`. Its connector API can build a SeaORM `DatabaseConnection` from an existing typed SQLx pool handle. SQLx pool handles are cloneable references to the same underlying pool, which allows RustFlow to keep one pool lifecycle rather than creating a duplicate.
 
-The current Phase 6.5/6.6 DatabasePool remains unchanged in Phase 6.7.1. Do not open a second pool for the same URL as a workaround, and do not claim that the new ORM facade is already wired into that legacy pool.
+The Phase 6.7.2 implementation now follows this boundary: `DatabasePool` owns a backend-tagged enum containing exactly one typed SQLx pool; `DatabasePool::orm()` exposes the SeaORM connection built from that handle; the `sqlx_*_pool()` accessors expose only the configured driver's pool; and SQLx migrations dispatch to that same typed pool. `DatabasePool::begin_transaction()` uses SeaORM's transaction on the shared pool, with parameterized raw statements routed through the transaction's `ConnectionTrait` so ORM and raw operations can share one transaction. This intentionally replaces the pre-1.0 `AnyPool` and `AnyConnection` accessors.
 
-Phase 6.7.2 must perform and test one explicit pre-1.0 connection-boundary migration:
-
-1. Make one backend-specific SeaORM/SQLx typed connection pool the single owner for each configured database.
-2. Preserve the current AppConfig URL precedence, redaction, pool bounds, acquire timeout and backend validation.
-3. Make the ORM connection and the raw-SQL escape hatch share that same typed pool. Use SeaORM's typed SQLx-pool accessors when direct SQLx APIs are required; provide a backend-tagged enum rather than constructing an AnyPool alongside it.
-4. Run SQLx migrations against the matching typed SQLx pool/connection. Preserve per-engine migration directories and dialect-marker validation.
-5. Replace the experimental AnyPool-only raw accessor and AnyConnection-only transaction accessor with a documented backend-tagged/raw-parameterized API. This is a deliberate pre-1.0 API migration; provide examples and deprecation notes rather than silently changing semantics.
-6. Represent model operations and explicit transactions with the same backend connection, including commit/rollback and connection-loss behavior.
-7. Prove pool closure, pool limits, timeouts, transaction composition and migration behavior on all four SQL servers before exposing integrated CRUD.
-
-No duplicate pool, hidden pool or process-global connection is allowed. If the typed-pool bridge cannot meet the current configuration and migration contract, stop Phase 6.7.2 and amend this ADR before implementing an alternative.
+The connection bridge is implementation work in progress, not acceptance evidence for the whole subphase. Phase 6.7.2 must still prove pool closure, limits, acquire timeouts, migrations, mixed ORM/raw transaction behavior, type mapping and CRUD on SQLite, PostgreSQL, MySQL and MariaDB. No duplicate pool, hidden pool or process-global connection is allowed. If the one-pool bridge fails any of these contracts, stop and amend this ADR rather than adding a second pool.
 
 ### 4. Model derive and metadata contract
 

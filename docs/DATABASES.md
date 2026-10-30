@@ -1,17 +1,17 @@
-# SQLx, pools, transactions, and migrations (Phase 6.5)
+# SQL pools, SeaORM, transactions, and migrations (Phase 6.7.2)
 
-The existing database pool/configuration/migration API is experimental and pre-1.0. It re-exports SQLx and currently uses AnyPool for explicit parameterized SQL and SQLx migrations; it is not yet wired to model CRUD. Phase 6.7.1 selects SeaORM 1.1.20 and adds the validation-only ModelDiagnostics derive, without adding SeaORM as a dependency. Phase 6.7.2 must introduce the SeaORM server facade and migrate the single connection boundary from AnyPool to backend-specific SQLx pools in one change. Do not create a parallel pool for the same database. The MongoDB adapter remains separate.
+The database API remains experimental and pre-1.0. Phase 6.7.1 selected SeaORM 1.1.20 and defined the Data Mapper/model contract. Phase 6.7.2 is integrating SeaORM into `rustflow-server` while replacing the old SQLx `typed SQLx pool` boundary with backend-specific SQLx pools. The implementation is in progress: the connection bridge and typed accessors are present in the phase branch, while complete CRUD, relationship-loading, type-codec and four-engine ORM evidence remain acceptance work. MongoDB continues to use its independent document adapter.
 
 ## Supported engines
 
-The adapter enables SQLite, PostgreSQL, and the SQLx MySQL protocol driver through `AnyPool`. Connection schemes are:
+The adapter uses one backend-specific SQLx pool per configured database: `SqlitePool`, `PgPool`, or `MySqlPool`. MariaDB shares the MySQL protocol driver. SeaORM receives a clone of that same pool handle; it does not open a second pool. Connection schemes are:
 
 - SQLite: `sqlite://rustflow.db?mode=rwc` or `sqlite::memory:`.
 - PostgreSQL: `postgres://user:password@host/database` or `postgresql://user:password@host/database`.
 - MySQL: `mysql://user:password@host:3306/database`.
-- MariaDB: the same `mysql://` URL and SQLx MySQL driver; `mariadb://` is not accepted by SQLx `AnyPool` driver selection.
+- MariaDB: the same `mysql://` URL and SQLx MySQL driver; `mariadb://` is not accepted by SQLx `typed SQLx pool` driver selection.
 
-MySQL and MariaDB are represented by `DatabaseBackend::MySql` because a `mysql://` URL selects the driver and does not identify the responding server product. The current pinned CI contract is PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS, SQLite 3.46.0 bundled by the locked SQLx / `libsqlite3-sys` dependencies, and MongoDB 7.0.45. The full tested version/MSRV matrix and evidence boundaries live in [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md). These exact targets do not imply compatibility with every version or vendor-specific feature. MongoDB is implemented through a separate document adapter and does not use SQLx `AnyPool` or SQL migrations. SQL syntax, placeholders, migrations, and value support remain engine-specific. Bind user values rather than interpolating request data into SQL.
+MySQL and MariaDB are represented by `DatabaseBackend::MySql` because a `mysql://` URL selects the driver and does not identify the responding server product. The current pinned CI contract is PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS, SQLite 3.46.0 bundled by the locked SQLx / `libsqlite3-sys` dependencies, and MongoDB 7.0.45. The full tested version/MSRV matrix and evidence boundaries live in [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md). These exact targets do not imply compatibility with every version or vendor-specific feature. MongoDB is implemented through a separate document adapter and does not use SQLx `typed SQLx pool` or SQL migrations. SQL syntax, placeholders, migrations, and value support remain engine-specific. Bind user values rather than interpolating request data into SQL.
 
 ## Configuration and connection pool
 
@@ -31,28 +31,70 @@ let database = DatabasePool::connect(&config).await?;
 
 In request handlers, capture Arc<DatabasePool> explicitly. There is no global service locator.
 
-## Parameterized queries and transaction helpers
+## Typed pools, ORM access, and raw SQL
 
-Use SQLx's normal query API and bind every value that comes from outside the program. The example below uses SQLite placeholder syntax; adapt SQL text for PostgreSQL when necessary.
+`DatabasePool::connect` creates one typed SQLx pool for the configured backend and constructs the SeaORM `DatabaseConnection` from a clone of that exact pool handle. SQLx and SeaORM therefore share the underlying connection pool, limits, acquire timeout and close lifecycle.
+
+Use `DatabasePool::orm()` when calling SeaORM Entity, ActiveModel, query-builder and relation-loader APIs. The server re-exports SeaORM as `rustflow_server::sea_orm`; this keeps the ORM dependency inside `rustflow-server` and outside the browser/WASM core.
+
+~~~rust
+use rustflow_server::{AppConfig, DatabaseConfig, DatabasePool, sea_orm};
+
+let app = AppConfig::load()?;
+let config = DatabaseConfig::from_app_config(&app)?;
+let database = DatabasePool::connect(&config).await?;
+
+// Pass the shared connection explicitly to SeaORM operations.
+let connection = database.orm();
+~~~
+
+Direct SQLx access remains available through backend-checked accessors. They return `None` when the configured backend does not match; they never convert or duplicate a pool.
 
 ~~~rust
 use rustflow_server::{DatabaseConfig, DatabasePool, sqlx};
 
-let config = DatabaseConfig::new("sqlite://rustflow.db?mode=rwc")?
-    .with_max_connections(8)?;
+let config = DatabaseConfig::new("sqlite://rustflow.db?mode=rwc")?;
 let database = DatabasePool::connect(&config).await?;
+let pool = database.sqlx_sqlite_pool().expect("configured SQLite backend");
 
-let mut transaction = database.begin_transaction().await?;
-sqlx::query("INSERT INTO notes (title) VALUES (?)")
-    .bind("A validated title")
-    .execute(transaction.connection())
+let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM notes")
+    .fetch_one(pool)
     .await?;
+~~~
+
+The available accessors are `sqlx_sqlite_pool()`, `sqlx_postgres_pool()`, and `sqlx_mysql_pool()`; the last is used for both MySQL and MariaDB. Direct SQLx queries remain backend-specific: placeholders, codecs and SQL syntax are not translated.
+
+For portable parameterized SQL through the SeaORM connection, use `query_raw` and `execute_raw`. Use `?` placeholders with SQLite/MySQL/MariaDB and numbered `$1`, `$2`, ... placeholders with PostgreSQL. Values must be passed as SeaORM `Value`s, not interpolated into SQL.
+
+~~~rust
+let rows = database
+    .query_raw("SELECT title FROM notes WHERE id = ?", [requested_id.into()])
+    .await?;
+~~~
+
+## Shared transactions
+
+`DatabasePool::begin_transaction()` starts a SeaORM transaction on the same pool. The transaction exposes SeaORM's `ConnectionTrait`, so ORM operations and raw parameterized statements can run through the same transaction. It is deliberately no longer an SQLx `SeaORM transaction connection`.
+
+~~~rust
+let transaction = database.begin_transaction().await?;
+
+transaction
+    .execute_raw(
+        "INSERT INTO notes (title) VALUES (?)",
+        ["A validated title".into()],
+    )
+    .await?;
+
+// SeaORM operations receive transaction.connection() explicitly.
 transaction.commit().await?;
 ~~~
 
-A transaction is committed explicitly; call rollback() when the operation should be discarded. Dropping an uncommitted SQLx transaction requests a rollback. Do not hold a transaction while awaiting unrelated network calls or rendering a response.
+Call `rollback()` when the operation should be discarded. Do not hold a transaction while awaiting unrelated network calls or rendering a response. A connection loss during commit can leave the server outcome unknown; do not report it as a guaranteed rollback. For SQLx-only transactions, use the matching typed pool directly; do not start a second transaction when work must be atomic with ORM operations.
 
-DatabaseError::to_http_error maps row-not-found to 404, recognized unique-key violations to 409, pool timeouts/closures to 503 and all other database faults to a generic 500. Internal SQL, driver messages, and connection credentials are not copied into the response. Applications should log the underlying error through their own trusted logging policy, never the URL or bound secrets.
+## Error mapping
+
+`DatabaseError::to_http_error` maps row-not-found to 404, recognized unique-key violations to 409, pool timeouts/closures to 503 and other database faults to a generic 500. SQLx and SeaORM error sources remain available to trusted server-side diagnostics, while public messages do not expose SQL, credentials or bound secrets.
 
 ## Versioned migrations and rollback policy
 
@@ -90,7 +132,7 @@ When running locally outside CI, a test skips if its corresponding URL is absent
 
 ## MongoDB document adapter (Phase 6.6.2)
 
-MongoDB is document-oriented and uses its own adapter, independent of SQLx, AnyPool, SQL transactions, and SQL migrations. The current API is experimental and exposes the official driver's native collection API rather than an ODM.
+MongoDB is document-oriented and uses its own adapter, independent of SQLx, typed SQLx pool, SQL transactions, and SQL migrations. The current API is experimental and exposes the official driver's native collection API rather than an ODM.
 
 The official MongoDB Rust driver is pinned to =3.6.0 because that release retains the repository's Rust 1.85 MSRV. The DNS SRV resolver feature is intentionally disabled because its Hickory 0.25 dependency triggered a high-severity dependency-review advisory; only standard mongodb:// URIs are supported by this initial adapter. Re-evaluate the pin and optional features during dependency/security reviews. The initial CI server contract is MongoDB 7.0.45.
 
@@ -134,9 +176,7 @@ The adapter does not add an ODM, model derives, a portable query builder, SQL-li
 
 ## Roadmap status
 
-Subphase 6.6.1 was merged into `main` as commit `48a491d660c71005b58ed88a4f6a7e8ba3390c9d` (PR #54); its historical tests covered MySQL 8.0 and MariaDB 11.4. Phase 6.6.2 was merged into `main` as commit `e3ceb86d757bb7aa1a07e16a1e21b462adb69841` (PR #55); its final head passed CI including MongoDB 7.0.45. Phase 6.6.3 publishes the current support contract for bundled SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS, and MongoDB 7.0.45, with exact runtime-version checks. The code head `51ac4c212b3d6bf68483ee2ef8e28b5c3a75f421` passed Rust stable/1.85, all five runtime/engine contracts, generated CLI smoke tests, rustdoc, WebAssembly, browser E2E/bundle budget, documentation, governance, and dependency review. The support matrix and its evidence are recorded in this guide, `docs/DATABASE_SUPPORT_MATRIX.md`, ADR 0019, and the Phase 6.6 section of `ROADMAP.md`. Phase 6.7 ORM/ODM remains separate planned work.
-
-Phase 6.7 is planned to deliver a mature, cohesive typed SQL ORM for SQLite, PostgreSQL, MySQL, and MariaDB, plus a separate mature document-mapping/ODM API for MongoDB. This is not a CRUD-only MVP target. The subphases organize implementation work; they do not permit Phase 6.7 to close until model metadata/type mapping, a composable query builder, relations and explicit efficient loading, transaction/error semantics, derive diagnostics, driver-specific behavior, generated-app examples, and CI-backed integration coverage meet the full acceptance gate. An ADR must select the architectural pattern, dependency strategy, and mandatory/excluded feature matrix before the public contract is fixed. These capabilities are not implemented or stabilized yet.
+Phase 6.6 is complete: its SQL and MongoDB support contracts, runtime versions and evidence are recorded in `docs/DATABASE_SUPPORT_MATRIX.md`, ADR 0019 and `ROADMAP.md`. Phase 6.7.1 is complete and merged in PR #58 (`36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1`); ADR 0020 selects Data Mapper with SeaORM 1.1.20 and the validation-only `ModelDiagnostics` derive. Phase 6.7.2 is now in progress on the typed-pool bridge. The ORM phase will not close until model CRUD, query composition, relations and explicit efficient loading, transaction/error semantics, cross-engine type mapping, generated-app examples and CI-backed integration coverage meet the accepted contract. MongoDB remains separate and is planned for Phase 6.7.3.
 
 ## Testing
 
@@ -150,4 +190,4 @@ cargo test -p rustflow-server --all-features
 cargo test --workspace --all-features
 ~~~
 
-The SQL integration still does not include executable ORM persistence, runtime query abstraction, migration generation by sqlx-cli, database-backed sessions, or a built-in repository layer. Phase 6.7.1 adds only experimental compile-time model metadata via the Data Mapper derive; see [ADR 0020](adr/0020-orm-model-contract.md) and [the model/type contract](ORM_MODEL_CONTRACT.md). CRUD, typed codecs, query execution, relationships and loading remain unimplemented until later subphases. MongoDB has its own separate experimental adapter contract, merged in PR #55 as `e3ceb86d757bb7aa1a07e16a1e21b462adb69841`. MySQL/MariaDB support was introduced in PR #54 as `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`; Phase 6.6.3 now retests the maintained MySQL 8.4.13 LTS and MariaDB 11.4.13 LTS lines alongside PostgreSQL 16.15, SQLite 3.46.0, and MongoDB 7.0.45. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.
+The current 6.7.2 branch introduces the SeaORM connection facade and shared typed-pool bridge, but the complete persistence contract is not yet closed: CRUD behavior, relationship loaders, checked type codecs and four-engine ORM integration coverage still need implementation and evidence. See [ADR 0020](adr/0020-orm-model-contract.md) and [the model/type contract](ORM_MODEL_CONTRACT.md). MongoDB has its own separate experimental adapter contract, merged in PR #55 as `e3ceb86d757bb7aa1a07e16a1e21b462adb69841`. MySQL/MariaDB support was introduced in PR #54 as `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`; Phase 6.6.3 now retests the maintained MySQL 8.4.13 LTS and MariaDB 11.4.13 LTS lines alongside PostgreSQL 16.15, SQLite 3.46.0, and MongoDB 7.0.45. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.
