@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, str::FromStr};
 
 use rustflow_server::{
     DatabaseBackend, DatabaseConfig, DatabasePool,
@@ -156,6 +156,49 @@ mod entities {
         impl ActiveModelBehavior for ActiveModel {}
     }
 
+
+    pub mod codec {
+        use rustflow_server::sea_orm::entity::prelude::*;
+
+        #[derive(Clone, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+        #[sea_orm(
+            rs_type = "String",
+            db_type = "String(StringLen::N(12))",
+            enum_name = "rustflow_orm_codec_state"
+        )]
+        pub enum State {
+            #[sea_orm(string_value = "active")]
+            Active,
+            #[sea_orm(string_value = "paused")]
+            Paused,
+        }
+
+        #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+        #[sea_orm(table_name = "rustflow_orm_codecs")]
+        pub struct Model {
+            #[sea_orm(primary_key)]
+            pub id: i64,
+            pub signed_value: i64,
+            pub unsigned_value: u64,
+            pub ratio: f64,
+            pub decimal_value: Decimal,
+            pub big_decimal_value: BigDecimal,
+            pub uuid_value: Uuid,
+            pub event_date: Date,
+            pub event_time: Time,
+            pub timestamp_value: DateTime,
+            pub state: State,
+            pub optional_value: Option<String>,
+            pub json_value: Json,
+            pub bytes_value: Vec<u8>,
+        }
+
+        #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+        pub enum Relation {}
+
+        impl ActiveModelBehavior for ActiveModel {}
+    }
+
     pub mod note {
         use rustflow_server::sea_orm::entity::prelude::*;
 
@@ -203,6 +246,10 @@ fn integration_url(variable: &str) -> Option<String> {
 }
 
 async fn create_schema(database: &DatabasePool) {
+    database
+        .execute_raw("DROP TABLE IF EXISTS rustflow_orm_codecs", [])
+        .await
+        .expect("drop codec table");
     database
         .execute_raw("DROP TABLE IF EXISTS rustflow_orm_account_tags", [])
         .await
@@ -317,10 +364,151 @@ async fn create_schema(database: &DatabasePool) {
         .execute_raw(&account_tags, [])
         .await
         .expect("create account tags table");
+
+    let (
+        codec_id,
+        signed_type,
+        unsigned_type,
+        ratio_type,
+        decimal_type,
+        big_decimal_type,
+        uuid_type,
+        date_type,
+        time_type,
+        timestamp_type,
+        state_type,
+        json_type,
+        bytes_type,
+    ) = match database.backend() {
+        DatabaseBackend::Sqlite => (
+            "INTEGER PRIMARY KEY AUTOINCREMENT",
+            "INTEGER",
+            "INTEGER",
+            "REAL",
+            "TEXT",
+            "TEXT",
+            "BLOB",
+            "TEXT",
+            "TEXT",
+            "TEXT",
+            "VARCHAR(12)",
+            "JSON",
+            "BLOB",
+        ),
+        DatabaseBackend::Postgres => (
+            "BIGSERIAL PRIMARY KEY",
+            "BIGINT",
+            "NUMERIC(20,0)",
+            "DOUBLE PRECISION",
+            "NUMERIC(20,4)",
+            "NUMERIC(35,10)",
+            "UUID",
+            "DATE",
+            "TIME(6)",
+            "TIMESTAMP(6)",
+            "VARCHAR(12)",
+            "JSONB",
+            "BYTEA",
+        ),
+        DatabaseBackend::MySql => (
+            "BIGINT AUTO_INCREMENT PRIMARY KEY",
+            "BIGINT",
+            "BIGINT UNSIGNED",
+            "DOUBLE",
+            "DECIMAL(20,4)",
+            "DECIMAL(35,10)",
+            "BINARY(16)",
+            "DATE",
+            "TIME(6)",
+            "DATETIME(6)",
+            "VARCHAR(12)",
+            "JSON",
+            "LONGBLOB",
+        ),
+    };
+    let codecs = format!(
+        "CREATE TABLE rustflow_orm_codecs (
+            id {codec_id},
+            signed_value {signed_type} NOT NULL,
+            unsigned_value {unsigned_type} NOT NULL,
+            ratio {ratio_type} NOT NULL,
+            decimal_value {decimal_type} NOT NULL,
+            big_decimal_value {big_decimal_type} NOT NULL,
+            uuid_value {uuid_type} NOT NULL,
+            event_date {date_type} NOT NULL,
+            event_time {time_type} NOT NULL,
+            timestamp_value {timestamp_type} NOT NULL,
+            state {state_type} NOT NULL,
+            optional_value TEXT NULL,
+            json_value {json_type} NOT NULL,
+            bytes_value {bytes_type} NOT NULL
+        )"
+    );
+    database
+        .execute_raw(&codecs, [])
+        .await
+        .expect("create codec table");
+}
+
+async fn exercise_type_codecs(database: &DatabasePool) {
+    use rustflow_server::sea_orm::entity::prelude::{
+        BigDecimal, Date, DateTime, Decimal, Time, Uuid,
+    };
+
+    let date = Date::from_ymd_opt(2026, 10, 30).expect("valid fixture date");
+    let time = Time::from_hms_micro_opt(12, 34, 56, 123_456).expect("valid fixture time");
+    let timestamp = DateTime::new(date, time);
+    let uuid = Uuid::from_u128(0x1234_5678_1234_5678_1234_5678_1234_5678);
+    let decimal = Decimal::new(12_345, 2);
+    let big_decimal = BigDecimal::from_str("12345678901234567890.1234567890")
+        .expect("valid arbitrary precision decimal");
+    let json = serde_json::json!({"engine": "sql", "nullable": null});
+    let bytes = vec![0, 1, 127, 128, 255];
+
+    let codecs = database.entity::<entities::codec::Entity>();
+    let inserted = codecs
+        .insert(entities::codec::ActiveModel {
+            signed_value: Set(-42),
+            unsigned_value: Set(42),
+            ratio: Set(0.125),
+            decimal_value: Set(decimal),
+            big_decimal_value: Set(big_decimal.clone()),
+            uuid_value: Set(uuid),
+            event_date: Set(date),
+            event_time: Set(time),
+            timestamp_value: Set(timestamp),
+            state: Set(entities::codec::State::Active),
+            optional_value: Set(None),
+            json_value: Set(json.clone()),
+            bytes_value: Set(bytes.clone()),
+            ..Default::default()
+        })
+        .await
+        .expect("insert all supported SQL codec values");
+    let decoded = codecs
+        .find_by_id(inserted.id)
+        .await
+        .expect("query inserted codec row")
+        .expect("codec row exists");
+
+    assert_eq!(decoded.signed_value, -42);
+    assert_eq!(decoded.unsigned_value, 42);
+    assert!((decoded.ratio - 0.125).abs() < f64::EPSILON);
+    assert_eq!(decoded.decimal_value, decimal);
+    assert_eq!(decoded.big_decimal_value, big_decimal);
+    assert_eq!(decoded.uuid_value, uuid);
+    assert_eq!(decoded.event_date, date);
+    assert_eq!(decoded.event_time, time);
+    assert_eq!(decoded.timestamp_value, timestamp);
+    assert_eq!(decoded.state, entities::codec::State::Active);
+    assert_eq!(decoded.optional_value, None);
+    assert_eq!(decoded.json_value, json);
+    assert_eq!(decoded.bytes_value, bytes);
 }
 
 async fn exercise_orm(database: &DatabasePool) {
     create_schema(database).await;
+    exercise_type_codecs(database).await;
 
     let accounts = database.entity::<entities::account::Entity>();
     let notes = database.entity::<entities::note::Entity>();
