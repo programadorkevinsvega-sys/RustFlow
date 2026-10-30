@@ -6,7 +6,8 @@ use rustflow_server::{
     sea_orm::{
         ActiveValue::{NotSet, Set},
         ColumnTrait, Condition, EntityTrait, JoinType, QueryFilter, QueryOrder, QuerySelect,
-        QueryTrait, RelationTrait, sea_query::Expr,
+        QueryTrait, RelationTrait,
+        sea_query::Expr,
     },
 };
 
