@@ -24,7 +24,6 @@ rustls-pki-types.workspace = true
 ring.workspace = true
 sqlx.workspace = true
 mongodb.workspace = true
-sea-orm = { version = "=1.1.20", default-features = false, features = ["macros", "sqlx-sqlite", "sqlx-postgres", "sqlx-mysql", "runtime-tokio-rustls", "with-json", "with-chrono", "with-rust_decimal", "with-bigdecimal", "with-uuid", "with-time"] }
 rustflow = { path = "../rustflow" }
 rustflow-view = { path = "../rustflow-view" }
 rustflow-ssr = { path = "../rustflow-ssr" }

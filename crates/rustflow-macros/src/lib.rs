@@ -1038,10 +1038,16 @@ fn model_option_inner(ty: &syn::Type) -> Result<(&syn::Type, bool), syn::Error> 
         ));
     };
     if args.args.len() != 1 {
-        return Err(syn::Error::new_spanned(ty, "Option fields must contain exactly one type"));
+        return Err(syn::Error::new_spanned(
+            ty,
+            "Option fields must contain exactly one type",
+        ));
     }
     let Some(syn::GenericArgument::Type(inner)) = args.args.first() else {
-        return Err(syn::Error::new_spanned(ty, "Option fields must contain exactly one type"));
+        return Err(syn::Error::new_spanned(
+            ty,
+            "Option fields must contain exactly one type",
+        ));
     };
     if matches!(inner, syn::Type::Path(inner_path) if inner_path.path.segments.last().is_some_and(|item| item.ident == "Option"))
     {
@@ -1053,10 +1059,7 @@ fn model_option_inner(ty: &syn::Type) -> Result<(&syn::Type, bool), syn::Error> 
     Ok((inner, true))
 }
 
-fn validate_model_field_type(
-    ty: &syn::Type,
-    custom_type_mapping: bool,
-) -> Result<(), syn::Error> {
+fn validate_model_field_type(ty: &syn::Type, custom_type_mapping: bool) -> Result<(), syn::Error> {
     let syn::Type::Path(path) = ty else {
         return Err(syn::Error::new_spanned(
             ty,

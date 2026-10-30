@@ -8,7 +8,6 @@ mod csrf;
 mod database;
 mod document_database;
 mod group;
-pub mod orm;
 mod page;
 mod proxy;
 mod sessions;

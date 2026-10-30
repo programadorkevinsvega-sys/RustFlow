@@ -8,6 +8,77 @@
 //!
 //! RustFlow is not production-ready. See the repository README and roadmap
 //! before relying on the project.
+//!
+//! # SQL model diagnostics (Phase 6.7.1)
+//!
+//! The experimental `ModelDiagnostics` derive validates the supported
+//! SeaORM entity declaration subset. It does not generate an entity, execute SQL,
+//! or provide persistence methods. SeaORM 1.1.20 is the selected foundation; its
+//! dependency and server facade will be introduced with the typed-pool migration
+//! in Phase 6.7.2.
+//!
+//! A valid declaration is accepted without adding persistence behavior:
+//!
+//! ~~~
+//! use rustflow::ModelDiagnostics;
+//!
+//! #[derive(ModelDiagnostics)]
+//! #[sea_orm(table_name = "user_profiles")]
+//! struct UserProfile {
+//!     #[sea_orm(primary_key)]
+//!     id: i64,
+//!     display_name: String,
+//!     nickname: Option<String>,
+//! }
+//!
+//! let model = UserProfile {
+//!     id: 1,
+//!     display_name: "Ada".to_owned(),
+//!     nickname: None,
+//! };
+//! let _ = (model.id, model.display_name, model.nickname);
+//! ~~~
+//!
+//! Unknown entity attributes fail at the attribute that introduced them:
+//!
+//! ~~~compile_fail
+//! use rustflow::ModelDiagnostics;
+//!
+//! #[derive(ModelDiagnostics)]
+//! #[sea_orm(table_name = "users", unkown_option = true)]
+//! struct User {
+//!     #[sea_orm(primary_key)]
+//!     id: i64,
+//! }
+//! ~~~
+//!
+//! Nullable primary keys are rejected:
+//!
+//! ~~~compile_fail
+//! use rustflow::ModelDiagnostics;
+//!
+//! #[derive(ModelDiagnostics)]
+//! #[sea_orm(table_name = "users")]
+//! struct User {
+//!     #[sea_orm(primary_key)]
+//!     id: Option<i64>,
+//! }
+//! ~~~
+//!
+//! Unsupported field types need an explicit, compatible SeaORM type mapping:
+//!
+//! ~~~compile_fail
+//! use rustflow::ModelDiagnostics;
+//!
+//! #[derive(ModelDiagnostics)]
+//! #[sea_orm(table_name = "users")]
+//! struct User {
+//!     #[sea_orm(primary_key)]
+//!     id: i64,
+//!     address: std::net::IpAddr,
+//! }
+//! ~~~
+
 
 extern crate self as rustflow;
 
