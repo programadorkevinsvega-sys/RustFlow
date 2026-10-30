@@ -142,7 +142,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let input = request.validated_form::<NewNoteForm>()?;
                 rustflow_server::sqlx::query("INSERT INTO notes (title) VALUES (?)")
                     .bind(input.title.trim())
-                    .execute(database.pool())
+                    .execute(database.sqlx_sqlite_pool().expect("SQLite pool"))
                     .await
                     .map_err(|error| DatabaseError::from(error).to_http_error())?;
                 Ok(Response::new(StatusCode::SEE_OTHER, "saved")
@@ -159,7 +159,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let rows: Vec<String> = rustflow_server::sqlx::query_scalar(
                 "SELECT title FROM notes ORDER BY id"
             )
-            .fetch_all(database.pool())
+            .fetch_all(database.sqlx_sqlite_pool().expect("SQLite pool"))
             .await
             .map_err(|error| DatabaseError::from(error).to_http_error())?;
             let mut children = vec![View::element("h1", [View::text("Notes")])
@@ -181,7 +181,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let database = database_for_health.clone();
         async move {
             rustflow_server::sqlx::query("SELECT 1")
-                .execute(database.pool())
+                .execute(database.sqlx_sqlite_pool().expect("SQLite pool"))
                 .await
                 .map_err(|error| DatabaseError::from(error).to_http_error())?;
             Ok(Response::text("ok"))
