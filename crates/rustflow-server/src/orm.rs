@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 
 use sea_orm::{
     ActiveModelBehavior, ActiveModelTrait, ConnectionTrait, DeleteMany, DeleteResult,
-    EntityTrait, InsertManyResult, IntoActiveModel, LoaderTrait, ModelTrait, PrimaryKeyTrait,
+    EntityTrait, InsertResult, IntoActiveModel, LoaderTrait, ModelTrait, PrimaryKeyTrait,
     Related, Select, UpdateMany,
 };
 
@@ -164,7 +164,7 @@ where
     pub async fn insert_many<I>(
         &self,
         models: I,
-    ) -> Result<InsertManyResult, DatabaseError>
+    ) -> Result<InsertResult<E::ActiveModel>, DatabaseError>
     where
         I: IntoIterator<Item = E::ActiveModel>,
         E::ActiveModel: ActiveModelBehavior + Send,
