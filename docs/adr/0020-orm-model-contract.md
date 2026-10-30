@@ -1,108 +1,206 @@
-# ADR 0020: SQL ORM architecture and model contract
+# ADR 0020: SQL ORM architecture, foundation and model contract
 
-- Status: Proposed for review with Phase 6.7.1.
+- Status: Proposed for review with Phase 6.7.1; not yet accepted or merged.
 - Phase: 6.7.1 — Model contract and architecture.
 - Related: ADR 0016 (SQLx pools and migrations), ADR 0017 (MySQL/MariaDB driver), ADR 0018 (MongoDB document adapter), ADR 0019 (database support matrix), [ORM model contract](../ORM_MODEL_CONTRACT.md).
 
 ## Context
 
-RustFlow's Phase 6.6 support contract is verified for bundled SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS and MongoDB 7.0.45 on the workspace's Rust 1.85 MSRV and stable. SQLx 0.8.6 currently provides a runtime-generic AnyPool, explicit transaction wrappers and SQLx migrations. The MongoDB adapter uses the official MongoDB Rust driver 3.6.0 and native BSON/collection/index APIs independently of SQLx.
+RustFlow's Phase 6.6 support contract is verified for bundled SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS and MongoDB 7.0.45. The workspace MSRV is Rust 1.85; CI verifies that toolchain and stable. The existing SQL adapter is pinned to SQLx 0.8.6 and exposes an AnyPool, explicit transaction wrappers, parameterized SQL and SQLx migrations. MongoDB uses the official MongoDB Rust driver 3.6.0 and a separate BSON/collection/index adapter.
 
-No SQL ORM, model derive, model-row decoder, query builder or relationship loader is currently implemented. The CLI's generated models are structs; they do not imply persistence. Phase 6.7 must be a cohesive ORM and must not be closed as CRUD-only.
+Before this proposal, RustFlow had no integrated SQL ORM, model-row mapping, query execution API or relation loader. The CLI's generated models were plain structs and did not imply persistence. Phase 6.7 must be a cohesive, mature ORM for SQLite, PostgreSQL, MySQL and MariaDB, plus an independently designed MongoDB ODM. It must not close as a CRUD-only MVP.
 
-A full ORM candidate can conflict with the Rust 1.85 MSRV or current pool boundary. A shared SQL protocol/runtime-generic driver also does not make SQL types, placeholders, generated values, DDL or transaction guarantees identical. MongoDB must stay a separate document system.
+The key constraint is not simply whether an ORM has a Rust 1.85-compatible derive. It must also share the existing SQLx generation, support the intended four SQL servers, offer a query builder, relationships and batch loading, explicit transactions, type mapping and diagnostic behavior, while preserving a single managed connection pool per configured database. A generic SQLx Any driver does not prove that each backend has identical type codecs, SQL syntax, generated-value behavior or transaction semantics.
 
 ## Decision
 
-### 1. Pattern: Data Mapper
+### 1. Pattern: Data Mapper with explicit ActiveModel write state
 
-Use **Data Mapper**, not Active Record.
+Choose **Data Mapper**, implemented on the maintained SeaORM foundation. Do not build a custom Active Record or a custom ORM.
 
-- Model structs contain application data and compile-time table/column metadata; they do not hold a hidden connection or execute persistence methods.
-- Persistence operations belong to an explicit database/session/query context and receive a connection or transaction explicitly.
-- No process-global database singleton, implicit lazy I/O, mutable global identity map, automatic lifecycle hooks or baseline Unit of Work.
-- A successful write that returns generated values yields a new model value. A failed operation must not mutate the caller's in-memory model.
-- Dirty tracking and Unit of Work are excluded from the baseline contract. Explicit transactions compose operations. Including these later requires a reviewed ADR amendment and tests.
+- A SeaORM Model is the application-facing row value. Its fields do not hold a connection, pool, transaction, global identity map or hidden service locator.
+- Persistence belongs to an explicit SeaORM Entity/ActiveModel/query context. Operations receive a ConnectionTrait or DatabaseTransaction explicitly.
+- SeaORM's ActiveModel uses per-field NotSet, Set and Unchanged values. This is a write-payload/change-state mechanism, not a process-wide Unit of Work or automatic identity map.
+- A successful insert/update returns a model value built from values actually returned or read from the selected database. A failed operation must not mutate the caller's original Model value.
+- Associations are explicit. Do not implement transparent lazy I/O or implicit relation fetches; query count and loading behavior remain visible to the caller.
+- There is no application-global database singleton. Pool and transaction ownership remains explicit and request/test isolatable.
 
-This separates data from persistence and leaves space for efficient batch relation loading without hidden N+1 queries.
+Although SeaORM places write methods on ActiveModel, its operation methods receive a connection argument. This does not bind a hidden connection to model instances and is accepted here as a Data Mapper-style architecture with explicit ActiveModel state.
 
-### 2. Execution and SQL dialect foundation
+### 2. Foundation: SeaORM 1.1.20, SQLx 0.8.6 and SeaQuery 0.32.x
 
-- Retain SQLx **0.8.6** as the SQL execution, connection and migration foundation. Do not write database drivers or a custom migration runner.
-- Use SeaQuery's typed SQL AST and engine-specific renderer, with **SeaQuery 0.32.7** as the first compatible candidate line. Its official manifest declares Rust 1.62, MIT OR Apache-2.0, and MySQL/PostgreSQL/SQLite dialect builders. MySQL-family SQL is the starting dialect for MariaDB, but MariaDB-specific behavior still requires independent integration evidence.
-- Values must be bound parameters, not concatenated SQL strings. Identifiers come from validated model metadata and are quoted by the renderer. Raw SQL remains an explicit escape hatch with parameters.
-- The existing DatabasePool exposes SQLx AnyPool. It remains unchanged in 6.7.1. Before query execution/type codecs are implemented in 6.7.2, prove compatibility between query-builder values and the current pool. SQLx Any is not proof of full type portability.
-- Do **not** use the SeaQuery 0.32.7 Any binder as the universal model-value codec. Its published source panics for UUID and JSON values, panics for decimal values, and unwraps unsigned 64-bit conversion to i64. Those behaviors violate a no-panic/range-check contract. Use the SeaQuery AST/renderer with checked, engine-aware value codecs/execution adapters.
-- If typed codecs cannot correctly use AnyPool, 6.7.2 must introduce a backend-tagged SQLx connection boundary and a documented pre-1.0 migration for the raw-pool accessor before enabling ORM CRUD. It must not silently open a second pool for the same URL as a workaround.
+Use **SeaORM 1.1.20** as the SQL ORM foundation, pinned exactly in the workspace dependency declaration for this experimental adoption.
 
-### 3. Model metadata and derive
+Verified upstream manifest facts for SeaORM 1.1.20:
 
-- Implement a small RustFlow-owned derive macro named Model for metadata only; do not copy another ORM's query/CRUD implementation.
-- The derive accepts named-field, non-generic structs; table/column names; primary-key fields; nullable fields represented by Option<T>; database-generated/default markers; and explicit read-only mode for keyless views.
-- It emits immutable metadata only. It does not execute SQL, implement codecs, generate DDL/migrations or imply runtime type support.
-- Composite primary keys are supported in metadata. Keyless models must explicitly use the read-only attribute. Generated/default metadata is declarative; insert payload semantics and retrieval of generated values are implemented in a later subphase.
-- Known Rust types map to logical categories. Unsupported field types, unknown/duplicate attributes, conflicting markers, invalid identifiers, missing primary keys and nullable keys are compile-time errors. Custom enum fields need an explicit sql_type = "enum" marker until typed enum mapping exists.
+- Edition 2021, declared MSRV Rust 1.81, license MIT OR Apache-2.0.
+- It depends on SQLx 0.8.4 or compatible 0.8.x, and SeaQuery 0.32.5 or compatible 0.32.x. The workspace's SQLx 0.8.6 satisfies the dependency range and should resolve to the shared SQLx 0.8.6 package in Cargo.lock.
+- Its feature set provides SQLx drivers for SQLite, PostgreSQL and MySQL, Tokio/Rustls runtime support, model/entity derives and optional type integrations.
+- Its 1.1.x driver documentation describes the sqlx-mysql feature as supporting MySQL and MariaDB, alongside PostgreSQL and SQLite.
+- It supplies Entity/Model/ActiveModel derives, a composable query API, relation metadata, explicit transactions and relation loaders. The public loader API includes load_one, load_many and load_many_to_many.
 
-### 4. SQL ORM / MongoDB ODM boundary
+RustFlow enables only the server-side SeaORM features required by the current contract: macros; SQLx SQLite, PostgreSQL and MySQL; Tokio/Rustls; JSON; chrono; rust_decimal; bigdecimal; UUID; and time. SeaORM remains a dependency of rustflow-server only. It must not enter rustflow, rustflow-view, rustflow-dom, browser examples or the WASM dependency graph.
 
-The SQL ORM covers only SQLite, PostgreSQL, MySQL and MariaDB. It uses relational metadata, SQL query expressions, SQL transactions and engine-specific migration directories. MongoDB remains the separate document adapter introduced in Phase 6.6.2; its future ODM receives its own BSON/document contract, _id semantics, collection/index lifecycle and native query/update API in 6.7.3. No SQL model derive, relational query builder or migration semantics are shared with MongoDB by implication.
+SeaORM uses SeaQuery internally for SQL AST construction and backend rendering. Do not introduce a second custom SQL renderer or duplicate query-builder implementation. Use the SeaQuery version resolved through SeaORM's 0.32.x dependency range; keep the lockfile reproducible and record the resolved version during the final dependency review.
+
+Keep SQLx 0.8.6 as the execution/driver and migration foundation. Do not introduce another SQL driver or pool library. SQLx migrations remain the schema migration mechanism; SeaORM's schema-generation/migration tooling is not adopted in this ADR.
+
+Do not enable SeaORM's mariadb-use-returning feature globally. SeaORM represents MySQL and MariaDB with the same MySQL backend family, so enabling a MariaDB-specific RETURNING path at compile time would also affect MySQL. For this adoption, leave the feature disabled and use SeaORM's non-RETURNING MySQL-family path until a runtime server-identity/capability strategy is separately designed and tested. Both MySQL 8.4.13 and MariaDB 11.4.13 require independent integration contracts before runtime support may be claimed.
+
+### 3. Existing AnyPool boundary and migration plan
+
+SeaORM 1.1.20 uses backend-specific SQLx pools (SqlitePool, PgPool and MySqlPool), not SQLx AnyPool. It exposes those typed pools through its DatabaseConnection accessors. An AnyPool cannot be passed directly as a SeaORM DatabaseConnection.
+
+The current Phase 6.5/6.6 DatabasePool remains unchanged in Phase 6.7.1. Do not open a second pool for the same URL as a workaround, and do not claim that the new ORM facade is already wired into that legacy pool.
+
+Phase 6.7.2 must perform and test one explicit pre-1.0 connection-boundary migration:
+
+1. Make one backend-specific SeaORM/SQLx typed connection pool the single owner for each configured database.
+2. Preserve the current AppConfig URL precedence, redaction, pool bounds, acquire timeout and backend validation.
+3. Make the ORM connection and the raw-SQL escape hatch share that same typed pool. Use SeaORM's typed SQLx-pool accessors when direct SQLx APIs are required; provide a backend-tagged enum rather than constructing an AnyPool alongside it.
+4. Run SQLx migrations against the matching typed SQLx pool/connection. Preserve per-engine migration directories and dialect-marker validation.
+5. Replace the experimental AnyPool-only raw accessor and AnyConnection-only transaction accessor with a documented backend-tagged/raw-parameterized API. This is a deliberate pre-1.0 API migration; provide examples and deprecation notes rather than silently changing semantics.
+6. Represent model operations and explicit transactions with the same backend connection, including commit/rollback and connection-loss behavior.
+7. Prove pool closure, pool limits, timeouts, transaction composition and migration behavior on all four SQL servers before exposing integrated CRUD.
+
+No duplicate pool, hidden pool or process-global connection is allowed. If the typed-pool bridge cannot meet the current configuration and migration contract, stop Phase 6.7.2 and amend this ADR before implementing an alternative.
+
+### 4. Model derive and metadata contract
+
+Use SeaORM's maintained DeriveEntityModel for actual entity/model/column/primary-key code generation. Add the RustFlow-owned ModelDiagnostics derive as a validation-only companion:
+
+~~~rust
+use rustflow::ModelDiagnostics;
+use rustflow_server::orm as sea_orm;
+use sea_orm::entity::prelude::*;
+
+#[derive(Clone, Debug, PartialEq, ModelDiagnostics, DeriveEntityModel)]
+#[sea_orm(table_name = "user_profiles")]
+pub struct Model {
+    #[sea_orm(primary_key)]
+    pub id: i64,
+    pub display_name: String,
+    pub nickname: Option<String>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+~~~
+
+The application places related entity declarations in their own Rust module, as in SeaORM's conventional entity layout.
+
+ModelDiagnostics validates the supported SeaORM attribute subset before SeaORM generates code. It rejects unknown/duplicate entity and field attributes, malformed identifiers, non-named or generic model structs, duplicate column mappings, absent or nullable primary keys, nested Option, architecture-width integers, invalid generated-key combinations, unsupported portable field types and composite keys wider than SeaORM's supported arity. Explicit custom enum_name/column_type mappings require a matching SeaORM ValueType/ActiveEnum implementation. It does not generate SQL, model fields, entity traits, codecs or DDL.
+
+The exact model naming, key, nullability, defaults, generated-value, type and field-state rules are in [ORM_MODEL_CONTRACT.md](../ORM_MODEL_CONTRACT.md). The derive deliberately accepts SeaORM's attribute vocabulary rather than inventing a second parallel model syntax.
+
+### 5. Query builder, relations and loading are mandatory parts of the final ORM
+
+SeaORM provides the maintained basis for query composition and relationship loading. RustFlow will not implement a separate general-purpose SQL AST or dialect renderer.
+
+The final Phase 6.7 contract still requires RustFlow integration tests and documented wrappers for projections, aliases, nested AND/OR predicates, comparisons, NULL checks, IN, LIKE, ordering, pagination, joins, grouping/aggregates, HAVING, subqueries and engine-specific operations.
+
+Relations must cover belongs-to/many-to-one, one-to-one, one-to-many and many-to-many. Loading must be explicit and support efficient batch/eager loading, including the documented nested-load scope. Use query-count tests to prevent N+1 regressions. Never silently perform network I/O when a relation field is accessed.
+
+### 6. ActiveModel operations, hooks and transaction semantics
+
+Use SeaORM's explicit ActiveModel semantics rather than creating an incompatible second unit-of-work model:
+
+- NotSet means omit the field from an insert/update payload, allowing a database default or generated value to apply where supported.
+- Set(value) means include the value in the write.
+- Unchanged(value) records a value copied from a Model and is not a requested update; insert builders may still use it as an insert value.
+- Update predicates use the complete primary key. RustFlow's eventual safe wrappers must validate missing keys and return a typed error rather than allowing a lower-level builder panic.
+- Insert/update return the database-confirmed Model; delete returns affected-row information. The caller's original Model/ActiveModel is not mutated in place.
+- Database-generated fields/defaults are never guessed. If the backend cannot return a generated value directly, any follow-up read must be explicit and tested.
+
+SeaORM supplies opt-in ActiveModelBehavior hooks. Their order is:
+
+1. before_save runs before insert/update.
+2. after_save runs only after the write succeeded and a Model was returned.
+3. before_delete runs before delete.
+4. after_delete runs after delete succeeded.
+
+Hooks receive the same explicit ConnectionTrait argument and may return an error. An after-hook error does not undo an already committed statement. Callers must enclose hook-plus-write sequences in an explicit transaction whenever atomicity across the full operation is required. RustFlow must document this partial-failure case and must not imply that a hook error means the database statement was rolled back.
+
+Transactions are explicit. A callback error causes rollback through SeaORM's transaction helper; success attempts commit. Commit failure is reported, not converted to success. A transport loss during commit may leave the server outcome unknown; the API must not falsely promise that rollback occurred. Engine-specific DDL implicit commits, especially MySQL/MariaDB, are not made atomic by a client transaction wrapper.
+
+### 7. Raw SQL escape hatch and safety
+
+Keep an explicit raw SQL escape hatch for engine-specific operations. Prefer a Statement constructed from SQL plus bound values, or a typed SQLx pool/connection obtained from the one shared pool. Use the server's placeholder syntax. Caller values are always bound parameters; do not interpolate them into SQL text.
+
+Dynamic identifiers and SQL fragments must be constructed from validated typed metadata/expressions, not untrusted strings. Unprepared SQL is only for trusted static migration/administrative SQL and never for request data.
+
+Errors must distinguish validation/metadata, encode/decode, not-found, constraint, connection/pool, query and transaction failures. Public error messages and Debug representations must not reveal URLs, passwords, bound secrets or raw driver messages.
+
+### 8. Strict SQL ORM / MongoDB ODM boundary
+
+This SQL ORM covers only SQLite, PostgreSQL, MySQL and MariaDB. It uses relational metadata, SQL query expressions, SQL transactions and the existing engine-specific SQLx migration strategy.
+
+MongoDB remains the separate document adapter introduced in Phase 6.6.2. Its future ODM is Phase 6.7.3 and owns BSON/document models, _id mapping, serializers/deserializers, collection/index lifecycle, document filters/updates, and MongoDB-native session/transaction limitations. No SQL model derive, relational query builder, SQL relationship or SQL migration behavior is shared with MongoDB by implication.
 
 ## Alternatives compared
 
-| Option | Verified strengths and compatibility | Blockers / trade-offs | Decision |
+| Alternative | Current verified strengths | Compatibility and material limitations | Decision |
 |---|---|---|---|
-| Active Record (custom model methods) | Convenient calls appear directly on entities and can make simple CRUD easy to discover. | Couples entities to persistence/session state, encourages hidden connection selection and implicit I/O, and complicates multiple databases per test/request. That conflicts with RustFlow's explicit transaction and isolation requirements and risks hidden N+1 loading. | Rejected as the public pattern; Data Mapper keeps model values free of persistence state. |
-| SeaORM 2.0.4 | Mature ORM with entity derives, CRUD, query API and relations; MIT OR Apache-2.0. Official manifest: [docs.rs](https://docs.rs/crate/sea-orm/2.0.4/source/Cargo.toml). | Declares Rust 1.94 and SQLx 0.9.0, incompatible with this workspace's Rust 1.85 and SQLx 0.8.6 pins. | Rejected unless a separate ADR raises the MSRV and changes the driver contract. |
-| SeaORM 1.1.20 | Mature entity/query/relation features. The [1.1.x driver docs](https://www.sea-ql.org/SeaORM/zh-CN/docs/1.1.x/install-and-config/database-and-async-runtime/) list SQLx MySQL (including MariaDB), PostgreSQL and SQLite; its MSRV is below 1.85 and it supports SQLx 0.8. MIT OR Apache-2.0. | Older major than current 2.x and uses per-engine SQLx pools rather than the current AnyPool, so direct reuse needs a connection-boundary refactor. | Not adopted as a second ORM/pool; retained as a behavior reference. |
-| Diesel 2.3.14 | Mature compile-time ORM/query builder and migrations. Official manifest: [docs.rs](https://docs.rs/crate/diesel/2.3.14/source/Cargo.toml). | Declares Rust 1.86, above MSRV 1.85. Native client/async adapter choices do not fit the current SQLx/Tokio pool without a deliberate driver change. | Rejected unless the workspace MSRV and driver direction change by ADR. |
-| Toasty 0.11.0 | New ORM with relations and separate driver crates. Official [release history](https://github.com/tokio-rs/toasty/releases). | Current manifest declares Rust 1.95 and SQLx 0.9-family components; it does not establish RustFlow's exact MariaDB 11.4.13 support contract. MIT. | Rejected for MSRV and unverified MariaDB contract. |
-| SQLx 0.8.6 alone | Fits the workspace; supplies async execution, pools, parameters and migrations. [Official crate docs](https://docs.rs/crate/sqlx/0.8.6). | SQLx expressly is not an ORM; model metadata, relationship loading and cohesive query API remain to be defined. Any does not imply full type parity. | Retained as execution/driver layer, not the ORM itself. |
-| SeaQuery 0.32.7 + SQLx 0.8.6 | [Manifest](https://github.com/SeaQL/sea-query/blob/0.32.7/Cargo.toml) declares Rust 1.62, MIT OR Apache-2.0, and MySQL/PostgreSQL/SQLite dialect builders. The [binder manifest](https://github.com/SeaQL/sea-query/blob/0.32.7/sea-query-binder/Cargo.toml) supports SQLx 0.8 and sqlx-any. | The Any binder has gaps/panics for UUID, Decimal, JSON and out-of-range u64; it is not a universal safe codec. Per-engine conversions must be tested and checked. | **Selected query AST/rendering foundation**, with checked RustFlow execution/value adapters and an integration proof before CRUD. |
+| Custom Active Record | Simple CRUD can appear as methods on a model. | Couples model code to persistence; tempts hidden connection selection and implicit I/O; makes per-request/per-test database isolation and transaction ownership less clear. RustFlow would also have to implement derives, codecs, query building, relation loaders and dialect behavior itself. | Reject as the architecture. Use Data Mapper with explicit context. |
+| SeaORM 2.0.4 | Current SeaORM major line; entity derives, CRUD, query building, relationships and SQLx-backed drivers. MIT OR Apache-2.0. | Official manifest declares Rust 1.94 and SQLx 0.9.0. Both conflict with RustFlow's Rust 1.85 MSRV and SQLx 0.8.6 baseline. | Reject for the current compatibility contract. Reassess only through a separate MSRV/dependency ADR. |
+| SeaORM 1.1.20 | Full async ORM, model/entity derives, ActiveModel semantics, query composition, relationships/loaders, transactions and SQLx 0.8.x support. Official manifest declares Rust 1.81 and MIT OR Apache-2.0. Its 1.1.x docs list SQLx MySQL (including MariaDB), PostgreSQL and SQLite. | Uses backend-specific SQLx pools rather than the current AnyPool; a single-pool connection-boundary migration is required. Exact MariaDB 11.4.13 behavior is not proven by upstream feature documentation and must be tested in RustFlow CI. The 1.1 line is older than current 2.x. | **Selected foundation**, pinned at 1.1.20 for the current MSRV. |
+| Diesel 2.3.14 + diesel-async 0.9.2 | Mature compile-time ORM/query builder; schema, associations and migrations. Diesel lists PostgreSQL, MySQL and SQLite and its repository README also mentions MariaDB. diesel-async provides async connections. MIT OR Apache-2.0. | Diesel 2.3.14 declares Rust 1.86, above RustFlow's 1.85 MSRV. diesel-async 0.9.2 uses Diesel 2.3.9 and separate tokio-postgres/mysql_async/SQLite connection choices, not SQLx 0.8.6. It would require a new driver, pool and migration direction. Its async docs list PostgreSQL/MySQL/SQLite; exact MariaDB 11.4.13 support is not enough to assume this existing contract. | Reject under present MSRV and SQLx continuity requirements. |
+| Toasty 0.11.0 | New async ORM with separate drivers, model macros, query API and relations; MIT. | Current workspace manifest declares Rust 1.95 and uses SQLx 0.9.0. Its MariaDB driver documentation targets MariaDB 11.8+, not RustFlow's 11.4.13 target. Both MSRV and exact server contract conflict. | Reject for current compatibility contract. |
+| SQLx 0.8.6 alone | Existing async execution, pools, parameter binding, migrations, SQLite/PostgreSQL/MySQL-protocol service contracts. | SQLx is a driver/query execution framework, not the complete model/relation/query abstraction RustFlow needs. Model derives, ActiveModel state and relation loaders would still need to be built. AnyPool is not a universal value-codec guarantee. | Retain as SeaORM's execution/driver and migration layer, not as the ORM itself. |
+| SeaQuery 0.32.7 + SQLx 0.8.6 with RustFlow-owned ORM | A typed SQL AST and renderers for MySQL, PostgreSQL and SQLite; compatible with SQLx 0.8.x. MIT OR Apache-2.0. | It does not provide a complete ORM model/ActiveModel layer, relation metadata/loaders or full transaction/error contract. A custom layer would duplicate large portions SeaORM already supplies. The SeaQuery Any binder is not accepted as a universal codec; it has unsupported/panicking conversions for some types in the 0.32 line. | Not selected as a direct foundation. SeaORM already uses SeaQuery internally. |
 
 ### Evidence versus inference
 
-- **Verified from official manifests:** listed release versions, declared Rust versions, license expressions, SQLx major/minor requirements and SeaQuery backend feature declarations. These facts do not imply benchmark performance.
-- **Verified from source code:** the SeaQuery 0.32.7 Any binder's handling of UUID, Decimal, JSON and u64 in [sqlx_any.rs](https://github.com/SeaQL/sea-query/blob/0.32.7/sea-query-binder/src/sqlx_any.rs).
-- **Design inference:** an ORM cannot safely treat runtime-generic Any as proof that all model value types are portable.
-- **Security/advisory review (2026-10-29):** SQLx RUSTSEC-2024-0363 is patched in `>=0.8.1`, so the existing pinned SQLx 0.8.6 is outside the affected range ([RustSec](https://rustsec.org/advisories/RUSTSEC-2024-0363.html)). SeaQuery 1.0.2 is the current latest stable line but its official manifest declares Rust 1.88, so it is incompatible with RustFlow's 1.85 MSRV; the compatible 0.32.7 line remains a dependency/maintenance trade-off ([1.0.2 manifest](https://github.com/SeaQL/sea-query/blob/1.0.2/Cargo.toml)). SeaQuery 0.32.7's `with-time` integration allows `time ^0.3.36`; RUSTSEC-2026-0009 affects `time >=0.3.6,<0.3.47` and is fixed in `>=0.3.47` ([RustSec advisory](https://github.com/rustsec/advisory-db/blob/main/crates/time/RUSTSEC-2026-0009.md)). The existing lockfile uses `time 0.3.55`. The future SeaQuery integration must keep the lock resolved to a patched `time` version if enabling that feature; it must rerun dependency review and audit the complete enabled feature tree. The currently successful dependency-review workflow is evidence for this PR's dependency diff, not a claim that every future optional feature has been audited.
+- **Verified from official manifests:** SeaORM 1.1.20 declares Rust 1.81, edition 2021, MIT OR Apache-2.0, SQLx 0.8.4-compatible dependency range and SeaQuery 0.32.5-compatible dependency range. SeaORM 2.0.4 declares Rust 1.94 and SQLx 0.9.0. Diesel 2.3.14 declares Rust 1.86. Toasty's current 0.11.0 workspace manifest declares Rust 1.95 and SQLx 0.9.0.
+- **Verified from official driver docs/source:** SeaORM 1.1.x lists sqlx-mysql (MySQL and MariaDB), sqlx-postgres and sqlx-sqlite. SeaORM's DatabaseConnection has typed SQLx pool accessors. SeaORM's ConnectionTrait and TransactionTrait require explicit connection/transaction values; its loader API exposes load_one/load_many/load_many_to_many. Its MariaDB RETURNING feature is compile-time and shares the MySQL backend flag.
+- **Verified from RustFlow's repository:** the workspace currently pins SQLx 0.8.6, exposes AnyPool and uses SQLx's migration runner. MySQL and MariaDB use the same MySQL protocol backend family. MongoDB is a separate driver and adapter.
+- **Design inference:** SeaORM 1.1.20 is a better maintained foundation than a RustFlow-authored ORM because it already provides the model, query, transaction and relation abstractions required by the maturity gate while staying inside the current MSRV and SQLx major/minor boundary. The typed-pool bridge is necessary because AnyPool is not accepted directly by SeaORM.
+- **Not yet verified by this subphase:** SeaORM 1.1.20 end-to-end behavior against the exact RustFlow service matrix (PostgreSQL 16.15, MySQL 8.4.13, MariaDB 11.4.13 and bundled SQLite 3.46.0); runtime type codecs; CRUD semantics through RustFlow's DatabasePool; relation query counts; and the complete generated application. These are gates in later subphases, not claims made by this ADR.
 
-## Contract matrix: capabilities and exclusions
+## Capability matrix: final maturity target and 6.7.1 boundary
 
-| Capability | Required final Phase 6.7 contract | 6.7.1 boundary |
+| Capability | Mandatory final Phase 6.7 contract | 6.7.1 scope |
 |---|---|---|
-| Model/table/column metadata | Typed metadata, safe names, primary key(s), nullable/default/generated/read-only | Metadata trait and derive; no SQL execution |
-| Type mapping | Checked codecs with per-engine matrix and no silent loss | Logical categories/specification only; runtime codecs pending |
-| CRUD and bulk operations | Insert/update/delete/read, generated values, affected rows and conflicts | Semantics specified; APIs/execution pending |
-| Query builder | Projections, aliases, nested predicates, NULL/IN/LIKE, ordering/pagination, joins/group/HAVING/subqueries as in the roadmap | SeaQuery selected; runtime API pending |
-| Relationships/loading | belongs-to, one-to-one, one-to-many, many-to-many; explicit eager/batch/nested loading and query-count tests | Contract boundary specified; implementation pending |
-| Transactions/concurrency | Explicit context, rollback/error behavior, engine-specific atomicity; no hidden singleton | Semantics specified; integration pending |
-| Errors/security | Typed validation/encode/decode/connection/constraint/concurrency errors; no secrets; parameters bound | Compile-time model errors in 6.7.1; DB errors pending |
-| Lifecycle hooks / Unit of Work | Not in baseline; no implicit I/O or hidden dirty tracking | Explicitly excluded |
-| SQL migrations | Existing SQLx migration boundary; dialect-specific DDL and no blanket MySQL-family atomicity promise | Existing behavior retained; ORM schema generation excluded |
-| MongoDB ODM | Separate BSON/document/_id/index/query contract | Out of SQL ORM scope; planned as 6.7.3 |
+| Model/entity derives | SeaORM entities, Model and ActiveModel with useful RustFlow compile-time diagnostics | Validation derive and positive/compile-fail tests; no executable RustFlow persistence |
+| Keys and metadata | Names, primary key(s), nullable/default/generated fields, indexes/constraints, relations | Contract and diagnostic subset; SQL DDL stays in migrations |
+| Type mapping | Checked codec matrix per engine; reject overflow/loss and NULL incompatibility | Intended per-engine matrix; runtime codec tests pending |
+| CRUD/bulk | Insert/update/delete/read and semantically supported bulk operations | Operation semantics defined; integration pending |
+| Query builder | Typed projections/aliases, predicates, joins, grouping, pagination, subqueries and dialect capabilities | SeaORM selected; execution through RustFlow's shared pool pending |
+| Relations/loaders | belongs-to, one-to-one, one-to-many, many-to-many; explicit eager/batch/nested loading; query-count tests | Foundation confirmed; RustFlow integration/tests pending |
+| Transactions/errors | Explicit transaction context, rollback and uncertain-commit semantics, safe error mapping | Semantics specified; typed-pool bridge and integration pending |
+| Hooks | SeaORM hooks documented, explicit connection and transaction composition | Hook order/partial failure contract specified |
+| Raw SQL | Explicit parameterized escape hatch and engine-specific SQL | Statement/typed-pool strategy defined; no untrusted interpolation |
+| Migrations | Existing SQLx migrations, dialect-specific DDL and honest non-atomic DDL limitations | Existing migration strategy retained; typed pool adaptation in 6.7.2 |
+| MongoDB ODM | Separate BSON/document contract and verified MongoDB-native behavior | Explicitly outside SQL ORM; 6.7.3 |
 
 ## Failure and transaction semantics
 
-- A persistence command does not mutate a model in place. Successful writes return values with only confirmed generated fields; failures return errors and no success-shaped model.
-- A single statement outside an explicit transaction gets only the atomicity guaranteed by that server/statement. Multi-step operations requiring atomicity must receive an explicit transaction.
-- A failed commit is never reported as success. Network failure during commit can mean an unknown server outcome; callers need reconciliation/idempotency rather than a false rollback guarantee.
-- MySQL/MariaDB DDL can implicitly commit; the ORM must not promise migration DDL rolls back because it was issued inside a transaction wrapper.
-- Ordinary updates are last-write-wins unless an opt-in optimistic-lock/version contract is added and tested.
-- Runtime errors must distinguish model/metadata, value encode/decode, not found, constraint, pool/connection, query, concurrency and transaction failures. Public responses/Debug output must redact URLs and credentials and avoid raw SQL/value dumps.
+- A successful insert/update returns values confirmed by the database or by a follow-up read. RustFlow does not invent database defaults or generated timestamps.
+- A failed write does not return a success-shaped model or mutate the caller's original Model value.
+- An after_save/after_delete hook can fail after the SQL statement succeeded. Outside an explicit transaction, the database change may already be committed; this is a partial failure, not an automatic rollback guarantee.
+- A multi-step operation that must be atomic receives an explicit transaction. A callback error triggers rollback; a successful callback attempts commit.
+- A failed commit is not success. Connection loss during commit can leave the server outcome unknown and requires reconciliation/idempotency.
+- MySQL/MariaDB DDL may implicitly commit. The ORM cannot promise that a failed DDL migration has been fully rolled back by a transaction wrapper.
+- Runtime errors must distinguish metadata/validation, encode/decode, not found, constraints, pool/connection, query and transaction outcomes. Public HTTP errors and Debug output must redact credentials/URLs and avoid raw parameter disclosure.
 
 ## Phase boundaries and exit gates
 
-- **6.7.1:** ADR, metadata contract, per-engine type matrix, derive diagnostics, failure semantics, positive/compile-fail tests, docs/site updates and green required checks on the final PR SHA. It does not deliver executable ORM/query operations.
-- **6.7.2:** typed mapping/decoding, query execution integration, checked binding, CRUD/bulk operations, SeaQuery integration, per-engine error classification and explicit transaction composition. The AnyPool compatibility proof/connection-boundary migration is a gate, not optional follow-up work.
-- **6.7.3:** separate MongoDB ODM using BSON and native collection/document semantics.
-- **6.7.4:** relations and explicit eager/batch/nested loading with query-count/concurrency tests.
-- **6.7.5–6.7.6:** generated application and final quality/maturity gate. Phase 6.7 cannot close until the whole contract passes on four SQL engines and the separate MongoDB ODM contract.
+- **6.7.1:** this ADR and the Data Mapper/foundation decision; model/metadata/type/operation/hook/transaction contract; ModelDiagnostics derive; positive and compile-fail tests; ORM facade; technical and public documentation updates; all relevant required checks green on the final PR SHA. It does not integrate CRUD into RustFlow's legacy AnyPool or close Phase 6.7.
+- **6.7.2:** typed-pool bridge to SeaORM without a second pool; migration and raw-SQL accessor evolution; checked runtime type codecs; query execution; CRUD/bulk operations; per-engine error classification; explicit transaction composition; real-service tests on the four SQL engines.
+- **6.7.3:** MongoDB's separate BSON document mapper/ODM, including native IDs, queries, update operators, indexes and MongoDB-specific transaction/session semantics.
+- **6.7.4:** relational associations, relation mutations, explicit eager/batch/nested loading, query-count and concurrency tests.
+- **6.7.5:** CLI/generated application and complete developer docs/examples against the accepted public APIs.
+- **6.7.6:** final dependency/security, Rust 1.85/stable, compile-fail, runtime integration, WASM/browser, website, governance and quality maturity gate.
+
+Phase 6.7 cannot close until the generated application demonstrates the complete ORM contract on SQLite, PostgreSQL, MySQL and MariaDB and the separate ODM contract on MongoDB. A working CRUD slice alone is insufficient.
 
 ## Upstream references
 
-- [SeaORM 2.0.4 manifest/MSRV](https://docs.rs/crate/sea-orm/2.0.4/source/Cargo.toml) and [SeaORM 1.1.x driver docs](https://www.sea-ql.org/SeaORM/zh-CN/docs/1.1.x/install-and-config/database-and-async-runtime/).
-- [Diesel 2.3.14 manifest/MSRV](https://docs.rs/crate/diesel/2.3.14/source/Cargo.toml).
-- [Toasty manifest](https://github.com/tokio-rs/toasty/blob/main/Cargo.toml) and [release history](https://github.com/tokio-rs/toasty/releases).
-- [SQLx 0.8.6](https://docs.rs/crate/sqlx/0.8.6) and [SQLx placeholder docs](https://docs.rs/sqlx/0.8.6/sqlx/fn.query.html).
-- [SeaQuery 0.32.7 manifest](https://github.com/SeaQL/sea-query/blob/0.32.7/Cargo.toml), [SeaQuery 1.0.2 manifest/MSRV](https://github.com/SeaQL/sea-query/blob/1.0.2/Cargo.toml), [binder manifest](https://github.com/SeaQL/sea-query/blob/0.32.7/sea-query-binder/Cargo.toml), [Any binder source](https://github.com/SeaQL/sea-query/blob/0.32.7/sea-query-binder/src/sqlx_any.rs), [SQLx RustSec advisory](https://rustsec.org/advisories/RUSTSEC-2024-0363.html), [time RustSec advisory](https://github.com/rustsec/advisory-db/blob/main/crates/time/RUSTSEC-2026-0009.md).
-- [RustFlow support matrix](../DATABASE_SUPPORT_MATRIX.md) and [roadmap](../../ROADMAP.md).
+- SeaORM 1.1.20 [manifest](https://docs.rs/crate/sea-orm/1.1.20/source/Cargo.toml.orig), [1.1.x driver/runtime documentation](https://www.sea-ql.org/SeaORM/zh-CN/docs/1.1.x/install-and-config/database-and-async-runtime/), [typed SQLx pool accessors](https://github.com/SeaQL/sea-orm/blob/1.1.20/src/database/db_connection.rs), [active model and hooks](https://github.com/SeaQL/sea-orm/blob/1.1.20/src/entity/active_model.rs), [loader API](https://github.com/SeaQL/sea-orm/blob/1.1.20/src/query/loader.rs).
+- SeaORM 2.0.4 [manifest/MSRV](https://docs.rs/crate/sea-orm/2.0.4/source/Cargo.toml).
+- Diesel 2.3.14 [manifest/MSRV](https://docs.rs/crate/diesel/2.3.14/source/Cargo.toml), [relations documentation](https://diesel.rs/guides/relations.html); diesel-async 0.9.2 [manifest/MSRV and dependency set](https://docs.rs/crate/diesel-async/0.9.2/source/Cargo.toml.orig).
+- Toasty [workspace manifest](https://github.com/tokio-rs/toasty/blob/main/Cargo.toml), [driver source](https://github.com/tokio-rs/toasty/tree/main/crates/toasty-driver-mysql), [MariaDB guide](https://github.com/tokio-rs/toasty/blob/main/docs/guide/src/mysql.md).
+- SQLx 0.8.6 [crate documentation](https://docs.rs/crate/sqlx/0.8.6).
+- RustFlow [database support matrix](../DATABASE_SUPPORT_MATRIX.md), [roadmap](../../ROADMAP.md), [existing SQLx database code](../../crates/rustflow-server/src/database.rs), and [MongoDB adapter contract](./0018-mongodb-document-adapter.md).
