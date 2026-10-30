@@ -857,6 +857,7 @@ fn validate_model_contract(input: &syn::DeriveInput) -> Result<(), syn::Error> {
 
     let mut primary_keys = 0usize;
     let mut auto_increment_key = false;
+    let mut non_autoincrement_primary_keys = 0usize;
     let mut seen_columns = std::collections::HashSet::new();
     for field in fields {
         let field_ident = field
@@ -969,7 +970,11 @@ fn validate_model_contract(input: &syn::DeriveInput) -> Result<(), syn::Error> {
                     "a primary-key field cannot be nullable; use a non-Option type without #[sea_orm(nullable)]",
                 ));
             }
-            auto_increment_key |= auto_increment.unwrap_or(false);
+            match auto_increment {
+                Some(true) => auto_increment_key = true,
+                Some(false) => non_autoincrement_primary_keys += 1,
+                None => {}
+            }
         } else if auto_increment.is_some() {
             return Err(syn::Error::new_spanned(
                 field_ident,
@@ -1009,6 +1014,12 @@ fn validate_model_contract(input: &syn::DeriveInput) -> Result<(), syn::Error> {
         return Err(syn::Error::new_spanned(
             ident,
             "composite primary keys cannot declare auto_increment = true",
+        ));
+    }
+    if primary_keys > 1 && non_autoincrement_primary_keys != primary_keys {
+        return Err(syn::Error::new_spanned(
+            ident,
+            "each composite primary-key field must explicitly declare auto_increment = false",
         ));
     }
     Ok(())
@@ -1100,6 +1111,49 @@ fn validate_model_field_type(ty: &syn::Type, custom_type_mapping: bool) -> Resul
         return Ok(());
     }
 
+    if name == "DateTime" {
+        let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "DateTime requires an explicit Utc or FixedOffset timezone type",
+            ));
+        };
+        if args.args.len() != 1 {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "DateTime requires exactly one timezone type parameter",
+            ));
+        }
+        let Some(syn::GenericArgument::Type(syn::Type::Path(timezone))) = args.args.first()
+        else {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "DateTime timezone must be Utc or FixedOffset",
+            ));
+        };
+        let timezone_name = timezone
+            .path
+            .segments
+            .last()
+            .map(|part| part.ident.to_string())
+            .unwrap_or_default();
+        match timezone_name.as_str() {
+            "Utc" | "FixedOffset" => {}
+            "Local" => {
+                return Err(syn::Error::new_spanned(
+                    ty,
+                    "DateTime<Local> is not portable; use DateTime<Utc> or DateTime<FixedOffset>",
+                ));
+            }
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    ty,
+                    "DateTime timezone must be Utc or FixedOffset; other timezone types are unsupported",
+                ));
+            }
+        }
+    }
+
     // Keep the portable, feature-enabled type surface explicit. Qualified paths
     // such as uuid::Uuid and chrono::NaiveDateTime are recognized by their final
     // type segment. Custom SeaORM ValueType / ActiveEnum implementations require
@@ -1107,7 +1161,6 @@ fn validate_model_field_type(ty: &syn::Type, custom_type_mapping: bool) -> Resul
     let supported = matches!(
         name.as_str(),
         "bool"
-            | "char"
             | "i8"
             | "i16"
             | "i32"
@@ -1126,9 +1179,6 @@ fn validate_model_field_type(ty: &syn::Type, custom_type_mapping: bool) -> Resul
             | "Date"
             | "Time"
             | "DateTime"
-            | "DateTimeWithTimeZone"
-            | "DateTimeUtc"
-            | "DateTimeLocal"
             | "NaiveDate"
             | "NaiveTime"
             | "NaiveDateTime"
@@ -1315,6 +1365,72 @@ mod model_diagnostics_tests {
                 .contains("unsupported SQL model field type")
         );
         assert!(validate(custom_enum).is_ok());
+    }
+
+    #[test]
+    fn rejects_composite_keys_without_explicit_non_autoincrement_markers() {
+        let missing_marker = r#"
+            #[sea_orm(table_name = "tenant_items")]
+            struct Model {
+                #[sea_orm(primary_key, auto_increment = false)]
+                tenant_id: i64,
+                #[sea_orm(primary_key)]
+                item_id: i64,
+            }
+        "#;
+        let generated_marker = r#"
+            #[sea_orm(table_name = "tenant_items")]
+            struct Model {
+                #[sea_orm(primary_key, auto_increment = false)]
+                tenant_id: i64,
+                #[sea_orm(primary_key, auto_increment = true)]
+                item_id: i64,
+            }
+        "#;
+        assert!(
+            validate(missing_marker)
+                .unwrap_err()
+                .to_string()
+                .contains("each composite primary-key field")
+        );
+        assert!(
+            validate(generated_marker)
+                .unwrap_err()
+                .to_string()
+                .contains("composite primary keys cannot declare auto_increment = true")
+        );
+    }
+
+    #[test]
+    fn rejects_local_or_unspecified_datetime_timezones() {
+        let local = r#"
+            #[sea_orm(table_name = "events")]
+            struct Model {
+                #[sea_orm(primary_key)]
+                id: i64,
+                occurred_at: chrono::DateTime<chrono::Local>,
+            }
+        "#;
+        let unspecified = r#"
+            #[sea_orm(table_name = "events")]
+            struct Model {
+                #[sea_orm(primary_key)]
+                id: i64,
+                occurred_at: chrono::DateTime,
+            }
+        "#;
+        assert!(
+            validate(local)
+                .unwrap_err()
+                .to_string()
+                .contains("DateTime<Local> is not portable")
+        );
+        assert!(
+            validate(unspecified)
+                .unwrap_err()
+                .to_string()
+                .contains("DateTime requires an explicit Utc or FixedOffset")
+        );
     }
 
     #[test]
