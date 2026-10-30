@@ -850,7 +850,7 @@ mod tests {
             .await
             .unwrap();
 
-        let mut transaction = database.begin_transaction().await.unwrap();
+        let transaction = database.begin_transaction().await.unwrap();
         transaction
             .execute_raw(
                 "INSERT INTO transaction_items (value) VALUES (?)",

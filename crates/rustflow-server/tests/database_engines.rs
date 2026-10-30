@@ -175,7 +175,7 @@ async fn run_contract(url: &str, server: ExpectedServer) {
     );
     assert!(std::error::Error::source(&mapped_error).is_some());
 
-    let mut rollback = database
+    let rollback = database
         .begin_transaction()
         .await
         .expect("begin rollback transaction");
@@ -188,7 +188,7 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .expect("write in rollback transaction");
     rollback.rollback().await.expect("rollback transaction");
 
-    let mut commit = database
+    let commit = database
         .begin_transaction()
         .await
         .expect("begin commit transaction");
