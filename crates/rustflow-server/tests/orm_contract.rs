@@ -156,7 +156,6 @@ mod entities {
         impl ActiveModelBehavior for ActiveModel {}
     }
 
-
     pub mod codec {
         use rustflow_server::sea_orm::entity::prelude::*;
 
