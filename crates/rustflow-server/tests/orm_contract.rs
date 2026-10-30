@@ -93,7 +93,6 @@ mod entities {
         impl ActiveModelBehavior for ActiveModel {}
     }
 
-
     pub mod tag {
         use rustflow_server::sea_orm::entity::prelude::*;
 
