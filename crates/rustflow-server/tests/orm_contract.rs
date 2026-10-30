@@ -30,11 +30,50 @@ mod entities {
         pub enum Relation {
             #[sea_orm(has_many = "super::note::Entity")]
             Notes,
+            #[sea_orm(has_one = "super::profile::Entity")]
+            Profile,
         }
 
         impl Related<super::note::Entity> for Entity {
             fn to() -> RelationDef {
                 Relation::Notes.def()
+            }
+        }
+
+        impl Related<super::profile::Entity> for Entity {
+            fn to() -> RelationDef {
+                Relation::Profile.def()
+            }
+        }
+
+        impl ActiveModelBehavior for ActiveModel {}
+    }
+
+    pub mod profile {
+        use rustflow_server::sea_orm::entity::prelude::*;
+
+        #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+        #[sea_orm(table_name = "rustflow_orm_profiles")]
+        pub struct Model {
+            #[sea_orm(primary_key)]
+            pub id: i64,
+            pub account_id: i64,
+            pub bio: String,
+        }
+
+        #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+        pub enum Relation {
+            #[sea_orm(
+                belongs_to = "super::account::Entity",
+                from = "Column::AccountId",
+                to = "super::account::Column::Id"
+            )]
+            Account,
+        }
+
+        impl Related<super::account::Entity> for Entity {
+            fn to() -> RelationDef {
+                Relation::Account.def()
             }
         }
 
@@ -92,6 +131,10 @@ async fn create_schema(database: &DatabasePool) {
         .execute_raw("DROP TABLE IF EXISTS rustflow_orm_notes", [])
         .await
         .expect("drop notes table");
+    database
+        .execute_raw("DROP TABLE IF EXISTS rustflow_orm_profiles", [])
+        .await
+        .expect("drop profiles table");
     database
         .execute_raw("DROP TABLE IF EXISTS rustflow_orm_accounts", [])
         .await
@@ -155,6 +198,18 @@ async fn create_schema(database: &DatabasePool) {
         .execute_raw(&notes, [])
         .await
         .expect("create notes table");
+    let profiles = format!(
+        "CREATE TABLE rustflow_orm_profiles (
+            id {note_id},
+            account_id BIGINT NOT NULL UNIQUE,
+            bio VARCHAR(255) NOT NULL,
+            FOREIGN KEY (account_id) REFERENCES rustflow_orm_accounts(id) ON DELETE CASCADE
+        )"
+    );
+    database
+        .execute_raw(&profiles, [])
+        .await
+        .expect("create profiles table");
 }
 
 async fn exercise_orm(database: &DatabasePool) {
@@ -191,6 +246,16 @@ async fn exercise_orm(database: &DatabasePool) {
     assert_eq!(first.metadata["level"], 3);
     assert_eq!(first.checksum, [0, 1, 2, 255]);
     assert_eq!(second.alias, None);
+
+    database
+        .entity::<entities::profile::Entity>()
+        .insert(entities::profile::ActiveModel {
+            account_id: Set(first.id),
+            bio: Set("Analytical engine notes".to_owned()),
+            ..Default::default()
+        })
+        .await
+        .expect("insert one-to-one profile");
 
     let first_note = entities::note::ActiveModel {
         account_id: Set(first.id),
@@ -269,9 +334,12 @@ async fn exercise_orm(database: &DatabasePool) {
     assert_eq!(children[0].len(), 2);
     assert_eq!(children[1].len(), 1);
 
-    let loaded_one = load_one(&parents, entities::account::Entity, database.orm())
-        .await;
-    assert!(loaded_one.is_err(), "a model is not related to itself by default");
+    let profiles = load_one(&parents, entities::profile::Entity, database.orm())
+        .await
+        .expect("batch load one-to-one relation");
+    assert_eq!(profiles.len(), 2);
+    assert_eq!(profiles[0].as_ref().map(|profile| profile.bio.as_str()), Some("Analytical engine notes"));
+    assert!(profiles[1].is_none());
 
     let grouped: Vec<(i64, i64)> = entities::note::Entity::find()
         .select_only()
@@ -442,4 +510,65 @@ async fn mariadb_orm_contract() {
     };
     let database = database_from_url(&url).await;
     exercise_orm(&database).await;
+}
+
+
+#[tokio::test]
+async fn batch_loader_executes_one_related_query_for_many_parents() {
+    use rustflow_server::sea_orm::{DbBackend, MockDatabase};
+
+    let database = MockDatabase::new(DbBackend::Sqlite)
+        .append_query_results([vec![
+            entities::note::Model {
+                id: 1,
+                account_id: 10,
+                title: "first".to_owned(),
+                body: None,
+            },
+            entities::note::Model {
+                id: 2,
+                account_id: 10,
+                title: "second".to_owned(),
+                body: None,
+            },
+            entities::note::Model {
+                id: 3,
+                account_id: 11,
+                title: "third".to_owned(),
+                body: None,
+            },
+        ]])
+        .into_connection();
+    let parents = vec![
+        entities::account::Model {
+            id: 10,
+            email: "one@example.test".to_owned(),
+            enabled: true,
+            alias: None,
+            metadata: serde_json::json!({}),
+            checksum: vec![],
+        },
+        entities::account::Model {
+            id: 11,
+            email: "two@example.test".to_owned(),
+            enabled: true,
+            alias: None,
+            metadata: serde_json::json!({}),
+            checksum: vec![],
+        },
+    ];
+
+    let loaded = load_many(&parents, entities::note::Entity, &database)
+        .await
+        .expect("load related rows in one batch");
+    assert_eq!(loaded.len(), 2);
+    assert_eq!(loaded[0].len(), 2);
+    assert_eq!(loaded[1].len(), 1);
+
+    let query_log = database.into_transaction_log();
+    assert_eq!(
+        query_log.len(),
+        1,
+        "batch loading must issue one related query for the whole parent slice"
+    );
 }

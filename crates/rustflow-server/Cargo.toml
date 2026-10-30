@@ -30,6 +30,7 @@ rustflow-view = { path = "../rustflow-view" }
 rustflow-ssr = { path = "../rustflow-ssr" }
 
 [dev-dependencies]
+sea-orm = { workspace = true, features = ["mock"] }
 rcgen = "0.14"
 rustls.workspace = true
 tokio-rustls.workspace = true
