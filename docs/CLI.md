@@ -1,4 +1,4 @@
-# CLI de RustFlow (Fase 6.1)
+# CLI de RustFlow (Fases 6.1 y 6.7.5)
 
 El paquete `rustflow-cli` publica el ejecutable experimental `rustflow`. RustFlow es pre-1.0 y todavía no hay una publicación estable de los crates en crates.io. El método disponible es instalar el CLI desde un checkout:
 
@@ -14,7 +14,7 @@ El build script obtiene el SHA completo del checkout Git (o de la variable expl�
 
 ## Comandos
 
-- `rustflow new <nombre> [--path <directorio-padre>]`: crea un scaffold de servidor HTTP. El padre debe existir y el destino no puede existir previamente.
+- `rustflow new <nombre> [--path <directorio-padre>] [--template server|crud]`: crea una aplicación. `server` es la plantilla predeterminada y conserva el scaffold HTTP anterior; `crud` genera una aplicación CRUD SQL de demostración. El padre debe existir y el destino no puede existir previamente.
 - `rustflow dev [--release] [--offline] [--locked] [-- <args>]`: ejecuta una vez `cargo run`; los argumentos tras `--` se pasan al ejecutable.
 - `rustflow build [--release] [--target <triple>] [--features <lista>] [--all-features] [--no-default-features] [--offline] [--locked]`: delega a `cargo build`.
 - `rustflow generate <component|page|controller|model|migration> <nombre>`: crea un archivo nuevo protegido contra colisiones. `rustflow g` es un alias.
@@ -23,9 +23,31 @@ Los comandos de ejecución y build requieren estar dentro de un paquete RustFlow
 
 ## Scaffolding
 
-El scaffold contiene una ruta HTTP, una página construida con `rustflow::view::View`, un controller y los directorios de componentes/modelos/migraciones. El helper público `html_document` convierte la vista en un documento HTML. La aplicación carga `rustflow_server::AppConfig` antes de escuchar: en desarrollo/test lee opcionalmente `.env` y `.env.<perfil>`, y acepta `RUSTFLOW_HOST`/`RUSTFLOW_PORT`. Consulta [Configuración por entornos](CONFIGURATION.md) para la precedencia y el comportamiento seguro de producción.
+La plantilla `server` (predeterminada) contiene una ruta HTTP, una página construida con `rustflow::view::View`, un controller y los directorios de componentes/modelos/migraciones. El helper público `html_document` convierte la vista en un documento HTML. La aplicación carga `rustflow_server::AppConfig` antes de escuchar: en desarrollo/test lee opcionalmente `.env` y `.env.<perfil>`, y acepta `RUSTFLOW_HOST`/`RUSTFLOW_PORT`. Consulta [Configuración por entornos](CONFIGURATION.md) para la precedencia y el comportamiento seguro de producción.
 
 Las dependencias Git del proyecto se fijan al commit usado por el CLI. La primera compilación requiere acceso a ese repositorio salvo que el checkout esté disponible en la caché de Cargo. No se promete compatibilidad de API más allá de esa revisión.
+
+## Plantilla CRUD (`--template crud`)
+
+La plantilla CRUD se elige explícitamente; no cambia el comportamiento de `rustflow new` para los proyectos existentes.
+
+~~~sh
+rustflow new products --template crud
+cd products
+cp .env.example .env
+# Sustituye los valores demo locales y la clave CSRF antes de iniciar.
+rustflow dev
+~~~
+
+Genera una entidad `Product` con `ModelDiagnostics` + `DeriveEntityModel`, rutas para listar/ver/crear/editar/eliminar, formularios `ValidateInput`, acceso mediante `DatabasePool::entity`/`EntityRepository`, una operación transaccional con rollback explícito, login de demostración, guards de autenticación/autorización, middleware CSRF explícito y documentos HTML construidos con `Element`, `View` y `html_document`.
+
+La plantilla genera migraciones distintas en `migrations/sqlite`, `migrations/postgres` y `migrations/mysql`; MariaDB utiliza el driver MySQL y el mismo directorio. Cambiar `RUSTFLOW_DATABASE_URL` no convierte el SQL ni el DDL entre dialectos. `src/bin/migrate.rs` selecciona el directorio según `DatabaseBackend`.
+
+**Límites del ejemplo:** el login valida una sola cuenta configurada en `.env`, no proporciona un almacén de usuarios ni ciclo de vida de cuentas. La plantilla usa `InMemorySessionStore` y `SessionCookieConfig::development()` y rechaza `RUSTFLOW_ENV=production`; no es una plantilla lista para producción. Sustituye sesión, autenticación, cookies, CSRF y configuración operativa antes de un despliegue real.
+
+## Compatibilidad del generador de modelos
+
+`rustflow generate model <Name>` continúa creando un struct de dominio plano. Se conserva por compatibilidad: un nombre no permite inferir de forma segura tabla, columnas, tipos, claves, nulabilidad ni relaciones. La plantilla CRUD declara explícitamente su entidad SeaORM usando el contrato aceptado de `ModelDiagnostics` y `DeriveEntityModel`; no transforma modelos existentes ni inventa atributos.
 
 ## Protección frente a colisiones
 
@@ -59,8 +81,8 @@ cargo test --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 ~~~
 
-Las pruebas de integración usan directorios temporales. Cubren proyectos válidos, nombres/rutas inválidas, conflictos, cinco tipos generados, preservación de archivos existentes, determinismo, build/run y una petición HTTP a un proyecto generado. CI también instala el CLI y prueba `--help` y versión.
+Las pruebas de integración usan directorios temporales. Además de los cinco generadores existentes, la prueba CRUD crea el proyecto con `--template crud` sin reemplazar su `src/main.rs`, compila el binario generado y lo prueba mediante peticiones HTTP contra SQLite, ORM, validación, autorización, CSRF, rollback y SSR. CI también instala el CLI y prueba `--help` y versión.
 
 ## Límites explícitos
 
-La configuración de la Fase 6.2 solo cubre perfil, host y puerto; no es un sistema general ni almacena secretos. El CLI y el scaffold no conectan automáticamente validación tipada, `CsrfProtection`, `SessionManager` ni guards de autenticación/autorización; esas APIs experimentales están disponibles por separado en `rustflow-server` (consulta [FORM_VALIDATION.md](FORM_VALIDATION.md) y [ADR 0015](adr/0015-sessions-and-access-control.md)). La Fase 6.6 está completa: MySQL/MariaDB y el adaptador MongoDB se integraron, y la matriz de motores quedó publicada en [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md). La Fase 6.7.2 integra el ORM SQL experimental de SeaORM sobre pools SQLx tipados compartidos; la 6.7.3 integra el ODM documental MongoDB independiente (consulta [DATABASES.md](DATABASES.md)). Sin embargo, `rustflow generate model` continúa generando un struct de dominio ordinario: no crea entidades SeaORM, implementaciones `DocumentModel`, repositorios ni un esquema persistente automáticamente. El scaffold sí incluye el pool SQLx y el runner de migraciones descritos en `DATABASES.md`, pero no genera por sí solo una aplicación CRUD completa con autenticación y autorización de negocio. Siguen pendientes server actions y almacenamiento SQL durable para `SessionStore`; `InMemorySessionStore` permanece volátil y local al proceso. No hay file watcher, hot reload, preservación de estado, proxy de desarrollo ni bundler integrado server/browser. `use_memo`, `use_ref` y `use_context` siguen pendientes.
+La configuración de la Fase 6.2 solo cubre perfil, host y puerto; no es un sistema general ni almacena secretos. La plantilla `server` no conecta automáticamente validación tipada, `CsrfProtection`, `SessionManager` ni guards de autenticación/autorización; estas APIs siguen requiriendo configuración explícita. La plantilla `crud` muestra su composición para un caso educativo, pero utiliza sesión volátil y un login de demostración (consulta [FORM_VALIDATION.md](FORM_VALIDATION.md) y [ADR 0015](adr/0015-sessions-and-access-control.md)). La Fase 6.6 está completa: MySQL/MariaDB y el adaptador MongoDB se integraron, y la matriz de motores quedó publicada en [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md). La Fase 6.7.2 integra el ORM SQL experimental de SeaORM sobre pools SQLx tipados compartidos; la 6.7.3 integra el ODM documental MongoDB independiente (consulta [DATABASES.md](DATABASES.md)). Sin embargo, `rustflow generate model` continúa generando un struct de dominio ordinario: no crea entidades SeaORM, implementaciones `DocumentModel`, repositorios ni un esquema persistente automáticamente. El scaffold sí incluye el pool SQLx y el runner de migraciones descritos en `DATABASES.md`, pero no genera por sí solo una aplicación CRUD completa con autenticación y autorización de negocio. Siguen pendientes server actions y almacenamiento SQL durable para `SessionStore`; `InMemorySessionStore` permanece volátil y local al proceso. No hay file watcher, hot reload, preservación de estado, proxy de desarrollo ni bundler integrado server/browser. `use_memo`, `use_ref` y `use_context` siguen pendientes.

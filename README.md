@@ -26,7 +26,7 @@ Consulta el [estado público de las capacidades](website/src/content/docs/projec
 - La configuración de la Fase 6.2 cubre solo perfil, host y puerto; no es un sistema general ni un gestor de secretos.
 - La Fase 6.4 de sesiones y control de acceso ya está integrada en `main` y sus checks post-merge pasaron. Las APIs siguen siendo experimentales: `InMemorySessionStore` es volátil y local al proceso, y la Fase 6.5 no añade un adaptador SQL durable para sesiones. No se incluyen proveedor de usuarios, OAuth/OIDC, MFA, recuperación de cuentas ni rate limiting.
 - Un router general integrado: el callback de navegación cliente y las rutas HTTP de servidor no son un router full-stack unificado.
-- La Fase 6.5 añadió pools, transacciones y migraciones SQLx; las fases 6.6.1–6.6.3 completaron el soporte documentado de SQLite, PostgreSQL, MySQL, MariaDB y el adaptador MongoDB. La Fase 6.7 está en progreso: 6.7.1 (ADR 0020 y contrato de modelos), 6.7.2 (ORM SQL con SeaORM/pool compartido) y 6.7.3 (ODM MongoDB independiente) están integradas en `main`. La subfase 6.7.4 de relaciones/carga SQL avanzada también quedó integrada mediante PR #62 en el commit `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`; añade opciones de filtro/orden, proyecciones DTO has-many, grafos explícitos con profundidad acotada y helpers de asociación/reasignación/desasociación/reemplazo uno-a-uno. El ODM tipado reutiliza el cliente MongoDB existente y mantiene separada la semántica documental de SQL. Ambas APIs continúan experimentales; quedan pendientes la aplicación CRUD generada (6.7.5) y el gate global de madurez/compatibilidad (6.7.6). Siguen pendientes sesiones SQL durables, proveedor de usuarios y una receta de despliegue de producción validada.
+- La Fase 6.5 añadió pools, transacciones y migraciones SQLx; las fases 6.6.1–6.6.3 completaron el soporte documentado de SQLite, PostgreSQL, MySQL, MariaDB y el adaptador MongoDB. La Fase 6.7 está en progreso: 6.7.1 (ADR 0020 y contrato de modelos), 6.7.2 (ORM SQL con SeaORM/pool compartido) y 6.7.3 (ODM MongoDB independiente) están integradas en `main`. La subfase 6.7.4 de relaciones/carga SQL avanzada también quedó integrada mediante PR #62 en el commit `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`; añade opciones de filtro/orden, proyecciones DTO has-many, grafos explícitos con profundidad acotada y helpers de asociación/reasignación/desasociación/reemplazo uno-a-uno. El ODM tipado reutiliza el cliente MongoDB existente y mantiene separada la semántica documental de SQL. Ambas APIs continúan experimentales; la aplicación CRUD generada y el flujo `rustflow new --template crud` se proponen en esta rama para Phase 6.7.5 y siguen sujetos a los checks y revisión antes de integrarse en `main`; el gate global de madurez/compatibilidad (6.7.6) permanece pendiente. Siguen pendientes sesiones SQL durables, proveedor de usuarios y una receta de despliegue de producción validada.
 - Un flujo de desarrollo y despliegue de producción validado, una política completa de compatibilidad y la revisión de seguridad de producción.
 
 La hidratación y la navegación cliente existen como APIs explícitas y optativas; no activan automáticamente todas las páginas ni convierten por sí solas un proyecto en una aplicación full-stack lista para producción. Las cargas de archivo y los métodos de mutación no forman parte de la mejora progresiva de formularios actual.
@@ -66,14 +66,17 @@ cargo run -p rustflow-server --example basic
 
 Abre <code>http://127.0.0.1:3000/</code>. Para compilar y ejecutar el ejemplo del navegador, consulta [examples/browser/README.md](examples/browser/README.md). Para ejecutar el website, consulta [website/README.md](website/README.md).
 
-No existe una publicación estable de RustFlow en crates.io. Desde un checkout de este repositorio puedes instalar el CLI experimental y crear una aplicación de servidor:
+No existe una publicación estable de RustFlow en crates.io. Desde un checkout de este repositorio puedes instalar el CLI experimental y crear una aplicación de servidor o un CRUD ORM de demostración:
 
 ~~~sh
 cargo install --path crates/rustflow-cli --locked
 rustflow new hello-rustflow
+# Alternativa: rustflow new products --template crud
 cd hello-rustflow
 rustflow dev
 ~~~
+
+Para el CRUD generado, copia `.env.example` a `.env` y sustituye el usuario/clave demo y la clave CSRF local. La plantilla `crud` demuestra validación, `DatabasePool::entity`/`EntityRepository`, operaciones CRUD, rollback explícito, autorización, CSRF y renderizado SSR seguro. Usa `InMemorySessionStore`, login de demostración y cookies de desarrollo; rechaza `RUSTFLOW_ENV=production` y no es una plantilla lista para producción.
 
 Consulta [docs/CLI.md](docs/CLI.md), [docs/CONFIGURATION.md](docs/CONFIGURATION.md), la [guía pública del CLI](website/src/content/docs/guides/cli.md) y la [guía pública de configuración](website/src/content/docs/guides/configuration.md) para conocer comandos, perfiles y límites de la aplicación generada.
 

@@ -428,9 +428,9 @@ The 6.7.2 baseline is verified: all four SQL relation kinds have integration cov
 **Acceptance record (2026-10-31):** filtered/ordered loading, has-many DTO projection, bounded relation graphs and explicit mutation helpers were covered by mock/query-count tests and the SQLite, PostgreSQL, MySQL and MariaDB ORM integration contract. The final PR HEAD passed all required workflows before merge: CI run `41225860253`, Documentation site `41225860244`, Dependency review `41225860245`, and Governance checks `41225860215`. PR #62 was squash-merged into `main` as `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`. This closes subphase 6.7.4, not the global Phase 6.7 maturity gate.
 
 ### 6.7.5 CLI, generated applications, and documentation
-- [ ] Evolve `rustflow generate model` only after the model contract is accepted; keep the current generator's plain-struct behavior until then.
-- [ ] Add a generated CRUD application that proves validation, persistence, transactions, authorization/CSRF integration, and rendered output using the supported ORM surface.
-- [x] Document real examples and limits in `docs/`, README, and `website/src/content/docs`; keep examples matched to the public API. Phase 6.7.4's relation loading/projection/graph/mutation examples and their limits are documented in the technical guide, contract, ADR and public website.
+- [x] Audit the accepted `ORM_MODEL_CONTRACT.md`/ADR 0020 before changing generation. Keep `rustflow generate model` as a plain domain struct for compatibility: a type name alone cannot safely infer table/field/key/nullability/relation metadata. The CRUD template demonstrates the accepted `ModelDiagnostics` + `DeriveEntityModel` declaration explicitly.
+- [ ] Add and verify a generated CRUD application that proves validation, ORM persistence, explicit transactions/rollback, authorization/CSRF integration, and rendered output. The implementation is proposed in `feat/phase-6-7-5-generated-crud-app`; acceptance remains open until the generated-app and required CI evidence pass on the final PR HEAD.
+- [ ] Synchronize technical/public docs and runnable examples after the implementation API is verified. The 6.7.4 relation loading/projection/graph/mutation contracts remain unchanged.
 
 ### 6.7.6 Quality and compatibility gate
 - [ ] Run unit, compile-fail, property/model-based where useful, integration, and query-safety tests across all supported SQL engines and MongoDB.
