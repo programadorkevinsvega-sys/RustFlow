@@ -9,6 +9,16 @@ SeaORM se construye a partir de un clone del mismo pool SQLx; no se crea una seg
 
 La subfase 6.7.2 quedó fusionada mediante Squash Merge en `main` el 2026-10-31, con el commit `8d387943d5f6ccb4d3f33ba3708311442e238c5f`. <code>DatabasePool::entity</code> y <code>EntityRepository</code> ofrecen CRUD/bulk y queries SeaORM tipadas, loaders de relaciones explícitos y transacciones ORM/SQL compartidas. El contrato ejecutó SQLite, PostgreSQL, MySQL y MariaDB; también pasaron los límites numéricos por dialecto, los conteos de consultas anidadas, las mutaciones relacionales y la inyección real de pérdida de conexión durante <code>COMMIT</code>. Los 8 checks requeridos quedaron verdes en el SHA <code>2cadce73c19c37c2f088f572ea37a83c65c72380</code>. La API sigue siendo experimental; consulta los límites de codec y las fases pendientes descritos más abajo y en el contrato técnico.
 
+## Aplicación CRUD generada
+
+La plantilla `rustflow new <nombre> --template crud` conecta la superficie ORM SQL aceptada con el adaptador HTTP. Conserva un único `DatabasePool` y utiliza `database.entity::<ProductEntity>()` para insertar, buscar, listar, actualizar y borrar. La entidad de `src/models/product.rs` combina `ModelDiagnostics` con `DeriveEntityModel` de SeaORM.
+
+El ejemplo contiene migraciones específicas en `migrations/sqlite`, `migrations/postgres` y `migrations/mysql`; MariaDB comparte el backend y directorio MySQL. No se debe cambiar solo `RUSTFLOW_DATABASE_URL` y asumir que el DDL es portable.
+
+El endpoint `POST /admin/transaction-rollback-probe` inserta dos productos con el mismo SKU dentro de una transacción explícita. La segunda escritura viola la restricción única y la aplicación solicita `rollback`; la prueba de integración comprueba que la primera inserción tampoco permanece.
+
+La app protege lecturas con guards de sesión y mutaciones con autorización y CSRF explícitos. Es un ejemplo local: utiliza `InMemorySessionStore`, una cuenta demo y cookies de desarrollo; rechaza `RUSTFLOW_ENV=production`. No es una receta de despliegue ni aporta proveedor de usuarios o almacenamiento de sesión durable.
+
 ## Foundation seleccionado para SQL ORM
 
 RustFlow usa el patrón **Data Mapper** con SeaORM. Las entidades y modelos los genera SeaORM mediante <code>DeriveEntityModel</code>; <code>ModelDiagnostics</code> valida el subconjunto de metadatos de RustFlow, pero no reemplaza los derives de SeaORM.
@@ -548,7 +558,7 @@ Limitaciones que deben respetarse:
 - **Phase 6.7.2:** integrada en `main` mediante PR #59; la implementación incluye CRUD/bulk, consultas tipadas, transacciones mixtas, codecs y loaders explícitos, con contrato en los cuatro motores SQL.
 - **Phase 6.7.3:** ODM MongoDB tipado independiente, fusionado en `main` mediante PR #60 (HEAD final `659f1750d611e57315263216167d43375da23574`; merge `7ffb89b5ca36017a428cf3f828b68f590f8d404b`). La implementación y sus límites están en la [guía ODM MongoDB](/guides/mongodb-odm/) y [ADR 0021](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0021-mongodb-odm-architecture.md).
 - **Phase 6.7.4:** aceptada y fusionada mediante PR #62 (HEAD final `28218456db8ac323731054e291023a0765474125`; merge `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`). Añade `RelationLoadOptions` para filtros/orden por relación, `load_many_projected` para DTOs has-many, `RelationGraph` con ramas/niveles explícitos (profundidad predeterminada 8, máxima 16) y helpers `attach_one_to_many`, `detach_one_to_many` y `replace_one_to_one`. Los límites (offset/limit global al batch, proyecciones como hojas, sin lazy loading ni cascadas implícitas) están documentados en [ADR 0022](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0022-advanced-sql-relation-loading.md).
-- **Phase 6.7.5:** pendiente; aplicación CRUD generada que pruebe persistencia, relaciones, validación, transacciones y salida renderizada.
+- **Phase 6.7.5:** plantilla CRUD generada propuesta en `feat/phase-6-7-5-generated-crud-app`; aceptación pendiente de compilar/ejecutar la plantilla y pasar CI sobre el HEAD final del PR.
 - **Phase 6.7.6:** pendiente; gate global de calidad, compatibilidad y madurez ORM/ODM.
 
 La Phase 6.6 ya está completa y su matriz verificada está en `docs/DATABASE_SUPPORT_MATRIX.md`. El adaptador MongoDB de la 6.6.2 y el ODM independiente de Phase 6.7.3 están disponibles en `main`; el último se fusionó mediante PR #60 (`7ffb89b5ca36017a428cf3f828b68f590f8d404b`).
