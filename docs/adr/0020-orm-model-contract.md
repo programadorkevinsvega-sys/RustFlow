@@ -1,6 +1,6 @@
 # ADR 0020: SQL ORM architecture, foundation and model contract
 
-- Status: Accepted with Phase 6.7.1 (PR #58, merge commit `36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1`); Phase 6.7.2 implementation in progress.
+- Status: Accepted with Phase 6.7.1 (PR #58, merge commit `36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1`); Phase 6.7.2 accepted and merged in PR #59 (merge commit `8d387943d5f6ccb4d3f33ba3708311442e238c5f`).
 - Phase: 6.7.1 — Model contract and architecture.
 - Related: ADR 0016 (SQLx pools and migrations), ADR 0017 (MySQL/MariaDB driver), ADR 0018 (MongoDB document adapter), ADR 0019 (database support matrix), [ORM model contract](../ORM_MODEL_CONTRACT.md).
 
