@@ -492,10 +492,7 @@ async fn exercise_type_codecs(database: &DatabasePool) {
     let (decimal, big_decimal_text) = if database.backend() == DatabaseBackend::Sqlite {
         (Decimal::new(125, 1), "12.5")
     } else {
-        (
-            Decimal::new(12_345, 2),
-            "12345678901234567890.1234567890",
-        )
+        (Decimal::new(12_345, 2), "12345678901234567890.1234567890")
     };
     let big_decimal =
         BigDecimal::from_str(big_decimal_text).expect("valid integration decimal value");
