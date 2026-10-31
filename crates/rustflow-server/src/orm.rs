@@ -83,6 +83,21 @@ where
             .map_err(DatabaseError::OrmQuery)
     }
 
+    /// Start a native SeaORM insert builder for explicit dialect-specific behavior.
+    ///
+    /// Use this to compose OnConflict/upsert statements or select a RETURNING strategy.
+    /// Check DatabasePool::capabilities before requesting a returned model: the shared
+    /// MySQL/MariaDB backend does not advertise INSERT RETURNING.
+    pub fn insert_builder(
+        &self,
+        active_model: E::ActiveModel,
+    ) -> sea_orm::Insert<E::ActiveModel>
+    where
+        E::ActiveModel: ActiveModelTrait<Entity = E>,
+    {
+        E::insert(active_model)
+    }
+
     /// Insert an ActiveModel and return the database-observed Model.
     pub async fn insert(&self, active_model: E::ActiveModel) -> Result<E::Model, DatabaseError>
     where
