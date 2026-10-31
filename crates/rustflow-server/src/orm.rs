@@ -88,10 +88,7 @@ where
     /// Use this to compose OnConflict/upsert statements or select a RETURNING strategy.
     /// Check DatabasePool::capabilities before requesting a returned model: the shared
     /// MySQL/MariaDB backend does not advertise INSERT RETURNING.
-    pub fn insert_builder(
-        &self,
-        active_model: E::ActiveModel,
-    ) -> sea_orm::Insert<E::ActiveModel>
+    pub fn insert_builder(&self, active_model: E::ActiveModel) -> sea_orm::Insert<E::ActiveModel>
     where
         E::ActiveModel: ActiveModelTrait<Entity = E>,
     {
