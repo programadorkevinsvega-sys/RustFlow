@@ -1,9 +1,9 @@
 //! A document-oriented MongoDB adapter kept separate from SQLx and SQL migrations.
 //!
-//! The adapter intentionally exposes the official driver's collection API rather than
-//! introducing an ODM, query builder, or relational abstraction.
+//! The low-level adapter owns the official driver client, BSON helpers and collection lifecycle.
+//! The independent typed document ODM is implemented in the sibling document_odm module.
 
-use std::{error::Error as StdError, fmt, future::IntoFuture, time::Duration};
+use std::{error::Error as StdError, fmt, future::{Future, IntoFuture}, time::Duration};
 
 use crate::mongodb_driver::{
     Client, Collection, Database, IndexModel,
@@ -300,6 +300,17 @@ pub struct MongoDatabase {
     operation_timeout: Duration,
 }
 
+impl Clone for MongoDatabase {
+    fn clone(&self) -> Self {
+        Self {
+            client: self.client.clone(),
+            database: self.database.clone(),
+            database_name: self.database_name.clone(),
+            operation_timeout: self.operation_timeout,
+        }
+    }
+}
+
 impl fmt::Debug for MongoDatabase {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -372,6 +383,27 @@ impl MongoDatabase {
             .await
             .map_err(|_| MongoError::Timeout)?
             .map_err(MongoError::Operation)
+    }
+
+    /// Execute an owned driver future in a detached task and time out only its JoinHandle.
+    ///
+    /// The driver future is polled to completion even if the caller times out, avoiding
+    /// cancellation of an in-flight driver operation. A timeout does not reveal whether a
+    /// write reached or was applied by the server; callers must reconcile that outcome.
+    pub(crate) async fn run_owned_with_timeout<T, F>(
+        &self,
+        operation: F,
+    ) -> Result<T, MongoError>
+    where
+        T: Send + 'static,
+        F: Future<Output = Result<T, crate::mongodb_driver::error::Error>> + Send + 'static,
+    {
+        let task = tokio::spawn(operation);
+        let result = tokio::time::timeout(self.operation_timeout, task)
+            .await
+            .map_err(|_| MongoError::Timeout)?
+            .map_err(MongoError::TaskJoin)?;
+        result.map_err(MongoError::Operation)
     }
 
     /// Check connectivity with MongoDB's ping command.
@@ -464,6 +496,14 @@ pub enum MongoError {
     Timeout,
     /// Bootstrap completed without the expected declared index being reported.
     BootstrapVerification(&'static str),
+    /// A document model declaration or serialization contract is invalid.
+    InvalidDocumentModel(&'static str),
+    /// A filter, query option, or field path is invalid.
+    InvalidDocumentQuery(&'static str),
+    /// An update document is empty or contains conflicting operations.
+    InvalidDocumentUpdate(&'static str),
+    /// A spawned driver task failed before returning its operation result.
+    TaskJoin(tokio::task::JoinError),
 }
 
 impl MongoError {
@@ -473,6 +513,18 @@ impl MongoError {
                 Self::Bootstrap(error)
             }
             other => other,
+        }
+    }
+
+    /// Return whether a preserved driver error indicates an unknown transaction commit result.
+    ///
+    /// The caller must not assume the transaction committed or rolled back when this is true.
+    pub fn is_unknown_transaction_commit_result(&self) -> bool {
+        match self {
+            Self::Operation(error) => error.contains_label(
+                crate::mongodb_driver::error::UNKNOWN_TRANSACTION_COMMIT_RESULT,
+            ),
+            _ => false,
         }
     }
 
@@ -491,6 +543,9 @@ impl MongoError {
                 StatusCode::SERVICE_UNAVAILABLE,
                 "Document database temporarily unavailable",
             ),
+            Self::InvalidDocumentModel(_) | Self::InvalidDocumentQuery(_) | Self::InvalidDocumentUpdate(_) => {
+                HttpError::new(StatusCode::BAD_REQUEST, "Invalid document operation")
+            }
             _ => HttpError::internal_server_error(),
         }
     }
@@ -518,6 +573,10 @@ impl fmt::Debug for MongoError {
             Self::Deserialization(_) => "Deserialization",
             Self::Timeout => "Timeout",
             Self::BootstrapVerification(_) => "BootstrapVerification",
+            Self::InvalidDocumentModel(_) => "InvalidDocumentModel",
+            Self::InvalidDocumentQuery(_) => "InvalidDocumentQuery",
+            Self::InvalidDocumentUpdate(_) => "InvalidDocumentUpdate",
+            Self::TaskJoin(_) => "TaskJoin",
         };
         formatter
             .debug_struct("MongoError")
@@ -529,7 +588,11 @@ impl fmt::Debug for MongoError {
 impl fmt::Display for MongoError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
-            Self::InvalidConfiguration(message) | Self::BootstrapVerification(message) => {
+            Self::InvalidConfiguration(message)
+            | Self::BootstrapVerification(message)
+            | Self::InvalidDocumentModel(message)
+            | Self::InvalidDocumentQuery(message)
+            | Self::InvalidDocumentUpdate(message) => {
                 return write!(formatter, "{message}");
             }
             Self::InvalidUri(_) => "MongoDB connection settings are invalid",
@@ -539,6 +602,7 @@ impl fmt::Display for MongoError {
             Self::Serialization(_) => "Rust value could not be serialized to BSON",
             Self::Deserialization(_) => "BSON document could not be deserialized",
             Self::Timeout => "MongoDB operation timed out",
+            Self::TaskJoin(_) => "MongoDB operation task failed",
         };
         formatter.write_str(message)
     }
@@ -553,7 +617,13 @@ impl StdError for MongoError {
             | Self::Bootstrap(error) => Some(error),
             Self::Serialization(error) => Some(error),
             Self::Deserialization(error) => Some(error),
-            Self::InvalidConfiguration(_) | Self::Timeout | Self::BootstrapVerification(_) => None,
+            Self::TaskJoin(error) => Some(error),
+            Self::InvalidConfiguration(_)
+            | Self::Timeout
+            | Self::BootstrapVerification(_)
+            | Self::InvalidDocumentModel(_)
+            | Self::InvalidDocumentQuery(_)
+            | Self::InvalidDocumentUpdate(_) => None,
         }
     }
 }
