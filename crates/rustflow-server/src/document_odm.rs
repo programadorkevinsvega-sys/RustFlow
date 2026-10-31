@@ -516,7 +516,7 @@ impl<M: DocumentModel> DocumentRepository<M> {
             let mut action = collection.find(filter);
             if !sort.is_empty() { action = action.sort(sort); }
             if let Some(skip) = skip { action = action.skip(skip); }
-            action = action.limit(Some(limit));
+            action = action.limit(limit);
             if !projection.is_empty() { action = action.projection(projection); }
             action.await
         }).await?;
