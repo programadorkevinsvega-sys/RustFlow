@@ -116,15 +116,50 @@ Not implemented in this subphase: adding the SeaORM dependency/facade; CRUD exec
 ## References
 
 See [ADR 0020](adr/0020-orm-model-contract.md) for the verified foundation comparison, pool migration, design trade-offs and official upstream links. See [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md) for current RustFlow service versions and existing SQLx/MongoDB evidence.
-## 6.7.2 implementation boundary (in progress)
+## 6.7.2 SQL ORM runtime implementation (branch acceptance)
 
-The first implementation slice in the Phase 6.7.2 branch provides:
+The Phase 6.7.2 branch now implements the runtime slice below. Its final acceptance remains gated by the current PR's Rust 1.85/stable, integration, dependency-audit, documentation, WASM/browser and governance runs; a green compile alone is not sufficient evidence for cross-engine support.
 
-- SeaORM 1.1.20 is added as a dependency of `rustflow-server` only, with SQLite, PostgreSQL and MySQL SQLx drivers and Tokio/Rustls.
-- `DatabasePool` owns one driver-specific SQLx pool (`SqlitePool`, `PgPool` or `MySqlPool`). The SeaORM `DatabaseConnection` is constructed from a clone of that exact pool handle; it does not open a second pool.
-- The existing configuration URL precedence, redaction, limits, acquire timeout and backend selection remain in RustFlow's `DatabaseConfig`.
-- Direct SQLx access is explicit through backend-checked accessors: `sqlx_sqlite_pool()`, `sqlx_postgres_pool()`, and `sqlx_mysql_pool()`.
-- `DatabasePool::orm()`, `query_raw`, `execute_raw`, and the SeaORM-backed `DatabaseTransaction` expose the shared connection to ORM and parameterized raw statements. SQLx migrations dispatch to the matching typed pool.
-- MongoDB remains separate and is not included in SeaORM or the browser/WASM graph.
+### Connection and repository boundary
 
-Still required before Phase 6.7.2 can be considered complete: model insert/update/delete and bulk behavior; composable filter/join/group/order/pagination/subquery/aggregate coverage; explicit relationship metadata and batched `load_one`/`load_many`/`load_many_to_many` behavior; N+1/query-count tests; runtime codecs and NULL/range/precision tests on SQLite, PostgreSQL, MySQL and MariaDB; mixed ORM/raw-SQL transaction tests with commit/rollback and ambiguous commit outcomes; diagnostics and typed error mapping; dependency-lock and RustSec review (including the SQLx MySQL/RSA advisory already recorded in ADR 0020); runnable technical and public-site examples; and all CI/MSRV/WASM/security gates. Do not mark the roadmap criterion complete based solely on the connection bridge.
+- rustflow-server owns SeaORM 1.1.20. It is not pulled into the core, view, DOM, browser or WASM crates.
+- DatabasePool owns exactly one typed SQLx pool for the selected backend (SqlitePool, PgPool or MySqlPool). SeaORM is constructed from a clone of that handle; there is no second pool.
+- sqlx_sqlite_pool(), sqlx_postgres_pool() and sqlx_mysql_pool() expose only a backend-matching pool. The MySQL accessor also serves MariaDB through the MySQL protocol.
+- DatabasePool::entity::<E>() and DatabaseTransaction::entity::<E>() return repositories borrowing the existing connection/transaction. A repository never creates a pool or performs lazy I/O.
+- Raw SQL goes through bound Statement values via query_raw / execute_raw, or through the typed SQLx accessor. Caller values are parameters, not SQL interpolation. SQLx continues to own engine-specific migrations.
+
+### Entity operations and query composition
+
+EntityRepository exposes select, all, one, find_by_id, insert, update, save, delete, delete_by_id, insert_many, update_many and delete_many. Update/delete by ActiveModel validate that the primary key is present before delegating to SeaORM. Generated values are returned from the database, and bulk methods return SeaORM's affected-row/result metadata.
+
+The query builder deliberately uses SeaORM's typed query surface rather than introducing a second SQL AST. The four-engine integration contract exercises nested AND/OR filters, equality and NULL predicates, text matching, IN subqueries, ordering, distinct, limit/offset pagination, joins, projections, grouping, aggregates and HAVING. Backend SQL generation and driver value codecs remain SeaORM/SQLx behavior; they are not a promise that arbitrary SQL fragments are portable.
+
+### Relations and explicit loading
+
+Relationship metadata is defined on SeaORM entities. RustFlow exports explicit batch helpers load_one, load_many and load_many_to_many. They take parent models, the related entity (and junction entity for many-to-many), and an explicit connection. There is no transparent lazy loading. Tests verify one relationship query for a batch of has-many parents and two queries for a many-to-many batch, so query work remains visible and N+1 behavior is not hidden.
+
+### Transactions and error contract
+
+ORM calls and parameterized raw statements can use the same DatabaseTransaction. The four-engine contract checks mixed ORM/raw writes under both rollback and commit. A COMMIT transport/protocol failure is classified as DatabaseErrorKind::CommitOutcomeUnknown; the server cannot claim the transaction was rolled back and clients must inspect application state/idempotency before retrying.
+
+DatabaseError::kind() exposes the stable categories InvalidConfiguration, InvalidModelState, NotFound, UniqueViolation, ForeignKeyViolation, CheckViolation, Unavailable, Query, Transaction, CommitOutcomeUnknown and Migration. Public HTTP mapping is intentionally generic: invalid model state 400, missing row 404, unique/FK conflict 409, check constraint 422, unavailable/unknown commit 503, and unexpected query/transaction/migration/configuration failures 500. Database messages, constraint names, values and URLs are not placed in public responses.
+
+Constraint classification uses SQLSTATE/SQLite codes for PostgreSQL/SQLite and MySQL numeric server codes for MySQL/MariaDB. Server-native constraint semantics are not assumed identical across engines.
+
+### Type and engine evidence
+
+The integration target runs the same ORM contract against the pinned Phase 6.6 service versions: bundled SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS and MariaDB 11.4.13 LTS. It covers generated keys, insert/update/delete, bulk writes, JSON, optional values/NULL, bytes, UUID, date/time/timestamp and numeric codecs.
+
+Known explicit limitations:
+- SQLx/SeaORM do not provide a portable direct u64 codec for SQLite/PostgreSQL. Full-range u64 is exercised only with MySQL/MariaDB BIGINT UNSIGNED and engine-specific models.
+- SeaORM 1.1.20's SQLite Decimal/BigDecimal codec passes through f64. The SQLite fixture uses the exactly representable value 12.5; arbitrary precision and exact decimal arithmetic are not guaranteed there. Use scaled integers or a canonical custom codec when exact decimal semantics are required. PostgreSQL NUMERIC and MySQL/MariaDB DECIMAL are exercised with a high-precision value.
+- MySQL and MariaDB share the SQLx MySQL driver/backend enum. The scheme selects the protocol family; server identity is asserted separately in integration CI.
+- Dialect-specific upsert/RETURNING behavior and server capability detection remain explicit engine concerns; the shared facade does not pretend these features have identical semantics.
+
+### Dependency and security gate
+
+Cargo.lock is regenerated from the workspace manifest under Rust 1.85 and includes the pinned SeaORM 1.1.20 dependency graph. CI runs the GitHub dependency review and a locked cargo audit. The only audit exception is RUSTSEC-2023-0071 for rsa 0.9.10 inherited through sqlx-mysql 0.8.6. The advisory still has no patched release. SQLx's MySQL client uses RSA public-key encryption in the non-TLS password exchange path; this source-level reachability note does not mean the advisory is fixed or that TLS is enabled. The exception must be revisited when driver/authentication configuration changes and removed when the dependency is eliminated or fixed.
+
+### Remaining scope after the 6.7.2 runtime slice
+
+This branch does not close the full Phase 6.7 ORM/ODM maturity target. Remaining work is tracked in ROADMAP.md and later subphases: dialect capability-specific operations (including upsert/RETURNING where exposed), richer relation mutation and nested loading semantics, generated end-to-end CRUD application, and the separate MongoDB ODM in Phase 6.7.3. Phase 6.7.2 itself is accepted only after every criterion retained in its roadmap gate has corresponding runtime and CI evidence.
