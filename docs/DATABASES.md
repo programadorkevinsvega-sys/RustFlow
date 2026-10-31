@@ -1,6 +1,6 @@
 # SQL pools, SeaORM, transactions, and migrations (Phase 6.7.2)
 
-The database API remains experimental and pre-1.0. Phase 6.7.1 selected SeaORM 1.1.20 and defined the Data Mapper/model contract. Phase 6.7.2 is integrating SeaORM into `rustflow-server` while replacing the old SQLx `typed SQLx pool` boundary with backend-specific SQLx pools. The implementation is in progress: the connection bridge and typed accessors are present in the phase branch, while complete CRUD, relationship-loading, type-codec and four-engine ORM evidence remain acceptance work. MongoDB continues to use its independent document adapter.
+The database API remains experimental and pre-1.0. Phase 6.7.1 selected SeaORM 1.1.20 and defined the Data Mapper/model contract. The Phase 6.7.2 branch integrates SeaORM into `rustflow-server` over one backend-specific SQLx pool (SQLite, PostgreSQL or MySQL protocol) shared by SQLx and SeaORM. It exposes `EntityRepository` CRUD/bulk operations, typed SeaORM query composition, explicit relation loaders, parameterized raw SQL and mixed ORM/SQL transactions. Four-engine integration contracts cover SQLite, PostgreSQL, MySQL and MariaDB; acceptance remains pending the exact final PR SHA's full CI and the edge cases called out in the model contract. MongoDB continues to use its independent document adapter.
 
 ## Supported engines
 
@@ -9,9 +9,9 @@ The adapter uses one backend-specific SQLx pool per configured database: `Sqlite
 - SQLite: `sqlite://rustflow.db?mode=rwc` or `sqlite::memory:`.
 - PostgreSQL: `postgres://user:password@host/database` or `postgresql://user:password@host/database`.
 - MySQL: `mysql://user:password@host:3306/database`.
-- MariaDB: the same `mysql://` URL and SQLx MySQL driver; `mariadb://` is not accepted by SQLx `typed SQLx pool` driver selection.
+- MariaDB: the same `mysql://` URL and SQLx MySQL driver; `mariadb://` is not accepted by SQLx's MySQL driver URL parser.
 
-MySQL and MariaDB are represented by `DatabaseBackend::MySql` because a `mysql://` URL selects the driver and does not identify the responding server product. The current pinned CI contract is PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS, SQLite 3.46.0 bundled by the locked SQLx / `libsqlite3-sys` dependencies, and MongoDB 7.0.45. The full tested version/MSRV matrix and evidence boundaries live in [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md). These exact targets do not imply compatibility with every version or vendor-specific feature. MongoDB is implemented through a separate document adapter and does not use SQLx `typed SQLx pool` or SQL migrations. SQL syntax, placeholders, migrations, and value support remain engine-specific. Bind user values rather than interpolating request data into SQL.
+MySQL and MariaDB are represented by `DatabaseBackend::MySql` because a `mysql://` URL selects the driver and does not identify the responding server product. The current pinned CI contract is PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS, SQLite 3.46.0 bundled by the locked SQLx / `libsqlite3-sys` dependencies, and MongoDB 7.0.45. The full tested version/MSRV matrix and evidence boundaries live in [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md). These exact targets do not imply compatibility with every version or vendor-specific feature. MongoDB is implemented through a separate document adapter and does not use SQLx pools or SQL migrations. SQL syntax, placeholders, migrations, and value support remain engine-specific. Bind user values rather than interpolating request data into SQL.
 
 ## Configuration and connection pool
 
