@@ -70,7 +70,7 @@ The MVP is complete only when all of the following are implemented, documented, 
 6. CI runs core unit tests, browser tests, and server integration tests on pull requests.
 7. A clean-checkout guide lets a contributor install prerequisites, run checks, and launch examples.
 
-This paragraph records the initial MVP boundary. Later phases have since added SSR page/layout composition and opt-in hydration/navigation, but RustFlow still does not provide a complete production-ready full-stack workflow or an integrated user/credential provider; it also lacks a custom ORM and production deployment tooling. Phase 6.4 adds experimental session and access-control primitives, not a complete account-authentication system.
+This paragraph records the initial MVP boundary. Later phases have since added SSR page/layout composition, opt-in hydration/navigation, and experimental persistence APIs: SeaORM-based SQL ORM support for SQLite/PostgreSQL/MySQL/MariaDB (Phase 6.7.2) and a separate MongoDB ODM (Phase 6.7.3). RustFlow still does not provide a complete production-ready full-stack workflow, an integrated user/credential provider, a RustFlow-authored custom ORM, or production deployment tooling. Phase 6.4 adds experimental session and access-control primitives, not a complete account-authentication system.
 
 ## 6. MVP user stories and acceptance criteria
 
@@ -179,7 +179,7 @@ Phase 0.2 was marked complete in ROADMAP.md after its scope baseline and initial
 
 ### CLI Fase 6.1 (alcance experimental)
 
-El CLI de desarrollo genera un scaffold de servidor, delega `dev` y `build` a Cargo, y crea componentes/páginas/controladores/modelos/migraciones estructurales. Las dependencias Git del scaffold quedan fijadas a la revisión fuente del CLI. Los modelos no son entidades ORM. La Fase 6.2 configura perfil, host y puerto; la Fase 6.3 añade validación de entradas, CSRF optativo y redirección segura; la Fase 6.4 añade sesiones y guards experimentales. La Fase 6.5 integra SQLx, pools SQLite/PostgreSQL, transacciones, migraciones versionadas y mapeo de errores. La prueba de integración del CLI genera una aplicación y valida entrada, persistencia, sesiones/autorización, CSRF, páginas renderizadas y escape HTML. Esto no añade ORM ni proveedor de usuarios; las sesiones en memoria siguen siendo locales al proceso y la persistencia debe configurarse/operarse explícitamente.
+El CLI de desarrollo genera un scaffold de servidor, delega `dev` y `build` a Cargo, y crea componentes/páginas/controladores/modelos/migraciones estructurales. Las dependencias Git del scaffold quedan fijadas a la revisión fuente del CLI. Los modelos no son entidades ORM. La Fase 6.2 configura perfil, host y puerto; la Fase 6.3 añade validación de entradas, CSRF optativo y redirección segura; la Fase 6.4 añade sesiones y guards experimentales. La Fase 6.5 integra SQLx, pools SQLite/PostgreSQL, transacciones, migraciones versionadas y mapeo de errores. La prueba de integración del CLI genera una aplicación y valida entrada, persistencia SQLx, sesiones/autorización, CSRF, páginas renderizadas y escape HTML. Este scaffold de la Fase 6.5 no genera entidades ORM ni añade un proveedor de usuarios; las APIs ORM/ODM se incorporaron después en Phase 6.7.2/6.7.3. Las sesiones en memoria siguen siendo locales al proceso, no existe un SessionStore SQL durable y la persistencia debe configurarse/operarse explícitamente.
 
 
 ## Current implementation note — Phase 6.4 (merged into main)
