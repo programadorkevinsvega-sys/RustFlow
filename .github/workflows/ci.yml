@@ -136,7 +136,25 @@ jobs:
             echo "::error::MongoDB replica set did not become primary."
             exit 1
           fi
+
+          docker run --detach --name rustflow-mongodb-standalone --publish 27018:27017 \
+            mongo:7.0.45 mongod --bind_ip_all
+          standalone_ready=""
+          for attempt in $(seq 1 60); do
+            standalone_ready="$(docker exec rustflow-mongodb-standalone mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' 2>/dev/null || true)"
+            if [ "$standalone_ready" = "1" ]; then
+              break
+            fi
+            sleep 1
+          done
+          if [ "$standalone_ready" != "1" ]; then
+            docker logs rustflow-mongodb-standalone
+            echo "::error::MongoDB standalone service did not become ready."
+            exit 1
+          fi
+
           printf '%s\n' 'RUSTFLOW_TEST_MONGODB_URI=mongodb://127.0.0.1:27017/rustflow_test?replicaSet=rs0' >> "$GITHUB_ENV"
+          printf '%s\n' 'RUSTFLOW_TEST_MONGODB_STANDALONE_URI=mongodb://127.0.0.1:27018/rustflow_test_standalone' >> "$GITHUB_ENV"
 
       - name: Audit the resolved Cargo dependency graph
         if: matrix.toolchain == 'stable'
