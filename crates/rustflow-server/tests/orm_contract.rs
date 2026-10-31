@@ -486,14 +486,16 @@ async fn exercise_type_codecs(database: &DatabasePool) {
     let time = Time::from_hms_micro_opt(12, 34, 56, 123_456).expect("valid fixture time");
     let timestamp = DateTime::new(date, time);
     let uuid = Uuid::from_u128(0x1234_5678_1234_5678_1234_5678_1234_5678);
-    let decimal = Decimal::new(12_345, 2);
     // SeaORM 1.1.20's SQLite codec binds and decodes Decimal/BigDecimal through f64.
-    // Keep SQLite fixtures within a safely representable decimal range; exercise
+    // Use 12.5, which is exactly representable in binary, for SQLite. Exercise
     // arbitrary precision only on PostgreSQL and the MySQL protocol backends.
-    let big_decimal_text = if database.backend() == DatabaseBackend::Sqlite {
-        "123.45"
+    let (decimal, big_decimal_text) = if database.backend() == DatabaseBackend::Sqlite {
+        (Decimal::new(125, 1), "12.5")
     } else {
-        "12345678901234567890.1234567890"
+        (
+            Decimal::new(12_345, 2),
+            "12345678901234567890.1234567890",
+        )
     };
     let big_decimal =
         BigDecimal::from_str(big_decimal_text).expect("valid integration decimal value");
