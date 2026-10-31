@@ -11,6 +11,56 @@ use rustflow_server::{
 };
 use serde::{Deserialize, Serialize};
 
+use rustflow_server::{
+    DocumentDeleteOutcome, DocumentFilter, DocumentModel, DocumentQuery, DocumentRepository,
+    DocumentUpdate,
+};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct OdmEntry {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    id: Option<ObjectId>,
+    title: String,
+    score: i32,
+    tags: Vec<String>,
+}
+
+impl DocumentModel for OdmEntry {
+    type Id = ObjectId;
+    const COLLECTION: &'static str = "odm_entries";
+
+    fn id(&self) -> Option<Self::Id> {
+        self.id.clone()
+    }
+
+    fn set_id(&mut self, id: Self::Id) {
+        self.id = Some(id);
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct OdmEntrySummary {
+    #[serde(rename = "_id")]
+    id: ObjectId,
+    title: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct OdmScoreGroup {
+    #[serde(rename = "_id")]
+    score: i32,
+    entries: i32,
+}
+
+fn odm_entry(title: &str, score: i32, tags: &[&str]) -> OdmEntry {
+    OdmEntry {
+        id: None,
+        title: title.to_owned(),
+        score,
+        tags: tags.iter().map(|tag| (*tag).to_owned()).collect(),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 struct Address {
     city: String,
@@ -239,6 +289,151 @@ async fn mongodb_7045_real_server_contract() {
         .run_with_timeout(database.database().drop())
         .await
         .expect("clean up isolated test database");
+}
+
+
+#[tokio::test]
+async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation() {
+    let Some(uri) = test_uri() else {
+        eprintln!("Skipping typed ODM integration test outside CI: MongoDB URI is unset");
+        return;
+    };
+    let database_name = database_name();
+    let config = MongoConfig::new(uri, database_name.clone())
+        .expect("valid MongoDB integration URI")
+        .with_operation_timeout(Duration::from_secs(5))
+        .expect("valid operation timeout");
+    let database = MongoDatabase::connect(&config)
+        .await
+        .expect("connect to MongoDB replica set");
+    let repository = database.repository::<OdmEntry>();
+    assert_eq!(repository.collection_name(), "odm_entries");
+
+    let inserted = repository.insert(odm_entry("alpha", 10, &["rust", "database"]))
+        .await
+        .expect("insert typed document");
+    let alpha_id = inserted.id.clone().expect("server generated ObjectId");
+    assert_eq!(repository.find_by_id(alpha_id).await.expect("find by id"), Some(inserted.clone()));
+
+    let bulk = repository.insert_many(
+        vec![
+            odm_entry("beta", 20, &["rust"]),
+            odm_entry("gamma", 30, &["wasm"]),
+        ],
+        true,
+    ).await.expect("ordered bulk insert");
+    assert!(bulk.iter().all(|entry| entry.id.is_some()));
+
+    let filter = DocumentFilter::and([
+        DocumentFilter::new().gte("score", 10).expect("gte filter")
+            .lt("score", 30).expect("lt filter"),
+        DocumentFilter::or([
+            DocumentFilter::new().eq("title", "alpha").expect("title filter"),
+            DocumentFilter::new().eq("title", "beta").expect("title filter"),
+        ]).expect("or composition"),
+        DocumentFilter::new().exists("tags", true).expect("field existence"),
+    ]).expect("and composition");
+    let page = repository.find_many(
+        DocumentQuery::new(filter).sort_desc("score").expect("sort").limit(10).expect("page size"),
+    ).await.expect("query page");
+    assert_eq!(page.iter().map(|entry| entry.title.as_str()).collect::<Vec<_>>(), vec!["beta", "alpha"]);
+
+    let summaries = repository.find_many_as::<OdmEntrySummary>(
+        DocumentQuery::new(DocumentFilter::new().in_values("title", ["alpha", "beta"]).expect("in filter"))
+            .include("title").expect("projection")
+            .sort_asc("title").expect("sort"),
+    ).await.expect("typed projection");
+    assert_eq!(summaries.iter().map(|entry| entry.title.as_str()).collect::<Vec<_>>(), vec!["alpha", "beta"]);
+
+    let updated = repository.update_one(
+        DocumentFilter::new().eq("_id", inserted.id.clone().expect("id")).expect("filter"),
+        DocumentUpdate::new().inc("score", 5).expect("increment")
+            .push("tags", "odm").expect("array push"),
+        false,
+    ).await.expect("update typed document");
+    assert_eq!(updated.matched_count, 1);
+    assert_eq!(updated.modified_count, 1);
+    let after_update = repository.find_by_id(inserted.id.clone().expect("id"))
+        .await.expect("read after update").expect("document remains");
+    assert_eq!(after_update.score, 15);
+    assert!(after_update.tags.contains(&"odm".to_owned()));
+
+    let replaced = repository.replace_one(
+        DocumentFilter::new().eq("_id", inserted.id.clone().expect("id")).expect("filter"),
+        &OdmEntry { score: 16, ..after_update.clone() },
+        false,
+    ).await.expect("replace typed document");
+    assert_eq!(replaced.matched_count, 1);
+    assert_eq!(repository.find_by_id(inserted.id.clone().expect("id")).await
+        .expect("read replacement").expect("replacement exists").score, 16);
+
+    let groups = repository.aggregate_as::<OdmScoreGroup>(vec![
+        doc! { "$match": { "title": { "$in": ["alpha", "beta", "gamma"] } } },
+        doc! { "$group": { "_id": "$score", "entries": { "$sum": 1 } } },
+        doc! { "$sort": { "_id": 1 } },
+    ]).await.expect("typed aggregation");
+    assert_eq!(groups.len(), 3);
+    assert_eq!(groups[0].score, 16);
+    assert_eq!(groups[0].entries, 1);
+
+    assert_eq!(repository.count(DocumentFilter::new()).await.expect("count"), 3);
+    assert!(repository.exists(DocumentFilter::new().eq("title", "gamma").expect("filter"))
+        .await.expect("exists query"));
+    let upsert = repository.update_one(
+        DocumentFilter::new().eq("title", "created-by-upsert").expect("filter"),
+        DocumentUpdate::new().set("score", 40).expect("set score")
+            .set("tags", Vec::<String>::new()).expect("set tags"),
+        true,
+    ).await.expect("upsert document");
+    assert!(upsert.upserted_id.is_some());
+    assert!(repository.find_one(DocumentFilter::new().eq("title", "created-by-upsert").expect("filter"))
+        .await.expect("read upsert").is_some());
+
+    let deleted: DocumentDeleteOutcome = repository.delete_many(
+        DocumentFilter::new().in_values("title", ["alpha", "beta", "gamma", "created-by-upsert"])
+            .expect("delete filter"),
+    ).await.expect("delete fixtures");
+    assert_eq!(deleted.deleted_count, 4);
+    assert_eq!(repository.count(DocumentFilter::new()).await.expect("empty collection"), 0);
+
+    database.run_with_timeout(database.database().drop()).await.expect("drop isolated test database");
+}
+
+#[tokio::test]
+async fn mongodb_typed_odm_uses_real_replica_set_transactions_for_commit_and_abort() {
+    let Some(uri) = test_uri() else {
+        eprintln!("Skipping ODM transaction test outside CI: MongoDB URI is unset");
+        return;
+    };
+    let database_name = database_name();
+    let config = MongoConfig::new(uri, database_name.clone())
+        .expect("valid MongoDB replica-set URI")
+        .with_operation_timeout(Duration::from_secs(5))
+        .expect("valid operation timeout");
+    let database = MongoDatabase::connect(&config).await.expect("connect to replica set");
+    let repository: DocumentRepository<OdmEntry> = database.repository();
+
+    let mut committed_session = database.start_session().await.expect("start client session");
+    committed_session.start_transaction().await.expect("start replica-set transaction");
+    let committed = repository.insert_with_session(
+        odm_entry("committed", 1, &["transaction"]),
+        &mut committed_session,
+    ).await.expect("insert within transaction");
+    let committed_id = committed.id.clone().expect("generated ID");
+    committed_session.commit_transaction().await.expect("commit transaction");
+    assert!(repository.find_by_id(committed_id).await.expect("read committed doc").is_some());
+
+    let mut aborted_session = database.start_session().await.expect("start rollback session");
+    aborted_session.start_transaction().await.expect("start rollback transaction");
+    let aborted = repository.insert_with_session(
+        odm_entry("aborted", 2, &["transaction"]),
+        &mut aborted_session,
+    ).await.expect("insert before abort");
+    let aborted_id = aborted.id.expect("generated ID");
+    aborted_session.abort_transaction().await.expect("abort transaction");
+    assert!(repository.find_by_id(aborted_id).await.expect("read aborted doc").is_none());
+
+    database.run_with_timeout(database.database().drop()).await.expect("drop isolated transaction database");
 }
 
 #[tokio::test]
