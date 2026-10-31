@@ -3,7 +3,7 @@ title: ODM tipado para MongoDB
 description: Modelos BSON tipados, repositorios explícitos, filtros, actualizaciones, proyecciones, agregaciones y sesiones MongoDB en RustFlow.
 ---
 
-El ODM de RustFlow para MongoDB es una API documental experimental, independiente del SQL ORM. Utiliza el cliente oficial que ya administra `MongoDatabase`: no crea otro pool, no comparte entidades SeaORM y no traduce operaciones MongoDB a SQL. Su implementación fue aceptada por CI en la PR #60 sobre el HEAD `c91a558934851ea17e10dd9ebde13b8869fbbcf1` (2026-10-31); la PR sigue abierta y todavía no está fusionada en `main`.
+El ODM de RustFlow para MongoDB es una API documental experimental, independiente del SQL ORM. Utiliza el cliente oficial que ya administra `MongoDatabase`: no crea otro pool, no comparte entidades SeaORM y no traduce operaciones MongoDB a SQL. Su implementación pasó los checks requeridos en el HEAD final de la PR #60 `659f1750d611e57315263216167d43375da23574` y se fusionó en `main` el 2026-10-31 mediante squash (`7ffb89b5ca36017a428cf3f828b68f590f8d404b`). La API sigue siendo experimental y pre-1.0.
 
 ## 1. Configurar MongoDB
 
