@@ -1,6 +1,6 @@
 # ADR 0021: MongoDB document mapper / ODM architecture
 
-- Status: Accepted as the Phase 6.7.3 architecture decision; implementation and acceptance evidence remain in progress.
+- Status: Accepted; the Phase 6.7.3 implementation and acceptance evidence passed on PR #60 head `c91a558934851ea17e10dd9ebde13b8869fbbcf1` (2026-10-31). PR #60 remains open and unmerged.
 - Phase: 6.7.3 — MongoDB document mapper / ODM.
 - Related: ADR 0018 (MongoDB document adapter), ADR 0019 (database support matrix), ADR 0020 (SQL ORM architecture).
 - Boundary: this ADR applies only to MongoDB and does not amend the SQL ORM contract.
@@ -82,6 +82,10 @@ A timeout does not prove that the server did not execute a write. The driver doc
 ### 8. Out of scope
 
 This ADR does not add SQL-style joins or relationships, implicit lazy loading, SQL migrations, a second Mongo client/pool, mongodb+srv://, schema migrations, automatic cross-document cascades, an identity map, a global repository singleton, or global Phase 6.7 completion. Advanced generated CRUD applications and the remaining global quality gate stay in later subphases.
+
+## Implementation and acceptance record (2026-10-31)
+
+The trait-based ODM described in this ADR is implemented in `crates/rustflow-server/src/document_odm.rs` and verified by the integration suite in `crates/rustflow-server/tests/mongodb_adapter.rs`. The exact PR #60 head `c91a558934851ea17e10dd9ebde13b8869fbbcf1` passed Rust 1.85 and stable, formatting, Clippy, workspace tests, four-engine SQL regressions, MongoDB CRUD/bulk/query/index/ID/nested-document tests, replica-set commit/abort, standalone transaction rejection, Rustdoc, CLI and benchmark smoke, WebAssembly, Browser E2E/bundle, Documentation site, Governance and Dependency review. The PR is still open and has not been merged to `main`; implementation acceptance does not imply global Phase 6.7 completion.
 
 ## Consequences
 
