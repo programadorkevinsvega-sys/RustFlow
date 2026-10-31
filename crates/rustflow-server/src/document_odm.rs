@@ -483,6 +483,11 @@ impl DocumentUpdate {
         value: Bson,
     ) -> Result<(), MongoError> {
         validate_field_path(field)?;
+        if field == "_id" || field.starts_with("_id.") {
+            return Err(MongoError::InvalidDocumentUpdate(
+                "MongoDB document IDs are immutable and cannot be updated",
+            ));
+        }
         if self.paths.iter().any(|existing| {
             existing == field
                 || existing
@@ -1209,6 +1214,9 @@ mod tests {
         let update = DocumentUpdate::new().set("counter", 1).expect("first");
         assert!(update.inc("counter", 1).is_err());
         assert!(DocumentUpdate::new().into_document().is_err());
+        assert!(DocumentUpdate::new().set("_id", "replacement").is_err());
+        assert!(DocumentUpdate::new().unset("_id").is_err());
+        assert!(DocumentUpdate::new().set("_id.tenant", "replacement").is_err());
         let overlap = DocumentUpdate::new()
             .set("profile", doc! { "city": "Medellin" })
             .expect("parent path");
