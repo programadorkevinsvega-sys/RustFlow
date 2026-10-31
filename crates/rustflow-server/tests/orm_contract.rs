@@ -630,8 +630,8 @@ async fn exercise_orm(database: &DatabasePool) {
         .await
         .expect("save updates an existing ActiveModel");
     assert!(matches!(
-        saved_existing.alias,
-        Set(Some(ref alias)) if alias == "saved-existing"
+        &saved_existing.alias,
+        Set(Some(alias)) if alias == "saved-existing"
     ));
     let deleted_saved = accounts
         .delete(saved_existing)
