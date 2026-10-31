@@ -161,6 +161,37 @@ let changed = accounts
 assert_eq!(changed.rows_affected, 1);
 ~~~
 
+La API expone las capacidades por motor para no asumir que RETURNING tiene la misma disponibilidad:
+
+~~~rust
+let capabilities = database.capabilities();
+assert!(capabilities.upsert);
+
+// INSERT RETURNING solo está anunciado para SQLite y PostgreSQL.
+// MySQL/MariaDB usan el camino exec + lectura posterior.
+if capabilities.insert_returning {
+    // Usa exec_with_returning en el Insert builder nativo.
+}
+~~~
+
+Para upsert, usa el builder tipado de SeaORM. El mismo ejemplo se prueba contra los cuatro motores:
+
+~~~rust
+use rustflow_server::sea_orm::sea_query::OnConflict;
+
+accounts
+    .insert_builder(new_account)
+    .on_conflict(
+        OnConflict::column(entities::account::Column::Email)
+            .update_columns([entities::account::Column::Enabled])
+            .to_owned(),
+    )
+    .exec(database.orm())
+    .await?;
+~~~
+
+SQLite/PostgreSQL generan ON CONFLICT. MySQL/MariaDB generan ON DUPLICATE KEY UPDATE; una colisión en cualquier clave única aplicable puede activar el update, por lo que no debes asumir el mismo targeting exacto entre motores.
+
 Para relaciones, declara el grafo en las entidades SeaORM y usa loaders explícitos. Por ejemplo, load_many carga las notas para un conjunto de cuentas mediante una consulta por salto; load_many_to_many requiere la entidad de unión. Leer un modelo no dispara consultas ocultas.
 
 ~~~rust
