@@ -785,9 +785,7 @@ impl<M: DocumentModel> DocumentRepository<M> {
         collect_cursor(&self.database, cursor)
             .await?
             .into_iter()
-            .map(|document| {
-                bson::from_document(document).map_err(MongoError::Deserialization)
-            })
+            .map(|document| bson::from_document(document).map_err(MongoError::Deserialization))
             .collect()
     }
 
