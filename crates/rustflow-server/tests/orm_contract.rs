@@ -1,7 +1,7 @@
 use std::{env, str::FromStr};
 
 use rustflow_server::{
-    DatabaseBackend, DatabaseConfig, DatabasePool,
+    DatabaseBackend, DatabaseConfig, DatabaseErrorKind, DatabasePool,
     orm::{load_many, load_many_to_many, load_one},
     sea_orm::{
         ActiveValue::{NotSet, Set},
@@ -262,6 +262,10 @@ fn integration_url(variable: &str) -> Option<String> {
 
 async fn create_schema(database: &DatabasePool) {
     database
+        .execute_raw("DROP TABLE IF EXISTS rustflow_orm_constraints", [])
+        .await
+        .expect("drop constraint contract table");
+    database
         .execute_raw("DROP TABLE IF EXISTS rustflow_orm_mysql_unsigned", [])
         .await
         .expect("drop MySQL-family unsigned codec table");
@@ -347,6 +351,15 @@ async fn create_schema(database: &DatabasePool) {
         .execute_raw(&notes, [])
         .await
         .expect("create notes table");
+    database
+        .execute_raw(
+            "CREATE TABLE rustflow_orm_constraints (
+                value INTEGER NOT NULL CHECK (value > 0)
+            )",
+            [],
+        )
+        .await
+        .expect("create check-constraint contract table");
     let profiles = format!(
         "CREATE TABLE rustflow_orm_profiles (
             id {note_id},
@@ -593,6 +606,42 @@ async fn exercise_orm(database: &DatabasePool) {
     assert_eq!(first.checksum, [0, 1, 2, 255]);
     assert_eq!(second.alias, None);
 
+    let invalid_foreign_key = notes
+        .insert(entities::note::ActiveModel {
+            account_id: Set(i64::MAX),
+            title: Set("orphan note".to_owned()),
+            body: NotSet,
+            ..Default::default()
+        })
+        .await
+        .expect_err("a note cannot reference a missing account");
+    assert_eq!(
+        invalid_foreign_key.kind(),
+        DatabaseErrorKind::ForeignKeyViolation
+    );
+    assert_eq!(
+        invalid_foreign_key.to_http_error().status_code(),
+        http::StatusCode::CONFLICT
+    );
+
+    let check_placeholder = if database.backend() == DatabaseBackend::Postgres {
+        "$1"
+    } else {
+        "?"
+    };
+    let check_sql = format!(
+        "INSERT INTO rustflow_orm_constraints (value) VALUES ({check_placeholder})"
+    );
+    let check_error = database
+        .execute_raw(&check_sql, [0_i64.into()])
+        .await
+        .expect_err("non-positive values must fail the CHECK constraint");
+    assert_eq!(check_error.kind(), DatabaseErrorKind::CheckViolation);
+    assert_eq!(
+        check_error.to_http_error().status_code(),
+        http::StatusCode::UNPROCESSABLE_ENTITY
+    );
+
     let first_tag = database
         .entity::<entities::tag::Entity>()
         .insert(entities::tag::ActiveModel {
@@ -692,6 +741,19 @@ async fn exercise_orm(database: &DatabasePool) {
         .limit(10);
     let matching = accounts.all(filtered).await.expect("nested filter query");
     assert_eq!(matching.len(), 2);
+
+    let second_page = accounts
+        .all(
+            accounts
+                .select()
+                .order_by_asc(entities::account::Column::Id)
+                .offset(1)
+                .limit(1),
+        )
+        .await
+        .expect("offset pagination query");
+    assert_eq!(second_page.len(), 1);
+    assert_eq!(second_page[0].id, second.id);
 
     let joined = entities::account::Entity::find()
         .join(JoinType::LeftJoin, entities::account::Relation::Notes.def())
@@ -814,7 +876,22 @@ async fn exercise_orm(database: &DatabasePool) {
             ..Default::default()
         })
         .await
-        .expect("insert inside transaction");
+        .expect("insert ORM model inside transaction");
+    let raw_transaction_insert = match database.backend() {
+        DatabaseBackend::Postgres => {
+            "INSERT INTO rustflow_orm_notes (account_id, title, body) VALUES ($1, $2, NULL)"
+        }
+        DatabaseBackend::Sqlite | DatabaseBackend::MySql => {
+            "INSERT INTO rustflow_orm_notes (account_id, title, body) VALUES (?, ?, NULL)"
+        }
+    };
+    transaction
+        .execute_raw(
+            raw_transaction_insert,
+            [first.id.into(), "raw rolled back".into()],
+        )
+        .await
+        .expect("insert raw SQL inside the same transaction");
     transaction.rollback().await.expect("rollback transaction");
 
     let rolled_back = notes
@@ -826,6 +903,15 @@ async fn exercise_orm(database: &DatabasePool) {
         .await
         .expect("query rollback result");
     assert!(rolled_back.is_none());
+    let raw_rolled_back = notes
+        .one(
+            notes
+                .select()
+                .filter(entities::note::Column::Title.eq("raw rolled back")),
+        )
+        .await
+        .expect("query raw SQL rollback result");
+    assert!(raw_rolled_back.is_none());
 
     let commit = database
         .begin_transaction()
@@ -840,7 +926,14 @@ async fn exercise_orm(database: &DatabasePool) {
             ..Default::default()
         })
         .await
-        .expect("insert inside committed transaction");
+        .expect("insert ORM model inside committed transaction");
+    commit
+        .execute_raw(
+            raw_transaction_insert,
+            [first.id.into(), "raw committed".into()],
+        )
+        .await
+        .expect("insert raw SQL inside the same committed transaction");
     commit.commit().await.expect("commit transaction");
 
     let committed = notes
@@ -852,6 +945,15 @@ async fn exercise_orm(database: &DatabasePool) {
         .await
         .expect("query commit result");
     assert!(committed.is_some());
+    let raw_committed = notes
+        .one(
+            notes
+                .select()
+                .filter(entities::note::Column::Title.eq("raw committed")),
+        )
+        .await
+        .expect("query raw SQL commit result");
+    assert!(raw_committed.is_some());
 
     let duplicate = accounts
         .insert(entities::account::ActiveModel {
@@ -864,6 +966,7 @@ async fn exercise_orm(database: &DatabasePool) {
         })
         .await
         .expect_err("unique email must be rejected");
+    assert_eq!(duplicate.kind(), DatabaseErrorKind::UniqueViolation);
     assert_eq!(
         duplicate.to_http_error().status_code(),
         http::StatusCode::CONFLICT
