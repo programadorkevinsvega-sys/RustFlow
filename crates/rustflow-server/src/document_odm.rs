@@ -9,6 +9,9 @@ use crate::{
 };
 use serde::{Serialize, de::DeserializeOwned};
 
+/// Maximum number of documents accepted by one typed insert-many call.
+pub const MAX_DOCUMENT_BULK_SIZE: usize = 1_000;
+
 /// A Serde-backed document model whose identifier field serializes as BSON _id.
 pub trait DocumentModel: Serialize + DeserializeOwned + Clone + Send + Sync + 'static {
     /// BSON-serializable identifier type.
@@ -465,6 +468,11 @@ impl<M: DocumentModel> DocumentRepository<M> {
         if models.is_empty() {
             return Err(MongoError::InvalidDocumentModel("insert_many requires at least one document"));
         }
+        if models.len() > MAX_DOCUMENT_BULK_SIZE {
+            return Err(MongoError::InvalidDocumentModel(
+                "insert_many exceeds the maximum batch size of 1000 documents",
+            ));
+        }
         let mut documents = Vec::with_capacity(models.len());
         for model in &models {
             let mut document = to_bson_document(model)?;
@@ -815,6 +823,11 @@ mod tests {
         let overlap = DocumentUpdate::new().set("profile", doc! { "city": "Medellin" })
             .expect("parent path");
         assert!(overlap.set("profile.city", "Bogota").is_err());
+    }
+
+    #[test]
+    fn bulk_insert_size_limit_is_explicit() {
+        assert_eq!(MAX_DOCUMENT_BULK_SIZE, 1_000);
     }
 
     #[test]
