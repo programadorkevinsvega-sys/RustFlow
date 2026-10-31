@@ -39,7 +39,7 @@ The model trait contract is:
 - An associated Id type that is BSON/Serde serializable and deserializable, cloneable and thread-safe.
 - A static collection name.
 - Explicit methods to read and set the model ID.
-- The serialized ID field maps to _id; RustFlow's insert path removes a missing ID field before sending the document, then sets the returned driver-generated ID on the value returned to the caller.
+- The serialized ID field maps to _id; before writes RustFlow verifies that a supplied model ID matches the BSON _id value and rejects a model whose ID does not serialize under _id. For a missing ID it omits _id before sending the document, then sets the returned driver-generated ID on the value returned to the caller.
 - Caller-supplied IDs are retained. A duplicate _id is a duplicate-key error, not an overwrite.
 - IDs are values, not relationships. ObjectId, strings, UUIDs and other BSON-compatible IDs are supported only when the chosen BSON Serde representation and the model's ID type agree. No implicit string/ObjectId coercion is performed.
 
