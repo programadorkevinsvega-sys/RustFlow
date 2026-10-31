@@ -1,6 +1,6 @@
-# SQL pools, SeaORM, transactions, and migrations (Phase 6.7.2)
+# SQL ORM and MongoDB ODM, pools, transactions, and migrations (Phase 6.7)
 
-The database API remains experimental and pre-1.0. Phase 6.7.1 selected SeaORM 1.1.20 and defined the Data Mapper/model contract. Phase 6.7.2 is accepted on the PR #59 head for final review (the PR remains open and unmerged): SeaORM runs in `rustflow-server` over one backend-specific SQLx pool shared by SQLx and SeaORM. `EntityRepository` exposes CRUD/bulk operations, typed SeaORM query composition, explicit relation loaders, parameterized raw SQL and mixed ORM/SQL transactions. SQLite, PostgreSQL, MySQL and MariaDB integration contracts, the expanded boundary/relationship/COMMIT-fault tests, and all eight required checks passed on `2cadce73c19c37c2f088f572ea37a83c65c72380`. MongoDB continues to use its independent document adapter.
+The database API remains experimental and pre-1.0. Phase 6.7.1 selected SeaORM 1.1.20 and defined the Data Mapper/model contract. Phase 6.7.2 was merged through PR #59 on 2026-10-31 (merge commit `8d387943d5f6ccb4d3f33ba3708311442e238c5f`): SeaORM runs in `rustflow-server` over one backend-specific SQLx pool shared by SQLx and SeaORM. `EntityRepository` exposes CRUD/bulk operations, typed SeaORM query composition, explicit relation loaders, parameterized raw SQL and mixed ORM/SQL transactions. SQLite, PostgreSQL, MySQL and MariaDB integration contracts, the expanded boundary/relationship/COMMIT-fault tests, and all eight required checks passed on the final PR head. MongoDB continues to use its independent document adapter and the typed Phase 6.7.3 ODM is being implemented separately.
 
 ## Supported engines
 
