@@ -88,9 +88,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
-      mongodb:
-        image: mongo:7.0.45
-        env:
+    env:
           MONGO_INITDB_ROOT_USERNAME: root
           MONGO_INITDB_ROOT_PASSWORD: root
           MONGO_INITDB_DATABASE: rustflow_test
@@ -105,7 +103,6 @@ jobs:
       RUSTFLOW_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/rustflow_test
       RUSTFLOW_TEST_MYSQL_URL: mysql://rustflow:rustflow@127.0.0.1:3306/rustflow_test
       RUSTFLOW_TEST_MARIADB_URL: mysql://rustflow:rustflow@127.0.0.1:3307/rustflow_test
-      RUSTFLOW_TEST_MONGODB_URI: mongodb://root:root@127.0.0.1:27017/rustflow_test?authSource=admin
     strategy:
       fail-fast: false
       matrix:
@@ -123,6 +120,34 @@ jobs:
 
       - name: Cache Cargo artifacts
         uses: Swatinem/rust-cache@v2
+
+      - name: Start MongoDB 7.0.45 single-node replica set
+        run: |
+          set -euo pipefail
+          docker run --detach --name rustflow-mongodb --publish 27017:27017 \
+            mongo:7.0.45 mongod --replSet rs0 --bind_ip_all
+          for attempt in $(seq 1 60); do
+            if docker exec rustflow-mongodb mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q '^1$'; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec rustflow-mongodb mongosh --quiet --eval \
+            'rs.initiate({_id: "rs0", members: [{_id: 0, host: "127.0.0.1:27017"}]})'
+          primary=""
+          for attempt in $(seq 1 60); do
+            primary="$(docker exec rustflow-mongodb mongosh --quiet --eval 'rs.status().myState' 2>/dev/null || true)"
+            if [ "$primary" = "1" ]; then
+              break
+            fi
+            sleep 1
+          done
+          if [ "$primary" != "1" ]; then
+            docker logs rustflow-mongodb
+            echo "::error::MongoDB replica set did not become primary."
+            exit 1
+          fi
+          printf '%s\n' 'RUSTFLOW_TEST_MONGODB_URI=mongodb://127.0.0.1:27017/rustflow_test?replicaSet=rs0' >> "$GITHUB_ENV"
 
       - name: Audit the resolved Cargo dependency graph
         if: matrix.toolchain == 'stable'
