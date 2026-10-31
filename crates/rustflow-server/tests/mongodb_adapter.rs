@@ -212,7 +212,6 @@ async fn mongodb_7045_real_server_contract() {
         .expect_err("bootstrap must reject an index with incompatible uniqueness");
     assert!(matches!(index_conflict, MongoError::Bootstrap(_)));
 
-
     let collection = database.collection::<Profile>(collection_name);
     let profile = Profile {
         id: ObjectId::new(),
@@ -334,7 +333,6 @@ async fn mongodb_7045_real_server_contract() {
         .expect("clean up isolated test database");
 }
 
-
 #[tokio::test]
 async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation() {
     let Some(uri) = test_uri() else {
@@ -352,141 +350,302 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
     let repository = database.repository::<OdmEntry>();
     assert_eq!(repository.collection_name(), "odm_entries");
 
-    let inserted = repository.insert(odm_entry("alpha", 10, &["rust", "database"]))
+    let inserted = repository
+        .insert(odm_entry("alpha", 10, &["rust", "database"]))
         .await
         .expect("insert typed document");
     let alpha_id = inserted.id.clone().expect("server generated ObjectId");
-    assert_eq!(repository.find_by_id(alpha_id).await.expect("find by id"), Some(inserted.clone()));
+    assert_eq!(
+        repository.find_by_id(alpha_id).await.expect("find by id"),
+        Some(inserted.clone())
+    );
 
     let named_repository = database.repository::<NamedOdmEntry>();
-    let named = named_repository.insert(NamedOdmEntry {
-        id: "stable-user-key".to_owned(),
-        title: "custom id".to_owned(),
-    }).await.expect("insert custom string ID");
+    let named = named_repository
+        .insert(NamedOdmEntry {
+            id: "stable-user-key".to_owned(),
+            title: "custom id".to_owned(),
+        })
+        .await
+        .expect("insert custom string ID");
     assert_eq!(
-        named_repository.find_by_id("stable-user-key".to_owned()).await.expect("find string ID"),
+        named_repository
+            .find_by_id("stable-user-key".to_owned())
+            .await
+            .expect("find string ID"),
         Some(named),
     );
 
-    let bulk = repository.insert_many(
-        vec![
-            odm_entry("beta", 20, &["rust"]),
-            odm_entry("gamma", 30, &["wasm"]),
-        ],
-        true,
-    ).await.expect("ordered bulk insert");
+    let bulk = repository
+        .insert_many(
+            vec![
+                odm_entry("beta", 20, &["rust"]),
+                odm_entry("gamma", 30, &["wasm"]),
+            ],
+            true,
+        )
+        .await
+        .expect("ordered bulk insert");
     assert!(bulk.iter().all(|entry| entry.id.is_some()));
 
-    let bulk_update = repository.update_many(
-        DocumentFilter::new().in_values("title", ["beta", "gamma"]).expect("bulk update filter"),
-        DocumentUpdate::new().set("batch_mark", true).expect("bulk update"),
-        false,
-    ).await.expect("update many documents");
+    let bulk_update = repository
+        .update_many(
+            DocumentFilter::new()
+                .in_values("title", ["beta", "gamma"])
+                .expect("bulk update filter"),
+            DocumentUpdate::new()
+                .set("batch_mark", true)
+                .expect("bulk update"),
+            false,
+        )
+        .await
+        .expect("update many documents");
     assert_eq!(bulk_update.matched_count, 2);
     assert_eq!(bulk_update.modified_count, 2);
 
     let duplicate_id = ObjectId::new();
-    let partial_error = repository.insert_many(
-        vec![
-            OdmEntry { id: Some(duplicate_id), title: "bulk-first".to_owned(), score: 1, tags: vec![] },
-            OdmEntry { id: Some(duplicate_id), title: "bulk-conflict".to_owned(), score: 2, tags: vec![] },
-        ],
-        true,
-    ).await.expect_err("ordered bulk stops at a duplicate _id");
+    let partial_error = repository
+        .insert_many(
+            vec![
+                OdmEntry {
+                    id: Some(duplicate_id),
+                    title: "bulk-first".to_owned(),
+                    score: 1,
+                    tags: vec![],
+                },
+                OdmEntry {
+                    id: Some(duplicate_id),
+                    title: "bulk-conflict".to_owned(),
+                    score: 2,
+                    tags: vec![],
+                },
+            ],
+            true,
+        )
+        .await
+        .expect_err("ordered bulk stops at a duplicate _id");
     assert!(std::error::Error::source(&partial_error).is_some());
     assert_eq!(
         partial_error.to_http_error().status_code(),
         StatusCode::CONFLICT,
         "a positively identified duplicate in insert_many maps to HTTP 409",
     );
-    assert!(repository.find_by_id(duplicate_id).await.expect("read partial insert").is_some());
-    repository.delete_one(
-        DocumentFilter::new().eq("_id", duplicate_id).expect("delete partial insert"),
-    ).await.expect("clean partial insert fixture");
+    assert!(
+        repository
+            .find_by_id(duplicate_id)
+            .await
+            .expect("read partial insert")
+            .is_some()
+    );
+    repository
+        .delete_one(
+            DocumentFilter::new()
+                .eq("_id", duplicate_id)
+                .expect("delete partial insert"),
+        )
+        .await
+        .expect("clean partial insert fixture");
 
     let filter = DocumentFilter::and([
-        DocumentFilter::new().gte("score", 10).expect("gte filter")
-            .lt("score", 30).expect("lt filter"),
+        DocumentFilter::new()
+            .gte("score", 10)
+            .expect("gte filter")
+            .lt("score", 30)
+            .expect("lt filter"),
         DocumentFilter::or([
-            DocumentFilter::new().eq("title", "alpha").expect("title filter"),
-            DocumentFilter::new().eq("title", "beta").expect("title filter"),
-        ]).expect("or composition"),
-        DocumentFilter::new().exists("tags", true).expect("field existence"),
-    ]).expect("and composition");
-    let page = repository.find_many(
-        DocumentQuery::new(filter).sort_desc("score").expect("sort").limit(10).expect("page size"),
-    ).await.expect("query page");
-    assert_eq!(page.iter().map(|entry| entry.title.as_str()).collect::<Vec<_>>(), vec!["beta", "alpha"]);
+            DocumentFilter::new()
+                .eq("title", "alpha")
+                .expect("title filter"),
+            DocumentFilter::new()
+                .eq("title", "beta")
+                .expect("title filter"),
+        ])
+        .expect("or composition"),
+        DocumentFilter::new()
+            .exists("tags", true)
+            .expect("field existence"),
+    ])
+    .expect("and composition");
+    let page = repository
+        .find_many(
+            DocumentQuery::new(filter)
+                .sort_desc("score")
+                .expect("sort")
+                .limit(10)
+                .expect("page size"),
+        )
+        .await
+        .expect("query page");
+    assert_eq!(
+        page.iter()
+            .map(|entry| entry.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["beta", "alpha"]
+    );
 
-    let summaries = repository.find_many_as::<OdmEntrySummary>(
-        DocumentQuery::new(DocumentFilter::new().in_values("title", ["alpha", "beta"]).expect("in filter"))
-            .include("title").expect("projection")
-            .sort_asc("title").expect("sort"),
-    ).await.expect("typed projection");
-    assert_eq!(summaries.iter().map(|entry| entry.title.as_str()).collect::<Vec<_>>(), vec!["alpha", "beta"]);
+    let summaries = repository
+        .find_many_as::<OdmEntrySummary>(
+            DocumentQuery::new(
+                DocumentFilter::new()
+                    .in_values("title", ["alpha", "beta"])
+                    .expect("in filter"),
+            )
+            .include("title")
+            .expect("projection")
+            .sort_asc("title")
+            .expect("sort"),
+        )
+        .await
+        .expect("typed projection");
+    assert_eq!(
+        summaries
+            .iter()
+            .map(|entry| entry.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["alpha", "beta"]
+    );
 
-    let updated = repository.update_one(
-        DocumentFilter::new().eq("_id", inserted.id.clone().expect("id")).expect("filter"),
-        DocumentUpdate::new().inc("score", 5).expect("increment")
-            .push("tags", "odm").expect("array push"),
-        false,
-    ).await.expect("update typed document");
+    let updated = repository
+        .update_one(
+            DocumentFilter::new()
+                .eq("_id", inserted.id.clone().expect("id"))
+                .expect("filter"),
+            DocumentUpdate::new()
+                .inc("score", 5)
+                .expect("increment")
+                .push("tags", "odm")
+                .expect("array push"),
+            false,
+        )
+        .await
+        .expect("update typed document");
     assert_eq!(updated.matched_count, 1);
     assert_eq!(updated.modified_count, 1);
-    let after_update = repository.find_by_id(inserted.id.clone().expect("id"))
-        .await.expect("read after update").expect("document remains");
+    let after_update = repository
+        .find_by_id(inserted.id.clone().expect("id"))
+        .await
+        .expect("read after update")
+        .expect("document remains");
     assert_eq!(after_update.score, 15);
     assert!(after_update.tags.contains(&"odm".to_owned()));
 
-    let pulled = repository.update_one(
-        DocumentFilter::new().eq("_id", inserted.id.clone().expect("id")).expect("filter"),
-        DocumentUpdate::new().pull("tags", "rust").expect("pull array item"),
-        false,
-    ).await.expect("pull an array element");
+    let pulled = repository
+        .update_one(
+            DocumentFilter::new()
+                .eq("_id", inserted.id.clone().expect("id"))
+                .expect("filter"),
+            DocumentUpdate::new()
+                .pull("tags", "rust")
+                .expect("pull array item"),
+            false,
+        )
+        .await
+        .expect("pull an array element");
     assert_eq!(pulled.modified_count, 1);
-    let after_pull = repository.find_by_id(inserted.id.clone().expect("id"))
-        .await.expect("read after pull").expect("document remains");
+    let after_pull = repository
+        .find_by_id(inserted.id.clone().expect("id"))
+        .await
+        .expect("read after pull")
+        .expect("document remains");
     assert!(!after_pull.tags.contains(&"rust".to_owned()));
 
-    let replaced = repository.replace_one(
-        DocumentFilter::new().eq("_id", inserted.id.clone().expect("id")).expect("filter"),
-        &OdmEntry { score: 16, ..after_update.clone() },
-        false,
-    ).await.expect("replace typed document");
+    let replaced = repository
+        .replace_one(
+            DocumentFilter::new()
+                .eq("_id", inserted.id.clone().expect("id"))
+                .expect("filter"),
+            &OdmEntry {
+                score: 16,
+                ..after_update.clone()
+            },
+            false,
+        )
+        .await
+        .expect("replace typed document");
     assert_eq!(replaced.matched_count, 1);
-    assert_eq!(repository.find_by_id(inserted.id.clone().expect("id")).await
-        .expect("read replacement").expect("replacement exists").score, 16);
+    assert_eq!(
+        repository
+            .find_by_id(inserted.id.clone().expect("id"))
+            .await
+            .expect("read replacement")
+            .expect("replacement exists")
+            .score,
+        16
+    );
 
-    let groups = repository.aggregate_as::<OdmScoreGroup>(vec![
-        doc! { "$match": { "title": { "$in": ["alpha", "beta", "gamma"] } } },
-        doc! { "$group": { "_id": "$score", "entries": { "$sum": 1 } } },
-        doc! { "$sort": { "_id": 1 } },
-    ]).await.expect("typed aggregation");
+    let groups = repository
+        .aggregate_as::<OdmScoreGroup>(vec![
+            doc! { "$match": { "title": { "$in": ["alpha", "beta", "gamma"] } } },
+            doc! { "$group": { "_id": "$score", "entries": { "$sum": 1 } } },
+            doc! { "$sort": { "_id": 1 } },
+        ])
+        .await
+        .expect("typed aggregation");
     assert_eq!(groups.len(), 3);
     assert_eq!(groups[0].score, 16);
     assert_eq!(groups[0].entries, 1);
 
-    assert_eq!(repository.count(DocumentFilter::new()).await.expect("count"), 3);
-    assert!(repository.exists(DocumentFilter::new().eq("title", "gamma").expect("filter"))
-        .await.expect("exists query"));
-    let upsert = repository.update_one(
-        DocumentFilter::new().eq("title", "created-by-upsert").expect("filter"),
-        DocumentUpdate::new().set("score", 40).expect("set score")
-            .set("tags", Vec::<String>::new()).expect("set tags"),
-        true,
-    ).await.expect("upsert document");
+    assert_eq!(
+        repository
+            .count(DocumentFilter::new())
+            .await
+            .expect("count"),
+        3
+    );
+    assert!(
+        repository
+            .exists(DocumentFilter::new().eq("title", "gamma").expect("filter"))
+            .await
+            .expect("exists query")
+    );
+    let upsert = repository
+        .update_one(
+            DocumentFilter::new()
+                .eq("title", "created-by-upsert")
+                .expect("filter"),
+            DocumentUpdate::new()
+                .set("score", 40)
+                .expect("set score")
+                .set("tags", Vec::<String>::new())
+                .expect("set tags"),
+            true,
+        )
+        .await
+        .expect("upsert document");
     assert!(upsert.upserted_id.is_some());
-    assert!(repository.find_one(DocumentFilter::new().eq("title", "created-by-upsert").expect("filter"))
-        .await.expect("read upsert").is_some());
+    assert!(
+        repository
+            .find_one(
+                DocumentFilter::new()
+                    .eq("title", "created-by-upsert")
+                    .expect("filter")
+            )
+            .await
+            .expect("read upsert")
+            .is_some()
+    );
 
-    let deleted: DocumentDeleteOutcome = repository.delete_many(
-        DocumentFilter::new().in_values("title", ["alpha", "beta", "gamma", "created-by-upsert"])
-            .expect("delete filter"),
-    ).await.expect("delete fixtures");
+    let deleted: DocumentDeleteOutcome = repository
+        .delete_many(
+            DocumentFilter::new()
+                .in_values("title", ["alpha", "beta", "gamma", "created-by-upsert"])
+                .expect("delete filter"),
+        )
+        .await
+        .expect("delete fixtures");
     assert_eq!(deleted.deleted_count, 4);
-    assert_eq!(repository.count(DocumentFilter::new()).await.expect("empty collection"), 0);
+    assert_eq!(
+        repository
+            .count(DocumentFilter::new())
+            .await
+            .expect("empty collection"),
+        0
+    );
 
-    database.run_with_timeout(database.database().drop()).await.expect("drop isolated test database");
+    database
+        .run_with_timeout(database.database().drop())
+        .await
+        .expect("drop isolated test database");
 }
 
 #[tokio::test]
@@ -505,19 +664,30 @@ async fn mongodb_typed_odm_rejects_multi_document_transactions_on_standalone() {
         .expect("connect to MongoDB standalone");
     let repository = database.repository::<OdmEntry>();
 
-    let mut session = database.start_session().await.expect("start standalone session");
-    session.start_transaction().await.expect("transaction state is local until operation");
-    let error = repository.insert_with_session(
-        odm_entry("standalone-transaction-must-fail", 1, &[]),
-        &mut session,
-    ).await.expect_err("standalone MongoDB must reject multi-document transaction writes");
+    let mut session = database
+        .start_session()
+        .await
+        .expect("start standalone session");
+    session
+        .start_transaction()
+        .await
+        .expect("transaction state is local until operation");
+    let error = repository
+        .insert_with_session(
+            odm_entry("standalone-transaction-must-fail", 1, &[]),
+            &mut session,
+        )
+        .await
+        .expect_err("standalone MongoDB must reject multi-document transaction writes");
     assert!(
         std::error::Error::source(&error).is_some(),
         "the server's transaction topology error must remain available as a source",
     );
 
-    database.run_with_timeout(database.database().drop())
-        .await.expect("drop isolated standalone test database");
+    database
+        .run_with_timeout(database.database().drop())
+        .await
+        .expect("drop isolated standalone test database");
 }
 
 #[tokio::test]
