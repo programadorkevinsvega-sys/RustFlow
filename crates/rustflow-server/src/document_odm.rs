@@ -1216,7 +1216,11 @@ mod tests {
         assert!(DocumentUpdate::new().into_document().is_err());
         assert!(DocumentUpdate::new().set("_id", "replacement").is_err());
         assert!(DocumentUpdate::new().unset("_id").is_err());
-        assert!(DocumentUpdate::new().set("_id.tenant", "replacement").is_err());
+        assert!(
+            DocumentUpdate::new()
+                .set("_id.tenant", "replacement")
+                .is_err()
+        );
         let overlap = DocumentUpdate::new()
             .set("profile", doc! { "city": "Medellin" })
             .expect("parent path");
