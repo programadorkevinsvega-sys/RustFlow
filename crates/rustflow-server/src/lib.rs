@@ -54,7 +54,7 @@ pub use document_database::{
 };
 pub use document_odm::{
     DocumentDeleteOutcome, DocumentField, DocumentFilter, DocumentModel, DocumentQuery, DocumentRepository,
-    DocumentUpdate, DocumentUpdateOutcome,
+    DocumentUpdate, DocumentUpdateOutcome, MAX_DOCUMENT_BULK_SIZE,
 };
 pub use group::RouteGroup;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
