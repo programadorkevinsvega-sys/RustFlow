@@ -89,17 +89,6 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-          MONGO_INITDB_ROOT_USERNAME: root
-          MONGO_INITDB_ROOT_PASSWORD: root
-          MONGO_INITDB_DATABASE: rustflow_test
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --quiet --username root --password root --authenticationDatabase admin --eval 'quit(db.adminCommand({ping:1}).ok ? 0 : 1)'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-    env:
       RUSTFLOW_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/rustflow_test
       RUSTFLOW_TEST_MYSQL_URL: mysql://rustflow:rustflow@127.0.0.1:3306/rustflow_test
       RUSTFLOW_TEST_MARIADB_URL: mysql://rustflow:rustflow@127.0.0.1:3307/rustflow_test
