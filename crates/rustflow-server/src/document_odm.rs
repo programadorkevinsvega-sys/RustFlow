@@ -25,12 +25,12 @@ pub trait DocumentModel: Serialize + DeserializeOwned + Clone + Send + Sync + 's
 ///
 /// Declare field constants next to a model to couple the path to its Rust value type:
 ///
-/// \`\`\`
+/// ```
 /// use rustflow_server::DocumentField;
 ///
 /// const EMAIL: DocumentField<String> = DocumentField::new("email");
 /// const AGE: DocumentField<i32> = DocumentField::new("age");
-/// \`\`\`
+/// ```
 ///
 /// The type parameter prevents passing a value of the wrong Rust type to typed filter
 /// and update helpers. It does not inspect arbitrary Serde rename attributes at runtime.
@@ -82,11 +82,11 @@ impl DocumentFilter {
 
     /// Match a typed field against an equal value.
     ///
-    /// \`\`\`compile_fail
+    /// ```compile_fail
     /// use rustflow_server::{DocumentField, DocumentFilter};
     /// const EMAIL: DocumentField<String> = DocumentField::new("email");
     /// let _ = DocumentFilter::new().eq_field(EMAIL, 42_i32);
-    /// \`\`\`
+    /// ```
     pub fn eq_field<T: Serialize>(
         mut self,
         field: DocumentField<T>,
