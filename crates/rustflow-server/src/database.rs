@@ -638,26 +638,6 @@ impl DatabaseError {
         }
     }
 
-    fn sqlx_error(&self) -> Option<&sqlx::Error> {
-        match self {
-            Self::Connect(error) | Self::Query(error) => Some(error),
-            Self::InvalidConfiguration(_)
-            | Self::InvalidModelState(_)
-            | Self::OrmQuery(_)
-            | Self::OrmTransaction(_)
-            | Self::Migration(_) => None,
-        }
-    }
-
-    fn orm_error(&self) -> Option<&sea_orm::DbErr> {
-        match self {
-            Self::OrmQuery(error)
-            | Self::OrmTransaction(error)
-            | Self::CommitOutcomeUnknown(error) => Some(error),
-            _ => None,
-        }
-    }
-
     /// Convert a database failure into a safe HTTP error response.
     ///
     /// Row-not-found maps to 404, known uniqueness constraints map to 409, pool
@@ -730,26 +710,32 @@ impl Error for DatabaseError {
     }
 }
 
-fn sqlx_constraint_kind(
-    error: &dyn sqlx::error::DatabaseError,
+fn constraint_kind_from_code(
+    code: Option<&str>,
+    is_unique_violation: bool,
 ) -> Option<DatabaseErrorKind> {
-    let code = error.code();
-    if error.is_unique_violation()
+    if is_unique_violation
         || matches!(
-            code.as_deref(),
+            code,
             Some("23505" | "1555" | "2067" | "1022" | "1062" | "1169" | "1586")
         )
     {
         return Some(DatabaseErrorKind::UniqueViolation);
     }
 
-    match code.as_deref() {
+    match code {
         Some("23503" | "787" | "1216" | "1217" | "1451" | "1452" | "1557" | "1761" | "1762") => {
             Some(DatabaseErrorKind::ForeignKeyViolation)
         }
         Some("23514" | "275" | "3819" | "4025") => Some(DatabaseErrorKind::CheckViolation),
         _ => None,
     }
+}
+
+fn sqlx_constraint_kind(
+    error: &dyn sqlx::error::DatabaseError,
+) -> Option<DatabaseErrorKind> {
+    constraint_kind_from_code(error.code().as_deref(), error.is_unique_violation())
 }
 
 fn classify_sqlx_error(error: &sqlx::Error, fallback: DatabaseErrorKind) -> DatabaseErrorKind {
@@ -787,20 +773,6 @@ fn commit_error_outcome_is_unknown(error: &sea_orm::DbErr) -> bool {
         sea_orm::DbErr::Conn(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(_)))
             | sea_orm::DbErr::Exec(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(_)))
             | sea_orm::DbErr::Query(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(_)))
-    )
-}
-
-fn is_orm_unique_constraint_error(error: &sea_orm::DbErr) -> bool {
-    let runtime_error = match error {
-        sea_orm::DbErr::Conn(error)
-        | sea_orm::DbErr::Exec(error)
-        | sea_orm::DbErr::Query(error) => error,
-        _ => return false,
-    };
-    matches!(
-        runtime_error,
-        sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(error))
-            if is_unique_constraint_error(error.as_ref())
     )
 }
 
@@ -1026,6 +998,56 @@ mod tests {
 
         let transaction = database.begin_transaction().await.unwrap();
         transaction.rollback().await.unwrap();
+    }
+
+    #[test]
+    fn database_error_codes_are_classified_for_all_supported_sql_drivers() {
+        use super::{DatabaseErrorKind, constraint_kind_from_code};
+
+        for code in ["23505", "1555", "2067", "1022", "1062", "1169", "1586"] {
+            assert_eq!(
+                constraint_kind_from_code(Some(code), false),
+                Some(DatabaseErrorKind::UniqueViolation),
+                "unique code {code}"
+            );
+        }
+        for code in ["23503", "787", "1216", "1217", "1451", "1452", "1557", "1761", "1762"] {
+            assert_eq!(
+                constraint_kind_from_code(Some(code), false),
+                Some(DatabaseErrorKind::ForeignKeyViolation),
+                "foreign-key code {code}"
+            );
+        }
+        for code in ["23514", "275", "3819", "4025"] {
+            assert_eq!(
+                constraint_kind_from_code(Some(code), false),
+                Some(DatabaseErrorKind::CheckViolation),
+                "check code {code}"
+            );
+        }
+        assert_eq!(
+            constraint_kind_from_code(None, true),
+            Some(DatabaseErrorKind::UniqueViolation)
+        );
+        assert_eq!(constraint_kind_from_code(Some("08006"), false), None);
+    }
+
+    #[test]
+    fn ambiguous_commit_failures_are_not_reported_as_rolled_back() {
+        use super::{DatabaseError, DatabaseErrorKind, commit_error_outcome_is_unknown};
+        use sea_orm::DbErr;
+
+        let ambiguous = DbErr::Custom("connection dropped during commit".to_owned());
+        assert!(commit_error_outcome_is_unknown(&ambiguous));
+
+        let error = DatabaseError::CommitOutcomeUnknown(ambiguous);
+        assert_eq!(error.kind(), DatabaseErrorKind::CommitOutcomeUnknown);
+        assert_eq!(
+            error.to_http_error().status_code(),
+            http::StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert!(error.to_string().contains("outcome is unknown"));
+        assert!(!error.to_string().contains("connection dropped"));
     }
 
     #[test]
