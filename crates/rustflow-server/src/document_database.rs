@@ -469,7 +469,7 @@ impl MongoDatabase {
             existing_indexes.push(
                 cursor
                     .deserialize_current()
-                    .map_err(MongoError::Deserialization)?,
+                    .map_err(MongoError::Bootstrap)?,
             );
         }
 
