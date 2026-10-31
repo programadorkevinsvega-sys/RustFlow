@@ -44,8 +44,8 @@ use bytes::Bytes;
 pub use config::{AppConfig, AppEnvironment, ConfigError};
 pub use csrf::{CsrfError, CsrfProtection, CsrfToken};
 pub use database::{
-    DatabaseBackend, DatabaseConfig, DatabaseError, DatabaseErrorKind, DatabasePool,
-    DatabaseTransaction,
+    DatabaseBackend, DatabaseCapabilities, DatabaseConfig, DatabaseError, DatabaseErrorKind,
+    DatabasePool, DatabaseTransaction,
 };
 pub use document_database::{
     DocumentBootstrap, DocumentIndex, MongoConfig, MongoDatabase, MongoError, from_bson_document,
