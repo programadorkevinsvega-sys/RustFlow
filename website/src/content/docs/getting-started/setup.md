@@ -92,4 +92,4 @@ Esta demo muestra Counter, estado reactivo, eventos, una lista de tareas con cla
 
 ## Instalación y límites del CLI
 
-Todavía no hay una versión estable publicada en crates.io. El método disponible es instalar desde el checkout con `cargo install --path crates/rustflow-cli --locked`. El scaffold genera un servidor nativo; las plantillas de modelo y migración no integran persistencia. Consulta [CLI y generadores](/guides/cli/) y [Estado del proyecto](/project-status/).
+Todavía no hay una versión estable publicada en crates.io. El método disponible es instalar desde el checkout con `cargo install --path crates/rustflow-cli --locked`. El scaffold genera un servidor nativo con configuración, pool SQLx y runner de migraciones; la plantilla `model` sigue creando un struct de dominio plano y no genera una entidad ORM ni integra un repositorio persistente. Consulta [CLI y generadores](/guides/cli/) y [Estado del proyecto](/project-status/).
