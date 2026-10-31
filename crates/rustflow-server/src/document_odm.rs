@@ -42,7 +42,7 @@ impl DocumentFilter {
 
     /// Match an exact serialized field value.
     pub fn eq<T: Serialize>(mut self, field: &str, value: T) -> Result<Self, MongoError> {
-        self.insert_value(field, bson_value(&value)?)?;
+        self.insert_operator(field, "$eq", bson_value(&value)?)?;
         Ok(self)
     }
 
@@ -84,13 +84,13 @@ impl DocumentFilter {
 
     /// Match BSON null; MongoDB also matches documents where the field is absent.
     pub fn is_null(mut self, field: &str) -> Result<Self, MongoError> {
-        self.insert_value(field, Bson::Null)?;
+        self.insert_operator(field, "$eq", Bson::Null)?;
         Ok(self)
     }
 
     /// Match a field whose array contains the serialized value.
     pub fn array_contains<T: Serialize>(mut self, field: &str, value: T) -> Result<Self, MongoError> {
-        self.insert_value(field, bson_value(&value)?)?;
+        self.insert_operator(field, "$eq", bson_value(&value)?)?;
         Ok(self)
     }
 
@@ -292,9 +292,16 @@ impl DocumentUpdate {
     }
     fn insert(&mut self, operator: &'static str, field: &str, value: Bson) -> Result<(), MongoError> {
         validate_field_path(field)?;
-        if !self.paths.insert(field.to_owned()) {
-            return Err(MongoError::InvalidDocumentUpdate("an update cannot target the same field twice"));
+        if self.paths.iter().any(|existing| {
+            existing == field
+                || existing.strip_prefix(field).is_some_and(|suffix| suffix.starts_with('.'))
+                || field.strip_prefix(existing).is_some_and(|suffix| suffix.starts_with('.'))
+        }) {
+            return Err(MongoError::InvalidDocumentUpdate(
+                "an update cannot target the same or overlapping field paths",
+            ));
         }
+        self.paths.insert(field.to_owned());
         if !self.document.contains_key(operator) {
             self.document.insert(operator, Document::new());
         }
@@ -610,7 +617,10 @@ mod tests {
         assert_eq!(filter.into_document(), doc! {
             "$and": [
                 { "age": { "$gte": 18, "$lt": 65 } },
-                { "$or": [{ "status": "active" }, { "status": "trial" }] }
+                { "$or": [
+                    { "status": { "$eq": "active" } },
+                    { "status": { "$eq": "trial" } }
+                ] }
             ]
         });
     }
@@ -643,6 +653,9 @@ mod tests {
         let update = DocumentUpdate::new().set("counter", 1).expect("first");
         assert!(update.inc("counter", 1).is_err());
         assert!(DocumentUpdate::new().into_document().is_err());
+        let overlap = DocumentUpdate::new().set("profile", doc! { "city": "Medellin" })
+            .expect("parent path");
+        assert!(overlap.set("profile.city", "Bogota").is_err());
     }
 
     #[test]
