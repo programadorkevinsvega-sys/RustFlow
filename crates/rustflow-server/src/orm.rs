@@ -358,7 +358,7 @@ where
         return Ok(Vec::new());
     }
 
-    let keys: Vec<K> = parents.iter().map(parent_key).collect();
+    let keys: Vec<K> = parents.iter().map(|parent| parent_key(parent)).collect();
     let query = options.into_query().filter(foreign_key.is_in(keys.clone()));
 
     let projected = query
@@ -591,6 +591,7 @@ where
             parent_key,
             related_key,
             _types: PhantomData,
+            _connection: PhantomData,
         }));
         Ok(self)
     }
@@ -840,6 +841,7 @@ where
     parent_key: ParentKey,
     related_key: RelatedKey,
     _types: PhantomData<fn(&P) -> (D, K)>,
+    _connection: PhantomData<fn() -> C>,
 }
 
 impl<P, R, D, K, ParentKey, RelatedKey, C> RelationGraphNode<P, C>
