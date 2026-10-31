@@ -10,10 +10,12 @@ El ODM de RustFlow para MongoDB es una API documental experimental, independient
 Configura `RUSTFLOW_MONGODB_URI` y `RUSTFLOW_MONGODB_DATABASE` en el entorno. La URI admitida en este contrato es `mongodb://`; el resolver DNS SRV está deshabilitado. La configuración aplica timeouts de conexión, selección de servidor y operaciones.
 
 ```rust
-use rustflow_server::{AppConfig, MongoConfig, MongoDatabase};
+use rustflow_server::{MongoConfig, MongoDatabase};
 
-let app = AppConfig::load()?;
-let config = MongoConfig::from_app_config(&app)?;
+let config = MongoConfig::new(
+    std::env::var("RUSTFLOW_MONGODB_URI").expect("set RUSTFLOW_MONGODB_URI"),
+    std::env::var("RUSTFLOW_MONGODB_DATABASE").expect("set RUSTFLOW_MONGODB_DATABASE"),
+)?;
 let database = MongoDatabase::connect(&config).await?;
 database.ping().await?;
 ```
@@ -23,7 +25,7 @@ database.ping().await?;
 Implementa `DocumentModel` para asociar el tipo Rust a una colección y al tipo de identificador. La propiedad del ID debe serializarse como BSON `_id`. Para que MongoDB genere un `ObjectId`, omite el campo cuando todavía es `None`.
 
 ```rust
-use mongodb_driver::bson::oid::ObjectId;
+use rustflow_server::mongodb_driver::bson::oid::ObjectId;
 use rustflow_server::DocumentModel;
 use serde::{Deserialize, Serialize};
 
