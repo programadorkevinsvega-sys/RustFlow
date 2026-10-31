@@ -717,7 +717,7 @@ fn constraint_kind_from_code(
 ) -> Option<DatabaseErrorKind> {
     if is_unique_violation
         || matches!(code, Some("23505" | "1555" | "2067"))
-        || matches!(mysql_number, Some(1022 | 1062 | 1169 | 1586))
+        || matches!(mysql_number, Some(1022 | 1062 | 1169 | 1586 | 1859))
     {
         return Some(DatabaseErrorKind::UniqueViolation);
     }
@@ -727,13 +727,14 @@ fn constraint_kind_from_code(
         Some("23503" | "787")
     ) || matches!(
         mysql_number,
-        Some(1216 | 1217 | 1451 | 1452 | 1557 | 1761 | 1762)
+        Some(1216 | 1217 | 1451 | 1452 | 1557 | 1761 | 1762 | 1830 | 1834)
     ) {
         return Some(DatabaseErrorKind::ForeignKeyViolation);
     }
 
     if matches!(code, Some("23514" | "275"))
-        || matches!(mysql_number, Some(3819 | 4025))
+        || matches!(mysql_number, Some(3819))
+        || (mysql_number == Some(4025) && code == Some("23000"))
     {
         return Some(DatabaseErrorKind::CheckViolation);
     }
@@ -744,13 +745,26 @@ fn constraint_kind_from_code(
 fn sqlx_constraint_kind(
     error: &dyn sqlx::error::DatabaseError,
 ) -> Option<DatabaseErrorKind> {
+    // Prefer SQLx's backend-native classification. In particular, MySQL's
+    // SQLSTATE 23000 is shared by several constraint types; the driver uses
+    // the protocol error number to distinguish them.
+    if error.is_unique_violation() {
+        return Some(DatabaseErrorKind::UniqueViolation);
+    }
+    if error.is_foreign_key_violation() {
+        return Some(DatabaseErrorKind::ForeignKeyViolation);
+    }
+    if error.is_check_violation() {
+        return Some(DatabaseErrorKind::CheckViolation);
+    }
+
     let mysql_number = error
         .try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>()
         .map(sqlx::mysql::MySqlDatabaseError::number);
     constraint_kind_from_code(
         error.code().as_deref(),
         mysql_number,
-        error.is_unique_violation(),
+        false,
     )
 }
 
@@ -1027,7 +1041,7 @@ mod tests {
                 "unique SQLSTATE/SQLite code {code}"
             );
         }
-        for number in [1022, 1062, 1169, 1586] {
+        for number in [1022, 1062, 1169, 1586, 1859] {
             assert_eq!(
                 constraint_kind_from_code(Some("23000"), Some(number), false),
                 Some(DatabaseErrorKind::UniqueViolation),
@@ -1041,7 +1055,7 @@ mod tests {
                 "foreign-key SQLSTATE/SQLite code {code}"
             );
         }
-        for number in [1216, 1217, 1451, 1452, 1557, 1761, 1762] {
+        for number in [1216, 1217, 1451, 1452, 1557, 1761, 1762, 1830, 1834] {
             assert_eq!(
                 constraint_kind_from_code(Some("23000"), Some(number), false),
                 Some(DatabaseErrorKind::ForeignKeyViolation),
@@ -1055,13 +1069,21 @@ mod tests {
                 "check SQLSTATE/SQLite code {code}"
             );
         }
-        for number in [3819, 4025] {
-            assert_eq!(
-                constraint_kind_from_code(Some("HY000"), Some(number), false),
-                Some(DatabaseErrorKind::CheckViolation),
-                "MySQL-family check error {number}"
-            );
-        }
+        assert_eq!(
+            constraint_kind_from_code(Some("HY000"), Some(3819), false),
+            Some(DatabaseErrorKind::CheckViolation),
+            "MySQL CHECK constraint error 3819"
+        );
+        assert_eq!(
+            constraint_kind_from_code(Some("23000"), Some(4025), false),
+            Some(DatabaseErrorKind::CheckViolation),
+            "MariaDB CHECK constraint error 4025"
+        );
+        assert_eq!(
+            constraint_kind_from_code(Some("HY000"), Some(4025), false),
+            None,
+            "MySQL error 4025 is not MariaDB's CHECK violation"
+        );
         assert_eq!(
             constraint_kind_from_code(None, None, true),
             Some(DatabaseErrorKind::UniqueViolation)
