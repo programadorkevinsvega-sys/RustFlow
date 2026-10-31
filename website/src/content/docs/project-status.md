@@ -134,7 +134,8 @@ La subfase 6.6.2 quedó integrada en `main` mediante PR #55, con el commit `e3ce
 La fase se divide en subfases para mantener contratos separados, pero **el objetivo obligatorio es una capa madura desde el principio, no un ORM mínimo que se declare terminado tras CRUD**. El cierre global exige que el contrato completo de modelos, consultas, relaciones/carga, transacciones, diagnósticos, compatibilidad y CI pase conjuntamente.
 
 - **6.7.1 — Arquitectura y contrato de modelos:** cerrada e integrada mediante PR #58; ADR 0020 selecciona Data Mapper/SeaORM 1.1.20 y define el contrato `ModelDiagnostics`.
-- **6.7.2 — ORM SQL:** criterios de aceptación cerrados sobre el HEAD de PR #59 (abierta, sin merge); pools SQLx tipados compartidos con SeaORM, EntityRepository, CRUD/bulk, query composition, loaders explícitos y transacciones mixtas para SQLite/PostgreSQL/MySQL/MariaDB.
+- **6.7.2 — ORM SQL:** criterios de aceptación cerrados e integrados en `main` mediante PR #59 (Squash Merge, commit `8d387943d5f6ccb4d3f33ba3708311442e238c5f`); pools SQLx tipados compartidos con SeaORM, EntityRepository, CRUD/bulk, query composition, loaders explícitos y transacciones mixtas para SQLite/PostgreSQL/MySQL/MariaDB.
+- **6.7.3 — ODM MongoDB:** implementación en curso en la PR #60 (Draft, sin merge). El contrato Data Mapper separado y la API experimental están documentados en ADR 0021 y en la [guía ODM](/guides/mongodb-odm/).
 - **6.7.3 — Mapeador documental/ODM:** pendiente; modelos BSON, colecciones, IDs y operaciones MongoDB nativas, sin reutilizar semántica SQL.
 - **6.7.4 — Relaciones y carga avanzada:** pendiente de opciones de carga filtrada/ordenada, grafos más profundos y helpers de mutación one-to-one/one-to-many más allá de la cobertura baseline ya aceptada en 6.7.2.
 - **6.7.5 — CLI, ejemplos y documentación:** pendiente una aplicación CRUD generada que pruebe validación, persistencia y salida renderizada.
