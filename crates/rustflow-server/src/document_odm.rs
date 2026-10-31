@@ -449,11 +449,7 @@ impl<M: DocumentModel> DocumentRepository<M> {
 
     /// Insert one model and return it with its database-generated or supplied ID.
     pub async fn insert(&self, mut model: M) -> Result<M, MongoError> {
-        let mut document = to_bson_document(&model)?;
-        match model.id() {
-            Some(id) => { document.insert("_id", bson_value(&id)?); }
-            None => { document.remove("_id"); }
-        }
+        let document = serialize_document_model(&model)?;
         let collection = self.database.collection::<Document>(self.collection_name);
         let result = self.database.run_owned_with_timeout(async move {
             collection.insert_one(document).await
@@ -468,12 +464,7 @@ impl<M: DocumentModel> DocumentRepository<M> {
         validate_bulk_size(models.len())?;
         let mut documents = Vec::with_capacity(models.len());
         for model in &models {
-            let mut document = to_bson_document(model)?;
-            match model.id() {
-                Some(id) => { document.insert("_id", bson_value(&id)?); }
-                None => { document.remove("_id"); }
-            }
-            documents.push(document);
+            documents.push(serialize_document_model(model)?);
         }
         let collection = self.database.collection::<Document>(self.collection_name);
         let result = self.database.run_owned_with_timeout(async move {
@@ -541,7 +532,7 @@ impl<M: DocumentModel> DocumentRepository<M> {
     pub async fn replace_one(
         &self, filter: DocumentFilter, replacement: &M, upsert: bool,
     ) -> Result<DocumentUpdateOutcome, MongoError> {
-        let replacement = to_bson_document(replacement)?;
+        let replacement = serialize_document_model(replacement)?;
         let collection = self.database.collection::<Document>(self.collection_name);
         let result = self.database.run_owned_with_timeout(async move {
             collection.replace_one(filter.into_document(), replacement).upsert(upsert).await
@@ -613,11 +604,7 @@ impl<M: DocumentModel> DocumentRepository<M> {
     pub async fn insert_with_session(
         &self, mut model: M, session: &mut ClientSession,
     ) -> Result<M, MongoError> {
-        let mut document = to_bson_document(&model)?;
-        match model.id() {
-            Some(id) => { document.insert("_id", bson_value(&id)?); }
-            None => { document.remove("_id"); }
-        }
+        let document = serialize_document_model(&model)?;
         let collection = self.database.collection::<Document>(self.collection_name);
         let result = collection.insert_one(document).session(&mut *session).await
             .map_err(MongoError::Operation)?;
@@ -687,6 +674,33 @@ where P: DeserializeOwned + Send + Sync + 'static {
     Ok(documents)
 }
 
+fn serialize_document_model<M: DocumentModel>(model: &M) -> Result<Document, MongoError> {
+    let mut document = to_bson_document(model)?;
+    match model.id() {
+        Some(id) => {
+            let expected = bson_value(&id)?;
+            match document.get("_id") {
+                Some(serialized) if serialized == &expected => {}
+                Some(_) => {
+                    return Err(MongoError::InvalidDocumentModel(
+                        "serialized BSON _id does not match DocumentModel::id",
+                    ));
+                }
+                None => {
+                    return Err(MongoError::InvalidDocumentModel(
+                        "DocumentModel identifier must serialize as BSON _id",
+                    ));
+                }
+            }
+        }
+        None => {
+            // Omit an absent ID so MongoDB can generate an ObjectId on insert.
+            document.remove("_id");
+        }
+    }
+    Ok(document)
+}
+
 fn validate_bulk_size(size: usize) -> Result<(), MongoError> {
     if size == 0 {
         return Err(MongoError::InvalidDocumentModel(
@@ -717,6 +731,25 @@ fn validate_field_path(field: &str) -> Result<(), MongoError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Clone, Serialize, Deserialize)]
+    struct MissingIdRename {
+        id: ObjectId,
+    }
+
+    impl DocumentModel for MissingIdRename {
+        type Id = ObjectId;
+        const COLLECTION: &'static str = "missing_id_rename";
+
+        fn id(&self) -> Option<Self::Id> { Some(self.id) }
+        fn set_id(&mut self, id: Self::Id) { self.id = id; }
+    }
+
+    #[test]
+    fn document_model_requires_identifier_to_serialize_as_bson_id() {
+        let model = MissingIdRename { id: bson::oid::ObjectId::new() };
+        assert!(serialize_document_model(&model).is_err());
+    }
 
     #[test]
     fn filters_compose_native_nested_operators() {
