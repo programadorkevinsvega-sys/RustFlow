@@ -98,7 +98,23 @@ Call `rollback()` when the operation should be discarded. Do not hold a transact
 
 ## Error mapping
 
-`DatabaseError::to_http_error` maps row-not-found to 404, recognized unique-key violations to 409, pool timeouts/closures to 503 and other database faults to a generic 500. SQLx and SeaORM error sources remain available to trusted server-side diagnostics, while public messages do not expose SQL, credentials or bound secrets.
+DatabaseError::kind() classifies failures without exposing driver messages, SQL, constraint names, values or connection URLs. The same mapping applies to SQLx and SeaORM-originated operations.
+
+| DatabaseErrorKind | Condition | HTTP | Application response |
+|---|---|---:|---|
+| InvalidConfiguration | Invalid URL, pool settings or migration configuration | 500 | Correct deployment/configuration; never expose the configured URL |
+| InvalidModelState | Missing primary-key state or invalid ActiveModel write state | 400 | Correct the model before retrying |
+| NotFound | A required row was not found | 404 | Handle missing resource |
+| UniqueViolation | Unique or primary-key conflict | 409 | Resolve the conflicting value or use a deliberate upsert path |
+| ForeignKeyViolation | Referenced parent missing or referenced row cannot be deleted | 409 | Resolve the relation conflict |
+| CheckViolation | A database CHECK constraint rejected the write | 422 | Correct the submitted value |
+| Unavailable | Connection/acquire timeout or closed pool | 503 | Retry with backoff where the operation is safe |
+| CommitOutcomeUnknown | Transport/protocol failure while COMMIT was in flight | 503 | Inspect the persisted state or idempotency key before retrying |
+| Query / Transaction / Migration | Other query, transaction or migration failure | 500 | Handle as an internal database error |
+
+MySQL and MariaDB report a general SQLSTATE for some constraints, so the mapper inspects MySQL protocol error numbers (unique: 1022/1062/1169/1586; foreign key: 1216/1217/1451/1452/1557/1761/1762; CHECK: MySQL 3819, MariaDB 4025). PostgreSQL uses SQLSTATE 23505/23503/23514; SQLite uses 1555/2067/787/275. These mappings are backed by integration tests and are not inferred from an error's text.
+
+A failed COMMIT is not automatically equivalent to a rollback. If the connection is lost before the client receives the server's result, the transaction outcome is uncertain. DatabaseTransaction returns CommitOutcomeUnknown for that case. Do not blindly repeat non-idempotent writes; query a stable application identifier or idempotency record first.
 
 ## Versioned migrations and rollback policy
 
@@ -180,18 +196,24 @@ The adapter does not add an ODM, model derives, a portable query builder, SQL-li
 
 ## Roadmap status
 
-Phase 6.6 is complete: its SQL and MongoDB support contracts, runtime versions and evidence are recorded in `docs/DATABASE_SUPPORT_MATRIX.md`, ADR 0019 and `ROADMAP.md`. Phase 6.7.1 is complete and merged in PR #58 (`36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1`); ADR 0020 selects Data Mapper with SeaORM 1.1.20 and the validation-only `ModelDiagnostics` derive. Phase 6.7.2 is now in progress on the typed-pool bridge. The ORM phase will not close until model CRUD, query composition, relations and explicit efficient loading, transaction/error semantics, cross-engine type mapping, generated-app examples and CI-backed integration coverage meet the accepted contract. MongoDB remains separate and is planned for Phase 6.7.3.
+Phase 6.6 is complete: its SQL and MongoDB support contracts, runtime versions and evidence are recorded in docs/DATABASE_SUPPORT_MATRIX.md, ADR 0019 and ROADMAP.md. Phase 6.7.1 is complete and merged in PR #58 (36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1); ADR 0020 selects Data Mapper with SeaORM 1.1.20 and the validation-only ModelDiagnostics derive.
+
+Phase 6.7.2 now contains the typed-pool bridge, SeaORM repository facade, CRUD/bulk methods, typed SeaORM query composition, explicit batch loaders, cross-engine codec contracts, shared ORM/raw transactions, typed constraint errors and an explicit ambiguous-COMMIT category. The current PR adds the resolved Cargo.lock and a RustSec audit workflow. This implementation remains under acceptance until all checks pass on the exact PR head and the roadmap criteria are closed with evidence. MongoDB remains a separate document adapter; its ODM is Phase 6.7.3.
 
 ## Testing
 
-The server tests exercise SQLite 3.46.0 migrations, forward application, rollback, parameterized writes, and PostgreSQL 16.15 pool/transaction behavior. The `database_engines` integration target exercises MySQL 8.4.13 and MariaDB 11.4.13 separately, including URL redaction, exact server version and identity, CRUD with bound values, transactions, duplicate-key mapping, migration failure/rollback, and pool closure. CI also provisions MongoDB 7.0.45 and explicitly runs the `mongodb_adapter` integration target. These service contracts are run on Rust 1.85 and stable; the corresponding tests fail in CI if a required service URL is absent.
+The ORM contract target executes the same entity/query/relation/type contract on SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 and MariaDB 11.4.13. It covers generated keys, CRUD and bulk writes, nested filters, ordering and offset pagination, joins, projections, grouping/aggregates/HAVING, subqueries, one-to-one/one-to-many/many-to-many batch loading, NULL/JSON/bytes/UUID/date/time/timestamp/numeric codecs, FK/unique/CHECK constraints, and mixed ORM/raw writes inside committed and rolled-back transactions. MockDatabase tests assert batch-loader query counts. The support-specific database_engines target independently verifies MySQL and MariaDB service identity and migration behavior.
+
+The Rust CI matrix runs the workspace and database services under Rust 1.85 and stable, and includes Clippy, tests, Rustdoc and an explicit RustSec cargo audit. Dependency Review remains a separate workflow. The only audit exception is RUSTSEC-2023-0071 for the inherited rsa 0.9.10 dependency of sqlx-mysql 0.8.6; it has no patched release and is documented in ADR 0020 and .cargo/audit.toml. A green audit does not mean that exception is fixed.
 
 Run:
 
-~~~sh
-cargo test -p rustflow-server database::
+~~~
+cargo test -p rustflow-server --test orm_contract -- --test-threads=1
+cargo test -p rustflow-server --test database_engines -- --test-threads=1
 cargo test -p rustflow-server --all-features
 cargo test --workspace --all-features
+cargo audit --deny warnings
 ~~~
 
-The current 6.7.2 branch introduces the SeaORM connection facade and shared typed-pool bridge, but the complete persistence contract is not yet closed: CRUD behavior, relationship loaders, checked type codecs and four-engine ORM integration coverage still need implementation and evidence. See [ADR 0020](adr/0020-orm-model-contract.md) and [the model/type contract](ORM_MODEL_CONTRACT.md). MongoDB has its own separate experimental adapter contract, merged in PR #55 as `e3ceb86d757bb7aa1a07e16a1e21b462adb69841`. MySQL/MariaDB support was introduced in PR #54 as `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`; Phase 6.6.3 now retests the maintained MySQL 8.4.13 LTS and MariaDB 11.4.13 LTS lines alongside PostgreSQL 16.15, SQLite 3.46.0, and MongoDB 7.0.45. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.
+The API remains experimental and pre-1.0. Dialect-specific upsert/RETURNING capabilities, generated CRUD application proof, richer relation mutation/nested loading semantics and the separate MongoDB ODM are tracked in ROADMAP.md and later subphases. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.
