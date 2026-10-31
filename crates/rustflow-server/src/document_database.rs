@@ -239,8 +239,8 @@ impl DocumentIndex {
 
 /// An explicit, repeatable declaration of a collection and its indexes.
 ///
-/// Bootstrap creates missing collections and declared indexes, verifies their
-/// names, and never drops existing resources. It does not manage schema migrations.
+/// Bootstrap creates missing collections and declared indexes, verifies declared
+/// index key documents and uniqueness, and never drops existing resources. It does not manage schema migrations.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocumentBootstrap {
     collection: String,
@@ -298,17 +298,6 @@ pub struct MongoDatabase {
     database: Database,
     database_name: String,
     operation_timeout: Duration,
-}
-
-impl Clone for MongoDatabase {
-    fn clone(&self) -> Self {
-        Self {
-            client: self.client.clone(),
-            database: self.database.clone(),
-            database_name: self.database_name.clone(),
-            operation_timeout: self.operation_timeout,
-        }
-    }
 }
 
 impl fmt::Debug for MongoDatabase {
@@ -448,17 +437,51 @@ impl MongoDatabase {
                 .map_err(MongoError::into_bootstrap)?;
         }
 
-        let existing_indexes = self
-            .run_with_timeout(collection.list_index_names())
+        let mut existing_indexes = self
+            .run_owned_with_timeout({
+                let collection = collection.clone();
+                async move { collection.list_indexes().await }
+            })
             .await
             .map_err(MongoError::into_bootstrap)?;
         for declared_index in &declaration.indexes {
-            if !existing_indexes
-                .iter()
-                .any(|name| name == &declared_index.name)
-            {
+            let mut compatible = false;
+            loop {
+                let (available, cursor) = self
+                    .run_owned_with_timeout(async move {
+                        let mut cursor = existing_indexes;
+                        let available = cursor.advance().await?;
+                        Ok((available, cursor))
+                    })
+                    .await
+                    .map_err(MongoError::into_bootstrap)?;
+                existing_indexes = cursor;
+                if !available {
+                    break;
+                }
+
+                let existing = existing_indexes
+                    .deserialize_current()
+                    .map_err(MongoError::Deserialization)?;
+                let options = existing.options.as_ref();
+                if options.and_then(|value| value.name.as_deref())
+                    == Some(declared_index.name.as_str())
+                {
+                    let existing_unique = options
+                        .and_then(|value| value.unique)
+                        .unwrap_or(false);
+                    if existing.keys != declared_index.keys || existing_unique != declared_index.unique {
+                        return Err(MongoError::BootstrapVerification(
+                            "an existing MongoDB index has an incompatible key or uniqueness definition",
+                        ));
+                    }
+                    compatible = true;
+                }
+            }
+
+            if !compatible {
                 return Err(MongoError::BootstrapVerification(
-                    "MongoDB did not report a declared index after bootstrap",
+                    "MongoDB did not report a compatible declared index after bootstrap",
                 ));
             }
         }
