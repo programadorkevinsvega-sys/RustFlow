@@ -775,12 +775,20 @@ impl<M: DocumentModel> DocumentRepository<M> {
                 "aggregation pipeline cannot be empty",
             ));
         }
-        let collection = self.database.collection::<R>(self.collection_name);
+        // The official driver returns aggregation stages as BSON Documents even when
+        // the source collection has a typed model. Decode each result into the caller's DTO.
+        let collection = self.database.collection::<Document>(self.collection_name);
         let cursor = self
             .database
             .run_owned_with_timeout(async move { collection.aggregate(pipeline).await })
             .await?;
-        collect_cursor(&self.database, cursor).await
+        collect_cursor(&self.database, cursor)
+            .await?
+            .into_iter()
+            .map(|document| {
+                bson::from_document(document).map_err(MongoError::Deserialization)
+            })
+            .collect()
     }
 
     /// Insert one model using a session created from this repository's MongoDatabase client.
