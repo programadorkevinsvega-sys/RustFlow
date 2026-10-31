@@ -20,7 +20,7 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 ## Una ruta de aprendizaje
 
 - [1. Empezar desde cero](/getting-started/setup/): instalar los requisitos, clonar RustFlow y validar el workspace.
-- [2. Crear tu primera aplicación con el CLI](/tutorials/first-cli-app/): scaffold de servidor, configuración inicial, ejecución, build y generadores.
+- [2. Crear tu primera aplicación con el CLI](/tutorials/first-cli-app/): scaffold `server` predeterminado, plantilla CRUD opcional, configuración inicial, ejecución, build y generadores.
 - [3. Configurar entornos](/guides/configuration/): precedencia de .env, perfiles test/producción y manejo seguro de ajustes.
 - [4. Aprender estado y efectos](/concepts/reactivity/): señales, dependencias, batching, scopes y limpieza.
 - [5. Crear componentes](/guides/components/): vistas, props, eventos, estado y listas keyed.
@@ -40,7 +40,7 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 
 | Lo que quieres explorar | Empieza aquí |
 |---|---|
-| Crear un proyecto de servidor y generar archivos | [CLI y generadores](/guides/cli/) y [tutorial de primera aplicación](/tutorials/first-cli-app/) |
+| Crear un proyecto de servidor/CRUD y generar archivos | [CLI y generadores](/guides/cli/) y [tutorial de primera aplicación](/tutorials/first-cli-app/) |
 | Configurar perfil, host y puerto | [Configuración por entornos](/guides/configuration/) |
 | Un componente o un contador reactivo | [Componentes](/guides/components/) y [reactividad](/concepts/reactivity/) |
 | Una lista de tareas interactiva en el navegador | [Tutorial browser/WASM](/tutorials/reactive-todo/) |
@@ -74,11 +74,11 @@ El [catálogo de ejemplos](/reference/examples/) conecta cada caso con un archiv
 
 ## Lo que no debes asumir
 
-El CLI experimental genera aplicaciones de servidor nativo y delega compilación a Cargo; no incluye hot reload ni un bundler integrado para browser/WASM. El generador `rustflow generate model` sigue produciendo un struct de dominio plano: no crea automáticamente entidades SeaORM ni implementaciones `DocumentModel`. La configuración de la Fase 6.2 cubre perfil, host y puerto. `use_memo`, `use_ref` y `use_context` siguen pendientes. Las APIs de sesión y guards de la Fase 6.4 son experimentales; `InMemorySessionStore` es volátil y local al proceso, no hay proveedor de usuarios y todavía no existe un `SessionStore` SQL durable.
+El CLI experimental genera aplicaciones de servidor nativo y delega compilación a Cargo; `rustflow new --template crud` añade un proyecto didáctico con ORM SQL, validación, transacciones, auth, CSRF y SSR. No incluye hot reload ni un bundler integrado para browser/WASM. El generador `rustflow generate model` sigue produciendo un struct de dominio plano por compatibilidad: no crea automáticamente entidades SeaORM ni implementaciones `DocumentModel`. La configuración de la Fase 6.2 cubre perfil, host y puerto. `use_memo`, `use_ref` y `use_context` siguen pendientes. Las APIs de sesión y guards de la Fase 6.4 son experimentales; `InMemorySessionStore` es volátil y local al proceso, no hay proveedor de usuarios y todavía no existe un `SessionStore` SQL durable.
 
 La Fase 6.6 está completa, con la matriz verificada publicada: SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS y MongoDB 7.0.45. La Fase 6.7.2 integra el ORM SQL experimental SeaORM 1.1.20 sobre un único pool SQLx tipado compartido; `DatabasePool::entity` proporciona `EntityRepository` para CRUD/bulk, consultas tipadas, loaders explícitos y transacciones ORM/SQL combinadas. La Fase 6.7.3 integra un ODM MongoDB independiente sobre el cliente oficial existente, con `DocumentModel`, `DocumentRepository`, filtros y updates BSON, proyecciones, agregaciones y un subconjunto explícito de operaciones con sesiones. La Fase 6.7.4 añade carga relacional SQL avanzada: filtros/orden por relación, proyecciones has-many a DTO, grafos explícitos con profundidad acotada y helpers de asociación/desasociación/reemplazo uno-a-uno. PR #62 se fusionó en `main` el 2026-10-31 como `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`. El ORM y el ODM continúan siendo APIs experimentales/pre-1.0. Consulta la [matriz de versiones](/guides/database/#matriz-de-versiones-verificadas), la [guía de base de datos](/guides/database/), la [guía ODM](/guides/mongodb-odm/) y [Estado del proyecto](/project-status/).
 
-La Fase 6.7 global continúa en progreso: 6.7.1–6.7.4 están implementadas e integradas en `main`; 6.7.5 demostrará una aplicación CRUD generada; y 6.7.6 cerrará los gates globales de madurez y compatibilidad. La prueba de integración del CLI ya verifica un flujo scaffold con validación/persistencia/sesión/CSRF/SSR, pero el scaffold predeterminado no genera por sí solo esa aplicación de negocio. Siguen pendientes server actions, proveedor de usuarios, sesiones durables y una receta de despliegue de producción validada. El callback de navegación cliente no es un router general y la mejora progresiva de formularios se limita a GET URL-encoded compatibles; no procesa uploads ni mutaciones. Consulta la [guía de formularios](/guides/forms-validation/), la [guía de sesiones](/guides/sessions-and-access/), [Estado del proyecto](/project-status/) y [referencia de disponibilidad de API](/reference/api-status/).
+La Fase 6.7 global continúa en progreso: 6.7.1–6.7.4 están implementadas e integradas en `main`; 6.7.5 demostrará una aplicación CRUD generada; y 6.7.6 cerrará los gates globales de madurez y compatibilidad. La plantilla CRUD se propone como parte de Phase 6.7.5; su aceptación depende de compilar y ejecutar el proyecto generado y pasar los checks obligatorios del PR. Siguen pendientes server actions, proveedor de usuarios, sesiones durables y una receta de despliegue de producción validada. El callback de navegación cliente no es un router general y la mejora progresiva de formularios se limita a GET URL-encoded compatibles; no procesa uploads ni mutaciones. Consulta la [guía de formularios](/guides/forms-validation/), la [guía de sesiones](/guides/sessions-and-access/), [Estado del proyecto](/project-status/) y [referencia de disponibilidad de API](/reference/api-status/).
 
 ## Si ya conoces React
 

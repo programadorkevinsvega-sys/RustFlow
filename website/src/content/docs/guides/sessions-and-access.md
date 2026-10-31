@@ -122,6 +122,12 @@ El secreto debe ser aleatorio, estable para el despliegue y almacenado fuera del
 - SessionStore exige operaciones atómicas. La PR de la Fase 6.5 añade SQLx, pools, transacciones y migraciones para datos de aplicación, pero todavía no implementa un adaptador SQL para SessionStore; `InMemorySessionStore` sigue siendo volátil y local al proceso.
 - No se incluyen OAuth/OIDC, MFA, recuperación de cuentas, rate limiting, protección de fuerza bruta ni auditoría completa del despliegue.
 
+## La plantilla CRUD y sus límites
+
+La plantilla `rustflow new products --template crud` usa `SessionManager::in_memory` y `SessionCookieConfig::development` solo para ejecutar el ejemplo local por HTTP. Verifica una cuenta demo configurada mediante `RUSTFLOW_DEMO_USER` y `RUSTFLOW_DEMO_PASSWORD`, calcula `PasswordHash` y llama `SessionContext::authenticate` después de verificar las credenciales. Las rutas de lectura usan `route_protected`; las mutaciones usan `route_authorized` con una `RolePolicy` explícita; un permiso sin regla queda denegado.
+
+El ejemplo rechaza `RUSTFLOW_ENV=production`. `InMemorySessionStore` no sobrevive a reinicios ni coordina procesos. La cuenta única no es un proveedor de usuarios. No copies este flujo directamente a producción: implementa un `SessionStore` durable que satisfaga su contrato, autenticación real y cookies seguras HTTPS; mantén CSRF en cada ruta insegura autenticada por cookies.
+
 ## 8. Ejecutar pruebas
 
 ~~~sh

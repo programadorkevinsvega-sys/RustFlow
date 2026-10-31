@@ -7,16 +7,17 @@ Esta página es un índice de los ejemplos que existen en el repositorio. Los co
 
 ## CLI y proyecto generado
 
-Desde un checkout del repositorio, instala el binario y crea una aplicación de servidor:
+Desde un checkout del repositorio, instala el binario y crea una aplicación de servidor (plantilla predeterminada) o una aplicación CRUD SQL:
 
 ~~~sh
 cargo install --path crates/rustflow-cli --locked
 rustflow new hello-rustflow
+# Alternativa: rustflow new products --template crud
 cd hello-rustflow
 rustflow dev
 ~~~
 
-Desde la raíz de la nueva aplicación, puedes generar `component ProductCard`, `page about`, `controller health`, `model User` o `migration create_users` con `rustflow generate <tipo> <nombre>`. La implementación de plantillas está en [`crates/rustflow-cli/src/lib.rs`](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow-cli/src/lib.rs). Modelos y migraciones son estructurales y no integran persistencia. Más detalles en la [guía del CLI](/guides/cli/).
+Desde la raíz de la aplicación, puedes generar `component ProductCard`, `page about`, `controller health`, `model User` o `migration create_users` con `rustflow generate <tipo> <nombre>`. El generador `model` conserva su struct plano para compatibilidad. La plantilla `crud` incluye una entidad SeaORM explícita y migraciones por dialecto. Más detalles en la [guía del CLI](/guides/cli/).
 
 ## Ejemplos ejecutables
 
@@ -66,13 +67,37 @@ cargo test -p rustflow-server --test http_integration
 
 Esa suite incluye `real_tcp_typed_forms_validate_and_return_structured_errors`, `real_tcp_rejects_oversized_payloads_before_handler_execution`, `real_tcp_csrf_middleware_requires_a_valid_cookie_and_matching_token` y `real_tcp_redirect_back_accepts_same_origin_and_falls_back_for_external_referers`. El archivo fuente está en [`http_integration.rs`](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow-server/tests/http_integration.rs).
 
+## Aplicación CRUD generada (SQL ORM)
+
+Genera y ejecuta el proyecto:
+
+~~~sh
+rustflow new products --template crud
+cd products
+cp .env.example .env
+# Cambia el usuario, la contraseña demo y RUSTFLOW_CSRF_KEY.
+rustflow dev
+~~~
+
+Abre `/login`, inicia sesión con los valores configurados y navega por el CRUD. La aplicación usa `DatabasePool::entity`/`EntityRepository` para create/read/update/delete; `ValidateInput` para formularios; `begin_transaction` más rollback explícito para la prueba de fallo; `SessionManager`, guards y `RolePolicy` para acceso; CSRF explícito en rutas POST; y `View`/`html_document` para SSR con escape.
+
+La app crea migraciones separadas para SQLite, PostgreSQL y MySQL/MariaDB. Cambiar el motor requiere una URL adecuada y el esquema SQL de su dialecto. La aplicación no utiliza MongoDB: el ODM documental permanece separado.
+
+La prueba canónica genera el proyecto sin reemplazar manualmente sus fuentes, compila el binario y recorre el flujo HTTP/ORM contra SQLite:
+
+~~~sh
+cargo test -p rustflow-cli generated_crud_template_builds_and_runs_the_real_orm_application -- --nocapture
+~~~
+
+El ejemplo usa `InMemorySessionStore`, credenciales demo y cookie de desarrollo. Rechaza `RUSTFLOW_ENV=production`; no representa autenticación durable ni una aplicación lista para producción.
+
 ## Verificación compartida
 
 Desde la raíz del repositorio puedes ejecutar `cargo test --workspace --all-features`. Para comprobar lint, formato y documentación Rust, consulta [Probar y depurar aplicaciones](/guides/testing/). Para disponibilidad y límites por API, usa [Referencia de disponibilidad de API](/reference/api-status/).
 
 ## Contratos de integración de persistencia
 
-Los ejemplos ejecutables anteriores enseñan HTTP, SSR y la interfaz browser/WASM; no son una aplicación que conecte el ORM o el ODM. La persistencia tiene contratos de integración separados:
+Los ejemplos HTTP básico, SSR de producto y browser/WASM son independientes y no conectan el ORM/ODM. La nueva plantilla CRUD es el ejemplo integrado SQL; la persistencia también conserva contratos de integración independientes:
 
 ### SQLx y ORM SeaORM
 
@@ -93,11 +118,11 @@ cargo test -p rustflow-server --test mongodb_adapter -- --test-threads=1
 
 La suite requiere un replica set mediante `RUSTFLOW_TEST_MONGODB_URI` y un servidor standalone mediante `RUSTFLOW_TEST_MONGODB_STANDALONE_URI` para probar contratos distintos, incluidas las transacciones en replica set y el rechazo de transacciones multi-documento en standalone. Consulta [Base de datos](/guides/database/) y [ODM MongoDB](/guides/mongodb-odm/) para configuración y límites.
 
-Estos comandos son pruebas de integración, no demos standalone ni una aplicación CRUD generada. La aplicación CRUD que conectará las capacidades en un flujo de extremo a extremo corresponde a la Fase 6.7.5, todavía pendiente.
+Estos comandos ejercitan los contratos del ORM y ODM de forma aislada; el ejemplo CRUD anterior conecta la superficie ORM con HTTP. Su aceptación de Phase 6.7.5 permanece pendiente de compilar/ejecutar el proyecto generado y pasar los checks del PR en el HEAD final.
 
 ## Lo que los ejemplos no proporcionan
 
-Los datos del catálogo de productos y de la lista de tareas de estos ejemplos no son persistentes. RustFlow ya incluye un ORM SQL experimental para SQLite/PostgreSQL/MySQL/MariaDB y un ODM MongoDB independiente, pero estos ejemplos no los conectan. Todavía no hay una demo canónica full-stack que integre una app CRUD generada con proveedor de usuarios, flujo de autenticación completo, autorización de negocio, CSRF y server actions. Consulta la [guía de base de datos](/guides/database/) y la [guía ODM](/guides/mongodb-odm/) para los contratos de persistencia y sus límites. No extrapoles una aplicación full-stack terminada desde ejemplos aislados de SSR, JSON o browser.
+Los datos del catálogo de la página de producto SSR y de la lista de tareas browser/WASM no son persistentes. La plantilla CRUD usa el ORM SQL experimental para SQLite/PostgreSQL/MySQL/MariaDB; el ODM MongoDB permanece independiente y no se mezcla en esa aplicación. La plantilla CRUD es una integración educativa de ORM, formularios, sesión volátil, autorización, CSRF y SSR, pero no ofrece proveedor de usuarios, almacenamiento durable, server actions ni una receta de producción. Consulta las guías de base de datos y sesiones para sus contratos y límites; no extrapoles preparación de producción desde la demo.
 
 
 ## Sesiones y rutas protegidas — Fase 6.4 integrada en main

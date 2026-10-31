@@ -3,7 +3,7 @@ title: CLI y generadores
 description: Crea una aplicación de servidor RustFlow, ejecútala, compílala y genera archivos sin sobrescribir el trabajo existente.
 ---
 
-El crate `rustflow-cli` proporciona el binario experimental `rustflow`. En esta fase crea proyectos de **servidor HTTP**, delega ejecución y compilación a Cargo y genera archivos estructurales. RustFlow es pre-1.0 y no publica todavía una versión estable en crates.io.
+El crate `rustflow-cli` proporciona el binario experimental `rustflow`. `rustflow new` crea por defecto un proyecto de **servidor HTTP**; `--template crud` selecciona una aplicación SQL CRUD de demostración que compone ORM, validación, transacciones, guards, CSRF y SSR. El CLI delega ejecución y compilación a Cargo. RustFlow es pre-1.0 y no publica todavía una versión estable en crates.io.
 
 ## Requisitos e instalación
 
@@ -47,6 +47,37 @@ La estructura principal es:
 | `migrations/` | Directorio para migraciones SQLx; `generate migration` crea un archivo, pero no lo ejecuta. |
 
 Abre <code>http://127.0.0.1:3000/</code>. La aplicación carga rustflow_server::AppConfig antes de escuchar. En desarrollo/test puedes copiar .env.example a .env; RUSTFLOW_HOST y RUSTFLOW_PORT controlan el bind. Producción exige ambas variables desde el entorno del proceso y no lee archivos dotenv. Consulta [Configuración por entornos](/guides/configuration/). La plantilla no incluye una app browser/WASM integrada ni crea automáticamente un bundle cliente.
+
+## Aplicación CRUD generada (`--template crud`)
+
+La plantilla predeterminada `server` no cambia. Para generar el ejemplo CRUD:
+
+~~~sh
+rustflow new products --template crud
+cd products
+cp .env.example .env
+# Reemplaza RUSTFLOW_DEMO_PASSWORD y RUSTFLOW_CSRF_KEY por valores locales.
+rustflow dev
+~~~
+
+Abre `http://127.0.0.1:3000/login`. La cuenta de demostración se toma de `RUSTFLOW_DEMO_USER`/`RUSTFLOW_DEMO_PASSWORD`; tras iniciar sesión puedes listar, crear, abrir, editar y borrar productos.
+
+La estructura añade `src/models/product.rs` (SeaORM `DeriveEntityModel` + RustFlow `ModelDiagnostics`), `src/bin/migrate.rs` y migraciones separadas para SQLite, PostgreSQL y MySQL/MariaDB. La aplicación elige el directorio según `DatabaseBackend`; la URL de conexión por sí sola no traduce SQL ni DDL.
+
+### Qué demuestra
+
+- `Request::validated_form` y `ValidateInput` para formularios y errores estructurados 422.
+- `DatabasePool::entity`/`EntityRepository` para listar, insertar, buscar, actualizar y borrar registros con el ORM respaldado por el pool compartido.
+- `DatabasePool::begin_transaction` y rollback explícito cuando una segunda escritura viola el índice único SKU.
+- `SessionManager`, `AuthIdentity`, `route_protected`, `route_authorized` y una `RolePolicy` deny-by-default.
+- `CsrfProtection` conectado explícitamente a rutas POST; los formularios incluyen `_csrf` oculto.
+- `Element`, `View` y `html_document` para SSR con escape del contenido de usuario.
+
+### Límites
+
+Es una demostración educativa, no un starter de producción. Usa `InMemorySessionStore` (volátil y de un solo proceso), `SessionCookieConfig::development()` y una sola cuenta demo configurada por entorno. Rechaza `RUSTFLOW_ENV=production`. No aporta proveedor de usuarios, sesión durable, OAuth/OIDC, MFA, rate limiting ni gestión de credenciales. Sustituye explícitamente esas piezas y configura cookies/CSRF/secretos apropiados para HTTPS antes de cualquier despliegue.
+
+El generador `rustflow generate model <Name>` sigue produciendo un struct de dominio plano por compatibilidad. El nombre no permite inferir tabla, tipos, claves o relaciones; consulta `src/models/product.rs` para la declaración explícita de una entidad SeaORM.
 
 ## Desarrollo: `rustflow dev`
 
@@ -116,6 +147,6 @@ cargo test --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 ~~~
 
-La suite de integración usa directorios temporales aislados, prueba nombres y conflictos, genera los cinco tipos, compila un proyecto con dependencias locales y realiza una petición HTTP. Revisa [la implementación](https://github.com/programadorkevinsvega-sys/RustFlow/tree/main/crates/rustflow-cli), la [nota técnica](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/CLI.md) y la [referencia de API](/reference/api-status/).
+La suite de integración usa directorios temporales aislados, prueba nombres y conflictos, genera los cinco tipos, compila un proyecto con dependencias locales y realiza peticiones HTTP. La prueba de `--template crud` compila y ejecuta la aplicación generada sin reemplazar `src/main.rs`, y recorre ORM, validación, autorización, CSRF, rollback y SSR. Revisa [la implementación](https://github.com/programadorkevinsvega-sys/RustFlow/tree/main/crates/rustflow-cli), la [nota técnica](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/CLI.md) y la [referencia de API](/reference/api-status/).
 
-El scaffold integra `AppConfig`, un pool SQLx configurable y una comprobación `/health/database`; por defecto, tanto el `.env.example` como las migraciones generadas están orientados a SQLite. En desarrollo/test aplica migraciones al iniciar y en producción expone el binario `migrate` para un paso de despliegue controlado. Cambiar `RUSTFLOW_DATABASE_URL` a PostgreSQL/MySQL/MariaDB no traduce automáticamente SQL, placeholders, tipos o DDL; adapta y prueba las migraciones contra el motor elegido. MongoDB usa `RUSTFLOW_MONGODB_URI` y `RUSTFLOW_MONGODB_DATABASE`, además de `MongoConfig`/`MongoDatabase`; el scaffold no inicializa ese adaptador ni reutiliza migraciones SQL. Consulta [Configuración](/guides/configuration/), [Formularios y validación](/guides/forms-validation/), [Sesiones y control de acceso](/guides/sessions-and-access/) y [Base de datos](/guides/database/). La [matriz de compatibilidad](/guides/database/#matriz-de-versiones-verificadas) enumera los targets verificados de Phase 6.6.3. El ORM SQL y el ODM MongoDB están disponibles como APIs experimentales, pero el scaffold no genera entidades SeaORM ni tipos `DocumentModel`, tampoco inicializa automáticamente MongoDB. Siguen pendientes server actions, un proveedor de usuarios y almacenamiento SQL durable para `SessionStore`; `InMemorySessionStore` sigue siendo local al proceso. `use_memo`, `use_ref` y `use_context` continúan pendientes.
+El scaffold integra `AppConfig`, un pool SQLx configurable y una comprobación `/health/database`; por defecto, tanto el `.env.example` como las migraciones generadas están orientados a SQLite. En desarrollo/test aplica migraciones al iniciar y en producción expone el binario `migrate` para un paso de despliegue controlado. Cambiar `RUSTFLOW_DATABASE_URL` a PostgreSQL/MySQL/MariaDB no traduce automáticamente SQL, placeholders, tipos o DDL; adapta y prueba las migraciones contra el motor elegido. MongoDB usa `RUSTFLOW_MONGODB_URI` y `RUSTFLOW_MONGODB_DATABASE`, además de `MongoConfig`/`MongoDatabase`; el scaffold no inicializa ese adaptador ni reutiliza migraciones SQL. Consulta [Configuración](/guides/configuration/), [Formularios y validación](/guides/forms-validation/), [Sesiones y control de acceso](/guides/sessions-and-access/) y [Base de datos](/guides/database/). La [matriz de compatibilidad](/guides/database/#matriz-de-versiones-verificadas) enumera los targets verificados de Phase 6.6.3. El ORM SQL y el ODM MongoDB están disponibles como APIs experimentales. La plantilla `server` no genera entidades; la plantilla `crud` incluye una entidad SeaORM concreta. Ninguna plantilla genera tipos `DocumentModel` ni inicializa MongoDB. Siguen pendientes server actions, un proveedor de usuarios y almacenamiento SQL durable para `SessionStore`; `InMemorySessionStore` sigue siendo local al proceso. `use_memo`, `use_ref` y `use_context` continúan pendientes.

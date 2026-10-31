@@ -119,6 +119,12 @@ Para un formulario HTML tradicional, el campo `_csrf` debe contener el token que
 
 El envío debe llevar también la cookie `rustflow_csrf` configurada por el servidor. No dejes el texto de ejemplo como token real ni aceptes un token proveniente de entrada de usuario sin la verificación del middleware.
 
+## Integración en la plantilla CRUD
+
+La plantilla `rustflow new products --template crud` declara `ProductForm` y `LoginForm` con `#[serde(deny_unknown_fields)]` y `ValidateInput`. Los formularios incluyen un campo oculto `_csrf`; por eso los tipos de entrada declaran `_csrf: Option<String>` de forma explícita. No elimines el campo ni añadas otro parser: `CsrfProtection` valida el token antes de que el handler extraiga y valide los datos de dominio.
+
+El middleware CSRF se conecta explícitamente a los POST de login, crear, actualizar, borrar y la prueba transaccional. La aplicación prueba el rechazo de token ausente o incorrecto (403), la entrada de dominio inválida (422) y un valor entero que no puede deserializarse (400). No incluyas contraseñas, tokens, SQL ni valores sensibles en errores públicos.
+
 ## 4. Redirige de vuelta sin abrir redirecciones externas
 
 Tras aceptar una mutación, Request::redirect_back("/profile") usa la ruta de Referer solo cuando el origen coincide con la petición actual. Si falta, es inválido o apunta a otro origen, redirige al fallback local. El fallback debe empezar por una sola barra, por ejemplo /profile; no uses valores del cuerpo del usuario como destino de redirección.
