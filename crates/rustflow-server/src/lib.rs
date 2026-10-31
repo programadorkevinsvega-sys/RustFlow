@@ -53,7 +53,7 @@ pub use document_database::{
     to_bson_document,
 };
 pub use document_odm::{
-    DocumentDeleteOutcome, DocumentFilter, DocumentModel, DocumentQuery, DocumentRepository,
+    DocumentDeleteOutcome, DocumentField, DocumentFilter, DocumentModel, DocumentQuery, DocumentRepository,
     DocumentUpdate, DocumentUpdateOutcome,
 };
 pub use group::RouteGroup;
