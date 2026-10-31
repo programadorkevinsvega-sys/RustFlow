@@ -358,7 +358,7 @@ where
         return Ok(Vec::new());
     }
 
-    let keys: Vec<K> = parents.iter().map(|parent| parent_key(parent)).collect();
+    let keys: Vec<K> = parents.iter().map(&parent_key).collect();
     let query = options.into_query().filter(foreign_key.is_in(keys.clone()));
 
     let projected = query
@@ -840,7 +840,7 @@ where
     options: RelationLoadOptions<R>,
     parent_key: ParentKey,
     related_key: RelatedKey,
-    _types: PhantomData<fn(&P) -> (D, K)>,
+    _types: PhantomData<(P, D, K)>,
     _connection: PhantomData<fn() -> C>,
 }
 
