@@ -127,7 +127,7 @@ Errors must distinguish validation/metadata, encode/decode, not-found, constrain
 
 This SQL ORM covers only SQLite, PostgreSQL, MySQL and MariaDB. It uses relational metadata, SQL query expressions, SQL transactions and the existing engine-specific SQLx migration strategy.
 
-MongoDB remains the separate document adapter introduced in Phase 6.6.2. Its future ODM is Phase 6.7.3 and owns BSON/document models, _id mapping, serializers/deserializers, collection/index lifecycle, document filters/updates, and MongoDB-native session/transaction limitations. No SQL model derive, relational query builder, SQL relationship or SQL migration behavior is shared with MongoDB by implication.
+MongoDB remains the separate document adapter introduced in Phase 6.6.2. Its independent Phase 6.7.3 ODM is implemented and accepted by CI on PR #60 head `c91a558934851ea17e10dd9ebde13b8869fbbcf1` (2026-10-31); PR #60 remains open and unmerged. It owns BSON/document models, `_id` mapping, serializers/deserializers, collection/index lifecycle, document filters/updates, and MongoDB-native session/transaction limitations. No SQL model derive, relational query builder, SQL relationship or SQL migration behavior is shared with MongoDB by implication.
 
 ## Alternatives compared
 
