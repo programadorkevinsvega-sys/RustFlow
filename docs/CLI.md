@@ -44,7 +44,7 @@ La protección no intenta fusionar automáticamente índices cuyo contrato gesti
 | component | `src/components/<snake_case>.rs` | Función de render estructural que devuelve `Result<View, ViewError>`. No usa `#[component]` ni estado reactivo. |
 | page | `src/pages/<snake_case>.rs` | Función `render` que devuelve una vista estructural. |
 | controller | `src/controllers/<snake_case>_controller.rs` | Handler asíncrono con `Request` y `Result<Response, HttpError>`. |
-| model | `src/models/<snake_case>.rs` | Struct Rust de dominio; no hay ORM. |
+| model | `src/models/<snake_case>.rs` | Struct Rust de dominio; no genera entidad ORM ni mapeo ODM. |
 | migration | `migrations/NNNN_<snake_case>.sql` | SQL ilustrativo con secuencia incremental; no se ejecuta. |
 
 Los números de migración se asignan como uno más que el mayor prefijo numérico de cuatro dígitos encontrado. Si ya existe una migración con el mismo nombre, el comando falla; el SQL debe adaptarse al motor antes de cualquier uso real.
