@@ -161,6 +161,79 @@ let changed = accounts
 assert_eq!(changed.rows_affected, 1);
 ~~~
 
+### CRUD y operaciones masivas
+
+`find_by_id` devuelve `Option<Model>` y recibe la clave primaria completa. `update` y `delete` operan sobre un `ActiveModel` con la clave definida; `save` inserta cuando la clave autogenerada está en `NotSet` y actualiza cuando ya está definida.
+
+~~~rust
+use rustflow_server::sea_orm::ActiveValue::Set;
+
+// Leer por la clave primaria completa.
+let current = accounts
+    .find_by_id(account.id)
+    .await?
+    .expect("account exists");
+
+// Actualizar una fila y devolver el modelo confirmado por la base de datos.
+let updated = accounts
+    .update(entities::account::ActiveModel {
+        id: Set(current.id),
+        alias: Set(Some("Ada Lovelace".to_owned())),
+        ..Default::default()
+    })
+    .await?;
+
+// save inserta si la clave autogenerada no está definida.
+let saved = accounts
+    .save(entities::account::ActiveModel {
+        email: Set("grace@example.test".to_owned()),
+        enabled: Set(true),
+        alias: Set(None),
+        metadata: Set(serde_json::json!({})),
+        checksum: Set(vec![]),
+        ..Default::default()
+    })
+    .await?;
+
+// INSERT bulk devuelve InsertResult de SeaORM. UPDATE/DELETE bulk
+// devuelven rows_affected y deben ejecutarse con un filtro deliberado.
+let inserted = accounts
+    .insert_many(vec![
+        entities::account::ActiveModel {
+            email: Set("bulk-one@example.test".to_owned()),
+            enabled: Set(true),
+            alias: Set(None),
+            metadata: Set(serde_json::json!({})),
+            checksum: Set(vec![]),
+            ..Default::default()
+        },
+        entities::account::ActiveModel {
+            email: Set("bulk-two@example.test".to_owned()),
+            enabled: Set(true),
+            alias: Set(None),
+            metadata: Set(serde_json::json!({})),
+            checksum: Set(vec![]),
+            ..Default::default()
+        },
+    ])
+    .await?;
+
+let removed_one = accounts.delete_by_id(updated.id).await?;
+assert_eq!(removed_one.rows_affected, 1);
+
+let removed_bulk = accounts
+    .delete_many()
+    .filter(entities::account::Column::Email.starts_with("bulk-"))
+    .exec(database.orm())
+    .await?;
+assert_eq!(removed_bulk.rows_affected, 2);
+
+// `saved` es un ActiveModel; su primary key está disponible como ActiveValue.
+let saved_id = saved.id;
+~~~
+
+No interpretes `InsertResult` como un contador portable de filas afectadas: los metadatos de inserción dependen del motor. `update_many` y `delete_many` informan `rows_affected`. Los métodos `update`/`delete` rechazan un ActiveModel sin todos los campos de clave primaria, en lugar de ejecutar una modificación ambigua.
+
 La API expone las capacidades por motor para no asumir que RETURNING tiene la misma disponibilidad:
 
 ~~~rust
