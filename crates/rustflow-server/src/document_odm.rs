@@ -21,6 +21,40 @@ pub trait DocumentModel: Serialize + DeserializeOwned + Clone + Send + Sync + 's
     fn set_id(&mut self, id: Self::Id);
 }
 
+/// A typed static MongoDB field path.
+///
+/// Declare field constants next to a model to couple the path to its Rust value type:
+///
+/// \`\`\`
+/// use rustflow_server::DocumentField;
+///
+/// const EMAIL: DocumentField<String> = DocumentField::new("email");
+/// const AGE: DocumentField<i32> = DocumentField::new("age");
+/// \`\`\`
+///
+/// The type parameter prevents passing a value of the wrong Rust type to typed filter
+/// and update helpers. It does not inspect arbitrary Serde rename attributes at runtime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DocumentField<T> {
+    path: &'static str,
+    marker: PhantomData<fn() -> T>,
+}
+
+impl<T> DocumentField<T> {
+    /// Declare a field path associated with a Rust/BSON value type.
+    pub const fn new(path: &'static str) -> Self {
+        Self {
+            path,
+            marker: PhantomData,
+        }
+    }
+
+    /// Return the declared field path.
+    pub const fn path(self) -> &'static str {
+        self.path
+    }
+}
+
 /// A MongoDB filter composed from BSON values and native query operators.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct DocumentFilter {
@@ -43,6 +77,52 @@ impl DocumentFilter {
     /// Match an exact serialized field value.
     pub fn eq<T: Serialize>(mut self, field: &str, value: T) -> Result<Self, MongoError> {
         self.insert_operator(field, "$eq", bson_value(&value)?)?;
+        Ok(self)
+    }
+
+    /// Match a typed field against an equal value.
+    ///
+    /// \`\`\`compile_fail
+    /// use rustflow_server::{DocumentField, DocumentFilter};
+    /// const EMAIL: DocumentField<String> = DocumentField::new("email");
+    /// let _ = DocumentFilter::new().eq_field(EMAIL, 42_i32);
+    /// \`\`\`
+    pub fn eq_field<T: Serialize>(
+        mut self,
+        field: DocumentField<T>,
+        value: T,
+    ) -> Result<Self, MongoError> {
+        self.insert_operator(field.path(), "$eq", bson_value(&value)?)?;
+        Ok(self)
+    }
+
+    /// Match a typed field greater than a value of its declared Rust type.
+    pub fn gt_field<T: Serialize>(
+        mut self,
+        field: DocumentField<T>,
+        value: T,
+    ) -> Result<Self, MongoError> {
+        self.insert_operator(field.path(), "$gt", bson_value(&value)?)?;
+        Ok(self)
+    }
+
+    /// Match a typed field greater than or equal to a value of its declared Rust type.
+    pub fn gte_field<T: Serialize>(
+        mut self,
+        field: DocumentField<T>,
+        value: T,
+    ) -> Result<Self, MongoError> {
+        self.insert_operator(field.path(), "$gte", bson_value(&value)?)?;
+        Ok(self)
+    }
+
+    /// Match a typed field less than a value of its declared Rust type.
+    pub fn lt_field<T: Serialize>(
+        mut self,
+        field: DocumentField<T>,
+        value: T,
+    ) -> Result<Self, MongoError> {
+        self.insert_operator(field.path(), "$lt", bson_value(&value)?)?;
         Ok(self)
     }
 
@@ -261,6 +341,26 @@ impl DocumentUpdate {
         self.insert("$set", field, bson_value(&value)?)?;
         Ok(self)
     }
+    /// Set a typed field using the value type associated with its declaration.
+    pub fn set_field<T: Serialize>(
+        mut self,
+        field: DocumentField<T>,
+        value: T,
+    ) -> Result<Self, MongoError> {
+        self.insert("$set", field.path(), bson_value(&value)?)?;
+        Ok(self)
+    }
+
+    /// Increment a typed numeric field.
+    pub fn inc_field<T: Serialize>(
+        mut self,
+        field: DocumentField<T>,
+        amount: T,
+    ) -> Result<Self, MongoError> {
+        self.insert("$inc", field.path(), bson_value(&amount)?)?;
+        Ok(self)
+    }
+
     /// Remove a field.
     pub fn unset(mut self, field: &str) -> Result<Self, MongoError> {
         self.insert("$unset", field, Bson::Int32(1))?;
@@ -622,6 +722,21 @@ mod tests {
                     { "status": { "$eq": "trial" } }
                 ] }
             ]
+        });
+    }
+
+    #[test]
+    fn typed_field_helpers_use_declared_paths() {
+        const AGE: DocumentField<i32> = DocumentField::new("age");
+        const EMAIL: DocumentField<String> = DocumentField::new("email");
+        let filter = DocumentFilter::new()
+            .gte_field(AGE, 21)
+            .expect("typed age filter")
+            .eq_field(EMAIL, "ada@example.test".to_owned())
+            .expect("typed email filter");
+        assert_eq!(filter.into_document(), doc! {
+            "age": { "$gte": 21 },
+            "email": { "$eq": "ada@example.test" }
         });
     }
 
