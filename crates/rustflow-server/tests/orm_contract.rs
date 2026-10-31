@@ -198,6 +198,23 @@ mod entities {
         impl ActiveModelBehavior for ActiveModel {}
     }
 
+    pub mod mysql_unsigned {
+        use rustflow_server::sea_orm::entity::prelude::*;
+
+        #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+        #[sea_orm(table_name = "rustflow_orm_mysql_unsigned")]
+        pub struct Model {
+            #[sea_orm(primary_key)]
+            pub id: i64,
+            pub value: u64,
+        }
+
+        #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+        pub enum Relation {}
+
+        impl ActiveModelBehavior for ActiveModel {}
+    }
+
     pub mod note {
         use rustflow_server::sea_orm::entity::prelude::*;
 
@@ -245,6 +262,10 @@ fn integration_url(variable: &str) -> Option<String> {
 }
 
 async fn create_schema(database: &DatabasePool) {
+    database
+        .execute_raw("DROP TABLE IF EXISTS rustflow_orm_mysql_unsigned", [])
+        .await
+        .expect("drop MySQL-family unsigned codec table");
     database
         .execute_raw("DROP TABLE IF EXISTS rustflow_orm_codecs", [])
         .await
@@ -367,7 +388,6 @@ async fn create_schema(database: &DatabasePool) {
     let (
         codec_id,
         signed_type,
-        unsigned_type,
         ratio_type,
         decimal_type,
         big_decimal_type,
@@ -381,7 +401,6 @@ async fn create_schema(database: &DatabasePool) {
     ) = match database.backend() {
         DatabaseBackend::Sqlite => (
             "INTEGER PRIMARY KEY AUTOINCREMENT",
-            "INTEGER",
             "INTEGER",
             "REAL",
             "TEXT",
@@ -397,7 +416,6 @@ async fn create_schema(database: &DatabasePool) {
         DatabaseBackend::Postgres => (
             "BIGSERIAL PRIMARY KEY",
             "BIGINT",
-            "NUMERIC(20,0)",
             "DOUBLE PRECISION",
             "NUMERIC(20,4)",
             "NUMERIC(35,10)",
@@ -412,7 +430,6 @@ async fn create_schema(database: &DatabasePool) {
         DatabaseBackend::MySql => (
             "BIGINT AUTO_INCREMENT PRIMARY KEY",
             "BIGINT",
-            "BIGINT UNSIGNED",
             "DOUBLE",
             "DECIMAL(20,4)",
             "DECIMAL(35,10)",
@@ -429,7 +446,6 @@ async fn create_schema(database: &DatabasePool) {
         "CREATE TABLE rustflow_orm_codecs (
             id {codec_id},
             signed_value {signed_type} NOT NULL,
-            unsigned_value {unsigned_type} NOT NULL,
             ratio {ratio_type} NOT NULL,
             decimal_value {decimal_type} NOT NULL,
             big_decimal_value {big_decimal_type} NOT NULL,
@@ -447,6 +463,19 @@ async fn create_schema(database: &DatabasePool) {
         .execute_raw(&codecs, [])
         .await
         .expect("create codec table");
+
+    if database.backend() == DatabaseBackend::MySql {
+        database
+            .execute_raw(
+                "CREATE TABLE rustflow_orm_mysql_unsigned (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    value BIGINT UNSIGNED NOT NULL
+                )",
+                [],
+            )
+            .await
+            .expect("create MySQL-family unsigned codec table");
+    }
 }
 
 async fn exercise_type_codecs(database: &DatabasePool) {
@@ -468,7 +497,6 @@ async fn exercise_type_codecs(database: &DatabasePool) {
     let inserted = codecs
         .insert(entities::codec::ActiveModel {
             signed_value: Set(-42),
-            unsigned_value: Set(42),
             ratio: Set(0.125),
             decimal_value: Set(decimal),
             big_decimal_value: Set(big_decimal.clone()),
@@ -491,7 +519,6 @@ async fn exercise_type_codecs(database: &DatabasePool) {
         .expect("codec row exists");
 
     assert_eq!(decoded.signed_value, -42);
-    assert_eq!(decoded.unsigned_value, 42);
     assert!((decoded.ratio - 0.125).abs() < f64::EPSILON);
     assert_eq!(decoded.decimal_value, decimal);
     assert_eq!(decoded.big_decimal_value, big_decimal);
@@ -503,6 +530,25 @@ async fn exercise_type_codecs(database: &DatabasePool) {
     assert_eq!(decoded.optional_value, None);
     assert_eq!(decoded.json_value, json);
     assert_eq!(decoded.bytes_value, bytes);
+
+    // SQLx exposes unsigned 64-bit values only through the MySQL protocol.
+    // Keep this engine-specific rather than implying SQLite/PostgreSQL support.
+    if database.backend() == DatabaseBackend::MySql {
+        let unsigned = database.entity::<entities::mysql_unsigned::Entity>();
+        let inserted = unsigned
+            .insert(entities::mysql_unsigned::ActiveModel {
+                value: Set(u64::MAX),
+                ..Default::default()
+            })
+            .await
+            .expect("insert full-range MySQL-family unsigned value");
+        let decoded = unsigned
+            .find_by_id(inserted.id)
+            .await
+            .expect("query MySQL-family unsigned value")
+            .expect("unsigned codec row exists");
+        assert_eq!(decoded.value, u64::MAX);
+    }
 }
 
 async fn exercise_orm(database: &DatabasePool) {
