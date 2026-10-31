@@ -894,7 +894,7 @@ where
         documents.push(
             cursor
                 .deserialize_current()
-                .map_err(MongoError::Operation)?,
+                .map_err(MongoError::Deserialization)?,
         );
     }
     Ok(documents)
