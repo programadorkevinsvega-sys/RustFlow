@@ -681,9 +681,7 @@ impl DatabaseError {
     /// SQL text, credentials, and connection URLs are never exposed to the caller.
     pub fn to_http_error(&self) -> HttpError {
         match self.kind() {
-            DatabaseErrorKind::InvalidModelState => {
-                HttpError::bad_request("Invalid model state")
-            }
+            DatabaseErrorKind::InvalidModelState => HttpError::bad_request("Invalid model state"),
             DatabaseErrorKind::NotFound => HttpError::not_found("Record not found"),
             DatabaseErrorKind::UniqueViolation => HttpError::new(
                 StatusCode::CONFLICT,
@@ -758,13 +756,12 @@ fn constraint_kind_from_code(
         return Some(DatabaseErrorKind::UniqueViolation);
     }
 
-    if matches!(
-        code,
-        Some("23503" | "787")
-    ) || matches!(
-        mysql_number,
-        Some(1216 | 1217 | 1451 | 1452 | 1557 | 1761 | 1762 | 1830 | 1834)
-    ) {
+    if matches!(code, Some("23503" | "787"))
+        || matches!(
+            mysql_number,
+            Some(1216 | 1217 | 1451 | 1452 | 1557 | 1761 | 1762 | 1830 | 1834)
+        )
+    {
         return Some(DatabaseErrorKind::ForeignKeyViolation);
     }
 
@@ -778,9 +775,7 @@ fn constraint_kind_from_code(
     None
 }
 
-fn sqlx_constraint_kind(
-    error: &dyn sqlx::error::DatabaseError,
-) -> Option<DatabaseErrorKind> {
+fn sqlx_constraint_kind(error: &dyn sqlx::error::DatabaseError) -> Option<DatabaseErrorKind> {
     // Prefer SQLx's backend-native classification. In particular, MySQL's
     // SQLSTATE 23000 is shared by several constraint types; the driver uses
     // the protocol error number to distinguish them.
@@ -797,11 +792,7 @@ fn sqlx_constraint_kind(
     let mysql_number = error
         .try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>()
         .map(sqlx::mysql::MySqlDatabaseError::number);
-    constraint_kind_from_code(
-        error.code().as_deref(),
-        mysql_number,
-        false,
-    )
+    constraint_kind_from_code(error.code().as_deref(), mysql_number, false)
 }
 
 fn classify_sqlx_error(error: &sqlx::Error, fallback: DatabaseErrorKind) -> DatabaseErrorKind {
