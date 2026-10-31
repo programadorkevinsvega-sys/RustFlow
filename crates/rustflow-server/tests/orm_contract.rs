@@ -298,7 +298,7 @@ async fn create_schema(database: &DatabasePool) {
         DatabaseBackend::Sqlite => (
             "INTEGER PRIMARY KEY AUTOINCREMENT",
             "BOOLEAN NOT NULL",
-            "TEXT NULL",
+            "TEXT NULL DEFAULT 'database-default'",
             "JSON NOT NULL",
             "BLOB NOT NULL",
             "INTEGER PRIMARY KEY AUTOINCREMENT",
@@ -307,7 +307,7 @@ async fn create_schema(database: &DatabasePool) {
         DatabaseBackend::Postgres => (
             "BIGSERIAL PRIMARY KEY",
             "BOOLEAN NOT NULL",
-            "VARCHAR(255) NULL",
+            "VARCHAR(255) NULL DEFAULT 'database-default'",
             "JSONB NOT NULL",
             "BYTEA NOT NULL",
             "BIGSERIAL PRIMARY KEY",
@@ -316,7 +316,7 @@ async fn create_schema(database: &DatabasePool) {
         DatabaseBackend::MySql => (
             "BIGINT AUTO_INCREMENT PRIMARY KEY",
             "BOOLEAN NOT NULL",
-            "VARCHAR(255) NULL",
+            "VARCHAR(255) NULL DEFAULT 'database-default'",
             "JSON NOT NULL",
             "LONGBLOB NOT NULL",
             "BIGINT AUTO_INCREMENT PRIMARY KEY",
@@ -354,7 +354,7 @@ async fn create_schema(database: &DatabasePool) {
     database
         .execute_raw(
             "CREATE TABLE rustflow_orm_constraints (
-                value INTEGER NOT NULL CHECK (value > 0)
+                positive_value INTEGER NOT NULL CHECK (positive_value > 0)
             )",
             [],
         )
@@ -630,7 +630,7 @@ async fn exercise_orm(database: &DatabasePool) {
         "?"
     };
     let check_sql = format!(
-        "INSERT INTO rustflow_orm_constraints (value) VALUES ({check_placeholder})"
+        "INSERT INTO rustflow_orm_constraints (positive_value) VALUES ({check_placeholder})"
     );
     let check_error = database
         .execute_raw(&check_sql, [0_i64.into()])
@@ -977,6 +977,45 @@ async fn exercise_orm(database: &DatabasePool) {
         .await
         .expect("delete account by id");
     assert_eq!(removed.rows_affected, 1);
+
+    let defaults = accounts
+        .insert(entities::account::ActiveModel {
+            email: Set("defaults@example.test".to_owned()),
+            enabled: Set(true),
+            alias: NotSet,
+            metadata: Set(serde_json::json!({})),
+            checksum: Set(vec![]),
+            ..Default::default()
+        })
+        .await
+        .expect("database default should populate an omitted field");
+    assert_eq!(defaults.alias.as_deref(), Some("database-default"));
+
+    let missing_update = accounts
+        .update(entities::account::ActiveModel {
+            id: Set(i64::MAX),
+            email: Set("missing@example.test".to_owned()),
+            enabled: Set(true),
+            alias: NotSet,
+            metadata: Set(serde_json::json!({})),
+            checksum: Set(vec![]),
+        })
+        .await
+        .expect_err("updating a missing primary key must report not found");
+    assert_eq!(missing_update.kind(), DatabaseErrorKind::NotFound);
+    assert_eq!(
+        missing_update.to_http_error().status_code(),
+        http::StatusCode::NOT_FOUND
+    );
+
+    let missing_delete = accounts
+        .delete_by_id(i64::MAX)
+        .await
+        .expect("deleting a missing key is a zero-row result");
+    assert_eq!(missing_delete.rows_affected, 0);
+
+    let cleanup = accounts.delete_by_id(defaults.id).await.expect("cleanup default row");
+    assert_eq!(cleanup.rows_affected, 1);
 }
 
 async fn database_from_url(url: &str) -> DatabasePool {
