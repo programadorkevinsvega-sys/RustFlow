@@ -97,7 +97,7 @@ Desde la raíz del repositorio puedes ejecutar `cargo test --workspace --all-fea
 
 ## Contratos de integración de persistencia
 
-Los ejemplos ejecutables anteriores enseñan HTTP, SSR y la interfaz browser/WASM; no son una aplicación que conecte el ORM o el ODM. La persistencia tiene contratos de integración separados:
+Los ejemplos HTTP básico, SSR de producto y browser/WASM son independientes y no conectan el ORM/ODM. La nueva plantilla CRUD es el ejemplo integrado SQL; la persistencia también conserva contratos de integración independientes:
 
 ### SQLx y ORM SeaORM
 
@@ -118,11 +118,11 @@ cargo test -p rustflow-server --test mongodb_adapter -- --test-threads=1
 
 La suite requiere un replica set mediante `RUSTFLOW_TEST_MONGODB_URI` y un servidor standalone mediante `RUSTFLOW_TEST_MONGODB_STANDALONE_URI` para probar contratos distintos, incluidas las transacciones en replica set y el rechazo de transacciones multi-documento en standalone. Consulta [Base de datos](/guides/database/) y [ODM MongoDB](/guides/mongodb-odm/) para configuración y límites.
 
-Estos comandos son pruebas de integración, no demos standalone ni una aplicación CRUD generada. La aplicación CRUD que conectará las capacidades en un flujo de extremo a extremo corresponde a la Fase 6.7.5, todavía pendiente.
+Estos comandos ejercitan los contratos del ORM y ODM de forma aislada; el ejemplo CRUD anterior conecta la superficie ORM con HTTP. Su aceptación de Phase 6.7.5 permanece pendiente de compilar/ejecutar el proyecto generado y pasar los checks del PR en el HEAD final.
 
 ## Lo que los ejemplos no proporcionan
 
-Los datos del catálogo de productos y de la lista de tareas de estos ejemplos no son persistentes. RustFlow ya incluye un ORM SQL experimental para SQLite/PostgreSQL/MySQL/MariaDB y un ODM MongoDB independiente, pero estos ejemplos no los conectan. La plantilla CRUD es una integración educativa de ORM, formularios, sesión volátil, autorización, CSRF y SSR, pero no ofrece proveedor de usuarios, almacenamiento durable, server actions ni una receta de producción. Consulta las guías de base de datos y sesiones para sus contratos y límites; no extrapoles preparación de producción desde la demo.
+Los datos del catálogo de la página de producto SSR y de la lista de tareas browser/WASM no son persistentes. La plantilla CRUD usa el ORM SQL experimental para SQLite/PostgreSQL/MySQL/MariaDB; el ODM MongoDB permanece independiente y no se mezcla en esa aplicación. La plantilla CRUD es una integración educativa de ORM, formularios, sesión volátil, autorización, CSRF y SSR, pero no ofrece proveedor de usuarios, almacenamiento durable, server actions ni una receta de producción. Consulta las guías de base de datos y sesiones para sus contratos y límites; no extrapoles preparación de producción desde la demo.
 
 
 ## Sesiones y rutas protegidas — Fase 6.4 integrada en main
