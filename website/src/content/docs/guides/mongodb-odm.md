@@ -22,7 +22,7 @@ database.ping().await?;
 
 ## 2. Declarar un documento
 
-Implementa `DocumentModel` para asociar el tipo Rust a una colección y al tipo de identificador. La propiedad del ID debe serializarse como BSON `_id`. Para que MongoDB genere un `ObjectId`, omite el campo cuando todavía es `None`.
+Implementa `DocumentModel` para asociar el tipo Rust a una colección y al tipo de identificador. La propiedad del ID debe serializarse como BSON `_id`; antes de escribir, RustFlow comprueba que el valor serializado coincida con `DocumentModel::id()` y rechaza el mapeo incorrecto. Para que MongoDB genere un `ObjectId`, omite el campo cuando todavía es `None`.
 
 ```rust
 use rustflow_server::mongodb_driver::bson::oid::ObjectId;
