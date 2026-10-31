@@ -60,7 +60,11 @@ pub use group::RouteGroup;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
 pub use mongodb as mongodb_driver;
-pub use orm::EntityRepository;
+pub use orm::{
+    EntityRepository, MAX_RELATION_GRAPH_DEPTH, RelationGraph, RelationGraphResults,
+    RelationLoadOptions, attach_one_to_many, detach_one_to_many, load_many_projected,
+    replace_one_to_one,
+};
 pub use page::HtmlPage;
 pub use proxy::{ClientAddressPolicy, IpNetwork};
 pub use sea_orm;
