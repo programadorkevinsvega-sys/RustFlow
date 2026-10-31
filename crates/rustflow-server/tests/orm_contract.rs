@@ -1850,12 +1850,12 @@ async fn postgres_commit_transport_loss_is_reported_as_unknown() {
     rustflow_server::sqlx::query(
         r#"
         CREATE FUNCTION rustflow_orm_wait_before_commit() RETURNS trigger
-        LANGUAGE plpgsql AS $
+        LANGUAGE plpgsql AS $function$
         BEGIN
             PERFORM pg_sleep(30);
             RETURN NEW;
         END;
-        $
+        $function$
         "#,
     )
     .execute(&admin)
