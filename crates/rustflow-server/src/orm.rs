@@ -193,7 +193,7 @@ where
     }
 }
 
-/// Batch-load a has-one relation for a slice of parent models.
+/// Batch-load a has-one or belongs-to relation for a slice of parent models.
 pub async fn load_one<M, R, C>(
     parents: &[M],
     related: R,
