@@ -12,8 +12,10 @@ jobs:
     name: Generate Cargo.lock with the workspace MSRV
     runs-on: ubuntu-24.04
     steps:
-      - name: Check out repository
+      - name: Check out the pull request branch
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
 
       - name: Install workspace MSRV
         uses: dtolnay/rust-toolchain@master
