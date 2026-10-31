@@ -42,7 +42,7 @@ No todos los tipos numéricos de Rust tienen un codec común en los cuatro motor
 
 Para modelos compartidos entre los cuatro motores, usa `i64` cuando el dominio cabe en el rango firmado. No conviertas `u64` a `i64` mediante un cast sin comprobar el rango. El uso de `u64` queda limitado a modelos específicos de MySQL/MariaDB; una representación portable para todo el rango unsigned requiere un codec explícito y todavía no forma parte del contrato común.
 
-Hay otra diferencia importante con los decimales: SeaORM 1.1.20/SeaQuery enlaza y recupera `Decimal` y `BigDecimal` en SQLite mediante `f64`. Por eso el esquema de prueba usa columnas `REAL` y limita el round-trip SQLite a valores representables por esa ruta. No uses esos tipos en SQLite para dinero ni para cálculos que exijan precisión decimal arbitraria. Para ello usa enteros escalados o un codec de texto canónico diseñado expresamente. PostgreSQL usa `NUMERIC` y MySQL/MariaDB usan `DECIMAL`; las pruebas de integración verifican allí un `BigDecimal` de alta precisión.
+Hay otra diferencia importante con los decimales: SeaORM 1.1.20/SeaQuery enlaza y recupera `Decimal` y `BigDecimal` en SQLite mediante `f64`. Por eso el esquema de prueba usa columnas `REAL` y limita el round-trip SQLite a `12.5`, que sí es exactamente representable en binario. Otros valores decimales pueden redondearse o expandirse al reconstruirse desde `f64`. No uses esos tipos en SQLite para dinero ni para cálculos que exijan precisión decimal arbitraria. Para ello usa enteros escalados o un codec de texto canónico diseñado expresamente. PostgreSQL usa `NUMERIC` y MySQL/MariaDB usan `DECIMAL`; las pruebas de integración verifican allí un `BigDecimal` de alta precisión.
 
 ## 1. Configurar el pool
 
