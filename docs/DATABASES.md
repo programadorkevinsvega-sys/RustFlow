@@ -146,6 +146,150 @@ let result = accounts
 
 The four-engine ORM contract executes this upsert twice against the same unique key and verifies that the second call updates the row rather than creating another one.
 
+### Filtered and ordered relationship loading
+
+The RustFlow loaders accept an entity or a typed SeaORM Select through EntityOrSelect. A relation-specific query can therefore filter and order the related rows while keeping the batch loader responsible for the relationship grouping:
+
+~~~rust
+use rustflow_server::orm::{load_many, RelationLoadOptions};
+use rustflow_server::sea_orm::{ColumnTrait, QueryFilter, QueryOrder};
+
+let posts_by_user = load_many(
+    &users,
+    RelationLoadOptions::<entities::post::Entity>::new().modify(|query| {
+        query
+            .filter(entities::post::Column::Published.eq(true))
+            .order_by_desc(entities::post::Column::CreatedAt)
+            .order_by_asc(entities::post::Column::Id)
+    }),
+    database.orm(),
+)
+.await?;
+~~~
+
+The filter applies only to the related query; it does not filter the parent user query. Multiple order clauses are retained. Add a stable tiebreaker such as the related primary key when timestamp or price values can tie. A limit on this Select applies to the complete related batch, not independently per parent; per-parent top-N loading is not part of this API. Values built through SeaORM expressions remain bound parameters.
+
+### Relationship projections
+
+A partial column selection cannot safely be decoded into a complete SeaORM Model. Use a projection DTO with FromQueryResult and load_many_projected. The DTO must expose the related foreign key so the result can be grouped back to its parent:
+
+~~~rust
+use rustflow_server::orm::{load_many_projected, RelationLoadOptions};
+use rustflow_server::sea_orm::{ColumnTrait, FromQueryResult, QueryOrder};
+
+#[derive(Clone, Debug, FromQueryResult)]
+struct PostSummary {
+    id: i64,
+    user_id: i64,
+    title: String,
+}
+
+let summaries = load_many_projected(
+    &users,
+    entities::post::Column::UserId,
+    RelationLoadOptions::<entities::post::Entity>::new().modify(|query| {
+        query
+            .select_only()
+            .column(entities::post::Column::Id)
+            .column(entities::post::Column::UserId)
+            .column(entities::post::Column::Title)
+            .order_by_desc(entities::post::Column::Id)
+    }),
+    |user| user.id,
+    |post: &PostSummary| post.user_id,
+    database.orm(),
+)
+.await?;
+~~~
+
+The helper adds a bound IN predicate for all parent keys, executes one query, and groups the decoded DTOs in the returned parent order. The parent-key and DTO-key extractors must identify the same association key and return the same Rust key type. The DTO must include the foreign key selected by the query; otherwise rows cannot be grouped correctly. D must be Clone so duplicate parent keys receive their own grouped values. This helper currently covers has-many projections and returns DTOs, not entity models.
+
+### Configurable nested relation graphs
+
+Use RelationGraph to describe multiple explicit branches and nested batch hops. Each node may use its own RelationLoadOptions, so one branch can be filtered or ordered independently of its siblings:
+
+~~~rust
+use rustflow_server::orm::{RelationGraph, RelationLoadOptions};
+use rustflow_server::sea_orm::{ColumnTrait, QueryOrder};
+
+let post_graph = RelationGraph::<entities::post::Model, _>::new()
+    .with_many(
+        "comments",
+        RelationLoadOptions::<entities::comment::Entity>::new()
+            .modify(|query| query.order_by_asc(entities::comment::Column::CreatedAt)),
+        RelationGraph::new(),
+    )?;
+
+let graph = RelationGraph::<entities::user::Model, _>::new()
+    .with_many(
+        "posts",
+        RelationLoadOptions::<entities::post::Entity>::new()
+            .modify(|query| query.order_by_desc(entities::post::Column::CreatedAt)),
+        post_graph,
+    )?
+    .with_one(
+        "profile",
+        RelationLoadOptions::<entities::profile::Entity>::new(),
+        RelationGraph::new(),
+    )?
+    .with_many_to_many(
+        "roles",
+        RelationLoadOptions::<entities::role::Entity>::new(),
+        entities::user_role::Entity,
+        RelationGraph::new(),
+    )?
+    .with_max_depth(4)?;
+
+let loaded = graph.load(&users, database.orm()).await?;
+let posts_by_user = loaded.many::<entities::post::Model>("posts").unwrap();
+let comments_by_post = loaded.many::<entities::comment::Model>("posts.comments").unwrap();
+let profiles = loaded.one::<entities::profile::Model>("profile").unwrap();
+let roles_by_user = loaded.many::<entities::role::Model>("roles").unwrap();
+~~~
+
+The default maximum graph depth is 8; with_max_depth accepts 1 through 16. Sibling names must be unique path segments. Read results with many for collection nodes and one for one-to-one nodes. Nested-path groups correspond to the flattened models from the preceding collection edge. A many-to-many edge uses the explicit junction entity and performs junction/target batch work; query count depends on edge kind, not parent count. Empty intermediate collections do not trigger downstream queries. There is no implicit lazy loading.
+
+Projected DTO branches can also be added to a graph with with_many_projected. They expose grouped DTO values through many, but do not accept nested entity branches because a partial DTO is not necessarily an Entity Model.
+
+### Typed relation mutation helpers
+
+The relation mutation helpers update an existing related model's typed foreign-key column. They never create or delete related rows and never request a cascade. For a one-to-many association, attach_one_to_many can also reparent an existing child:
+
+~~~rust
+use rustflow_server::orm::attach_one_to_many;
+
+let transaction = database.begin_transaction().await?;
+let reassigned_post = attach_one_to_many(
+    existing_post,
+    entities::post::Column::UserId,
+    user.id.into(),
+    transaction.connection(),
+)
+.await?;
+transaction.commit().await?;
+~~~
+
+detach_one_to_many sets the supplied nullable foreign key to NULL. A non-nullable FK, uniqueness constraint, or foreign-key violation is returned as a database error; no fallback delete occurs.
+
+replace_one_to_one detaches the previous related model (if any) and associates an existing replacement inside a caller-owned DatabaseTransaction:
+
+~~~rust
+use rustflow_server::orm::replace_one_to_one;
+
+let transaction = database.begin_transaction().await?;
+let replacement = replace_one_to_one(
+    Some(previous_profile),
+    replacement_profile,
+    entities::profile::Column::UserId,
+    user.id.into(),
+    &transaction,
+)
+.await?;
+transaction.commit().await?;
+~~~
+
+For true one-to-one semantics, the FK must be nullable and protected by a UNIQUE constraint. The helper does not commit or roll back on behalf of the caller: roll back when it returns an error, and commit only after the complete mutation succeeds. Use EntityRepository::delete / delete_by_id when deletion is intended; database FK actions remain schema-defined.
+
 SQLite/PostgreSQL use ON CONFLICT syntax. The MySQL-family builder maps to ON DUPLICATE KEY UPDATE, whose conflict selection is not equivalent to a PostgreSQL/SQLite conflict target: a duplicate on any applicable unique/primary key can trigger the update. Do not assume identical target semantics or use this as a substitute for a deliberate uniqueness design. Check capabilities.insert_returning before calling SeaORM's exec_with_returning; when false, use exec and perform an explicit follow-up read using a stable key.
 
 ## Numeric codecs and decimal precision

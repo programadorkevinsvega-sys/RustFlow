@@ -2,7 +2,10 @@ use std::{env, str::FromStr};
 
 use rustflow_server::{
     DatabaseBackend, DatabaseConfig, DatabaseErrorKind, DatabasePool,
-    orm::{load_many, load_many_to_many, load_one},
+    orm::{
+        attach_one_to_many, detach_one_to_many, load_many, load_many_projected, load_many_to_many, load_one,
+        RelationGraph, RelationLoadOptions, replace_one_to_one,
+    },
     sea_orm::{
         ActiveValue::{NotSet, Set, Unchanged},
         ColumnTrait, Condition, EntityTrait, JoinType, QueryFilter, QueryOrder, QuerySelect,
@@ -10,6 +13,13 @@ use rustflow_server::{
         sea_query::{Expr, ExprTrait, OnConflict},
     },
 };
+
+#[derive(Clone, Debug, PartialEq, rustflow_server::sea_orm::FromQueryResult)]
+struct NotePreview {
+    id: i64,
+    account_id: i64,
+    title: String,
+}
 
 mod entities {
     pub mod account {
@@ -70,7 +80,7 @@ mod entities {
         pub struct Model {
             #[sea_orm(primary_key)]
             pub id: i64,
-            pub account_id: i64,
+            pub account_id: Option<i64>,
             pub bio: String,
         }
 
@@ -410,7 +420,7 @@ async fn create_schema(database: &DatabasePool) {
     let profiles = format!(
         "CREATE TABLE rustflow_orm_profiles (
             id {note_id},
-            account_id BIGINT NOT NULL UNIQUE,
+            account_id BIGINT NULL UNIQUE,
             bio VARCHAR(255) NOT NULL,
             FOREIGN KEY (account_id) REFERENCES rustflow_orm_accounts(id) ON DELETE CASCADE
         )"
@@ -1033,7 +1043,7 @@ async fn exercise_orm(database: &DatabasePool) {
     database
         .entity::<entities::profile::Entity>()
         .insert(entities::profile::ActiveModel {
-            account_id: Set(first.id),
+            account_id: Set(Some(first.id)),
             bio: Set("Analytical engine notes".to_owned()),
             ..Default::default()
         })
@@ -1166,6 +1176,226 @@ async fn exercise_orm(database: &DatabasePool) {
     assert_eq!(children[0].len(), 2);
     assert_eq!(children[1].len(), 1);
     assert!(children[2].is_empty(), "parent has no has-many children");
+    // Apply relation-specific filters and deterministic ordering inside the batch loader.
+    let filtered_children = load_many(
+        &parents,
+        RelationLoadOptions::<entities::note::Entity>::new().modify(|query| {
+            query
+                .filter(entities::note::Column::Title.contains("note"))
+                .order_by_desc(entities::note::Column::Id)
+        }),
+        database.orm(),
+    )
+    .await
+    .expect("batch load filtered and ordered notes");
+    assert_eq!(filtered_children.len(), parents.len());
+    assert_eq!(
+        filtered_children[0]
+            .iter()
+            .map(|note| note.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["second note", "first note"],
+        "the related query order must be preserved within each parent's group"
+    );
+    assert_eq!(filtered_children[1][0].title, "third note");
+    assert!(filtered_children[2].is_empty());
+
+    // A projection DTO includes the foreign key used to group results. The body column
+    // is deliberately omitted, so this verifies that the loader does not decode a
+    // partial row into the full Note model.
+    let projected_notes: Vec<Vec<NotePreview>> = load_many_projected(
+        &parents,
+        entities::note::Column::AccountId,
+        RelationLoadOptions::<entities::note::Entity>::new().modify(|query| {
+            query
+                .select_only()
+                .column(entities::note::Column::Id)
+                .column(entities::note::Column::AccountId)
+                .column(entities::note::Column::Title)
+                .order_by_desc(entities::note::Column::Id)
+        }),
+        |account| account.id,
+        |note: &NotePreview| note.account_id,
+        database.orm(),
+    )
+    .await
+    .expect("batch load a safe DTO projection");
+    assert_eq!(projected_notes.len(), parents.len());
+    assert_eq!(projected_notes[0].len(), 2);
+    assert_eq!(projected_notes[0][0].title, "second note");
+    assert_eq!(projected_notes[0][0].id > projected_notes[0][1].id, true);
+    assert_eq!(projected_notes[1][0].title, "third note");
+    assert!(projected_notes[2].is_empty());
+
+    // A configured graph supports multiple branches and nested branches while retaining
+    // explicit loaders. Each graph edge is a batch operation, not a query per parent.
+    let note_graph = RelationGraph::<entities::note::Model, _>::new()
+        .with_one(
+            "author",
+            RelationLoadOptions::<entities::account::Entity>::new(),
+            RelationGraph::new(),
+        )
+        .expect("configure nested author relation");
+    let graph = RelationGraph::<entities::account::Model, _>::new()
+        .with_many(
+            "notes",
+            RelationLoadOptions::<entities::note::Entity>::new().modify(|query| {
+                query.order_by_desc(entities::note::Column::Id)
+            }),
+            note_graph,
+        )
+        .expect("configure notes graph branch")
+        .with_one(
+            "profile",
+            RelationLoadOptions::<entities::profile::Entity>::new(),
+            RelationGraph::new(),
+        )
+        .expect("configure profile graph branch")
+        .with_many_to_many(
+            "tags",
+            RelationLoadOptions::<entities::tag::Entity>::new(),
+            entities::account_tag::Entity,
+            RelationGraph::new(),
+        )
+        .expect("configure tags graph branch")
+        .with_many_projected(
+            "note_summaries",
+            entities::note::Column::AccountId,
+            RelationLoadOptions::<entities::note::Entity>::new().modify(|query| {
+                query
+                    .select_only()
+                    .column(entities::note::Column::Id)
+                    .column(entities::note::Column::AccountId)
+                    .column(entities::note::Column::Title)
+                    .order_by_desc(entities::note::Column::Id)
+            }),
+            |account| account.id,
+            |note: &NotePreview| note.account_id,
+        )
+        .expect("configure projected note graph branch")
+        .with_max_depth(3)
+        .expect("set graph depth");
+    let graph_results = graph
+        .load(&parents, database.orm())
+        .await
+        .expect("execute explicit nested relation graph");
+    let graph_notes = graph_results
+        .many::<entities::note::Model>("notes")
+        .expect("read graph notes");
+    assert_eq!(graph_notes.len(), parents.len());
+    assert_eq!(graph_notes[0][0].title, "second note");
+    assert_eq!(graph_notes[1][0].title, "third note");
+    let graph_authors = graph_results
+        .one::<entities::account::Model>("notes.author")
+        .expect("read nested graph authors");
+    assert_eq!(graph_authors.len(), 3);
+    assert!(graph_results
+        .one::<entities::profile::Model>("profile")
+        .is_some());
+    assert_eq!(
+        graph_results.many::<entities::tag::Model>("tags").unwrap().len(),
+        parents.len()
+    );
+    assert_eq!(
+        graph_results.many::<NotePreview>("note_summaries").unwrap()[0][0].title,
+        "second note"
+    );
+
+    // Reassigning a has-many child is an explicit typed update and participates in the
+    // transaction supplied by the caller. A rollback restores the original parent key.
+    let third_note = notes
+        .one(
+            notes
+                .select()
+                .filter(entities::note::Column::Title.eq("third note")),
+        )
+        .await
+        .expect("find note to move")
+        .expect("third note exists");
+    let third_note_id = third_note.id;
+    let mutation = database.begin_transaction().await.expect("begin relation mutation");
+    let moved = attach_one_to_many(
+        third_note,
+        entities::note::Column::AccountId,
+        first.id.into(),
+        mutation.connection(),
+    )
+    .await
+    .expect("move a has-many child to another parent");
+    assert_eq!(moved.account_id, first.id);
+    mutation.rollback().await.expect("rollback relation reparenting");
+    let restored_note = notes
+        .find_by_id(third_note_id)
+        .await
+        .expect("reload rolled-back note")
+        .expect("note remains present");
+    assert_eq!(restored_note.account_id, second.id);
+
+    // One-to-one replacement explicitly detaches the old nullable FK and attaches the
+    // replacement inside one transaction; no related row is deleted.
+    let profiles = database.entity::<entities::profile::Entity>();
+    let old_profile = profiles
+        .one(
+            profiles
+                .select()
+                .filter(entities::profile::Column::AccountId.eq(Some(first.id))),
+        )
+        .await
+        .expect("find existing profile")
+        .expect("profile exists");
+    let replacement_profile = profiles
+        .insert(entities::profile::ActiveModel {
+            account_id: Set(None),
+            bio: Set("Replacement profile".to_owned()),
+            ..Default::default()
+        })
+        .await
+        .expect("create unassociated replacement profile");
+    let replacement = database.begin_transaction().await.expect("begin one-to-one replacement");
+    let replaced_profile = replace_one_to_one(
+        Some(old_profile),
+        replacement_profile,
+        entities::profile::Column::AccountId,
+        first.id.into(),
+        &replacement,
+    )
+    .await
+    .expect("replace one-to-one profile");
+    assert_eq!(replaced_profile.bio, "Replacement profile");
+    replacement.commit().await.expect("commit one-to-one replacement");
+    let profiles_after_replace = load_one(&parents, entities::profile::Entity, database.orm())
+        .await
+        .expect("reload one-to-one profiles");
+    assert_eq!(
+        profiles_after_replace[0].as_ref().map(|profile| profile.bio.as_str()),
+        Some("Replacement profile")
+    );
+    let replacement_for_detach = profiles_after_replace[0]
+        .clone()
+        .expect("replacement profile is associated");
+    let detach_transaction = database
+        .begin_transaction()
+        .await
+        .expect("begin explicit one-to-one detach");
+    let detached_profile = detach_one_to_many(
+        replacement_for_detach,
+        entities::profile::Column::AccountId,
+        detach_transaction.connection(),
+    )
+    .await
+    .expect("detach a nullable one-to-one foreign key without deleting the row");
+    assert!(detached_profile.account_id.is_none());
+    detach_transaction
+        .commit()
+        .await
+        .expect("commit explicit one-to-one detach");
+    let profiles_after_detach = load_one(&parents, entities::profile::Entity, database.orm())
+        .await
+        .expect("reload detached profiles");
+    assert!(profiles_after_detach[0].is_none());
+
+    assert!(profiles_after_replace[1].is_none());
+
 
     let all_notes = notes
         .all(notes.select().order_by_asc(entities::note::Column::Id))
@@ -1856,6 +2086,178 @@ async fn nested_relation_loading_uses_one_query_per_explicit_hop() {
         query_log.len(),
         2,
         "a two-hop graph must use one batched query per explicit hop, never one query per parent"
+    );
+}
+
+
+#[tokio::test]
+async fn configured_relation_graph_batches_each_nested_hop() {
+    use rustflow_server::sea_orm::{DbBackend, MockDatabase};
+
+    let database = MockDatabase::new(DbBackend::Sqlite)
+        .append_query_results([vec![
+            entities::note::Model {
+                id: 1,
+                account_id: 10,
+                title: "first".to_owned(),
+                body: None,
+            },
+            entities::note::Model {
+                id: 2,
+                account_id: 11,
+                title: "second".to_owned(),
+                body: None,
+            },
+        ]])
+        .append_query_results([vec![
+            entities::account::Model {
+                id: 10,
+                email: "one@example.test".to_owned(),
+                enabled: true,
+                alias: None,
+                metadata: serde_json::json!({}),
+                checksum: vec![],
+            },
+            entities::account::Model {
+                id: 11,
+                email: "two@example.test".to_owned(),
+                enabled: true,
+                alias: None,
+                metadata: serde_json::json!({}),
+                checksum: vec![],
+            },
+        ]])
+        .into_connection();
+    let parents = vec![
+        entities::account::Model {
+            id: 10,
+            email: "one@example.test".to_owned(),
+            enabled: true,
+            alias: None,
+            metadata: serde_json::json!({}),
+            checksum: vec![],
+        },
+        entities::account::Model {
+            id: 11,
+            email: "two@example.test".to_owned(),
+            enabled: true,
+            alias: None,
+            metadata: serde_json::json!({}),
+            checksum: vec![],
+        },
+    ];
+
+    let graph = RelationGraph::<entities::account::Model, _>::new()
+        .with_many(
+            "notes",
+            RelationLoadOptions::<entities::note::Entity>::new().modify(|query| {
+                query.filter(entities::note::Column::Title.contains("s"))
+            }),
+            RelationGraph::<entities::note::Model, _>::new()
+                .with_one(
+                    "author",
+                    RelationLoadOptions::<entities::account::Entity>::new(),
+                    RelationGraph::new(),
+                )
+                .expect("configure nested author"),
+        )
+        .expect("configure graph");
+    let results = graph
+        .load(&parents, &database)
+        .await
+        .expect("execute configured graph");
+    assert_eq!(results.many::<entities::note::Model>("notes").unwrap().len(), 2);
+    assert_eq!(
+        results.one::<entities::account::Model>("notes.author").unwrap().len(),
+        2
+    );
+
+    let query_log = database.into_transaction_log();
+    assert_eq!(
+        query_log.len(),
+        2,
+        "a two-edge graph must execute one batched query per edge, regardless of parent count"
+    );
+}
+
+#[tokio::test]
+async fn projected_relation_loading_preserves_parent_grouping_and_one_query() {
+    use rustflow_server::sea_orm::{DbBackend, MockDatabase};
+
+    let database = MockDatabase::new(DbBackend::Sqlite)
+        .append_query_results([vec![
+            NotePreview {
+                id: 2,
+                account_id: 10,
+                title: "second".to_owned(),
+            },
+            NotePreview {
+                id: 1,
+                account_id: 10,
+                title: "first".to_owned(),
+            },
+            NotePreview {
+                id: 3,
+                account_id: 11,
+                title: "third".to_owned(),
+            },
+        ]])
+        .into_connection();
+    let parents = vec![
+        entities::account::Model {
+            id: 10,
+            email: "one@example.test".to_owned(),
+            enabled: true,
+            alias: None,
+            metadata: serde_json::json!({}),
+            checksum: vec![],
+        },
+        entities::account::Model {
+            id: 11,
+            email: "two@example.test".to_owned(),
+            enabled: true,
+            alias: None,
+            metadata: serde_json::json!({}),
+            checksum: vec![],
+        },
+        entities::account::Model {
+            id: 12,
+            email: "empty@example.test".to_owned(),
+            enabled: false,
+            alias: None,
+            metadata: serde_json::json!({}),
+            checksum: vec![],
+        },
+    ];
+
+    let loaded: Vec<Vec<NotePreview>> = load_many_projected(
+        &parents,
+        entities::note::Column::AccountId,
+        RelationLoadOptions::<entities::note::Entity>::new().modify(|query| {
+            query
+                .select_only()
+                .column(entities::note::Column::Id)
+                .column(entities::note::Column::AccountId)
+                .column(entities::note::Column::Title)
+                .order_by_desc(entities::note::Column::Id)
+        }),
+        |parent| parent.id,
+        |note: &NotePreview| note.account_id,
+        &database,
+    )
+    .await
+    .expect("execute projected batch load");
+
+    assert_eq!(loaded.len(), 3);
+    assert_eq!(loaded[0].iter().map(|note| note.id).collect::<Vec<_>>(), vec![2, 1]);
+    assert_eq!(loaded[1][0].title, "third");
+    assert!(loaded[2].is_empty());
+
+    let query_log = database.into_transaction_log();
+    assert_eq!(
+        query_log.len(),
+        1,
+        "projected relationship loading must issue one query for the entire parent slice"
     );
 }
 

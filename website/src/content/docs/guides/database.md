@@ -275,6 +275,150 @@ let notes_by_account =
     load_many(&parents, entities::note::Entity, database.orm()).await?;
 ~~~
 
+
+### Filtrar y ordenar relaciones por separado
+
+El loader también recibe una consulta Select tipada. Puedes filtrar y ordenar los registros relacionados sin cambiar la consulta que obtuvo los padres:
+
+~~~rust
+use rustflow_server::orm::{load_many, RelationLoadOptions};
+use rustflow_server::sea_orm::{ColumnTrait, QueryFilter, QueryOrder};
+
+let posts_by_user = load_many(
+    &users,
+    RelationLoadOptions::<entities::post::Entity>::new().modify(|query| {
+        query
+            .filter(entities::post::Column::Published.eq(true))
+            .order_by_desc(entities::post::Column::CreatedAt)
+            .order_by_asc(entities::post::Column::Id)
+    }),
+    database.orm(),
+)
+.await?;
+~~~
+
+El filtro solo afecta a la consulta relacionada. Añade una segunda columna estable, normalmente la clave primaria, para obtener un orden determinista. Un limit aplicado al Select limita el batch completo; no es un top-N independiente por cada padre.
+
+### Proyecciones sin cargar todas las columnas
+
+No decodifiques una selección parcial como si fuera el Model completo. Define un DTO con FromQueryResult y conserva la clave foránea que permite asociarlo al padre:
+
+~~~rust
+use rustflow_server::orm::{load_many_projected, RelationLoadOptions};
+use rustflow_server::sea_orm::{ColumnTrait, FromQueryResult, QueryOrder};
+
+#[derive(Clone, Debug, FromQueryResult)]
+struct PostSummary {
+    id: i64,
+    user_id: i64,
+    title: String,
+}
+
+let summaries = load_many_projected(
+    &users,
+    entities::post::Column::UserId,
+    RelationLoadOptions::<entities::post::Entity>::new().modify(|query| {
+        query
+            .select_only()
+            .column(entities::post::Column::Id)
+            .column(entities::post::Column::UserId)
+            .column(entities::post::Column::Title)
+            .order_by_desc(entities::post::Column::Id)
+    }),
+    |user| user.id,
+    |post: &PostSummary| post.user_id,
+    database.orm(),
+)
+.await?;
+~~~
+
+El helper agrega un IN parametrizado con las claves de todos los padres, ejecuta una consulta batch y reconstruye los grupos en el orden original de los padres. Los dos extractores deben identificar la misma clave de asociación. Este helper cubre proyecciones has-many y devuelve DTOs, no entidades completas.
+
+### Grafos explícitos de relaciones anidadas
+
+RelationGraph permite declarar varias ramas y varios niveles. Cada relación tiene sus propias opciones de filtro y orden:
+
+~~~rust
+use rustflow_server::orm::{RelationGraph, RelationLoadOptions};
+use rustflow_server::sea_orm::{ColumnTrait, QueryOrder};
+
+let post_graph = RelationGraph::<entities::post::Model, _>::new()
+    .with_many(
+        "comments",
+        RelationLoadOptions::<entities::comment::Entity>::new()
+            .modify(|query| query.order_by_asc(entities::comment::Column::CreatedAt)),
+        RelationGraph::new(),
+    )?;
+
+let graph = RelationGraph::<entities::user::Model, _>::new()
+    .with_many(
+        "posts",
+        RelationLoadOptions::<entities::post::Entity>::new()
+            .modify(|query| query.order_by_desc(entities::post::Column::CreatedAt)),
+        post_graph,
+    )?
+    .with_one(
+        "profile",
+        RelationLoadOptions::<entities::profile::Entity>::new(),
+        RelationGraph::new(),
+    )?
+    .with_many_to_many(
+        "roles",
+        RelationLoadOptions::<entities::role::Entity>::new(),
+        entities::user_role::Entity,
+        RelationGraph::new(),
+    )?
+    .with_max_depth(4)?;
+
+let loaded = graph.load(&users, database.orm()).await?;
+let posts = loaded.many::<entities::post::Model>("posts").unwrap();
+let comments = loaded.many::<entities::comment::Model>("posts.comments").unwrap();
+let profiles = loaded.one::<entities::profile::Model>("profile").unwrap();
+~~~
+
+El límite predeterminado es de 8 niveles y el máximo configurable es de 16. Los nombres de ramas hermanas deben ser únicos. Recupera colecciones con many(path) y relaciones uno-a-uno con one(path). En una ruta anidada, cada grupo corresponde al orden aplanado de los modelos de la rama anterior. El loader many-to-many utiliza la entidad junction explícita. El número de consultas depende de las aristas y de su tipo, no del número de padres. Las ramas sin padres intermedios no ejecutan consultas posteriores. No hay carga perezosa implícita.
+
+También puedes añadir una proyección DTO mediante with_many_projected y recuperarla con many; ese DTO no es una entidad SeaORM y no admite ramas hijas.
+
+### Modificar relaciones uno-a-uno y uno-a-muchos
+
+attach_one_to_many mueve un modelo relacionado existente a otro padre mediante su columna foránea tipada:
+
+~~~rust
+use rustflow_server::orm::attach_one_to_many;
+
+let transaction = database.begin_transaction().await?;
+let post = attach_one_to_many(
+    existing_post,
+    entities::post::Column::UserId,
+    user.id.into(),
+    transaction.connection(),
+)
+.await?;
+transaction.commit().await?;
+~~~
+
+detach_one_to_many establece el FK nullable en NULL. Si la columna es NOT NULL o se viola otra restricción, devuelve el error de base de datos; no elimina el registro.
+
+replace_one_to_one separa la fila previa y asocia un reemplazo dentro de una transacción explícita:
+
+~~~rust
+use rustflow_server::orm::replace_one_to_one;
+
+let transaction = database.begin_transaction().await?;
+let profile = replace_one_to_one(
+    Some(previous_profile),
+    replacement_profile,
+    entities::profile::Column::UserId,
+    user.id.into(),
+    &transaction,
+)
+.await?;
+transaction.commit().await?;
+~~~
+
+Para una relación uno-a-uno real, el FK debe ser nullable y tener una restricción UNIQUE. Estos helpers no hacen commit ni rollback por ti: revierte la transacción si devuelven un error y confirma solo cuando todas las operaciones han salido bien. No se realizan cascadas destructivas implícitas.
+
 ## 3. Transacciones compartidas
 
 `begin_transaction()` inicia una transacción SeaORM sobre el mismo pool. El acceso `transaction.connection()` implementa `ConnectionTrait`; así, las operaciones ORM y las sentencias SQL parametrizadas pueden participar en la misma transacción.

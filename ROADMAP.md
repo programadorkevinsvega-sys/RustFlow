@@ -410,14 +410,20 @@ The accepted implementation includes typed CRUD and bounded bulk insert; composa
 
 ### 6.7.4 Relations and loading behavior (advanced extensions)
 
-The 6.7.2 baseline is now verified: all four SQL relation kinds have integration coverage; explicit batch helpers cover one-hop and nested two-hop loading with bounded query counts; and junction attach/update/detach/cascade plus transactional rollback are tested. This subphase tracks capabilities beyond that accepted baseline.
+The 6.7.2 baseline is verified: all four SQL relation kinds have integration coverage; explicit batch helpers cover one-hop and nested two-hop loading with bounded query counts; and junction attach/update/detach/cascade plus transactional rollback are tested. Phase 6.7.4 adds higher-level, explicit loading APIs without replacing SeaORM or introducing lazy I/O.
+
+**Implementation status: work in progress on `feat/phase-6-7-4-relations-loading`; acceptance remains pending the final CI run and four-engine integration evidence.** The branch adds `RelationLoadOptions<E>` (a typed wrapper over SeaORM `Select<E>`), filtered/ordered loaders, a has-many DTO projection loader, configurable `RelationGraph` branches (including projected branches), and explicit reparent/detach/one-to-one replacement helpers. The documentation and API-status reference are being updated to match these exact interfaces. Do not treat the implementation as accepted until the final PR head passes the full required checks.
 
 - [x] Establish and test the baseline SQL `belongs_to`/many-to-one, one-to-one, one-to-many, and many-to-many metadata and foreign-key behavior.
 - [x] Provide explicit eager/batch loading for the documented relation scope, including nested two-hop traversal and query-count assertions that rule out per-parent N+1 queries.
 - [x] Define and test baseline junction attach/update/detach semantics, cascade deletion, missing related records, and transactional rollback.
-- [ ] Add richer loader options for filtered/ordered related collections, selected columns, and deeper configurable relation graphs, with deterministic ordering documented.
-- [ ] Extend typed relation mutation helpers beyond the current junction-focused API where one-to-one and one-to-many lifecycle operations need first-class wrappers.
+- [ ] Add relation-specific filtered and ordered loading using typed SeaORM Select queries; document deterministic ordering and the global (not per-parent) limit/offset semantics.
+- [ ] Add has-many projection loading into explicit DTOs while requiring the association key in the result mapping; prove grouping, ordering and one-query behavior.
+- [ ] Add a configurable, bounded-depth relation graph with multiple branches, nested hops, per-edge query options and query-count tests; do not introduce implicit lazy loading.
+- [ ] Add explicit one-to-many reparent/detach and one-to-one replacement helpers that use typed foreign-key columns and caller-owned transactions.
+- [ ] Verify loader filters, ordering, projections, relation graph traversal, missing rows and mutation/rollback behavior on SQLite, PostgreSQL, MySQL and MariaDB.
 - [ ] Keep MongoDB embedding/referencing and document population semantics in the ODM contract; do not emulate relational joins where MongoDB does not provide them.
+
 
 ### 6.7.5 CLI, generated applications, and documentation
 - [ ] Evolve `rustflow generate model` only after the model contract is accepted; keep the current generator's plain-struct behavior until then.
