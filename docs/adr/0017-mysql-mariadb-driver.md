@@ -28,7 +28,7 @@ Phase 6.5 introduced SQLx 0.8.6, `AnyPool`, configuration validation, parameteri
 
 ## Consequences and limitations
 
-The public API remains experimental. MySQL and MariaDB share one `DatabaseBackend::MySql` variant and SQLx driver. Applications must select the correct server URL, use the target dialect's SQL, and validate vendor-specific behavior. Some MySQL-family DDL implicitly commits; RustFlow does not promise full atomicity for failed DDL migrations. MongoDB and the Phase 6.7 ORM/ODM remain unimplemented.
+The public API remains experimental. MySQL and MariaDB share one `DatabaseBackend::MySql` variant and SQLx driver. Applications must select the correct server URL, use the target dialect's SQL, and validate vendor-specific behavior. Some MySQL-family DDL implicitly commits; RustFlow does not promise full atomicity for failed DDL migrations. At the time of this Phase 6.6.1 decision, MongoDB and the Phase 6.7 ORM/ODM were not yet implemented. Since then, Phase 6.6.2/6.6.3 completed MongoDB support and the separate SQL ORM/MongoDB ODM were added in Phase 6.7.2/6.7.3; see ROADMAP.md and DATABASES.md.
 
 ## Verification gate
 
