@@ -712,30 +712,46 @@ impl Error for DatabaseError {
 
 fn constraint_kind_from_code(
     code: Option<&str>,
+    mysql_number: Option<u16>,
     is_unique_violation: bool,
 ) -> Option<DatabaseErrorKind> {
     if is_unique_violation
-        || matches!(
-            code,
-            Some("23505" | "1555" | "2067" | "1022" | "1062" | "1169" | "1586")
-        )
+        || matches!(code, Some("23505" | "1555" | "2067"))
+        || matches!(mysql_number, Some(1022 | 1062 | 1169 | 1586))
     {
         return Some(DatabaseErrorKind::UniqueViolation);
     }
 
-    match code {
-        Some("23503" | "787" | "1216" | "1217" | "1451" | "1452" | "1557" | "1761" | "1762") => {
-            Some(DatabaseErrorKind::ForeignKeyViolation)
-        }
-        Some("23514" | "275" | "3819" | "4025") => Some(DatabaseErrorKind::CheckViolation),
-        _ => None,
+    if matches!(
+        code,
+        Some("23503" | "787")
+    ) || matches!(
+        mysql_number,
+        Some(1216 | 1217 | 1451 | 1452 | 1557 | 1761 | 1762)
+    ) {
+        return Some(DatabaseErrorKind::ForeignKeyViolation);
     }
+
+    if matches!(code, Some("23514" | "275"))
+        || matches!(mysql_number, Some(3819 | 4025))
+    {
+        return Some(DatabaseErrorKind::CheckViolation);
+    }
+
+    None
 }
 
 fn sqlx_constraint_kind(
     error: &dyn sqlx::error::DatabaseError,
 ) -> Option<DatabaseErrorKind> {
-    constraint_kind_from_code(error.code().as_deref(), error.is_unique_violation())
+    let mysql_number = error
+        .try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>()
+        .map(sqlx::mysql::MySqlDatabaseError::number);
+    constraint_kind_from_code(
+        error.code().as_deref(),
+        mysql_number,
+        error.is_unique_violation(),
+    )
 }
 
 fn classify_sqlx_error(error: &sqlx::Error, fallback: DatabaseErrorKind) -> DatabaseErrorKind {
@@ -1004,32 +1020,53 @@ mod tests {
     fn database_error_codes_are_classified_for_all_supported_sql_drivers() {
         use super::{DatabaseErrorKind, constraint_kind_from_code};
 
-        for code in ["23505", "1555", "2067", "1022", "1062", "1169", "1586"] {
+        for code in ["23505", "1555", "2067"] {
             assert_eq!(
-                constraint_kind_from_code(Some(code), false),
+                constraint_kind_from_code(Some(code), None, false),
                 Some(DatabaseErrorKind::UniqueViolation),
-                "unique code {code}"
+                "unique SQLSTATE/SQLite code {code}"
             );
         }
-        for code in ["23503", "787", "1216", "1217", "1451", "1452", "1557", "1761", "1762"] {
+        for number in [1022, 1062, 1169, 1586] {
             assert_eq!(
-                constraint_kind_from_code(Some(code), false),
+                constraint_kind_from_code(Some("23000"), Some(number), false),
+                Some(DatabaseErrorKind::UniqueViolation),
+                "MySQL-family unique error {number}"
+            );
+        }
+        for code in ["23503", "787"] {
+            assert_eq!(
+                constraint_kind_from_code(Some(code), None, false),
                 Some(DatabaseErrorKind::ForeignKeyViolation),
-                "foreign-key code {code}"
+                "foreign-key SQLSTATE/SQLite code {code}"
             );
         }
-        for code in ["23514", "275", "3819", "4025"] {
+        for number in [1216, 1217, 1451, 1452, 1557, 1761, 1762] {
             assert_eq!(
-                constraint_kind_from_code(Some(code), false),
+                constraint_kind_from_code(Some("23000"), Some(number), false),
+                Some(DatabaseErrorKind::ForeignKeyViolation),
+                "MySQL-family foreign-key error {number}"
+            );
+        }
+        for code in ["23514", "275"] {
+            assert_eq!(
+                constraint_kind_from_code(Some(code), None, false),
                 Some(DatabaseErrorKind::CheckViolation),
-                "check code {code}"
+                "check SQLSTATE/SQLite code {code}"
+            );
+        }
+        for number in [3819, 4025] {
+            assert_eq!(
+                constraint_kind_from_code(Some("HY000"), Some(number), false),
+                Some(DatabaseErrorKind::CheckViolation),
+                "MySQL-family check error {number}"
             );
         }
         assert_eq!(
-            constraint_kind_from_code(None, true),
+            constraint_kind_from_code(None, None, true),
             Some(DatabaseErrorKind::UniqueViolation)
         );
-        assert_eq!(constraint_kind_from_code(Some("08006"), false), None);
+        assert_eq!(constraint_kind_from_code(Some("08006"), None, false), None);
     }
 
     #[test]
