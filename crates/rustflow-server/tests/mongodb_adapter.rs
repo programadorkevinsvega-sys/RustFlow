@@ -38,6 +38,26 @@ impl DocumentModel for OdmEntry {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct NamedOdmEntry {
+    #[serde(rename = "_id")]
+    id: String,
+    title: String,
+}
+
+impl DocumentModel for NamedOdmEntry {
+    type Id = String;
+    const COLLECTION: &'static str = "named_odm_entries";
+
+    fn id(&self) -> Option<Self::Id> {
+        Some(self.id.clone())
+    }
+
+    fn set_id(&mut self, id: Self::Id) {
+        self.id = id;
+    }
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 struct OdmEntrySummary {
     #[serde(rename = "_id")]
@@ -315,6 +335,16 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
     let alpha_id = inserted.id.clone().expect("server generated ObjectId");
     assert_eq!(repository.find_by_id(alpha_id).await.expect("find by id"), Some(inserted.clone()));
 
+    let named_repository = database.repository::<NamedOdmEntry>();
+    let named = named_repository.insert(NamedOdmEntry {
+        id: "stable-user-key".to_owned(),
+        title: "custom id".to_owned(),
+    }).await.expect("insert custom string ID");
+    assert_eq!(
+        named_repository.find_by_id("stable-user-key".to_owned()).await.expect("find string ID"),
+        Some(named),
+    );
+
     let bulk = repository.insert_many(
         vec![
             odm_entry("beta", 20, &["rust"]),
@@ -323,6 +353,20 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
         true,
     ).await.expect("ordered bulk insert");
     assert!(bulk.iter().all(|entry| entry.id.is_some()));
+
+    let duplicate_id = ObjectId::new();
+    let partial_error = repository.insert_many(
+        vec![
+            OdmEntry { id: Some(duplicate_id), title: "bulk-first".to_owned(), score: 1, tags: vec![] },
+            OdmEntry { id: Some(duplicate_id), title: "bulk-conflict".to_owned(), score: 2, tags: vec![] },
+        ],
+        true,
+    ).await.expect_err("ordered bulk stops at a duplicate _id");
+    assert!(std::error::Error::source(&partial_error).is_some());
+    assert!(repository.find_by_id(duplicate_id).await.expect("read partial insert").is_some());
+    repository.delete_one(
+        DocumentFilter::new().eq("_id", duplicate_id).expect("delete partial insert"),
+    ).await.expect("clean partial insert fixture");
 
     let filter = DocumentFilter::and([
         DocumentFilter::new().gte("score", 10).expect("gte filter")
@@ -357,6 +401,16 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
         .await.expect("read after update").expect("document remains");
     assert_eq!(after_update.score, 15);
     assert!(after_update.tags.contains(&"odm".to_owned()));
+
+    let pulled = repository.update_one(
+        DocumentFilter::new().eq("_id", inserted.id.clone().expect("id")).expect("filter"),
+        DocumentUpdate::new().pull("tags", "rust").expect("pull array item"),
+        false,
+    ).await.expect("pull an array element");
+    assert_eq!(pulled.modified_count, 1);
+    let after_pull = repository.find_by_id(inserted.id.clone().expect("id"))
+        .await.expect("read after pull").expect("document remains");
+    assert!(!after_pull.tags.contains(&"rust".to_owned()));
 
     let replaced = repository.replace_one(
         DocumentFilter::new().eq("_id", inserted.id.clone().expect("id")).expect("filter"),
