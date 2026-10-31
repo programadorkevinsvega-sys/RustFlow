@@ -405,7 +405,7 @@ Limitaciones que deben respetarse:
 - **Phase 6.7.3:** ODM MongoDB tipado independiente, actualmente en desarrollo. Su implementación y documentación están en la rama `feat/phase-6-7-3-mongodb-odm`; aún no está integrada en `main`.
 - **Phase 6.7.4–6.7.6:** extensiones avanzadas de carga relacional SQL, aplicación CRUD generada y quality gate global.
 
-La Phase 6.6 ya está completa y su matriz verificada está en docs/DATABASE_SUPPORT_MATRIX.md. El adaptador MongoDB de la 6.6.2 está disponible en main; el ODM independiente se desarrollará en 6.7.3.
+La Phase 6.6 ya está completa y su matriz verificada está en docs/DATABASE_SUPPORT_MATRIX.md. El adaptador MongoDB de la 6.6.2 está disponible en `main`; su ODM independiente se implementa en Phase 6.7.3 y todavía no está integrado.
 
 La auditoría de dependencias usa cargo audit en CI. Se mantiene una única excepción documentada para RUSTSEC-2023-0071 (rsa 0.9.10 a través de sqlx-mysql 0.8.6); el advisory no tiene una versión corregida y no se considera resuelto. Consulta ADR 0020 para el análisis de alcance y la condición para retirar esa excepción.
 
