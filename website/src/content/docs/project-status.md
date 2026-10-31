@@ -78,7 +78,7 @@ PR #58 integró ADR 0020, el patrón Data Mapper sobre SeaORM 1.1.20 y el derive
 
 La rama de la PR #59 integra SeaORM 1.1.20 en <code>rustflow-server</code> sobre un único pool SQLx tipado compartido por backend. <code>DatabasePool::entity</code> crea repositorios enlazados a la conexión o transacción existente; la API incluye CRUD/bulk, composición de consultas tipadas, loaders explícitos, parámetros SQL seguros, transacciones mixtas ORM/SQL y clasificación de errores. El contrato de integración está preparado para SQLite, PostgreSQL 16.15, MySQL 8.4.13 y MariaDB 11.4.13.
 
-La subfase aún no se declara cerrada: la aceptación depende de CI verde sobre el SHA final y de completar/validar los límites señalados en el contrato (en particular, cobertura de anchos/overflow de enteros, fallos reales con resultado de COMMIT ambiguo y semánticas anidadas de relaciones). MongoDB conserva su adaptador documental separado; su ODM no forma parte del SQL ORM y está previsto para 6.7.3. Phase 6.7 global sigue en progreso.
+La rama de la PR #59 ya incorpora pruebas ampliadas para límites de `i8/i16/i32/i64`, unsigned soportados por dialecto, conteos de consultas en dos saltos relacionales, mutaciones attach/update/detach/cascade y terminación del backend PostgreSQL mientras `COMMIT` está activo. Estos casos aún deben pasar en CI sobre el SHA final antes de aceptar la subfase; no se confunde la existencia de las pruebas con evidencia verde. MongoDB conserva su adaptador documental separado; su ODM no forma parte del SQL ORM y está previsto para 6.7.3. Phase 6.7 global sigue en progreso.
 
 ## Matriz rápida: ¿qué puedes hacer?
 
