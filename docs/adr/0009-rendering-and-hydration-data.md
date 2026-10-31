@@ -1,6 +1,6 @@
 # ADR 0009: Server/client rendering and hydration-data contract
 
-- **Status:** Proposed for review
+- **Status:** Proposed for formal review; the bounded SSR/hydration-data contract is implemented through the later SSR composition and hydration workstreams (see ADR 0010 and `docs/SSR_RENDERING.md`). This status tracks formal ADR approval, not runtime availability.
 - **Date:** 2026-10-27
 - **Phase:** 5.1 — Rendering contract
 
