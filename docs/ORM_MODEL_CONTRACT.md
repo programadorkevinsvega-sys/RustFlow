@@ -116,9 +116,9 @@ Not implemented in this subphase: adding the SeaORM dependency/facade; CRUD exec
 ## References
 
 See [ADR 0020](adr/0020-orm-model-contract.md) for the verified foundation comparison, pool migration, design trade-offs and official upstream links. See [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md) for current RustFlow service versions and existing SQLx/MongoDB evidence.
-## 6.7.2 SQL ORM runtime implementation (accepted on PR head; pre-merge)
+## 6.7.2 SQL ORM runtime implementation (merged; experimental API)
 
-The Phase 6.7.2 runtime slice below is accepted for final review on PR #59 head `2cadce73c19c37c2f088f572ea37a83c65c72380`. Rust 1.85/stable, four-engine integration, dependency review, documentation, WASM/browser, governance and Cloudflare Pages checks all completed successfully (8/8). The PR has not yet been merged; the subphase remains experimental and pre-1.0.
+The Phase 6.7.2 runtime slice below was accepted on PR #59 head `2cadce73c19c37c2f088f572ea37a83c65c72380`; Rust 1.85/stable, four-engine integration, dependency review, documentation, WASM/browser, governance and Cloudflare Pages checks completed successfully (8/8). PR #59 was merged into `main` on 2026-10-31 at `8d387943d5f6ccb4d3f33ba3708311442e238c5f`. The API remains experimental and pre-1.0.
 
 ### Connection and repository boundary
 
