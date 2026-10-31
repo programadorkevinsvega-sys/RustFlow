@@ -542,9 +542,9 @@ pub enum MongoError {
 impl MongoError {
     fn into_bootstrap(self) -> Self {
         match self {
-            Self::Operation(error) | Self::Connect(error) | Self::InvalidUri(error) => {
-                Self::Bootstrap(error)
-            }
+            Self::Operation(error) => Self::Bootstrap(error),
+            Self::Connect(error) => Self::Connect(error),
+            Self::InvalidUri(error) => Self::InvalidUri(error),
             other => other,
         }
     }
@@ -563,15 +563,17 @@ impl MongoError {
 
     /// Convert an adapter failure into a safe HTTP response.
     ///
-    /// HTTP 409 is used only for a driver-reported duplicate-key command error.
-    /// Timeouts and connection failures are reported as temporary unavailability;
-    /// internal driver messages and connection credentials are never returned.
+    /// HTTP 409 is used only for driver-confirmed duplicate-key errors.
+    /// Connection, server-selection, pool and timeout failures map to temporary
+    /// unavailability; internal driver messages and credentials are never returned.
     pub fn to_http_error(&self) -> HttpError {
         match self {
-            Self::Operation(error) if is_duplicate_key(error) => HttpError::new(
-                StatusCode::CONFLICT,
-                "A document with those values already exists",
-            ),
+            Self::Operation(error) | Self::Bootstrap(error) if is_duplicate_key(error) => {
+                HttpError::new(StatusCode::CONFLICT, "A document with those values already exists")
+            }
+            Self::Operation(error) | Self::Bootstrap(error) if is_unavailable(error) => {
+                HttpError::new(StatusCode::SERVICE_UNAVAILABLE, "Document database temporarily unavailable")
+            }
             Self::Timeout | Self::Connect(_) => HttpError::new(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "Document database temporarily unavailable",
@@ -581,6 +583,26 @@ impl MongoError {
             }
             _ => HttpError::internal_server_error(),
         }
+    }
+}
+
+fn is_unavailable(error: &crate::mongodb_driver::error::Error) -> bool {
+    use crate::mongodb_driver::error::{ErrorKind, WriteFailure};
+
+    match error.kind.as_ref() {
+        ErrorKind::Io(_)
+        | ErrorKind::ConnectionPoolCleared { .. }
+        | ErrorKind::ServerSelection { .. }
+        | ErrorKind::Shutdown => true,
+        ErrorKind::Command(command) => command.code == 50,
+        ErrorKind::Write(WriteFailure::WriteConcernError(write_concern)) => {
+            matches!(write_concern.code, 50 | 64)
+        }
+        ErrorKind::InsertMany(insert_many) => insert_many
+            .write_concern_error
+            .as_ref()
+            .is_some_and(|write_concern| matches!(write_concern.code, 50 | 64)),
+        _ => error.contains_label(crate::mongodb_driver::error::RETRYABLE_ERROR),
     }
 }
 
