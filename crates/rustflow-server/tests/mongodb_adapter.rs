@@ -30,7 +30,7 @@ impl DocumentModel for OdmEntry {
     const COLLECTION: &'static str = "odm_entries";
 
     fn id(&self) -> Option<Self::Id> {
-        self.id.clone()
+        self.id
     }
 
     fn set_id(&mut self, id: Self::Id) {
@@ -354,7 +354,7 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
         .insert(odm_entry("alpha", 10, &["rust", "database"]))
         .await
         .expect("insert typed document");
-    let alpha_id = inserted.id.clone().expect("server generated ObjectId");
+    let alpha_id = inserted.id.expect("server generated ObjectId");
     assert_eq!(
         repository.find_by_id(alpha_id).await.expect("find by id"),
         Some(inserted.clone())
@@ -508,7 +508,7 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
     let updated = repository
         .update_one(
             DocumentFilter::new()
-                .eq("_id", inserted.id.clone().expect("id"))
+                .eq("_id", inserted.id.expect("id"))
                 .expect("filter"),
             DocumentUpdate::new()
                 .inc("score", 5)
@@ -522,7 +522,7 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
     assert_eq!(updated.matched_count, 1);
     assert_eq!(updated.modified_count, 1);
     let after_update = repository
-        .find_by_id(inserted.id.clone().expect("id"))
+        .find_by_id(inserted.id.expect("id"))
         .await
         .expect("read after update")
         .expect("document remains");
@@ -532,7 +532,7 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
     let pulled = repository
         .update_one(
             DocumentFilter::new()
-                .eq("_id", inserted.id.clone().expect("id"))
+                .eq("_id", inserted.id.expect("id"))
                 .expect("filter"),
             DocumentUpdate::new()
                 .pull("tags", "rust")
@@ -543,7 +543,7 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
         .expect("pull an array element");
     assert_eq!(pulled.modified_count, 1);
     let after_pull = repository
-        .find_by_id(inserted.id.clone().expect("id"))
+        .find_by_id(inserted.id.expect("id"))
         .await
         .expect("read after pull")
         .expect("document remains");
@@ -552,7 +552,7 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
     let replaced = repository
         .replace_one(
             DocumentFilter::new()
-                .eq("_id", inserted.id.clone().expect("id"))
+                .eq("_id", inserted.id.expect("id"))
                 .expect("filter"),
             &OdmEntry {
                 score: 16,
@@ -565,7 +565,7 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
     assert_eq!(replaced.matched_count, 1);
     assert_eq!(
         repository
-            .find_by_id(inserted.id.clone().expect("id"))
+            .find_by_id(inserted.id.expect("id"))
             .await
             .expect("read replacement")
             .expect("replacement exists")
@@ -721,7 +721,7 @@ async fn mongodb_typed_odm_uses_real_replica_set_transactions_for_commit_and_abo
         )
         .await
         .expect("insert within transaction");
-    let committed_id = committed.id.clone().expect("generated ID");
+    let committed_id = committed.id.expect("generated ID");
     committed_session
         .commit_transaction()
         .await
