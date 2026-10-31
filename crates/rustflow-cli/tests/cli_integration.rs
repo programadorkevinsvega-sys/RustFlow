@@ -747,7 +747,6 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
     );
 }
 
-
 fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: &str, label: &str) {
     let port = TcpListener::bind(("127.0.0.1", 0))
         .unwrap()
