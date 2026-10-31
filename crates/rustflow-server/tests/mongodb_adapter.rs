@@ -113,6 +113,16 @@ fn test_uri() -> Option<String> {
     }
 }
 
+fn standalone_test_uri() -> Option<String> {
+    match env::var("RUSTFLOW_TEST_MONGODB_STANDALONE_URI") {
+        Ok(uri) if !uri.trim().is_empty() => Some(uri),
+        _ if env::var("CI").is_ok_and(|value| value == "true") => {
+            panic!("RUSTFLOW_TEST_MONGODB_STANDALONE_URI must be set in CI");
+        }
+        _ => None,
+    }
+}
+
 fn database_name() -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -477,6 +487,37 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
     assert_eq!(repository.count(DocumentFilter::new()).await.expect("empty collection"), 0);
 
     database.run_with_timeout(database.database().drop()).await.expect("drop isolated test database");
+}
+
+#[tokio::test]
+async fn mongodb_typed_odm_rejects_multi_document_transactions_on_standalone() {
+    let Some(uri) = standalone_test_uri() else {
+        eprintln!("Skipping standalone transaction restriction test outside CI: URI is unset");
+        return;
+    };
+    let database_name = database_name();
+    let config = MongoConfig::new(uri, database_name.clone())
+        .expect("valid MongoDB standalone URI")
+        .with_operation_timeout(Duration::from_secs(5))
+        .expect("valid operation timeout");
+    let database = MongoDatabase::connect(&config)
+        .await
+        .expect("connect to MongoDB standalone");
+    let repository = database.repository::<OdmEntry>();
+
+    let mut session = database.start_session().await.expect("start standalone session");
+    session.start_transaction().await.expect("transaction state is local until operation");
+    let error = repository.insert_with_session(
+        odm_entry("standalone-transaction-must-fail", 1, &[]),
+        &mut session,
+    ).await.expect_err("standalone MongoDB must reject multi-document transaction writes");
+    assert!(
+        std::error::Error::source(&error).is_some(),
+        "the server's transaction topology error must remain available as a source",
+    );
+
+    database.run_with_timeout(database.database().drop())
+        .await.expect("drop isolated standalone test database");
 }
 
 #[tokio::test]
