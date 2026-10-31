@@ -535,8 +535,17 @@ async fn create_schema(database: &DatabasePool) {
             .await
             .expect("create MySQL-family unsigned codec table");
     }
-    let (integer_id_type, i8_type, i16_type, i32_type, i64_type, i8_check, i16_check, i32_check, i64_check) =
-        match database.backend() {
+    let (
+        integer_id_type,
+        i8_type,
+        i16_type,
+        i32_type,
+        i64_type,
+        i8_check,
+        i16_check,
+        i32_check,
+        i64_check,
+    ) = match database.backend() {
             DatabaseBackend::Sqlite => (
                 "INTEGER PRIMARY KEY AUTOINCREMENT",
                 "INTEGER",
@@ -589,8 +598,7 @@ async fn create_schema(database: &DatabasePool) {
     // Exercise SQLite's checked integer representation and MySQL/MariaDB's
     // native unsigned integer widths instead of claiming PostgreSQL parity.
     if database.backend() != DatabaseBackend::Postgres {
-        let (unsigned_id_type, u8_type, u16_type, u32_type) =
-            match database.backend() {
+        let (unsigned_id_type, u8_type, u16_type, u32_type) = match database.backend() {
                 DatabaseBackend::Sqlite => (
                     "INTEGER PRIMARY KEY AUTOINCREMENT",
                     "INTEGER NULL CHECK (u8_value BETWEEN 0 AND 255)",
@@ -702,13 +710,8 @@ async fn exercise_type_codecs(database: &DatabasePool) {
             ("negative u64", "-1"),
             ("u64 upper overflow", "18446744073709551616"),
         ] {
-            let sql = format!(
-                "INSERT INTO rustflow_orm_mysql_unsigned (value) VALUES ({invalid})"
-            );
-            database
-                .execute_raw(&sql, [])
-                .await
-                .expect_err(label);
+            let sql = format!("INSERT INTO rustflow_orm_mysql_unsigned (value) VALUES ({invalid})");
+            database.execute_raw(&sql, []).await.expect_err(label);
         }
     }
 }
@@ -756,27 +759,48 @@ async fn exercise_integer_widths(database: &DatabasePool) {
     assert_eq!(decoded_maximum.i64_value, i64::MAX);
 
     let mut signed_overflow_cases = vec![
-        ("i16 upper overflow", "INSERT INTO rustflow_orm_signed_widths (i16_value) VALUES (32768)"),
-        ("i16 lower overflow", "INSERT INTO rustflow_orm_signed_widths (i16_value) VALUES (-32769)"),
-        ("i32 upper overflow", "INSERT INTO rustflow_orm_signed_widths (i32_value) VALUES (2147483648)"),
-        ("i32 lower overflow", "INSERT INTO rustflow_orm_signed_widths (i32_value) VALUES (-2147483649)"),
-        ("i64 upper overflow", "INSERT INTO rustflow_orm_signed_widths (i64_value) VALUES (9223372036854775808)"),
-        ("i64 lower overflow", "INSERT INTO rustflow_orm_signed_widths (i64_value) VALUES (-9223372036854775809)"),
+        (
+            "i16 upper overflow",
+            "INSERT INTO rustflow_orm_signed_widths (i16_value) VALUES (32768)",
+        ),
+        (
+            "i16 lower overflow",
+            "INSERT INTO rustflow_orm_signed_widths (i16_value) VALUES (-32769)",
+        ),
+        (
+            "i32 upper overflow",
+            "INSERT INTO rustflow_orm_signed_widths (i32_value) VALUES (2147483648)",
+        ),
+        (
+            "i32 lower overflow",
+            "INSERT INTO rustflow_orm_signed_widths (i32_value) VALUES (-2147483649)",
+        ),
+        (
+            "i64 upper overflow",
+            "INSERT INTO rustflow_orm_signed_widths (i64_value) VALUES (9223372036854775808)",
+        ),
+        (
+            "i64 lower overflow",
+            "INSERT INTO rustflow_orm_signed_widths (i64_value) VALUES (-9223372036854775809)",
+        ),
     ];
     // PostgreSQL represents i8 through its one-byte internal "char" type.
     // Its signed boundary values are round-tripped above; the remaining
     // dialects enforce the TINYINT/SQLite CHECK overflow boundary directly.
     if database.backend() != DatabaseBackend::Postgres {
         signed_overflow_cases.extend([
-            ("i8 upper overflow", "INSERT INTO rustflow_orm_signed_widths (i8_value) VALUES (128)"),
-            ("i8 lower overflow", "INSERT INTO rustflow_orm_signed_widths (i8_value) VALUES (-129)"),
+            (
+                "i8 upper overflow",
+                "INSERT INTO rustflow_orm_signed_widths (i8_value) VALUES (128)",
+            ),
+            (
+                "i8 lower overflow",
+                "INSERT INTO rustflow_orm_signed_widths (i8_value) VALUES (-129)",
+            ),
         ]);
     }
     for (label, sql) in signed_overflow_cases {
-        database
-            .execute_raw(sql, [])
-            .await
-            .expect_err(label);
+        database.execute_raw(sql, []).await.expect_err(label);
     }
 
     if database.backend() != DatabaseBackend::Postgres {
@@ -818,18 +842,33 @@ async fn exercise_integer_widths(database: &DatabasePool) {
         assert_eq!(decoded_maxima.u32_value, u32::MAX);
 
         let unsigned_overflow_cases = [
-            ("u8 upper overflow", "INSERT INTO rustflow_orm_unsigned_widths (u8_value) VALUES (256)"),
-            ("u8 negative overflow", "INSERT INTO rustflow_orm_unsigned_widths (u8_value) VALUES (-1)"),
-            ("u16 upper overflow", "INSERT INTO rustflow_orm_unsigned_widths (u16_value) VALUES (65536)"),
-            ("u16 negative overflow", "INSERT INTO rustflow_orm_unsigned_widths (u16_value) VALUES (-1)"),
-            ("u32 upper overflow", "INSERT INTO rustflow_orm_unsigned_widths (u32_value) VALUES (4294967296)"),
-            ("u32 negative overflow", "INSERT INTO rustflow_orm_unsigned_widths (u32_value) VALUES (-1)"),
+            (
+                "u8 upper overflow",
+                "INSERT INTO rustflow_orm_unsigned_widths (u8_value) VALUES (256)",
+            ),
+            (
+                "u8 negative overflow",
+                "INSERT INTO rustflow_orm_unsigned_widths (u8_value) VALUES (-1)",
+            ),
+            (
+                "u16 upper overflow",
+                "INSERT INTO rustflow_orm_unsigned_widths (u16_value) VALUES (65536)",
+            ),
+            (
+                "u16 negative overflow",
+                "INSERT INTO rustflow_orm_unsigned_widths (u16_value) VALUES (-1)",
+            ),
+            (
+                "u32 upper overflow",
+                "INSERT INTO rustflow_orm_unsigned_widths (u32_value) VALUES (4294967296)",
+            ),
+            (
+                "u32 negative overflow",
+                "INSERT INTO rustflow_orm_unsigned_widths (u32_value) VALUES (-1)",
+            ),
         ];
         for (label, sql) in unsigned_overflow_cases {
-            database
-                .execute_raw(sql, [])
-                .await
-                .expect_err(label);
+            database.execute_raw(sql, []).await.expect_err(label);
         }
     }
 }
@@ -1841,12 +1880,10 @@ async fn postgres_commit_transport_loss_is_reported_as_unknown() {
         .execute(&admin)
         .await
         .expect("remove prior commit fault trigger function");
-    rustflow_server::sqlx::query(
-        "CREATE TABLE rustflow_orm_commit_fault (value INTEGER NOT NULL)",
-    )
-    .execute(&admin)
-    .await
-    .expect("create commit fault table");
+    rustflow_server::sqlx::query("CREATE TABLE rustflow_orm_commit_fault (value INTEGER NOT NULL)")
+        .execute(&admin)
+        .await
+        .expect("create commit fault table");
     rustflow_server::sqlx::query(
         r#"
         CREATE FUNCTION rustflow_orm_wait_before_commit() RETURNS trigger
@@ -1924,31 +1961,31 @@ async fn postgres_commit_transport_loss_is_reported_as_unknown() {
     }
 
     if !observed_commit_wait {
-        let _ = rustflow_server::sqlx::query_scalar::<_, bool>(
-            "SELECT pg_terminate_backend($1)",
-        )
-        .bind(backend_pid)
-        .fetch_one(&admin)
-        .await;
+        let _ = rustflow_server::sqlx::query_scalar::<_, bool>("SELECT pg_terminate_backend($1)")
+            .bind(backend_pid)
+            .fetch_one(&admin)
+            .await;
         let _ = commit_task.await;
         panic!("PostgreSQL COMMIT never reached the deferred-trigger PgSleep fault window");
     }
 
-    let terminated = rustflow_server::sqlx::query_scalar::<_, bool>(
-        "SELECT pg_terminate_backend($1)",
-    )
-    .bind(backend_pid)
-    .fetch_one(&admin)
-    .await
-    .expect("terminate the backend while COMMIT is executing");
-    assert!(terminated, "PostgreSQL must terminate the active COMMIT backend");
+    let terminated =
+        rustflow_server::sqlx::query_scalar::<_, bool>("SELECT pg_terminate_backend($1)")
+            .bind(backend_pid)
+            .fetch_one(&admin)
+            .await
+            .expect("terminate the backend while COMMIT is executing");
+    assert!(
+        terminated,
+        "PostgreSQL must terminate the active COMMIT backend"
+    );
 
     let commit_result = tokio::time::timeout(Duration::from_secs(10), commit_task)
         .await
         .expect("commit task must finish promptly after its backend is terminated")
         .expect("commit task must not panic after transport loss");
-    let commit_error = commit_result
-        .expect_err("a transport drop during COMMIT must not be reported as success");
+    let commit_error =
+        commit_result.expect_err("a transport drop during COMMIT must not be reported as success");
     assert_eq!(
         commit_error.kind(),
         DatabaseErrorKind::CommitOutcomeUnknown,
