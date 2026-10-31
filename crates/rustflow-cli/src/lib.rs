@@ -80,14 +80,14 @@ where
 
 fn print_help() {
     println!(
-        "RustFlow CLI {}\n\nUSAGE:\n  rustflow <COMMAND> [OPTIONS]\n\nCOMMANDS:\n  new <name> [--path <parent>]       Create a server-side RustFlow application\n  dev [--release] [--offline]        Run the application through Cargo\n  build [OPTIONS]                    Build the application through Cargo\n  generate <TYPE> <name>              Generate a component, page, controller, model, or migration\n  help                                Show this help\n\nGENERATOR TYPES:\n  component | page | controller | model | migration\n\nNOTES:\n  Generators refuse file collisions. dev does not watch files or provide hot reload.\n  Model and migration output is structural; no ORM or migration runner is included.\n  RustFlow is pre-1.0. Generated projects pin the source revision used by this CLI.",
+        "RustFlow CLI {}\n\nUSAGE:\n  rustflow <COMMAND> [OPTIONS]\n\nCOMMANDS:\n  new <name> [--path <parent>] [--template server|crud]  Create a RustFlow application\n  dev [--release] [--offline]        Run the application through Cargo\n  build [OPTIONS]                    Build the application through Cargo\n  generate <TYPE> <name>              Generate a component, page, controller, model, or migration\n  help                                Show this help\n\nGENERATOR TYPES:\n  component | page | controller | model | migration\n\nNOTES:\n  Generators refuse file collisions. dev does not watch files or provide hot reload.\n  Model and migration output is structural; no ORM or migration runner is included.\n  RustFlow is pre-1.0. Generated projects pin the source revision used by this CLI.",
         env!("CARGO_PKG_VERSION")
     );
 }
 
 fn new_command(args: &[OsString]) -> Result<i32, CliError> {
     if args.is_empty() || is_help(&args[0]) {
-        println!("Usage: rustflow new <name> [--path <existing-parent-directory>]");
+        println!("Usage: rustflow new <name> [--path <existing-parent-directory>] [--template server|crud]");
         return if args.is_empty() {
             Err("missing project name".into())
         } else {
@@ -100,6 +100,7 @@ fn new_command(args: &[OsString]) -> Result<i32, CliError> {
     let mut parent = env::current_dir()
         .map_err(|error| format!("could not determine the current directory: {error}"))?;
 
+    let mut template = "server";
     let mut index = 1;
     while index < args.len() {
         match argument_text(&args[index], "option")? {
@@ -108,6 +109,16 @@ fn new_command(args: &[OsString]) -> Result<i32, CliError> {
                     return Err("option --path requires an existing parent directory".into());
                 };
                 parent = PathBuf::from(value);
+                index += 2;
+            }
+            "--template" => {
+                let Some(value) = args.get(index + 1) else {
+                    return Err("option --template requires server or crud".into());
+                };
+                template = argument_text(value, "template name")?;
+                if !matches!(template, "server" | "crud") {
+                    return Err(format!("unknown application template `{template}`; choose server or crud").into());
+                }
                 index += 2;
             }
             option => return Err(format!("unknown option for rustflow new: {option}").into()),
@@ -122,7 +133,7 @@ fn new_command(args: &[OsString]) -> Result<i32, CliError> {
         );
     }
 
-    let destination = create_project(name, &parent, revision)?;
+    let destination = create_project(name, &parent, revision, template)?;
     println!(
         "Created RustFlow project `{name}` at {}",
         destination.display()
@@ -368,10 +379,13 @@ fn is_rust_keyword(name: &str) -> bool {
     )
 }
 
-fn create_project(name: &str, parent: &Path, revision: &str) -> Result<PathBuf, CliError> {
+fn create_project(name: &str, parent: &Path, revision: &str, template: &str) -> Result<PathBuf, CliError> {
     validate_project_name(name)?;
     if !is_revision(revision) {
         return Err("RustFlow source revision must be a full 40-character commit SHA".into());
+    }
+    if !matches!(template, "server" | "crud") {
+        return Err("application template must be server or crud".into());
     }
 
     let parent = fs::canonicalize(parent).map_err(|error| {
@@ -394,7 +408,7 @@ fn create_project(name: &str, parent: &Path, revision: &str) -> Result<PathBuf, 
     }
 
     let staging = create_staging_dir(&parent, name)?;
-    populate_staging_dir(&staging, &scaffold_files(name, revision))?;
+    populate_staging_dir(&staging, &scaffold_files(name, revision, template))?;
 
     match path_exists(&destination) {
         Ok(false) => {}
@@ -496,11 +510,11 @@ fn write_project_files(root: &Path, files: &[(PathBuf, String)]) -> Result<(), C
     Ok(())
 }
 
-fn scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
+fn scaffold_files(name: &str, revision: &str, template: &str) -> Vec<(PathBuf, String)> {
     let package_manifest = format!(
         "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.85\"\ndefault-run = \"{name}\"\n\n[package.metadata.rustflow]\ntemplate = \"server\"\n\n[[bin]]\nname = \"migrate\"\npath = \"src/bin/migrate.rs\"\n\n[dependencies]\nrustflow = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\nrustflow-server = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\", \"net\"] }}\n"
     );
-    vec![
+    let mut files = vec![
         (PathBuf::from("Cargo.toml"), package_manifest),
         (
             PathBuf::from(".gitignore"),
@@ -603,6 +617,85 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 "#
             .to_owned(),
+        ),
+    ];
+    if template == "crud" {
+        for (path, contents) in crud_scaffold_files(name, revision) {
+            if let Some((_, existing)) = files.iter_mut().find(|(existing_path, _)| existing_path == &path) {
+                *existing = contents;
+            } else {
+                files.push((path, contents));
+            }
+        }
+    }
+    files
+}
+ 
+fn crud_scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
+    let manifest = format!(
+        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.85\"\ndefault-run = \"{name}\"\n\n[package.metadata.rustflow]\ntemplate = \"crud\"\n\n[[bin]]\nname = \"migrate\"\npath = \"src/bin/migrate.rs\"\n\n[dependencies]\nrustflow = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\nrustflow-server = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\", \"net\"] }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\nhttp = \"1\"\n"
+    );
+    vec![
+        (PathBuf::from("Cargo.toml"), manifest),
+        (
+            PathBuf::from("README.md"),
+            include_str!("../templates/crud/README.md").replace("{{project_name}}", name),
+        ),
+        (
+            PathBuf::from(".env.example"),
+            include_str!("../templates/crud/.env.example").to_owned(),
+        ),
+        (
+            PathBuf::from("src/main.rs"),
+            include_str!("../templates/crud/main.rs").to_owned(),
+        ),
+        (
+            PathBuf::from("src/bin/migrate.rs"),
+            include_str!("../templates/crud/migrate.rs").to_owned(),
+        ),
+        (
+            PathBuf::from("src/models/mod.rs"),
+            module_index_with_modules("Entidades SQL del ejemplo CRUD.", &["product"]),
+        ),
+        (
+            PathBuf::from("src/models/product.rs"),
+            include_str!("../templates/crud/product.rs").to_owned(),
+        ),
+        (
+            PathBuf::from("migrations/sqlite/.rustflow-dialect"),
+            include_str!("../templates/crud/sqlite/.rustflow-dialect").to_owned(),
+        ),
+        (
+            PathBuf::from("migrations/sqlite/0001_create_products.sql"),
+            include_str!("../templates/crud/sqlite/0001_create_products.sql").to_owned(),
+        ),
+        (
+            PathBuf::from("migrations/sqlite/0001_create_products.down.sql"),
+            include_str!("../templates/crud/sqlite/0001_create_products.down.sql").to_owned(),
+        ),
+        (
+            PathBuf::from("migrations/postgres/.rustflow-dialect"),
+            include_str!("../templates/crud/postgres/.rustflow-dialect").to_owned(),
+        ),
+        (
+            PathBuf::from("migrations/postgres/0001_create_products.sql"),
+            include_str!("../templates/crud/postgres/0001_create_products.sql").to_owned(),
+        ),
+        (
+            PathBuf::from("migrations/postgres/0001_create_products.down.sql"),
+            include_str!("../templates/crud/postgres/0001_create_products.down.sql").to_owned(),
+        ),
+        (
+            PathBuf::from("migrations/mysql/.rustflow-dialect"),
+            include_str!("../templates/crud/mysql/.rustflow-dialect").to_owned(),
+        ),
+        (
+            PathBuf::from("migrations/mysql/0001_create_products.sql"),
+            include_str!("../templates/crud/mysql/0001_create_products.sql").to_owned(),
+        ),
+        (
+            PathBuf::from("migrations/mysql/0001_create_products.down.sql"),
+            include_str!("../templates/crud/mysql/0001_create_products.down.sql").to_owned(),
         ),
     ]
 }
