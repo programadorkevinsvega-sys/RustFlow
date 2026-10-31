@@ -266,8 +266,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
     })?;
 
+    let login_page_csrf = csrf.clone();
     app.get("/login", move |request: Request| {
-        let csrf = csrf.clone();
+        let csrf = login_page_csrf.clone();
         async move {
             let token = csrf
                 .token_for(&request)
@@ -327,9 +328,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     app.route_middleware(HttpMethod::Post, "/login", login_csrf.middleware())?;
 
     let list_database = Arc::clone(&database);
+    let list_csrf = csrf.clone();
     app.route_protected(HttpMethod::Get, "/products", move |request: Request| {
         let database = Arc::clone(&list_database);
-        let csrf = csrf.clone();
+        let csrf = list_csrf.clone();
         async move {
             let rows = database
                 .entity::<ProductEntity>()
@@ -366,8 +368,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     })?;
 
+    let new_page_csrf = csrf.clone();
     app.route_protected(HttpMethod::Get, "/products/new", move |request: Request| {
-        let csrf = csrf.clone();
+        let csrf = new_page_csrf.clone();
         async move {
             let token = csrf.token_for(&request).map_err(|_| HttpError::internal_server_error())?;
             let cookie = csrf.cookie_header(&token, request.is_https()).map_err(|_| HttpError::internal_server_error())?;
@@ -402,9 +405,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     app.route_middleware(HttpMethod::Post, "/products", csrf.clone().middleware())?;
 
     let detail_database = Arc::clone(&database);
+    let detail_csrf = csrf.clone();
     app.route_protected(HttpMethod::Get, "/products/{id}", move |request: Request| {
         let database = Arc::clone(&detail_database);
-        let csrf = csrf.clone();
+        let csrf = detail_csrf.clone();
         async move {
             let id = parse_product_id(&request)?;
             let product = load_product(&database, id).await?;
@@ -431,9 +435,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     })?;
 
     let edit_database = Arc::clone(&database);
+    let edit_csrf = csrf.clone();
     app.route_protected(HttpMethod::Get, "/products/{id}/edit", move |request: Request| {
         let database = Arc::clone(&edit_database);
-        let csrf = csrf.clone();
+        let csrf = edit_csrf.clone();
         async move {
             let id = parse_product_id(&request)?;
             let product = load_product(&database, id).await?;
