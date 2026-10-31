@@ -7,6 +7,7 @@ mod config;
 mod csrf;
 mod database;
 mod document_database;
+mod document_odm;
 mod group;
 pub mod orm;
 mod page;
@@ -50,6 +51,10 @@ pub use database::{
 pub use document_database::{
     DocumentBootstrap, DocumentIndex, MongoConfig, MongoDatabase, MongoError, from_bson_document,
     to_bson_document,
+};
+pub use document_odm::{
+    DocumentDeleteOutcome, DocumentField, DocumentFilter, DocumentModel, DocumentQuery,
+    DocumentRepository, DocumentUpdate, DocumentUpdateOutcome, MAX_DOCUMENT_BULK_SIZE,
 };
 pub use group::RouteGroup;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};

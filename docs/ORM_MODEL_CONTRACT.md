@@ -1,6 +1,6 @@
 # ORM model and SQL type contract (Phase 6.7.1)
 
-**Status: Phase 6.7.1 accepted; Phase 6.7.2 accepted on PR #59 head for final review (not merged); global Phase 6.7 remains in progress.** SeaORM 1.1.20 and the Data Mapper contract were selected in 6.7.1. The 6.7.2 branch adds the server-only SeaORM dependency/facade, replaces SQLx `AnyPool` with one backend-specific typed pool shared by SQLx and SeaORM, and implements `EntityRepository`, typed query execution, explicit relation loaders, mixed ORM/raw transactions, engine-aware error classification and runtime codec fixtures. The four-engine contract, expanded numeric boundaries, nested-loader query counts, relation lifecycle coverage and live PostgreSQL COMMIT fault injection passed on exact PR head `2cadce73c19c37c2f088f572ea37a83c65c72380`; all eight required status checks are successful. The type/engine matrix below distinguishes tested cases from explicit limitations and unverified combinations.
+**Status: Phase 6.7.1 and Phase 6.7.2 accepted and merged; global Phase 6.7 remains in progress.** SeaORM 1.1.20 and the Data Mapper contract were selected in 6.7.1. The merged Phase 6.7.2 implementation adds the server-only SeaORM dependency/facade, replaces SQLx `AnyPool` with one backend-specific typed pool shared by SQLx and SeaORM, and implements `EntityRepository`, typed query execution, explicit relation loaders, mixed ORM/raw transactions, engine-aware error classification and runtime codec fixtures. The four-engine contract, expanded numeric boundaries, nested-loader query counts, relation lifecycle coverage and live PostgreSQL COMMIT fault injection passed on exact PR head `2cadce73c19c37c2f088f572ea37a83c65c72380`; all eight required status checks are successful. The type/engine matrix below distinguishes tested cases from explicit limitations and unverified combinations.
 
 ## Selected architecture and model declaration
 
@@ -116,9 +116,9 @@ Not implemented in this subphase: adding the SeaORM dependency/facade; CRUD exec
 ## References
 
 See [ADR 0020](adr/0020-orm-model-contract.md) for the verified foundation comparison, pool migration, design trade-offs and official upstream links. See [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md) for current RustFlow service versions and existing SQLx/MongoDB evidence.
-## 6.7.2 SQL ORM runtime implementation (accepted on PR head; pre-merge)
+## 6.7.2 SQL ORM runtime implementation (merged; experimental API)
 
-The Phase 6.7.2 runtime slice below is accepted for final review on PR #59 head `2cadce73c19c37c2f088f572ea37a83c65c72380`. Rust 1.85/stable, four-engine integration, dependency review, documentation, WASM/browser, governance and Cloudflare Pages checks all completed successfully (8/8). The PR has not yet been merged; the subphase remains experimental and pre-1.0.
+The Phase 6.7.2 runtime slice below was accepted on PR #59 head `2cadce73c19c37c2f088f572ea37a83c65c72380`; Rust 1.85/stable, four-engine integration, dependency review, documentation, WASM/browser, governance and Cloudflare Pages checks completed successfully (8/8). PR #59 was merged into `main` on 2026-10-31 at `8d387943d5f6ccb4d3f33ba3708311442e238c5f`. The API remains experimental and pre-1.0.
 
 ### Connection and repository boundary
 
@@ -170,4 +170,4 @@ Cargo.lock is regenerated from the workspace manifest under Rust 1.85 and includ
 
 ### Remaining scope after the 6.7.2 runtime slice
 
-The expanded runtime tests for the signed/unsigned widths supported by each dialect, integer boundary failures, nested loader query counts, relation attach/update/detach/cascade semantics, and PostgreSQL backend termination while a deferred trigger is executing inside COMMIT all passed on the exact PR head stated above. Phase 6.7.2 is accepted for final review but remains unmerged. The generated CRUD application and MongoDB ODM remain outside this runtime subphase and are tracked by later Phase 6.7 subphases; the global Phase 6.7 maturity gate remains open.
+The expanded runtime tests for the signed/unsigned widths supported by each dialect, integer boundary failures, nested loader query counts, relation attach/update/detach/cascade semantics, and PostgreSQL backend termination while a deferred trigger is executing inside COMMIT all passed on the exact PR head stated above. Phase 6.7.2 was subsequently merged into `main` through PR #59 on 2026-10-31. The generated CRUD application and MongoDB ODM remain outside this SQL runtime subphase and are tracked by later Phase 6.7 subphases; the global Phase 6.7 maturity gate remains open.

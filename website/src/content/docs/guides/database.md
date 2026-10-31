@@ -5,9 +5,9 @@ description: Configura SeaORM sobre pools SQLx tipados compartidos, consultas pa
 
 La capa de base de datos de RustFlow continúa siendo experimental y pre-1.0. Phase 6.7.1 seleccionó **Data Mapper con SeaORM 1.1.20** y añadió el derive de validación <code>rustflow::ModelDiagnostics</code>. La implementación de Phase 6.7.2 en la PR #59 conecta SeaORM en <code>rustflow-server</code> y sustituye <code>AnyPool</code> por un pool SQLx tipado por backend compartido con SeaORM.
 
-SeaORM se construye a partir de un clone del mismo pool SQLx; no se crea una segunda pool para la misma URL. La integración relacional cubre SQLite, PostgreSQL, MySQL y MariaDB. MongoDB conserva su adaptador documental independiente, con BSON, colecciones e índices; su ODM pertenece a la subfase 6.7.3.
+SeaORM se construye a partir de un clone del mismo pool SQLx; no se crea una segunda pool para la misma URL. La integración relacional cubre SQLite, PostgreSQL, MySQL y MariaDB. MongoDB conserva su adaptador documental independiente, con BSON, colecciones e índices. El ODM tipado de la subfase 6.7.3 se desarrolla como una capa separada sobre el mismo cliente; consulta la [guía ODM MongoDB](/guides/mongodb-odm/).
 
-La subfase 6.7.2 quedó aceptada en el HEAD de la PR #59 para revisión final (PR abierta, todavía sin merge). <code>DatabasePool::entity</code> y <code>EntityRepository</code> ofrecen CRUD/bulk y queries SeaORM tipadas, loaders de relaciones explícitos y transacciones ORM/SQL compartidas. El contrato ejecutó SQLite, PostgreSQL, MySQL y MariaDB; también pasaron los límites numéricos por dialecto, los conteos de consultas anidadas, las mutaciones relacionales y la inyección real de pérdida de conexión durante <code>COMMIT</code>. Los 8 checks requeridos quedaron verdes en el SHA <code>2cadce73c19c37c2f088f572ea37a83c65c72380</code>. La API sigue siendo experimental; consulta los límites de codec y las fases pendientes descritos más abajo y en el contrato técnico.
+La subfase 6.7.2 quedó fusionada mediante Squash Merge en `main` el 2026-10-31, con el commit `8d387943d5f6ccb4d3f33ba3708311442e238c5f`. <code>DatabasePool::entity</code> y <code>EntityRepository</code> ofrecen CRUD/bulk y queries SeaORM tipadas, loaders de relaciones explícitos y transacciones ORM/SQL compartidas. El contrato ejecutó SQLite, PostgreSQL, MySQL y MariaDB; también pasaron los límites numéricos por dialecto, los conteos de consultas anidadas, las mutaciones relacionales y la inyección real de pérdida de conexión durante <code>COMMIT</code>. Los 8 checks requeridos quedaron verdes en el SHA <code>2cadce73c19c37c2f088f572ea37a83c65c72380</code>. La API sigue siendo experimental; consulta los límites de codec y las fases pendientes descritos más abajo y en el contrato técnico.
 
 ## Foundation seleccionado para SQL ORM
 
@@ -389,7 +389,7 @@ Las migraciones de producción deben ejecutarse como un paso coordinado, antes d
 
 ## Límites actuales
 
-Phase 6.7.2 integra SeaORM 1.1.20 sobre el mismo pool SQLx tipado. La rama de la PR #59 añade pruebas de límites numéricos signed/unsigned por dialecto, conteos de consultas en carga anidada, mutaciones de relaciones y una inyección real de terminación del backend PostgreSQL mientras `COMMIT` está activo. Estos casos siguen pendientes de validación por CI en el SHA final; su presencia en la rama no equivale todavía a aceptación.
+Phase 6.7.2 integra SeaORM 1.1.20 sobre el mismo pool SQLx tipado. Las pruebas de límites numéricos signed/unsigned por dialecto, conteos de consultas en carga anidada, mutaciones de relaciones y terminación real del backend PostgreSQL mientras `COMMIT` está activo pasaron en el SHA final de PR #59, que fue fusionada en `main` el 2026-10-31.
 
 Limitaciones que deben respetarse:
 - PostgreSQL no ofrece mapeo unsigned para `u8/u16/u32/u64` en SeaORM 1.1.20. `u8/u16/u32` se prueban en SQLite y MySQL/MariaDB; `u64` no tiene codec directo para SQLite y solo se prueba en MySQL/MariaDB mediante `BIGINT UNSIGNED`.
@@ -401,10 +401,11 @@ Limitaciones que deben respetarse:
 ## Roadmap de persistencia
 
 - **Phase 6.7.1:** cerrada y fusionada en PR #58; selecciona SeaORM 1.1.20 y define el contrato Data Mapper/ModelDiagnostics.
-- **Phase 6.7.2:** implementación en aceptación en PR #59. La rama incorpora pruebas de límites numéricos por dialecto, conteos de carga relacional anidada, mutaciones attach/update/detach/cascade y fallo de transporte durante `COMMIT`. No se declara cerrada hasta que esos casos y todos los gates pasen sobre el SHA final.
-- **Phase 6.7.3 y posteriores:** ODM MongoDB separado, cobertura ampliada de mutación/carga de relaciones, aplicación CRUD generada y quality gate.
+- **Phase 6.7.2:** integrada en `main` mediante PR #59; la implementación incluye pruebas de límites numéricos por dialecto, conteos de carga relacional anidada, mutaciones attach/update/detach/cascade y fallo de transporte durante `COMMIT`. Los casos ampliados pasaron sobre el SHA final aceptado y la integración quedó completada en `main`.
+- **Phase 6.7.3:** ODM MongoDB tipado independiente, actualmente en desarrollo. Su implementación y documentación están en la rama `feat/phase-6-7-3-mongodb-odm`; aún no está integrada en `main`.
+- **Phase 6.7.4–6.7.6:** extensiones avanzadas de carga relacional SQL, aplicación CRUD generada y quality gate global.
 
-La Phase 6.6 ya está completa y su matriz verificada está en docs/DATABASE_SUPPORT_MATRIX.md. El adaptador MongoDB de la 6.6.2 está disponible en main; el ODM independiente se desarrollará en 6.7.3.
+La Phase 6.6 ya está completa y su matriz verificada está en docs/DATABASE_SUPPORT_MATRIX.md. El adaptador MongoDB de la 6.6.2 está disponible en `main`; su ODM independiente se implementa en Phase 6.7.3 y todavía no está integrado.
 
 La auditoría de dependencias usa cargo audit en CI. Se mantiene una única excepción documentada para RUSTSEC-2023-0071 (rsa 0.9.10 a través de sqlx-mysql 0.8.6); el advisory no tiene una versión corregida y no se considera resuelto. Consulta ADR 0020 para el análisis de alcance y la condición para retirar esa excepción.
 
