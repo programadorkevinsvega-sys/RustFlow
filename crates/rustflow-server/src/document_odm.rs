@@ -4,7 +4,7 @@
 use std::{collections::HashSet, marker::PhantomData};
 
 use crate::{
-    MongoDatabase, MongoError,
+    MongoDatabase, MongoError, to_bson_document,
     mongodb_driver::{ClientSession, Cursor, bson::{self, Bson, Document, doc}},
 };
 use serde::{Serialize, de::DeserializeOwned};
