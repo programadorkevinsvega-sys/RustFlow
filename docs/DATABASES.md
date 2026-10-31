@@ -1,17 +1,17 @@
-# SQLx, pools, transactions, and migrations (Phase 6.5)
+# SQL pools, SeaORM, transactions, and migrations (Phase 6.7.2)
 
-The existing database pool/configuration/migration API is experimental and pre-1.0. It re-exports SQLx and currently uses AnyPool for explicit parameterized SQL and SQLx migrations; it is not yet wired to model CRUD. Phase 6.7.1 selects SeaORM 1.1.20 and adds the validation-only ModelDiagnostics derive, without adding SeaORM as a dependency. Phase 6.7.2 must introduce the SeaORM server facade and migrate the single connection boundary from AnyPool to backend-specific SQLx pools in one change. Do not create a parallel pool for the same database. The MongoDB adapter remains separate.
+The database API remains experimental and pre-1.0. Phase 6.7.1 selected SeaORM 1.1.20 and defined the Data Mapper/model contract. Phase 6.7.2 is accepted on the PR #59 head for final review (the PR remains open and unmerged): SeaORM runs in `rustflow-server` over one backend-specific SQLx pool shared by SQLx and SeaORM. `EntityRepository` exposes CRUD/bulk operations, typed SeaORM query composition, explicit relation loaders, parameterized raw SQL and mixed ORM/SQL transactions. SQLite, PostgreSQL, MySQL and MariaDB integration contracts, the expanded boundary/relationship/COMMIT-fault tests, and all eight required checks passed on `2cadce73c19c37c2f088f572ea37a83c65c72380`. MongoDB continues to use its independent document adapter.
 
 ## Supported engines
 
-The adapter enables SQLite, PostgreSQL, and the SQLx MySQL protocol driver through `AnyPool`. Connection schemes are:
+The adapter uses one backend-specific SQLx pool per configured database: `SqlitePool`, `PgPool`, or `MySqlPool`. MariaDB shares the MySQL protocol driver. SeaORM receives a clone of that same pool handle; it does not open a second pool. Connection schemes are:
 
 - SQLite: `sqlite://rustflow.db?mode=rwc` or `sqlite::memory:`.
 - PostgreSQL: `postgres://user:password@host/database` or `postgresql://user:password@host/database`.
 - MySQL: `mysql://user:password@host:3306/database`.
-- MariaDB: the same `mysql://` URL and SQLx MySQL driver; `mariadb://` is not accepted by SQLx `AnyPool` driver selection.
+- MariaDB: the same `mysql://` URL and SQLx MySQL driver; `mariadb://` is not accepted by SQLx's MySQL driver URL parser.
 
-MySQL and MariaDB are represented by `DatabaseBackend::MySql` because a `mysql://` URL selects the driver and does not identify the responding server product. The current pinned CI contract is PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS, SQLite 3.46.0 bundled by the locked SQLx / `libsqlite3-sys` dependencies, and MongoDB 7.0.45. The full tested version/MSRV matrix and evidence boundaries live in [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md). These exact targets do not imply compatibility with every version or vendor-specific feature. MongoDB is implemented through a separate document adapter and does not use SQLx `AnyPool` or SQL migrations. SQL syntax, placeholders, migrations, and value support remain engine-specific. Bind user values rather than interpolating request data into SQL.
+MySQL and MariaDB are represented by `DatabaseBackend::MySql` because a `mysql://` URL selects the driver and does not identify the responding server product. The current pinned CI contract is PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS, SQLite 3.46.0 bundled by the locked SQLx / `libsqlite3-sys` dependencies, and MongoDB 7.0.45. The full tested version/MSRV matrix and evidence boundaries live in [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md). These exact targets do not imply compatibility with every version or vendor-specific feature. MongoDB is implemented through a separate document adapter and does not use SQLx pools or SQL migrations. SQL syntax, placeholders, migrations, and value support remain engine-specific. Bind user values rather than interpolating request data into SQL.
 
 ## Configuration and connection pool
 
@@ -31,28 +31,174 @@ let database = DatabasePool::connect(&config).await?;
 
 In request handlers, capture Arc<DatabasePool> explicitly. There is no global service locator.
 
-## Parameterized queries and transaction helpers
+## Typed pools, ORM access, and raw SQL
 
-Use SQLx's normal query API and bind every value that comes from outside the program. The example below uses SQLite placeholder syntax; adapt SQL text for PostgreSQL when necessary.
+`DatabasePool::connect` creates one typed SQLx pool for the configured backend and constructs the SeaORM `DatabaseConnection` from a clone of that exact pool handle. SQLx and SeaORM therefore share the underlying connection pool, limits, acquire timeout and close lifecycle.
+
+Use `DatabasePool::orm()` when calling SeaORM Entity, ActiveModel, query-builder and relation-loader APIs. The server re-exports SeaORM as `rustflow_server::sea_orm`; this keeps the ORM dependency inside `rustflow-server` and outside the browser/WASM core.
+
+~~~rust
+use rustflow_server::{AppConfig, DatabaseConfig, DatabasePool, sea_orm};
+
+let app = AppConfig::load()?;
+let config = DatabaseConfig::from_app_config(&app)?;
+let database = DatabasePool::connect(&config).await?;
+
+// Pass the shared connection explicitly to SeaORM operations.
+let connection = database.orm();
+~~~
+
+Direct SQLx access remains available through backend-checked accessors. They return `None` when the configured backend does not match; they never convert or duplicate a pool.
 
 ~~~rust
 use rustflow_server::{DatabaseConfig, DatabasePool, sqlx};
 
-let config = DatabaseConfig::new("sqlite://rustflow.db?mode=rwc")?
-    .with_max_connections(8)?;
+let config = DatabaseConfig::new("sqlite://rustflow.db?mode=rwc")?;
 let database = DatabasePool::connect(&config).await?;
+let pool = database.sqlx_sqlite_pool().expect("configured SQLite backend");
 
-let mut transaction = database.begin_transaction().await?;
-sqlx::query("INSERT INTO notes (title) VALUES (?)")
-    .bind("A validated title")
-    .execute(transaction.connection())
+let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM notes")
+    .fetch_one(pool)
     .await?;
+~~~
+
+The available accessors are `sqlx_sqlite_pool()`, `sqlx_postgres_pool()`, and `sqlx_mysql_pool()`; the last is used for both MySQL and MariaDB. Direct SQLx queries remain backend-specific: placeholders, codecs and SQL syntax are not translated.
+
+### EntityRepository CRUD and query composition
+
+Define entities with SeaORM's `DeriveEntityModel`/`DeriveRelation` derives and RustFlow's optional `ModelDiagnostics` validator. Then bind a repository to the existing pool or an explicit transaction:
+
+~~~rust
+use rustflow_server::{
+    sea_orm::{ActiveValue::Set, ColumnTrait, QueryFilter, QueryOrder},
+    DatabasePool,
+};
+
+let accounts = database.entity::<entities::account::Entity>();
+
+let inserted = accounts
+    .insert(entities::account::ActiveModel {
+        email: Set("ada@example.test".to_owned()),
+        enabled: Set(true),
+        alias: Set(None),
+        metadata: Set(serde_json::json!({})),
+        checksum: Set(vec![]),
+        ..Default::default()
+    })
+    .await?;
+
+let found = accounts.find_by_id(inserted.id).await?;
+assert!(found.is_some());
+let updated = accounts
+    .update(entities::account::ActiveModel {
+        id: Set(inserted.id),
+        alias: Set(Some("Ada Lovelace".to_owned())),
+        ..Default::default()
+    })
+    .await?;
+
+let page = accounts
+    .all(
+        accounts
+            .select()
+            .filter(entities::account::Column::Enabled.eq(true))
+            .order_by_asc(entities::account::Column::Id)
+            .offset(0)
+            .limit(25),
+    )
+    .await?;
+
+let removed = accounts.delete_by_id(updated.id).await?;
+assert_eq!(removed.rows_affected, 1);
+~~~
+
+The repository surface also includes `one`, `save`, `delete` by ActiveModel, `insert_many`, `update_many`, and `delete_many`. A new model passed to `save` has its generated primary key unset; an existing model has its full primary key set. `update` and `delete` reject ActiveModels with incomplete primary-key state. `update_many`/`delete_many` are SeaORM builders and require an explicit filter unless intentionally acting on the whole table. They return `rows_affected`; bulk insert returns SeaORM's `InsertResult`, whose metadata is not a portable row-count contract.
+
+The `select()` method returns SeaORM's typed `Select<E>` builder. Use typed columns/expressions and bound values for nested filters, comparisons, NULL/IN/LIKE predicates, aliases/projections, joins, grouping, aggregates, HAVING, subqueries, ordering, and pagination. Do not create SQL text from request-provided identifiers or fragments.
+
+### Dialect capabilities and upsert
+
+DatabasePool::capabilities() exposes the selected adapter contract:
+
+| Capability | SQLite | PostgreSQL | MySQL | MariaDB |
+|---|---:|---:|---:|---:|
+| SeaORM OnConflict upsert builder | Yes | Yes | Yes | Yes |
+| INSERT RETURNING in this SeaORM configuration | Yes | Yes | No | No |
+
+The MariaDB row is intentionally conservative: SQLx/SeaORM use one MySQL backend family, and the SeaORM mariadb-use-returning feature remains disabled so it cannot accidentally enable the same behavior for MySQL.
+
+EntityRepository::insert_builder exposes SeaORM's native Insert builder for operations whose semantics differ by dialect:
+
+~~~rust
+use rustflow_server::sea_orm::sea_query::OnConflict;
+
+let accounts = database.entity::<entities::account::Entity>();
+let result = accounts
+    .insert_builder(new_account)
+    .on_conflict(
+        OnConflict::column(entities::account::Column::Email)
+            .update_columns([entities::account::Column::Enabled])
+            .to_owned(),
+    )
+    .exec(database.orm())
+    .await?;
+~~~
+
+The four-engine ORM contract executes this upsert twice against the same unique key and verifies that the second call updates the row rather than creating another one.
+
+SQLite/PostgreSQL use ON CONFLICT syntax. The MySQL-family builder maps to ON DUPLICATE KEY UPDATE, whose conflict selection is not equivalent to a PostgreSQL/SQLite conflict target: a duplicate on any applicable unique/primary key can trigger the update. Do not assume identical target semantics or use this as a substitute for a deliberate uniqueness design. Check capabilities.insert_returning before calling SeaORM's exec_with_returning; when false, use exec and perform an explicit follow-up read using a stable key.
+
+## Numeric codecs and decimal precision
+
+SeaORM 1.1.20 with SeaQuery uses an SQLite-specific f64 path for both Decimal and BigDecimal: values are bound as floating point and read back through f64. The SQLite fixture therefore uses REAL columns and tests 12.5 only, because it is exactly representable in binary f64. Other decimal-looking values may be rounded or expanded when reconstructed from f64. This is not arbitrary-precision decimal storage; do not use SQLite Decimal/BigDecimal for money or other precision-sensitive values. Use scaled integers or a separately designed canonical-text codec when exact decimal semantics are required on SQLite. PostgreSQL uses NUMERIC, while MySQL and MariaDB use DECIMAL; their integration contracts exercise a high-precision BigDecimal round-trip.
+
+For portable parameterized SQL through the SeaORM connection, use `query_raw` and `execute_raw`. Use `?` placeholders with SQLite/MySQL/MariaDB and numbered `$1`, `$2`, ... placeholders with PostgreSQL. Values must be passed as SeaORM `Value`s, not interpolated into SQL.
+
+~~~rust
+let rows = database
+    .query_raw("SELECT title FROM notes WHERE id = ?", [requested_id.into()])
+    .await?;
+~~~
+
+## Shared transactions
+
+`DatabasePool::begin_transaction()` starts a SeaORM transaction on the same pool. The transaction exposes SeaORM's `ConnectionTrait`, so ORM operations and raw parameterized statements can run through the same transaction. It is deliberately no longer an SQLx `SeaORM transaction connection`.
+
+~~~rust
+let transaction = database.begin_transaction().await?;
+
+transaction
+    .execute_raw(
+        "INSERT INTO notes (title) VALUES (?)",
+        ["A validated title".into()],
+    )
+    .await?;
+
+// SeaORM operations receive transaction.connection() explicitly.
 transaction.commit().await?;
 ~~~
 
-A transaction is committed explicitly; call rollback() when the operation should be discarded. Dropping an uncommitted SQLx transaction requests a rollback. Do not hold a transaction while awaiting unrelated network calls or rendering a response.
+Call `rollback()` when the operation should be discarded. Do not hold a transaction while awaiting unrelated network calls or rendering a response. A connection loss during commit can leave the server outcome unknown; do not report it as a guaranteed rollback. For SQLx-only transactions, use the matching typed pool directly; do not start a second transaction when work must be atomic with ORM operations.
 
-DatabaseError::to_http_error maps row-not-found to 404, recognized unique-key violations to 409, pool timeouts/closures to 503 and all other database faults to a generic 500. Internal SQL, driver messages, and connection credentials are not copied into the response. Applications should log the underlying error through their own trusted logging policy, never the URL or bound secrets.
+## Error mapping
+
+DatabaseError::kind() classifies failures without exposing driver messages, SQL, constraint names, values or connection URLs. The same mapping applies to SQLx and SeaORM-originated operations.
+
+| DatabaseErrorKind | Condition | HTTP | Application response |
+|---|---|---:|---|
+| InvalidConfiguration | Invalid URL, pool settings or migration configuration | 500 | Correct deployment/configuration; never expose the configured URL |
+| InvalidModelState | Missing primary-key state or invalid ActiveModel write state | 400 | Correct the model before retrying |
+| NotFound | A required row was not found | 404 | Handle missing resource |
+| UniqueViolation | Unique or primary-key conflict | 409 | Resolve the conflicting value or use a deliberate upsert path |
+| ForeignKeyViolation | Referenced parent missing or referenced row cannot be deleted | 409 | Resolve the relation conflict |
+| CheckViolation | A database CHECK constraint rejected the write | 422 | Correct the submitted value |
+| Unavailable | Connection/acquire timeout or closed pool | 503 | Retry with backoff where the operation is safe |
+| CommitOutcomeUnknown | Transport/protocol failure while COMMIT was in flight | 503 | Inspect the persisted state or idempotency key before retrying |
+| Query / Transaction / Migration | Other query, transaction or migration failure | 500 | Handle as an internal database error |
+
+MySQL and MariaDB report a general SQLSTATE for some constraints, so the mapper inspects MySQL protocol error numbers (unique: 1022/1062/1169/1586/1859; foreign key: 1216/1217/1451/1452/1557/1761/1762/1830/1834; CHECK: MySQL 3819, MariaDB 4025 with SQLSTATE 23000). PostgreSQL uses SQLSTATE 23505/23503/23514; SQLite uses 1555/2067/787/275. These mappings are backed by integration tests and are not inferred from an error's text.
+
+A failed COMMIT is not automatically equivalent to a rollback. If the connection is lost before the client receives the server's result, the transaction outcome is uncertain. DatabaseTransaction returns CommitOutcomeUnknown for that case. Do not blindly repeat non-idempotent writes; query a stable application identifier or idempotency record first.
 
 ## Versioned migrations and rollback policy
 
@@ -90,7 +236,7 @@ When running locally outside CI, a test skips if its corresponding URL is absent
 
 ## MongoDB document adapter (Phase 6.6.2)
 
-MongoDB is document-oriented and uses its own adapter, independent of SQLx, AnyPool, SQL transactions, and SQL migrations. The current API is experimental and exposes the official driver's native collection API rather than an ODM.
+MongoDB is document-oriented and uses its own adapter, independent of SQLx, typed SQLx pool, SQL transactions, and SQL migrations. The current API is experimental and exposes the official driver's native collection API rather than an ODM.
 
 The official MongoDB Rust driver is pinned to =3.6.0 because that release retains the repository's Rust 1.85 MSRV. The DNS SRV resolver feature is intentionally disabled because its Hickory 0.25 dependency triggered a high-severity dependency-review advisory; only standard mongodb:// URIs are supported by this initial adapter. Re-evaluate the pin and optional features during dependency/security reviews. The initial CI server contract is MongoDB 7.0.45.
 
@@ -134,20 +280,24 @@ The adapter does not add an ODM, model derives, a portable query builder, SQL-li
 
 ## Roadmap status
 
-Subphase 6.6.1 was merged into `main` as commit `48a491d660c71005b58ed88a4f6a7e8ba3390c9d` (PR #54); its historical tests covered MySQL 8.0 and MariaDB 11.4. Phase 6.6.2 was merged into `main` as commit `e3ceb86d757bb7aa1a07e16a1e21b462adb69841` (PR #55); its final head passed CI including MongoDB 7.0.45. Phase 6.6.3 publishes the current support contract for bundled SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS, and MongoDB 7.0.45, with exact runtime-version checks. The code head `51ac4c212b3d6bf68483ee2ef8e28b5c3a75f421` passed Rust stable/1.85, all five runtime/engine contracts, generated CLI smoke tests, rustdoc, WebAssembly, browser E2E/bundle budget, documentation, governance, and dependency review. The support matrix and its evidence are recorded in this guide, `docs/DATABASE_SUPPORT_MATRIX.md`, ADR 0019, and the Phase 6.6 section of `ROADMAP.md`. Phase 6.7 ORM/ODM remains separate planned work.
+Phase 6.6 is complete: its SQL and MongoDB support contracts, runtime versions and evidence are recorded in docs/DATABASE_SUPPORT_MATRIX.md, ADR 0019 and ROADMAP.md. Phase 6.7.1 is complete and merged in PR #58 (36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1); ADR 0020 selects Data Mapper with SeaORM 1.1.20 and the validation-only ModelDiagnostics derive.
 
-Phase 6.7 is planned to deliver a mature, cohesive typed SQL ORM for SQLite, PostgreSQL, MySQL, and MariaDB, plus a separate mature document-mapping/ODM API for MongoDB. This is not a CRUD-only MVP target. The subphases organize implementation work; they do not permit Phase 6.7 to close until model metadata/type mapping, a composable query builder, relations and explicit efficient loading, transaction/error semantics, derive diagnostics, driver-specific behavior, generated-app examples, and CI-backed integration coverage meet the full acceptance gate. An ADR must select the architectural pattern, dependency strategy, and mandatory/excluded feature matrix before the public contract is fixed. These capabilities are not implemented or stabilized yet.
+Phase 6.7.2 is accepted on PR #59 head `2cadce73c19c37c2f088f572ea37a83c65c72380`. The typed-pool bridge, SeaORM repository facade, CRUD/bulk methods, typed query composition, explicit batch loaders, cross-engine codec contracts, shared ORM/raw transactions, typed constraint errors and ambiguous-COMMIT category are covered by the four-engine integration contract. The expanded integer-width/boundary tests, nested-loader query-count assertions, relation attach/update/detach/cascade tests and PostgreSQL live backend-termination test during COMMIT all passed on that exact SHA; all eight required checks are green. The PR is awaiting final review and merge. MongoDB remains a separate document adapter; its ODM is Phase 6.7.3. The global Phase 6.7 maturity gate remains open.
 
 ## Testing
 
-The server tests exercise SQLite 3.46.0 migrations, forward application, rollback, parameterized writes, and PostgreSQL 16.15 pool/transaction behavior. The `database_engines` integration target exercises MySQL 8.4.13 and MariaDB 11.4.13 separately, including URL redaction, exact server version and identity, CRUD with bound values, transactions, duplicate-key mapping, migration failure/rollback, and pool closure. CI also provisions MongoDB 7.0.45 and explicitly runs the `mongodb_adapter` integration target. These service contracts are run on Rust 1.85 and stable; the corresponding tests fail in CI if a required service URL is absent.
+The ORM contract target executes the same entity/query/relation/type contract on SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 and MariaDB 11.4.13. It covers generated keys, CRUD and bulk writes, nested filters, ordering and offset pagination, joins, projections, grouping/aggregates/HAVING, subqueries, one-to-one/one-to-many/many-to-many batch loading, NULL/JSON/bytes/UUID/date/time/timestamp/numeric codecs, FK/unique/CHECK constraints, and mixed ORM/raw writes inside committed and rolled-back transactions. The expanded branch contract round-trips signed `i8/i16/i32/i64` boundaries on all four engines, tests supported unsigned widths and overflow behavior on SQLite/MySQL/MariaDB, asserts one query per nested loader hop, exercises junction attach/update/detach/cascade, and injects a PostgreSQL backend termination while COMMIT is in flight. These newly added cases remain unaccepted until CI passes on the exact PR head. The support-specific `database_engines` target independently verifies MySQL and MariaDB service identity and migration behavior.
+
+The Rust CI matrix runs the workspace and database services under Rust 1.85 and stable, and includes Clippy, tests, Rustdoc and an explicit RustSec cargo audit. Dependency Review remains a separate workflow. The only audit exception is RUSTSEC-2023-0071 for the inherited rsa 0.9.10 dependency of sqlx-mysql 0.8.6; it has no patched release and is documented in ADR 0020 and .cargo/audit.toml. A green audit does not mean that exception is fixed.
 
 Run:
 
-~~~sh
-cargo test -p rustflow-server database::
+~~~
+cargo test -p rustflow-server --test orm_contract -- --test-threads=1
+cargo test -p rustflow-server --test database_engines -- --test-threads=1
 cargo test -p rustflow-server --all-features
 cargo test --workspace --all-features
+cargo audit --deny warnings
 ~~~
 
-The SQL integration still does not include executable ORM persistence, runtime query abstraction, migration generation by sqlx-cli, database-backed sessions, or a built-in repository layer. Phase 6.7.1 adds only experimental compile-time model metadata via the Data Mapper derive; see [ADR 0020](adr/0020-orm-model-contract.md) and [the model/type contract](ORM_MODEL_CONTRACT.md). CRUD, typed codecs, query execution, relationships and loading remain unimplemented until later subphases. MongoDB has its own separate experimental adapter contract, merged in PR #55 as `e3ceb86d757bb7aa1a07e16a1e21b462adb69841`. MySQL/MariaDB support was introduced in PR #54 as `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`; Phase 6.6.3 now retests the maintained MySQL 8.4.13 LTS and MariaDB 11.4.13 LTS lines alongside PostgreSQL 16.15, SQLite 3.46.0, and MongoDB 7.0.45. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.
+The API remains experimental and pre-1.0. PostgreSQL unsigned primitive mapping is unavailable in the selected SeaORM 1.1.20 foundation; unsigned `u8/u16/u32` coverage is therefore limited to SQLite and MySQL/MariaDB, while `u64` is MySQL/MariaDB-only. Dialect-specific upsert/RETURNING capabilities, generated CRUD application proof and the separate MongoDB ODM remain tracked in ROADMAP.md and later subphases. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.

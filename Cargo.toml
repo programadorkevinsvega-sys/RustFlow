@@ -24,7 +24,8 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 rustls-pki-types = "1"
 ring = "0.17"
 mongodb = { version = "=3.6.0", default-features = false, features = ["compat-3-0-0", "rustls-tls"] }
-sqlx = { version = "=0.8.6", default-features = false, features = ["runtime-tokio-rustls", "any", "sqlite", "postgres", "mysql", "migrate"] }
+sea-orm = { version = "=1.1.20", default-features = false, features = ["macros", "with-json", "with-chrono", "with-rust_decimal", "with-bigdecimal", "with-uuid", "with-time", "sqlx-sqlite", "sqlx-postgres", "sqlx-mysql", "runtime-tokio-rustls"] }
+sqlx = { version = "=0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "postgres", "mysql", "migrate"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

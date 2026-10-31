@@ -124,6 +124,11 @@ jobs:
       - name: Cache Cargo artifacts
         uses: Swatinem/rust-cache@v2
 
+      - name: Audit the resolved Cargo dependency graph
+        if: matrix.toolchain == 'stable'
+        run: |
+          cargo install cargo-audit --locked --version 0.22.2
+          cargo audit --deny warnings
 
       - name: Check formatting
         run: cargo fmt --all -- --check

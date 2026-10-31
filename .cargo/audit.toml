@@ -1,0 +1,10 @@
+# Keep RustSec auditing enabled for the complete resolved Cargo.lock.
+# The sole exception is RUSTSEC-2023-0071: rsa 0.9.10 is pulled in by
+# sqlx-mysql 0.8.6 (already used by the MySQL/MariaDB database adapter).
+# The audited SQLx client code path uses RSA public-key encryption for the
+# password exchange; it does not perform the vulnerable private-key operation.
+# This is an explicitly owned exception, not a claim that rsa is patched.
+# Remove this entry when the dependency is eliminated or a fixed release is adopted.
+[advisories]
+ignore = ["RUSTSEC-2023-0071"]
+severity_threshold = "low"

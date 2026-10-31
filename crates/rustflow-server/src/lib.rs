@@ -8,6 +8,7 @@ mod csrf;
 mod database;
 mod document_database;
 mod group;
+pub mod orm;
 mod page;
 mod proxy;
 mod sessions;
@@ -43,7 +44,8 @@ use bytes::Bytes;
 pub use config::{AppConfig, AppEnvironment, ConfigError};
 pub use csrf::{CsrfError, CsrfProtection, CsrfToken};
 pub use database::{
-    DatabaseBackend, DatabaseConfig, DatabaseError, DatabasePool, DatabaseTransaction,
+    DatabaseBackend, DatabaseCapabilities, DatabaseConfig, DatabaseError, DatabaseErrorKind,
+    DatabasePool, DatabaseTransaction,
 };
 pub use document_database::{
     DocumentBootstrap, DocumentIndex, MongoConfig, MongoDatabase, MongoError, from_bson_document,
@@ -53,8 +55,10 @@ pub use group::RouteGroup;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
 pub use mongodb as mongodb_driver;
+pub use orm::EntityRepository;
 pub use page::HtmlPage;
 pub use proxy::{ClientAddressPolicy, IpNetwork};
+pub use sea_orm;
 use serde::{Serialize, de::DeserializeOwned};
 pub use sessions::{
     AccessPolicy, AccessPolicyError, AuthIdentity, InMemorySessionStore, PasswordHash, RolePolicy,

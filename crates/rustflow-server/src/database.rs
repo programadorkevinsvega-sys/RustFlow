@@ -1,21 +1,22 @@
-//! SQLx-backed database connections, transactions, error mapping, and migrations.
+//! SQLx-backed typed pools shared with SeaORM, transactions, error mapping, and migrations.
 //!
-//! RustFlow deliberately exposes SQLx instead of introducing an ORM. All application
-//! queries should be parameterized. SQLite, PostgreSQL, MySQL, and MariaDB use the
-//! runtime-generic AnyPool; MariaDB is reached through SQLx's MySQL protocol driver.
+//! Each configured database owns exactly one typed SQLx pool. SeaORM is constructed from
+//! a clone of that same pool handle, so ORM queries, raw SQLx access, and migrations share
+//! one connection lifecycle and do not create competing pools. MariaDB uses SQLx's MySQL driver.
 
-use std::{error::Error, fmt, path::Path, str::FromStr, sync::Once, time::Duration};
+use std::{error::Error, fmt, path::Path, str::FromStr, sync::Arc, time::Duration};
 
 use http::StatusCode;
+use sea_orm::{
+    ConnectionTrait, DatabaseConnection, DatabaseTransaction as SeaOrmTransaction, QueryResult,
+    Statement, TransactionTrait, Value,
+};
 use sqlx::{
-    Any, AnyConnection, AnyPool, Transaction,
-    any::{AnyPoolOptions, install_default_drivers},
-    migrate::Migrator,
+    MySqlPool, PgPool, SqlitePool, migrate::Migrator, mysql::MySqlPoolOptions,
+    postgres::PgPoolOptions, sqlite::SqlitePoolOptions,
 };
 
-use crate::{AppConfig, AppEnvironment, HttpError};
-
-static INSTALL_DRIVERS: Once = Once::new();
+use crate::{AppConfig, AppEnvironment, HttpError, orm::EntityRepository};
 
 /// Database backend selected by a validated connection URL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +27,37 @@ pub enum DatabaseBackend {
     Postgres,
     /// MySQL protocol driver, also used for compatible MariaDB servers.
     MySql,
+}
+
+impl DatabaseBackend {
+    /// Return the stable capability contract for this driver family.
+    pub const fn capabilities(self) -> DatabaseCapabilities {
+        match self {
+            Self::Sqlite | Self::Postgres => DatabaseCapabilities {
+                upsert: true,
+                insert_returning: true,
+            },
+            Self::MySql => DatabaseCapabilities {
+                upsert: true,
+                // The SeaORM MariaDB-only RETURNING feature is deliberately disabled because
+                // SQLx/SeaORM expose MySQL and MariaDB through the same compile-time backend.
+                insert_returning: false,
+            },
+        }
+    }
+}
+
+/// Database features that the configured SeaORM/SQLx backend can expose.
+///
+/// Upsert is available through SeaORM's typed OnConflict builder on each backend, but its
+/// conflict-target and duplicate-key semantics are dialect-specific. INSERT RETURNING is
+/// deliberately not advertised for the shared MySQL/MariaDB backend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DatabaseCapabilities {
+    /// A backend-specific upsert builder is available.
+    pub upsert: bool,
+    /// SeaORM can return the inserted model from an INSERT statement.
+    pub insert_returning: bool,
 }
 
 /// Configuration for a SQLx connection pool.
@@ -267,13 +299,22 @@ fn parse_positive_u32(name: &'static str, value: &str) -> Result<u32, DatabaseEr
     Ok(parsed)
 }
 
-/// A cloneable SQLx pool for supported SQLite, PostgreSQL, and MySQL-protocol backends.
+/// The single driver-specific SQLx pool owned by a database configuration.
+#[derive(Clone)]
+enum DatabaseDriverPool {
+    Sqlite(SqlitePool),
+    Postgres(PgPool),
+    MySql(MySqlPool),
+}
+
+/// A cloneable database resource shared by SQLx and SeaORM.
 ///
-/// The pool is a database resource, not an ORM or model layer. Share it with request
-/// handlers by using `Arc<DatabasePool>` and issue parameterized queries through `pool()`.
+/// The SeaORM connection is built from a clone of the matching SQLx pool. Cloning a SQLx
+/// pool handle shares the same underlying pool; it does not create another connection pool.
 #[derive(Clone)]
 pub struct DatabasePool {
-    pool: AnyPool,
+    pool: DatabaseDriverPool,
+    orm: Arc<DatabaseConnection>,
     backend: DatabaseBackend,
     max_connections: u32,
 }
@@ -284,38 +325,113 @@ impl fmt::Debug for DatabasePool {
             .debug_struct("DatabasePool")
             .field("backend", &self.backend)
             .field("max_connections", &self.max_connections)
-            .field("size", &self.pool.size())
-            .field("num_idle", &self.pool.num_idle())
+            .field("size", &self.size())
             .finish()
     }
 }
 
 impl DatabasePool {
-    /// Connect with the supplied pool and timeout configuration.
+    /// Connect with one typed SQLx pool and attach SeaORM to that exact pool handle.
     pub async fn connect(config: &DatabaseConfig) -> Result<Self, DatabaseError> {
-        INSTALL_DRIVERS.call_once(install_default_drivers);
-        let pool = AnyPoolOptions::new()
-            .max_connections(config.max_connections)
-            .min_connections(config.min_connections)
-            .acquire_timeout(config.acquire_timeout)
-            .connect(&config.url)
-            .await
-            .map_err(DatabaseError::Connect)?;
+        let pool = match config.backend {
+            DatabaseBackend::Sqlite => {
+                let pool = SqlitePoolOptions::new()
+                    .max_connections(config.max_connections)
+                    .min_connections(config.min_connections)
+                    .acquire_timeout(config.acquire_timeout)
+                    .connect(&config.url)
+                    .await
+                    .map_err(DatabaseError::Connect)?;
+                DatabaseDriverPool::Sqlite(pool)
+            }
+            DatabaseBackend::Postgres => {
+                let pool = PgPoolOptions::new()
+                    .max_connections(config.max_connections)
+                    .min_connections(config.min_connections)
+                    .acquire_timeout(config.acquire_timeout)
+                    .connect(&config.url)
+                    .await
+                    .map_err(DatabaseError::Connect)?;
+                DatabaseDriverPool::Postgres(pool)
+            }
+            DatabaseBackend::MySql => {
+                let pool = MySqlPoolOptions::new()
+                    .max_connections(config.max_connections)
+                    .min_connections(config.min_connections)
+                    .acquire_timeout(config.acquire_timeout)
+                    .connect(&config.url)
+                    .await
+                    .map_err(DatabaseError::Connect)?;
+                DatabaseDriverPool::MySql(pool)
+            }
+        };
+
+        let orm = match &pool {
+            DatabaseDriverPool::Sqlite(pool) => {
+                sea_orm::SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone())
+            }
+            DatabaseDriverPool::Postgres(pool) => {
+                sea_orm::SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone())
+            }
+            DatabaseDriverPool::MySql(pool) => {
+                sea_orm::SqlxMySqlConnector::from_sqlx_mysql_pool(pool.clone())
+            }
+        };
+
         Ok(Self {
             pool,
+            orm: Arc::new(orm),
             backend: config.backend,
             max_connections: config.max_connections,
         })
     }
 
-    /// Access the underlying SQLx pool for parameterized queries and row decoding.
-    pub fn pool(&self) -> &AnyPool {
-        &self.pool
+    /// Borrow the SQLite SQLx pool when SQLite is the configured backend.
+    pub fn sqlx_sqlite_pool(&self) -> Option<&SqlitePool> {
+        match &self.pool {
+            DatabaseDriverPool::Sqlite(pool) => Some(pool),
+            _ => None,
+        }
+    }
+
+    /// Borrow the PostgreSQL SQLx pool when PostgreSQL is the configured backend.
+    pub fn sqlx_postgres_pool(&self) -> Option<&PgPool> {
+        match &self.pool {
+            DatabaseDriverPool::Postgres(pool) => Some(pool),
+            _ => None,
+        }
+    }
+
+    /// Borrow the MySQL-protocol SQLx pool when MySQL or MariaDB is configured.
+    pub fn sqlx_mysql_pool(&self) -> Option<&MySqlPool> {
+        match &self.pool {
+            DatabaseDriverPool::MySql(pool) => Some(pool),
+            _ => None,
+        }
+    }
+
+    /// Access the SeaORM connection backed by the same SQLx pool.
+    pub fn orm(&self) -> &DatabaseConnection {
+        self.orm.as_ref()
+    }
+    /// Create a typed repository bound to this database's shared SeaORM connection.
+    ///
+    /// The repository borrows the existing connection; it never opens another pool.
+    pub fn entity<E>(&self) -> EntityRepository<'_, E, DatabaseConnection>
+    where
+        E: sea_orm::EntityTrait,
+    {
+        EntityRepository::new(self.orm.as_ref())
     }
 
     /// Return which SQLx driver this pool uses.
     pub fn backend(&self) -> DatabaseBackend {
         self.backend
+    }
+
+    /// Return the explicitly supported query capabilities for this database.
+    pub fn capabilities(&self) -> DatabaseCapabilities {
+        self.backend.capabilities()
     }
 
     /// Return the configured maximum number of connections.
@@ -325,24 +441,63 @@ impl DatabasePool {
 
     /// Return the current number of open connections.
     pub fn size(&self) -> u32 {
-        self.pool.size()
+        match &self.pool {
+            DatabaseDriverPool::Sqlite(pool) => pool.size(),
+            DatabaseDriverPool::Postgres(pool) => pool.size(),
+            DatabaseDriverPool::MySql(pool) => pool.size(),
+        }
     }
 
-    /// Begin a transaction. Call commit to persist it or rollback to undo it.
+    /// Execute parameterized SQL through SeaORM on the shared pool.
+    ///
+    /// Values are bound by the selected SeaORM backend; use question-mark placeholders for
+    /// SQLite and MySQL/MariaDB and numbered dollar placeholders for PostgreSQL.
+    pub async fn execute_raw(
+        &self,
+        sql: &str,
+        values: impl IntoIterator<Item = Value>,
+    ) -> Result<u64, DatabaseError> {
+        let statement =
+            Statement::from_sql_and_values(self.orm.get_database_backend(), sql, values);
+        self.orm
+            .execute(statement)
+            .await
+            .map(|result| result.rows_affected())
+            .map_err(DatabaseError::OrmQuery)
+    }
+
+    /// Run a parameterized raw query through SeaORM on the shared pool.
+    pub async fn query_raw(
+        &self,
+        sql: &str,
+        values: impl IntoIterator<Item = Value>,
+    ) -> Result<Vec<QueryResult>, DatabaseError> {
+        let statement =
+            Statement::from_sql_and_values(self.orm.get_database_backend(), sql, values);
+        self.orm
+            .query_all(statement)
+            .await
+            .map_err(DatabaseError::OrmQuery)
+    }
+
+    /// Begin a transaction on the shared connection pool.
+    ///
+    /// Both ORM operations and parameterized raw statements executed through the returned
+    /// transaction use the same database transaction.
     pub async fn begin_transaction(&self) -> Result<DatabaseTransaction, DatabaseError> {
         let inner = self
-            .pool
+            .orm
             .begin()
             .await
-            .map_err(DatabaseError::Transaction)?;
+            .map_err(DatabaseError::OrmTransaction)?;
         Ok(DatabaseTransaction { inner })
     }
 
-    /// Apply pending SQLx migrations from a directory.
+    /// Apply pending SQLx migrations from a directory using the configured typed pool.
     ///
     /// Re-applying an already-current directory is safe: SQLx tracks versions and
     /// checksums in _sqlx_migrations, rejecting edits to applied migrations. MySQL-family
-    /// directories must contain `.rustflow-dialect` with the value `mysql` so an unmarked
+    /// directories must contain a dialect marker with the value mysql so an unmarked
     /// SQLite/PostgreSQL directory is not accidentally applied to those servers.
     pub async fn run_migrations(&self, directory: impl AsRef<Path>) -> Result<(), DatabaseError> {
         let directory = directory.as_ref();
@@ -350,10 +505,12 @@ impl DatabasePool {
         let migrator = Migrator::new(directory)
             .await
             .map_err(DatabaseError::Migration)?;
-        migrator
-            .run(&self.pool)
-            .await
-            .map_err(DatabaseError::Migration)
+        let result = match &self.pool {
+            DatabaseDriverPool::Sqlite(pool) => migrator.run(pool).await,
+            DatabaseDriverPool::Postgres(pool) => migrator.run(pool).await,
+            DatabaseDriverPool::MySql(pool) => migrator.run(pool).await,
+        };
+        result.map_err(DatabaseError::Migration)
     }
 
     /// Explicitly revert reversible migrations newer than target_version.
@@ -376,38 +533,80 @@ impl DatabasePool {
         let migrator = Migrator::new(directory)
             .await
             .map_err(DatabaseError::Migration)?;
-        migrator
-            .undo(&self.pool, target_version)
-            .await
-            .map_err(DatabaseError::Migration)
+        let result = match &self.pool {
+            DatabaseDriverPool::Sqlite(pool) => migrator.undo(pool, target_version).await,
+            DatabaseDriverPool::Postgres(pool) => migrator.undo(pool, target_version).await,
+            DatabaseDriverPool::MySql(pool) => migrator.undo(pool, target_version).await,
+        };
+        result.map_err(DatabaseError::Migration)
     }
 
-    /// Close the pool and wait for its connections to be dropped.
+    /// Close the one underlying pool shared by SQLx and SeaORM.
     pub async fn close(&self) {
-        self.pool.close().await;
+        match &self.pool {
+            DatabaseDriverPool::Sqlite(pool) => pool.close().await,
+            DatabaseDriverPool::Postgres(pool) => pool.close().await,
+            DatabaseDriverPool::MySql(pool) => pool.close().await,
+        }
     }
 }
 
-/// A transaction borrowed from the pool with explicit commit/rollback semantics.
+/// A SeaORM transaction opened on the same pool used by the SQLx typed accessors.
 pub struct DatabaseTransaction {
-    inner: Transaction<'static, Any>,
+    inner: SeaOrmTransaction,
 }
 
 impl DatabaseTransaction {
-    /// Access the underlying connection while this transaction owns it.
-    ///
-    /// Use SQLx parameterized queries against this connection, then explicitly commit
-    /// or roll back. Dropping an uncommitted transaction requests a rollback.
-    pub fn connection(&mut self) -> &mut AnyConnection {
-        &mut self.inner
+    /// Borrow the SeaORM transaction for ORM or ConnectionTrait operations.
+    pub fn connection(&self) -> &SeaOrmTransaction {
+        &self.inner
+    }
+    /// Create a typed repository whose operations participate in this transaction.
+    pub fn entity<E>(&self) -> EntityRepository<'_, E, SeaOrmTransaction>
+    where
+        E: sea_orm::EntityTrait,
+    {
+        EntityRepository::new(&self.inner)
+    }
+
+    /// Execute parameterized raw SQL inside this transaction.
+    pub async fn execute_raw(
+        &self,
+        sql: &str,
+        values: impl IntoIterator<Item = Value>,
+    ) -> Result<u64, DatabaseError> {
+        let statement =
+            Statement::from_sql_and_values(self.inner.get_database_backend(), sql, values);
+        self.inner
+            .execute(statement)
+            .await
+            .map(|result| result.rows_affected())
+            .map_err(DatabaseError::OrmTransaction)
+    }
+
+    /// Fetch rows from a parameterized raw query inside this transaction.
+    pub async fn query_raw(
+        &self,
+        sql: &str,
+        values: impl IntoIterator<Item = Value>,
+    ) -> Result<Vec<QueryResult>, DatabaseError> {
+        let statement =
+            Statement::from_sql_and_values(self.inner.get_database_backend(), sql, values);
+        self.inner
+            .query_all(statement)
+            .await
+            .map_err(DatabaseError::OrmTransaction)
     }
 
     /// Commit all operations in this transaction.
     pub async fn commit(self) -> Result<(), DatabaseError> {
-        self.inner
-            .commit()
-            .await
-            .map_err(DatabaseError::Transaction)
+        self.inner.commit().await.map_err(|error| {
+            if commit_error_outcome_is_unknown(&error) {
+                DatabaseError::CommitOutcomeUnknown(error)
+            } else {
+                DatabaseError::OrmTransaction(error)
+            }
+        })
     }
 
     /// Roll back all operations in this transaction.
@@ -415,30 +614,71 @@ impl DatabaseTransaction {
         self.inner
             .rollback()
             .await
-            .map_err(DatabaseError::Transaction)
+            .map_err(DatabaseError::OrmTransaction)
     }
 }
 
+/// Stable category for application handling of database failures.
+///
+/// This classification deliberately omits driver messages, SQL, constraint names and values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DatabaseErrorKind {
+    InvalidConfiguration,
+    InvalidModelState,
+    NotFound,
+    UniqueViolation,
+    ForeignKeyViolation,
+    CheckViolation,
+    Unavailable,
+    Query,
+    Transaction,
+    CommitOutcomeUnknown,
+    Migration,
+}
+
 /// Database failures mapped to generic public messages rather than leaking SQL or URLs.
-#[derive(Debug)]
 pub enum DatabaseError {
     /// Invalid URL, pool sizing, timeout, or migration rollback configuration.
     InvalidConfiguration(&'static str),
-    /// Initial pool connection failed.
+    /// An ORM operation was rejected before SQL execution because its model state was invalid.
+    InvalidModelState(&'static str),
+    /// Initial typed-pool connection failed.
     Connect(sqlx::Error),
-    /// A query or result-decoding operation failed.
+    /// A direct SQLx query or result-decoding operation failed.
     Query(sqlx::Error),
-    /// A transaction could not start, commit, or roll back.
-    Transaction(sqlx::Error),
+    /// A SeaORM query or execution operation failed.
+    OrmQuery(sea_orm::DbErr),
+    /// A transaction operation received a definitive server/driver error.
+    OrmTransaction(sea_orm::DbErr),
+    /// The connection failed while COMMIT was in flight; the server outcome cannot be inferred.
+    CommitOutcomeUnknown(sea_orm::DbErr),
     /// SQLx could not load, validate, apply, or revert migrations.
     Migration(sqlx::migrate::MigrateError),
 }
 
+impl fmt::Debug for DatabaseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DatabaseError")
+            .field("kind", &self.kind())
+            .finish_non_exhaustive()
+    }
+}
+
 impl DatabaseError {
-    fn sqlx_error(&self) -> Option<&sqlx::Error> {
+    /// Return the stable public classification for this failure.
+    pub fn kind(&self) -> DatabaseErrorKind {
         match self {
-            Self::Connect(error) | Self::Query(error) | Self::Transaction(error) => Some(error),
-            Self::InvalidConfiguration(_) | Self::Migration(_) => None,
+            Self::InvalidConfiguration(_) => DatabaseErrorKind::InvalidConfiguration,
+            Self::InvalidModelState(_) => DatabaseErrorKind::InvalidModelState,
+            Self::Connect(_) => DatabaseErrorKind::Unavailable,
+            Self::Query(error) => classify_sqlx_error(error, DatabaseErrorKind::Query),
+            Self::OrmQuery(error) => classify_orm_error(error, DatabaseErrorKind::Query),
+            Self::OrmTransaction(error) => {
+                classify_orm_error(error, DatabaseErrorKind::Transaction)
+            }
+            Self::CommitOutcomeUnknown(_) => DatabaseErrorKind::CommitOutcomeUnknown,
+            Self::Migration(_) => DatabaseErrorKind::Migration,
         }
     }
 
@@ -448,19 +688,33 @@ impl DatabaseError {
     /// exhaustion maps to 503, and everything else is a generic 500. Driver messages,
     /// SQL text, credentials, and connection URLs are never exposed to the caller.
     pub fn to_http_error(&self) -> HttpError {
-        match self.sqlx_error() {
-            Some(sqlx::Error::RowNotFound) => HttpError::not_found("Record not found"),
-            Some(sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed) => HttpError::new(
+        match self.kind() {
+            DatabaseErrorKind::InvalidModelState => HttpError::bad_request("Invalid model state"),
+            DatabaseErrorKind::NotFound => HttpError::not_found("Record not found"),
+            DatabaseErrorKind::UniqueViolation => HttpError::new(
+                StatusCode::CONFLICT,
+                "A record with those values already exists",
+            ),
+            DatabaseErrorKind::ForeignKeyViolation => HttpError::new(
+                StatusCode::CONFLICT,
+                "The operation conflicts with related records",
+            ),
+            DatabaseErrorKind::CheckViolation => HttpError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "The record does not satisfy a database constraint",
+            ),
+            DatabaseErrorKind::Unavailable => HttpError::new(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "Database temporarily unavailable",
             ),
-            Some(sqlx::Error::Database(error)) if is_unique_constraint_error(error.as_ref()) => {
-                HttpError::new(
-                    StatusCode::CONFLICT,
-                    "A record with those values already exists",
-                )
-            }
-            _ => HttpError::internal_server_error(),
+            DatabaseErrorKind::CommitOutcomeUnknown => HttpError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Database commit outcome is unknown; verify the operation before retrying",
+            ),
+            DatabaseErrorKind::InvalidConfiguration
+            | DatabaseErrorKind::Query
+            | DatabaseErrorKind::Transaction
+            | DatabaseErrorKind::Migration => HttpError::internal_server_error(),
         }
     }
 }
@@ -471,9 +725,15 @@ impl fmt::Display for DatabaseError {
             Self::InvalidConfiguration(message) => {
                 write!(formatter, "invalid database configuration: {message}")
             }
+            Self::InvalidModelState(message) => {
+                write!(formatter, "invalid ORM model state: {message}")
+            }
             Self::Connect(_) => formatter.write_str("database connection failed"),
-            Self::Query(_) => formatter.write_str("database operation failed"),
-            Self::Transaction(_) => formatter.write_str("database transaction failed"),
+            Self::Query(_) | Self::OrmQuery(_) => formatter.write_str("database operation failed"),
+            Self::OrmTransaction(_) => formatter.write_str("database transaction failed"),
+            Self::CommitOutcomeUnknown(_) => {
+                formatter.write_str("database commit outcome is unknown")
+            }
             Self::Migration(_) => formatter.write_str("database migration failed"),
         }
     }
@@ -482,16 +742,123 @@ impl fmt::Display for DatabaseError {
 impl Error for DatabaseError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Connect(error) | Self::Query(error) | Self::Transaction(error) => Some(error),
+            Self::Connect(error) | Self::Query(error) => Some(error),
+            Self::OrmQuery(error)
+            | Self::OrmTransaction(error)
+            | Self::CommitOutcomeUnknown(error) => Some(error),
             Self::Migration(error) => Some(error),
-            Self::InvalidConfiguration(_) => None,
+            Self::InvalidConfiguration(_) | Self::InvalidModelState(_) => None,
         }
     }
 }
 
-fn is_unique_constraint_error(error: &dyn sqlx::error::DatabaseError) -> bool {
-    let code = error.code();
-    error.is_unique_violation() || matches!(code.as_deref(), Some("23505" | "1555" | "2067"))
+fn constraint_kind_from_code(
+    code: Option<&str>,
+    mysql_number: Option<u16>,
+    is_unique_violation: bool,
+) -> Option<DatabaseErrorKind> {
+    if is_unique_violation
+        || matches!(code, Some("23505" | "1555" | "2067"))
+        || matches!(mysql_number, Some(1022 | 1062 | 1169 | 1586 | 1859))
+    {
+        return Some(DatabaseErrorKind::UniqueViolation);
+    }
+
+    if matches!(code, Some("23503" | "787"))
+        || matches!(
+            mysql_number,
+            Some(1216 | 1217 | 1451 | 1452 | 1557 | 1761 | 1762 | 1830 | 1834)
+        )
+    {
+        return Some(DatabaseErrorKind::ForeignKeyViolation);
+    }
+
+    if matches!(code, Some("23514" | "275"))
+        || matches!(mysql_number, Some(3819))
+        || (mysql_number == Some(4025) && code == Some("23000"))
+    {
+        return Some(DatabaseErrorKind::CheckViolation);
+    }
+
+    None
+}
+
+fn sqlx_constraint_kind(error: &dyn sqlx::error::DatabaseError) -> Option<DatabaseErrorKind> {
+    // Prefer SQLx's backend-native classification. In particular, MySQL's
+    // SQLSTATE 23000 is shared by several constraint types; the driver uses
+    // the protocol error number to distinguish them.
+    if error.is_unique_violation() {
+        return Some(DatabaseErrorKind::UniqueViolation);
+    }
+    if error.is_foreign_key_violation() {
+        return Some(DatabaseErrorKind::ForeignKeyViolation);
+    }
+    if error.is_check_violation() {
+        return Some(DatabaseErrorKind::CheckViolation);
+    }
+
+    let mysql_number = error
+        .try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>()
+        .map(sqlx::mysql::MySqlDatabaseError::number);
+    constraint_kind_from_code(error.code().as_deref(), mysql_number, false)
+}
+
+fn classify_sqlx_error(error: &sqlx::Error, fallback: DatabaseErrorKind) -> DatabaseErrorKind {
+    match error {
+        sqlx::Error::RowNotFound => DatabaseErrorKind::NotFound,
+        sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed => DatabaseErrorKind::Unavailable,
+        sqlx::Error::Database(error) => sqlx_constraint_kind(error.as_ref()).unwrap_or(fallback),
+        _ => fallback,
+    }
+}
+
+fn classify_orm_error(error: &sea_orm::DbErr, fallback: DatabaseErrorKind) -> DatabaseErrorKind {
+    match error {
+        sea_orm::DbErr::RecordNotFound(_) | sea_orm::DbErr::RecordNotUpdated => {
+            DatabaseErrorKind::NotFound
+        }
+        sea_orm::DbErr::ConnectionAcquire(_) => DatabaseErrorKind::Unavailable,
+        sea_orm::DbErr::Conn(runtime)
+        | sea_orm::DbErr::Exec(runtime)
+        | sea_orm::DbErr::Query(runtime) => match runtime {
+            sea_orm::RuntimeErr::SqlxError(error) => classify_sqlx_error(error, fallback),
+            sea_orm::RuntimeErr::Internal(_) => fallback,
+        },
+        sea_orm::DbErr::UpdateGetPrimaryKey | sea_orm::DbErr::AttrNotSet(_) => {
+            DatabaseErrorKind::InvalidModelState
+        }
+        _ => fallback,
+    }
+}
+
+/// SQLSTATE connection failures and server shutdown responses are ambiguous during COMMIT.
+/// Ordinary server rejections (for example, constraint or serialization errors) are definitive.
+fn commit_sqlstate_is_unknown(code: Option<&str>) -> bool {
+    code.is_some_and(|code| code.starts_with("08") || matches!(code, "57P01" | "57P02" | "57P03"))
+}
+
+fn commit_error_outcome_is_unknown(error: &sea_orm::DbErr) -> bool {
+    match error {
+        sea_orm::DbErr::Conn(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(
+            database_error,
+        )))
+        | sea_orm::DbErr::Exec(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(
+            database_error,
+        )))
+        | sea_orm::DbErr::Query(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(
+            database_error,
+        ))) => {
+            let code = database_error.code();
+            commit_sqlstate_is_unknown(code.as_deref())
+        }
+        _ => true,
+    }
+}
+
+impl From<sea_orm::DbErr> for DatabaseError {
+    fn from(error: sea_orm::DbErr) -> Self {
+        Self::OrmQuery(error)
+    }
 }
 
 impl From<sqlx::Error> for DatabaseError {
@@ -608,7 +975,7 @@ mod tests {
             .unwrap();
         let database = DatabasePool::connect(&config).await.unwrap();
         let sqlite_version: String = sqlx::query_scalar("SELECT sqlite_version()")
-            .fetch_one(database.pool())
+            .fetch_one(database.sqlx_sqlite_pool().expect("SQLite pool"))
             .await
             .unwrap();
         assert_eq!(
@@ -624,11 +991,11 @@ mod tests {
 
         sqlx::query("INSERT INTO rustflow_audit_items (name) VALUES (?)")
             .bind("Ada")
-            .execute(database.pool())
+            .execute(database.sqlx_sqlite_pool().expect("SQLite pool"))
             .await
             .unwrap();
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM rustflow_audit_items")
-            .fetch_one(database.pool())
+            .fetch_one(database.sqlx_sqlite_pool().expect("SQLite pool"))
             .await
             .unwrap();
         assert_eq!(count, 1);
@@ -639,7 +1006,7 @@ mod tests {
             .unwrap();
         database.run_migrations(&migrations).await.unwrap();
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM rustflow_audit_items")
-            .fetch_one(database.pool())
+            .fetch_one(database.sqlx_sqlite_pool().expect("SQLite pool"))
             .await
             .unwrap();
         assert_eq!(count, 0);
@@ -653,20 +1020,22 @@ mod tests {
             .unwrap();
         let database = DatabasePool::connect(&config).await.unwrap();
         sqlx::query("CREATE TABLE transaction_items (id INTEGER PRIMARY KEY, value TEXT NOT NULL)")
-            .execute(database.pool())
+            .execute(database.sqlx_sqlite_pool().expect("SQLite pool"))
             .await
             .unwrap();
 
-        let mut transaction = database.begin_transaction().await.unwrap();
-        sqlx::query("INSERT INTO transaction_items (value) VALUES (?)")
-            .bind("discarded")
-            .execute(transaction.connection())
+        let transaction = database.begin_transaction().await.unwrap();
+        transaction
+            .execute_raw(
+                "INSERT INTO transaction_items (value) VALUES (?)",
+                ["discarded".into()],
+            )
             .await
             .unwrap();
         transaction.rollback().await.unwrap();
 
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM transaction_items")
-            .fetch_one(database.pool())
+            .fetch_one(database.sqlx_sqlite_pool().expect("SQLite pool"))
             .await
             .unwrap();
         assert_eq!(count, 0);
@@ -689,7 +1058,7 @@ mod tests {
             .unwrap();
         let database = DatabasePool::connect(&config).await.unwrap();
         let server_version: String = sqlx::query_scalar("SHOW server_version")
-            .fetch_one(database.pool())
+            .fetch_one(database.sqlx_postgres_pool().expect("PostgreSQL pool"))
             .await
             .unwrap();
         assert_eq!(
@@ -700,7 +1069,7 @@ mod tests {
         println!("verified PostgreSQL server version: {server_version}");
 
         let row = sqlx::query("SELECT CAST(1 AS BIGINT)")
-            .fetch_one(database.pool())
+            .fetch_one(database.sqlx_postgres_pool().expect("PostgreSQL pool"))
             .await
             .unwrap();
         use sqlx::Row;
@@ -708,6 +1077,134 @@ mod tests {
 
         let transaction = database.begin_transaction().await.unwrap();
         transaction.rollback().await.unwrap();
+    }
+
+    #[test]
+    fn database_error_codes_are_classified_for_all_supported_sql_drivers() {
+        use super::{DatabaseErrorKind, constraint_kind_from_code};
+
+        for code in ["23505", "1555", "2067"] {
+            assert_eq!(
+                constraint_kind_from_code(Some(code), None, false),
+                Some(DatabaseErrorKind::UniqueViolation),
+                "unique SQLSTATE/SQLite code {code}"
+            );
+        }
+        for number in [1022, 1062, 1169, 1586, 1859] {
+            assert_eq!(
+                constraint_kind_from_code(Some("23000"), Some(number), false),
+                Some(DatabaseErrorKind::UniqueViolation),
+                "MySQL-family unique error {number}"
+            );
+        }
+        for code in ["23503", "787"] {
+            assert_eq!(
+                constraint_kind_from_code(Some(code), None, false),
+                Some(DatabaseErrorKind::ForeignKeyViolation),
+                "foreign-key SQLSTATE/SQLite code {code}"
+            );
+        }
+        for number in [1216, 1217, 1451, 1452, 1557, 1761, 1762, 1830, 1834] {
+            assert_eq!(
+                constraint_kind_from_code(Some("23000"), Some(number), false),
+                Some(DatabaseErrorKind::ForeignKeyViolation),
+                "MySQL-family foreign-key error {number}"
+            );
+        }
+        for code in ["23514", "275"] {
+            assert_eq!(
+                constraint_kind_from_code(Some(code), None, false),
+                Some(DatabaseErrorKind::CheckViolation),
+                "check SQLSTATE/SQLite code {code}"
+            );
+        }
+        assert_eq!(
+            constraint_kind_from_code(Some("HY000"), Some(3819), false),
+            Some(DatabaseErrorKind::CheckViolation),
+            "MySQL CHECK constraint error 3819"
+        );
+        assert_eq!(
+            constraint_kind_from_code(Some("23000"), Some(4025), false),
+            Some(DatabaseErrorKind::CheckViolation),
+            "MariaDB CHECK constraint error 4025"
+        );
+        assert_eq!(
+            constraint_kind_from_code(Some("HY000"), Some(4025), false),
+            None,
+            "MySQL error 4025 is not MariaDB's CHECK violation"
+        );
+        assert_eq!(
+            constraint_kind_from_code(None, None, true),
+            Some(DatabaseErrorKind::UniqueViolation)
+        );
+        assert_eq!(constraint_kind_from_code(Some("08006"), None, false), None);
+    }
+
+    #[test]
+    fn commit_connection_and_shutdown_sqlstates_are_ambiguous() {
+        use super::commit_sqlstate_is_unknown;
+
+        for code in ["08003", "08006", "08S01", "57P01", "57P02", "57P03"] {
+            assert!(
+                commit_sqlstate_is_unknown(Some(code)),
+                "{code} must preserve an unknown COMMIT outcome"
+            );
+        }
+        for code in ["23505", "23514", "40001", "40P01"] {
+            assert!(
+                !commit_sqlstate_is_unknown(Some(code)),
+                "{code} is a definitive server-side transaction rejection"
+            );
+        }
+        assert!(!commit_sqlstate_is_unknown(None));
+    }
+
+    #[test]
+    fn ambiguous_commit_failures_are_not_reported_as_rolled_back() {
+        use super::{DatabaseError, DatabaseErrorKind, commit_error_outcome_is_unknown};
+        use sea_orm::DbErr;
+
+        let ambiguous = DbErr::Custom("connection dropped during commit".to_owned());
+        assert!(commit_error_outcome_is_unknown(&ambiguous));
+
+        let error = DatabaseError::CommitOutcomeUnknown(ambiguous);
+        assert_eq!(error.kind(), DatabaseErrorKind::CommitOutcomeUnknown);
+        assert_eq!(
+            error.to_http_error().status_code(),
+            http::StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert!(error.to_string().contains("outcome is unknown"));
+        assert!(!error.to_string().contains("connection dropped"));
+    }
+
+    #[test]
+    fn orm_missing_record_updates_map_to_not_found_for_queries_and_transactions() {
+        let query_error = super::DatabaseError::OrmQuery(sea_orm::DbErr::RecordNotUpdated);
+        assert_eq!(query_error.kind(), super::DatabaseErrorKind::NotFound);
+        assert_eq!(
+            query_error.to_http_error().status_code(),
+            http::StatusCode::NOT_FOUND
+        );
+
+        let transaction_error =
+            super::DatabaseError::OrmTransaction(sea_orm::DbErr::RecordNotUpdated);
+        assert_eq!(transaction_error.kind(), super::DatabaseErrorKind::NotFound);
+        assert_eq!(
+            transaction_error.to_http_error().status_code(),
+            http::StatusCode::NOT_FOUND
+        );
+    }
+
+    #[test]
+    fn database_error_debug_redacts_driver_details() {
+        let error = DatabaseError::OrmQuery(sea_orm::DbErr::Custom(
+            "postgres://admin:secret@db/internal SELECT secret_column".to_owned(),
+        ));
+        let debug = format!("{error:?}");
+
+        assert!(debug.contains("Query"));
+        assert!(!debug.contains("secret"));
+        assert!(!debug.contains("SELECT"));
     }
 
     #[test]

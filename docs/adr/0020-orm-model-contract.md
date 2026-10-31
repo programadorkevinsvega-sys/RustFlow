@@ -1,6 +1,6 @@
 # ADR 0020: SQL ORM architecture, foundation and model contract
 
-- Status: Proposed for review with Phase 6.7.1; not yet accepted or merged.
+- Status: Accepted with Phase 6.7.1 (PR #58, merge commit `36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1`); Phase 6.7.2 implementation in progress.
 - Phase: 6.7.1 — Model contract and architecture.
 - Related: ADR 0016 (SQLx pools and migrations), ADR 0017 (MySQL/MariaDB driver), ADR 0018 (MongoDB document adapter), ADR 0019 (database support matrix), [ORM model contract](../ORM_MODEL_CONTRACT.md).
 
@@ -47,23 +47,13 @@ Keep SQLx 0.8.6 as the execution/driver and migration foundation. Do not introdu
 
 Do not enable SeaORM's mariadb-use-returning feature globally. SeaORM represents MySQL and MariaDB with the same MySQL backend family, so enabling a MariaDB-specific RETURNING path at compile time would also affect MySQL. For this adoption, leave the feature disabled and use SeaORM's non-RETURNING MySQL-family path until a runtime server-identity/capability strategy is separately designed and tested. Both MySQL 8.4.13 and MariaDB 11.4.13 require independent integration contracts before runtime support may be claimed.
 
-### 3. Existing AnyPool boundary and migration plan
+### 3. Existing AnyPool boundary and typed-pool bridge
 
-SeaORM 1.1.20 uses backend-specific SQLx pools (SqlitePool, PgPool and MySqlPool), not SQLx AnyPool. It exposes those typed pools through its DatabaseConnection accessors. An AnyPool cannot be passed directly as a SeaORM DatabaseConnection.
+SeaORM 1.1.20 uses backend-specific SQLx pools (`SqlitePool`, `PgPool` and `MySqlPool`), not SQLx `AnyPool`. Its connector API can build a SeaORM `DatabaseConnection` from an existing typed SQLx pool handle. SQLx pool handles are cloneable references to the same underlying pool, which allows RustFlow to keep one pool lifecycle rather than creating a duplicate.
 
-The current Phase 6.5/6.6 DatabasePool remains unchanged in Phase 6.7.1. Do not open a second pool for the same URL as a workaround, and do not claim that the new ORM facade is already wired into that legacy pool.
+The Phase 6.7.2 implementation now follows this boundary: `DatabasePool` owns a backend-tagged enum containing exactly one typed SQLx pool; `DatabasePool::orm()` exposes the SeaORM connection built from that handle; the `sqlx_*_pool()` accessors expose only the configured driver's pool; and SQLx migrations dispatch to that same typed pool. `DatabasePool::begin_transaction()` uses SeaORM's transaction on the shared pool, with parameterized raw statements routed through the transaction's `ConnectionTrait` so ORM and raw operations can share one transaction. This intentionally replaces the pre-1.0 `AnyPool` and `AnyConnection` accessors.
 
-Phase 6.7.2 must perform and test one explicit pre-1.0 connection-boundary migration:
-
-1. Make one backend-specific SeaORM/SQLx typed connection pool the single owner for each configured database.
-2. Preserve the current AppConfig URL precedence, redaction, pool bounds, acquire timeout and backend validation.
-3. Make the ORM connection and the raw-SQL escape hatch share that same typed pool. Use SeaORM's typed SQLx-pool accessors when direct SQLx APIs are required; provide a backend-tagged enum rather than constructing an AnyPool alongside it.
-4. Run SQLx migrations against the matching typed SQLx pool/connection. Preserve per-engine migration directories and dialect-marker validation.
-5. Replace the experimental AnyPool-only raw accessor and AnyConnection-only transaction accessor with a documented backend-tagged/raw-parameterized API. This is a deliberate pre-1.0 API migration; provide examples and deprecation notes rather than silently changing semantics.
-6. Represent model operations and explicit transactions with the same backend connection, including commit/rollback and connection-loss behavior.
-7. Prove pool closure, pool limits, timeouts, transaction composition and migration behavior on all four SQL servers before exposing integrated CRUD.
-
-No duplicate pool, hidden pool or process-global connection is allowed. If the typed-pool bridge cannot meet the current configuration and migration contract, stop Phase 6.7.2 and amend this ADR before implementing an alternative.
+The connection bridge is implementation work in progress, not acceptance evidence for the whole subphase. Phase 6.7.2 must still prove pool closure, limits, acquire timeouts, migrations, mixed ORM/raw transaction behavior, type mapping and CRUD on SQLite, PostgreSQL, MySQL and MariaDB. No duplicate pool, hidden pool or process-global connection is allowed. If the one-pool bridge fails any of these contracts, stop and amend this ADR rather than adding a second pool.
 
 ### 4. Model derive and metadata contract
 
@@ -153,21 +143,21 @@ MongoDB remains the separate document adapter introduced in Phase 6.6.2. Its fut
 
 ### Security and dependency advisory review (snapshot: 2026-10-30)
 
-This phase does not add SeaORM to Cargo.lock. The following is a review of the existing SQLx-based baseline and a gate for introducing SeaORM with the typed-pool migration in 6.7.2.
+Phase 6.7.2 adds SeaORM to the resolved dependency graph. `Cargo.lock` has been regenerated by Cargo 1.85 and committed with SeaORM 1.1.20, SeaQuery, and the complete selected SQLx driver graph. A locked `cargo audit` now runs in CI; its single explicit exception is documented and owned below. This section records the current security review of the resulting graph, not a claim that every advisory has been fixed.
 
 - **RUSTSEC-2024-0363 (SQLx binary-protocol length truncation):** fixed in SQLx `>=0.8.1`; RustFlow locks SQLx `0.8.6`, so this advisory is outside the affected range. The advisory says MySQL and SQLite do not appear exploitable, while recommending the patched release for every backend. [RustSec advisory](https://rustsec.org/advisories/RUSTSEC-2024-0363.html); [SQLx 0.8.1 changelog](https://github.com/launchbadge/sqlx/blob/main/CHANGELOG.md#081---2024-08-23).
 - **RUSTSEC-2026-0009 (time RFC 2822 parser stack exhaustion):** fixed in `time >=0.3.47`; the current lockfile resolves `time 0.3.55`, outside the vulnerable range. Keep this floor in the lockfile when optional time integrations are enabled. [RustSec advisory](https://rustsec.org/advisories/RUSTSEC-2026-0009.html).
-- **RUSTSEC-2023-0071 (rsa Marvin timing side-channel):** the current pre-existing lockfile resolves `sqlx-mysql 0.8.6 -> rsa 0.9.10`. RustSec still lists no patched `rsa` release as of this snapshot. The dependency is already present through the Phase 6.5/6.6 MySQL-protocol driver; this PR did not introduce it. [RustSec advisory](https://rustsec.org/advisories/RUSTSEC-2023-0071.html); [sqlx-mysql 0.8.6 dependency/advisory page](https://deps.rs/crate/sqlx-mysql/0.8.6).
+- **RUSTSEC-2023-0071 (rsa Marvin timing side-channel):** the regenerated lockfile resolves `sqlx-mysql 0.8.6 -> rsa 0.9.10`. RustSec still lists no patched `rsa` release as of 2026-10-30. The dependency is inherited from the existing MySQL-protocol driver; it is not introduced by SeaORM, and no fixed upstream release is currently available. [RustSec advisory](https://rustsec.org/advisories/RUSTSEC-2023-0071.html); [sqlx-mysql 0.8.6 dependency/advisory page](https://deps.rs/crate/sqlx-mysql/0.8.6).
 - **Reachability qualification:** SQLx 0.8.6's MySQL client authentication source imports `RsaPublicKey` and uses `RsaPublicKey::encrypt` for the password exchange when the relevant authentication plugin is used without TLS; the TLS path sends the password inside the TLS stream instead. That client code path performs public-key encryption, not RSA private-key decryption/signing. The RustSec advisory concerns timing leakage from private-key operations. Consequently, the presence of the flagged transitive crate is a real dependency-review finding, but the cited SQLx client path alone is not evidence that RustFlow executes the vulnerable private-key operation. Do not call the advisory fixed, suppress it without an owner, or infer that TLS is configured merely because the crate enables TLS support. Review actual authentication/TLS configuration and the remote server's RSA handling before expanding production MySQL/MariaDB guarantees. [SQLx 0.8.6 authentication source](https://docs.rs/crate/sqlx-mysql/0.8.6/source/src/connection/auth.rs).
-- **6.7.2 dependency gate:** when SeaORM is introduced, regenerate Cargo.lock, inspect the complete feature-enabled graph for all four SQL engines, run the repository dependency-review workflow and a RustSec audit, and record any new/adopted advisories. SeaORM must not be added as a parallel or unevaluated dependency graph while AnyPool remains the only RustFlow-owned pool.
+- **6.7.2 dependency gate:** Cargo.lock is now generated and committed from the workspace manifest with Rust 1.85; it contains SeaORM 1.1.20 and the selected four-engine SQLx graph. CI runs `cargo audit --deny warnings` using `.cargo/audit.toml`, in addition to GitHub Dependency Review. The sole RustSec exception is RUSTSEC-2023-0071 and is narrowly scoped to the inherited RSA dependency described above; all other advisories, yanked crates and audit warnings remain blocking. Revisit this exception whenever the SQLx MySQL dependency, authentication path or TLS policy changes; remove it when the flagged dependency is eliminated or a fixed release is adopted. A passing audit therefore means every non-excepted finding passed, not that the RSA advisory was fixed.
 
 ### Evidence versus inference
 
 - **Verified from official manifests:** SeaORM 1.1.20 declares Rust 1.81, edition 2021, MIT OR Apache-2.0, SQLx 0.8.4-compatible dependency range and SeaQuery 0.32.5-compatible dependency range. SeaORM 2.0.4 declares Rust 1.94 and SQLx 0.9.0. Diesel 2.3.14 declares Rust 1.86. Toasty's current 0.11.0 workspace manifest declares Rust 1.95 and SQLx 0.9.0.
 - **Verified from official driver docs/source:** SeaORM 1.1.x lists sqlx-mysql (MySQL and MariaDB), sqlx-postgres and sqlx-sqlite. SeaORM's DatabaseConnection has typed SQLx pool accessors. SeaORM's ConnectionTrait and TransactionTrait require explicit connection/transaction values; its loader API exposes load_one/load_many/load_many_to_many. Its MariaDB RETURNING feature is compile-time and shares the MySQL backend flag.
-- **Verified from RustFlow's repository:** the workspace currently pins SQLx 0.8.6, exposes AnyPool and uses SQLx's migration runner. MySQL and MariaDB use the same MySQL protocol backend family. MongoDB is a separate driver and adapter.
+- **Verified at the Phase 6.7.1 decision point:** the workspace pinned SQLx 0.8.6, exposed AnyPool and used SQLx's migration runner. MySQL and MariaDB used the same MySQL protocol backend family. MongoDB was a separate driver and adapter. PR #59 replaces that historical AnyPool boundary with typed SQLx pools shared with SeaORM; this ADR's design snapshot should not be read as a description of the current branch API.
 - **Design inference:** SeaORM 1.1.20 is a better maintained foundation than a RustFlow-authored ORM because it already provides the model, query, transaction and relation abstractions required by the maturity gate while staying inside the current MSRV and SQLx major/minor boundary. The typed-pool bridge is necessary because AnyPool is not accepted directly by SeaORM.
-- **Not yet verified by this subphase:** SeaORM 1.1.20 end-to-end behavior against the exact RustFlow service matrix (PostgreSQL 16.15, MySQL 8.4.13, MariaDB 11.4.13 and bundled SQLite 3.46.0); runtime type codecs; CRUD semantics through RustFlow's DatabasePool; relation query counts; and the complete generated application. These are gates in later subphases, not claims made by this ADR.
+- **Phase 6.7.1 boundary (historical):** at the time this ADR was accepted, SeaORM 1.1.20 end-to-end behavior against RustFlow's exact service matrix, runtime codecs, CRUD through DatabasePool, relation query counts and the generated application were not yet verified. PR #59 subsequently implemented the SQL runtime contract; its integer-boundary, relationship-loading/mutation and live PostgreSQL COMMIT fault tests passed, together with all eight required CI checks, on head `2cadce73c19c37c2f088f572ea37a83c65c72380` (2026-10-31). Phase 6.7.2 is accepted for final review but is not yet merged. The generated application and independent MongoDB ODM remain future Phase 6.7 work.
 
 ## Capability matrix: final maturity target and 6.7.1 boundary
 
@@ -184,6 +174,12 @@ This phase does not add SeaORM to Cargo.lock. The following is a review of the e
 | Raw SQL | Explicit parameterized escape hatch and engine-specific SQL | Statement/typed-pool strategy defined; no untrusted interpolation |
 | Migrations | Existing SQLx migrations, dialect-specific DDL and honest non-atomic DDL limitations | Existing migration strategy retained; typed pool adaptation in 6.7.2 |
 | MongoDB ODM | Separate BSON/document contract and verified MongoDB-native behavior | Explicitly outside SQL ORM; 6.7.3 |
+
+### Phase 6.7.2 implementation snapshot — PR #59
+
+The 6.7.2 implementation now places SeaORM 1.1.20 inside `rustflow-server`, shares one typed SQLx pool per configured backend with SeaORM, retains backend-specific SQLx accessors/migrations, and exposes borrowed `EntityRepository` values. The repository provides insert/update/save/delete/find and bulk builders; typed SeaORM query composition is used for filters, projections, aliases, joins, grouping, aggregates and subqueries. Explicit loaders cover belongs-to, has-one, has-many and many-to-many metadata, with no transparent lazy loading. ORM and parameterized raw SQL can use the same explicit transaction. `DatabaseError` maps stable categories and its `Debug` representation reports only the category, not the underlying driver/SQL text.
+
+The test contract now exercises these paths across SQLite, PostgreSQL, MySQL and MariaDB with CI service variables required when `CI=true`. Relation tests include parents without has-many or many-to-many rows and missing has-one results. The present tests do not yet establish a complete integer-width/overflow matrix, nested-loader query-count budget, all relation mutation variants, or an injected live connection drop during COMMIT. These remain explicit acceptance tasks; synthetic ambiguity classification alone is not proof of transport-failure behavior. Do not mark the 6.7.2 roadmap criteria complete until the final PR SHA runs Rust 1.85/stable, Clippy, workspace and four-engine integration, rustdoc, dependency audit/review, WASM/browser, website and governance gates successfully.
 
 ## Failure and transaction semantics
 

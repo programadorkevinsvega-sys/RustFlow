@@ -106,7 +106,7 @@ async fn run_contract(url: &str, server: ExpectedServer) {
     assert!(database.size() <= database.max_connections());
 
     let server_version: String = sqlx::query_scalar("SELECT VERSION()")
-        .fetch_one(database.pool())
+        .fetch_one(database.sqlx_mysql_pool().expect("MySQL/MariaDB pool"))
         .await
         .expect("read server version");
     if server.is_mariadb() {
@@ -125,11 +125,11 @@ async fn run_contract(url: &str, server: ExpectedServer) {
     // CI gives each engine its own disposable database. Reset the fixture state so a
     // developer can repeat the same test against a dedicated local test database.
     sqlx::query("DROP TABLE IF EXISTS rustflow_phase661_items")
-        .execute(database.pool())
+        .execute(database.sqlx_mysql_pool().expect("MySQL/MariaDB pool"))
         .await
         .expect("reset test table");
     sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations")
-        .execute(database.pool())
+        .execute(database.sqlx_mysql_pool().expect("MySQL/MariaDB pool"))
         .await
         .expect("reset migration metadata");
 
@@ -146,13 +146,13 @@ async fn run_contract(url: &str, server: ExpectedServer) {
     let injection_like_value = "name'); DROP TABLE rustflow_phase661_items; --";
     sqlx::query("INSERT INTO rustflow_phase661_items (value) VALUES (?)")
         .bind(injection_like_value)
-        .execute(database.pool())
+        .execute(database.sqlx_mysql_pool().expect("MySQL/MariaDB pool"))
         .await
         .expect("parameterized insert");
     let selected: String =
         sqlx::query_scalar("SELECT value FROM rustflow_phase661_items WHERE value = ?")
             .bind(injection_like_value)
-            .fetch_one(database.pool())
+            .fetch_one(database.sqlx_mysql_pool().expect("MySQL/MariaDB pool"))
             .await
             .expect("read bound value");
     assert_eq!(selected, injection_like_value);
@@ -160,12 +160,12 @@ async fn run_contract(url: &str, server: ExpectedServer) {
     sqlx::query("UPDATE rustflow_phase661_items SET value = ? WHERE value = ?")
         .bind("updated")
         .bind(injection_like_value)
-        .execute(database.pool())
+        .execute(database.sqlx_mysql_pool().expect("MySQL/MariaDB pool"))
         .await
         .expect("parameterized update");
     let duplicate_error = sqlx::query("INSERT INTO rustflow_phase661_items (value) VALUES (?)")
         .bind("updated")
-        .execute(database.pool())
+        .execute(database.sqlx_mysql_pool().expect("MySQL/MariaDB pool"))
         .await
         .expect_err("unique constraint must reject duplicate");
     let mapped_error: DatabaseError = duplicate_error.into();
@@ -175,24 +175,28 @@ async fn run_contract(url: &str, server: ExpectedServer) {
     );
     assert!(std::error::Error::source(&mapped_error).is_some());
 
-    let mut rollback = database
+    let rollback = database
         .begin_transaction()
         .await
         .expect("begin rollback transaction");
-    sqlx::query("INSERT INTO rustflow_phase661_items (value) VALUES (?)")
-        .bind("rolled-back")
-        .execute(rollback.connection())
+    rollback
+        .execute_raw(
+            "INSERT INTO rustflow_phase661_items (value) VALUES (?)",
+            ["rolled-back".into()],
+        )
         .await
         .expect("write in rollback transaction");
     rollback.rollback().await.expect("rollback transaction");
 
-    let mut commit = database
+    let commit = database
         .begin_transaction()
         .await
         .expect("begin commit transaction");
-    sqlx::query("INSERT INTO rustflow_phase661_items (value) VALUES (?)")
-        .bind("committed")
-        .execute(commit.connection())
+    commit
+        .execute_raw(
+            "INSERT INTO rustflow_phase661_items (value) VALUES (?)",
+            ["committed".into()],
+        )
         .await
         .expect("write in commit transaction");
     commit.commit().await.expect("commit transaction");
@@ -201,7 +205,7 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         "SELECT CAST(COUNT(*) AS SIGNED) FROM rustflow_phase661_items WHERE value = ?",
     )
     .bind("rolled-back")
-    .fetch_one(database.pool())
+    .fetch_one(database.sqlx_mysql_pool().expect("MySQL/MariaDB pool"))
     .await
     .expect("count rolled back rows");
     assert_eq!(rolled_back_count, 0);
@@ -209,14 +213,14 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         "SELECT CAST(COUNT(*) AS SIGNED) FROM rustflow_phase661_items WHERE value = ?",
     )
     .bind("committed")
-    .fetch_one(database.pool())
+    .fetch_one(database.sqlx_mysql_pool().expect("MySQL/MariaDB pool"))
     .await
     .expect("count committed rows");
     assert_eq!(committed_count, 1);
 
     let deleted = sqlx::query("DELETE FROM rustflow_phase661_items WHERE value = ?")
         .bind("updated")
-        .execute(database.pool())
+        .execute(database.sqlx_mysql_pool().expect("MySQL/MariaDB pool"))
         .await
         .expect("parameterized delete");
     assert_eq!(deleted.rows_affected(), 1);
@@ -229,7 +233,7 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         "SELECT CAST(COUNT(*) AS SIGNED) FROM information_schema.tables
          WHERE table_schema = DATABASE() AND table_name = 'rustflow_phase661_items'",
     )
-    .fetch_one(database.pool())
+    .fetch_one(database.sqlx_mysql_pool().expect("MySQL/MariaDB pool"))
     .await
     .expect("check rolled-back table");
     assert_eq!(table_count, 0);
@@ -239,7 +243,7 @@ async fn run_contract(url: &str, server: ExpectedServer) {
         .expect("reapply migration");
     let empty_count: i64 =
         sqlx::query_scalar("SELECT CAST(COUNT(*) AS SIGNED) FROM rustflow_phase661_items")
-            .fetch_one(database.pool())
+            .fetch_one(database.sqlx_mysql_pool().expect("MySQL/MariaDB pool"))
             .await
             .expect("count after reapply");
     assert_eq!(empty_count, 0);
@@ -272,7 +276,7 @@ async fn run_contract(url: &str, server: ExpectedServer) {
 
     database.close().await;
     let after_close = sqlx::query_scalar::<_, i64>("SELECT 1")
-        .fetch_one(database.pool())
+        .fetch_one(database.sqlx_mysql_pool().expect("MySQL/MariaDB pool"))
         .await;
     assert!(after_close.is_err(), "closed pool must reject new work");
 }

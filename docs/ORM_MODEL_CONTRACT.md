@@ -1,6 +1,6 @@
 # ORM model and SQL type contract (Phase 6.7.1)
 
-**Status: proposed architecture contract for review.** This subphase selects SeaORM 1.1.20 and adds the RustFlow ModelDiagnostics validator plus compile-time checks. The SeaORM crate/facade is intentionally deferred to 6.7.2, where it will be introduced with the single typed-pool migration. No model CRUD is connected to RustFlow's existing DatabasePool. The type/engine matrix below is the target contract, not runtime evidence.
+**Status: Phase 6.7.1 accepted; Phase 6.7.2 accepted on PR #59 head for final review (not merged); global Phase 6.7 remains in progress.** SeaORM 1.1.20 and the Data Mapper contract were selected in 6.7.1. The 6.7.2 branch adds the server-only SeaORM dependency/facade, replaces SQLx `AnyPool` with one backend-specific typed pool shared by SQLx and SeaORM, and implements `EntityRepository`, typed query execution, explicit relation loaders, mixed ORM/raw transactions, engine-aware error classification and runtime codec fixtures. The four-engine contract, expanded numeric boundaries, nested-loader query counts, relation lifecycle coverage and live PostgreSQL COMMIT fault injection passed on exact PR head `2cadce73c19c37c2f088f572ea37a83c65c72380`; all eight required status checks are successful. The type/engine matrix below distinguishes tested cases from explicit limitations and unverified combinations.
 
 ## Selected architecture and model declaration
 
@@ -47,14 +47,14 @@ The table defines the target contract and expected engine-specific treatment. It
 
 | Rust logical type | SQLite 3.46.0 | PostgreSQL 16.15 | MySQL 8.4.13 LTS | MariaDB 11.4.13 LTS | Required behavior / limitations |
 |---|---|---|---|---|---|
-| Signed integers i8/i16/i32/i64 | SQLite INTEGER storage | SMALLINT / INTEGER / BIGINT | TINYINT / SMALLINT / INT / BIGINT | TINYINT / SMALLINT / INT / BIGINT | Checked narrowing on decode; reject overflow, never wrap. Exact DDL width remains schema-specific. |
-| Unsigned integers u8/u16/u32 | INTEGER with range check | Signed integer representation with checked range | Unsigned integer types where defined | Unsigned integer types where defined | Reject values outside backend-supported ranges. |
-| u64 | Signed INTEGER range only | Signed BIGINT range only | UNSIGNED BIGINT may represent full range | UNSIGNED BIGINT may represent full range | Cross-engine API must reject values above i64::MAX on SQLite/PostgreSQL; no silent cast. |
+| Signed integers i8/i16/i32/i64 | INTEGER storage with per-width range checks | `char` / SMALLINT / INTEGER / BIGINT | TINYINT / SMALLINT / INT / BIGINT | TINYINT / SMALLINT / INT / BIGINT | i8 uses PostgreSQL's one-byte `char` mapping. Runtime contract round-trips each signed minimum/maximum on all four engines and rejects out-of-range inserts for the dialect-supported widths; SQLite enforces narrow widths with CHECK constraints. |
+| Unsigned integers u8/u16/u32 | INTEGER storage with per-width range checks | Not available in SeaORM 1.1.20 | TINYINT UNSIGNED / SMALLINT UNSIGNED / INT UNSIGNED | TINYINT UNSIGNED / SMALLINT UNSIGNED / INT UNSIGNED | Runtime round-trip and negative/upper overflow rejection are exercised on SQLite and MySQL/MariaDB. PostgreSQL unsigned primitive mapping is explicitly unsupported by the selected SeaORM foundation; model as a checked signed type or use a custom codec instead. |
+| u64 | Not available as a direct SQLx/SeaORM codec | Not available in SeaORM 1.1.20 | BIGINT UNSIGNED; full range | BIGINT UNSIGNED; full range | Not a portable shared-model field. Use i64 for values in the signed range; use u64 only in MySQL-family-specific models. The contract round-trips u64::MAX and rejects negative/greater-than-u64::MAX inserts on MySQL and MariaDB. |
 | Floating point f32/f64 | REAL | REAL / DOUBLE PRECISION | FLOAT / DOUBLE | FLOAT / DOUBLE | Approximate values; never substitute for exact decimal arithmetic. |
 | Boolean | INTEGER 0/1 representation | BOOLEAN | BOOLEAN/TINYINT representation | BOOLEAN alias/TINYINT representation | Decode only documented backend representations; arbitrary nonzero is not automatically true. |
 | String / text | TEXT | TEXT / VARCHAR | TEXT / VARCHAR | TEXT / VARCHAR | Character set and collation depend on schema/server configuration. |
 | Bytes Vec<u8> | BLOB | BYTEA | BLOB family | BLOB family | Binary data is not a string; enforce engine/schema size limits. PostgreSQL arrays are a separate opt-in. |
-| Decimal / BigDecimal | Exact numeric behavior requires explicit SQLite codec tests; native arithmetic is not yet promised | NUMERIC/DECIMAL | DECIMAL exact precision/scale | DECIMAL exact precision/scale | Never route through f64. Reject precision/scale loss; support is gated on engine-specific codec tests. |
+| Decimal / BigDecimal | REAL through SeaORM's f64 codec | NUMERIC/DECIMAL | DECIMAL exact precision/scale | DECIMAL exact precision/scale | SQLite's SeaORM 1.1.20/SeaQuery codec binds and decodes through f64; arbitrary precision and exact decimal arithmetic are not guaranteed there. Use only decimal values exactly representable through the f64 path (the integration fixture uses 12.5), or use scaled integers/a custom string codec. PostgreSQL/MySQL/MariaDB retain native exact numeric storage and are tested with a high-precision BigDecimal. |
 | UUID | Explicit canonical text/binary representation required | Native UUID | Explicit canonical text/binary representation required | Explicit canonical text/binary representation required | Do not silently reinterpret byte order or text format. Runtime mapping must round-trip exact values. |
 | Date | Explicit text/integer representation | DATE | DATE | DATE | Strict calendar validation and documented encoding. |
 | Time | Explicit text/integer representation | TIME | TIME | TIME | Fractional precision is bounded by the server column type; reject or document loss explicitly. |
@@ -116,3 +116,58 @@ Not implemented in this subphase: adding the SeaORM dependency/facade; CRUD exec
 ## References
 
 See [ADR 0020](adr/0020-orm-model-contract.md) for the verified foundation comparison, pool migration, design trade-offs and official upstream links. See [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md) for current RustFlow service versions and existing SQLx/MongoDB evidence.
+## 6.7.2 SQL ORM runtime implementation (accepted on PR head; pre-merge)
+
+The Phase 6.7.2 runtime slice below is accepted for final review on PR #59 head `2cadce73c19c37c2f088f572ea37a83c65c72380`. Rust 1.85/stable, four-engine integration, dependency review, documentation, WASM/browser, governance and Cloudflare Pages checks all completed successfully (8/8). The PR has not yet been merged; the subphase remains experimental and pre-1.0.
+
+### Connection and repository boundary
+
+- rustflow-server owns SeaORM 1.1.20. It is not pulled into the core, view, DOM, browser or WASM crates.
+- DatabasePool owns exactly one typed SQLx pool for the selected backend (SqlitePool, PgPool or MySqlPool). SeaORM is constructed from a clone of that handle; there is no second pool.
+- sqlx_sqlite_pool(), sqlx_postgres_pool() and sqlx_mysql_pool() expose only a backend-matching pool. The MySQL accessor also serves MariaDB through the MySQL protocol.
+- DatabasePool::entity::<E>() and DatabaseTransaction::entity::<E>() return repositories borrowing the existing connection/transaction. A repository never creates a pool or performs lazy I/O.
+- Raw SQL goes through bound Statement values via query_raw / execute_raw, or through the typed SQLx accessor. Caller values are parameters, not SQL interpolation. SQLx continues to own engine-specific migrations.
+
+### Entity operations and query composition
+
+EntityRepository exposes select, all, one, find_by_id, insert, update, save, delete, delete_by_id, insert_many, update_many and delete_many. Update/delete by ActiveModel validate that the primary key is present before delegating to SeaORM. Generated values are returned from the database, and bulk methods return SeaORM's affected-row/result metadata.
+
+The query builder deliberately uses SeaORM's typed query surface rather than introducing a second SQL AST. The four-engine integration contract exercises nested AND/OR filters, equality/comparison operators, `IS NULL`/`IS NOT NULL`, parameterized `IN` and text matching, ordering, distinct, limit/offset pagination, joins, a projected/aliased column, grouping, aggregates, HAVING and an `IN` subquery. Values are bound through SeaORM's expression/query APIs; identifiers and expressions are represented by typed columns/expressions rather than request-string interpolation. Backend SQL generation and driver value codecs remain SeaORM/SQLx behavior; this is not a promise that arbitrary SQL fragments are portable.
+
+### Relations and explicit loading
+
+Relationship metadata is defined on SeaORM entities. RustFlow exports explicit batch helpers `load_one`, `load_many` and `load_many_to_many`. They take parent models, the related entity (and junction entity for many-to-many), and an explicit connection. The four-engine integration contract exercises belongs-to, has-one, has-many and many-to-many relations, including absent has-one/has-many/many-to-many results. Mock query-count tests assert one query for a has-many batch, two for a many-to-many batch, and exactly one query per hop for a two-hop graph; the number of parent models does not add per-parent queries. The nested fixture also verifies that an absent belongs-to target is returned as `None`. There is no transparent lazy loading. The four-engine contract now exercises junction attach, update, detach and foreign-key cascade deletion, in addition to a transactional junction-delete rollback.
+
+### Transactions and error contract
+
+ORM calls and parameterized raw statements can use the same DatabaseTransaction. The four-engine contract checks mixed ORM/raw writes under both rollback and commit. A COMMIT transport/protocol failure is classified as DatabaseErrorKind::CommitOutcomeUnknown; the server cannot claim the transaction was rolled back and clients must inspect application state/idempotency before retrying.
+
+DatabaseError::kind() exposes the stable categories InvalidConfiguration, InvalidModelState, NotFound, UniqueViolation, ForeignKeyViolation, CheckViolation, Unavailable, Query, Transaction, CommitOutcomeUnknown and Migration. Public HTTP mapping is intentionally generic: invalid model state 400, missing row 404, unique/FK conflict 409, check constraint 422, unavailable/unknown commit 503, and unexpected query/transaction/migration/configuration failures 500. Database messages, constraint names, values and URLs are not placed in public responses.
+
+Constraint classification uses SQLSTATE/SQLite codes for PostgreSQL/SQLite and MySQL numeric server codes for MySQL/MariaDB. Server-native constraint semantics are not assumed identical across engines.
+
+### Dialect-specific insert behavior
+
+DatabaseBackend::capabilities() and DatabasePool::capabilities() report two explicit facts: the SeaORM OnConflict builder is available on all four engine targets, while INSERT RETURNING is advertised only for SQLite and PostgreSQL in this build. The MariaDB-specific SeaORM feature stays disabled because the MySQL/MariaDB protocol family is shared with MySQL.
+
+EntityRepository::insert_builder returns SeaORM's native Insert<ActiveModel> builder, so callers can construct an OnConflict policy without concatenating SQL. The 4-engine contract executes an insert followed by an upsert against the same unique email and asserts that the existing row is updated. SQLite/PostgreSQL generate ON CONFLICT; MySQL/MariaDB generate ON DUPLICATE KEY UPDATE. The latter may react to any unique/primary-key duplicate and must not be described as having exactly the same conflict-target semantics.
+
+Check DatabaseCapabilities::insert_returning before requesting exec_with_returning. The MySQL/MariaDB adapter reports false; use exec plus a deliberate follow-up read by a stable key instead. This is a capability statement for the current SeaORM feature configuration, not a statement that MariaDB servers lack all SQL RETURNING support.
+
+### Type and engine evidence
+
+The integration target runs the same ORM contract against bundled SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS and MariaDB 11.4.13 LTS. In addition to generated keys, CRUD/bulk, defaults, constraints and scalar codecs, the expanded integer contract round-trips the minimum and maximum of `i8/i16/i32/i64` on all four engines and rejects out-of-range SQL inserts for the dialect-supported widths. SQLite checks `i8/i16/i32` and `i64` storage bounds; PostgreSQL uses its one-byte `char` mapping for `i8`, with native `SMALLINT/INTEGER/BIGINT` for the remaining signed widths; MySQL/MariaDB use `TINYINT/SMALLINT/INT/BIGINT`. Unsigned `u8/u16/u32` round-trips and lower/upper overflow failures are tested on SQLite and MySQL/MariaDB; PostgreSQL unsigned primitive fields are explicitly unsupported by SeaORM 1.1.20. Full-range `u64` and below-zero/above-maximum rejection are tested only on MySQL/MariaDB.
+
+Known explicit limitations:
+- SQLx/SeaORM do not provide a portable direct u64 codec for SQLite/PostgreSQL. Full-range u64 is exercised only with MySQL/MariaDB BIGINT UNSIGNED and engine-specific models.
+- SeaORM 1.1.20's SQLite Decimal/BigDecimal codec passes through f64. The SQLite fixture uses the exactly representable value 12.5; arbitrary precision and exact decimal arithmetic are not guaranteed there. Use scaled integers or a canonical custom codec when exact decimal semantics are required. PostgreSQL NUMERIC and MySQL/MariaDB DECIMAL are exercised with a high-precision value.
+- MySQL and MariaDB share the SQLx MySQL driver/backend enum. The scheme selects the protocol family; server identity is asserted separately in integration CI.
+- Dialect-specific upsert/RETURNING behavior and server capability detection remain explicit engine concerns; the shared facade does not pretend these features have identical semantics.
+
+### Dependency and security gate
+
+Cargo.lock is regenerated from the workspace manifest under Rust 1.85 and includes the pinned SeaORM 1.1.20 dependency graph. CI runs the GitHub dependency review and a locked cargo audit. The only audit exception is RUSTSEC-2023-0071 for rsa 0.9.10 inherited through sqlx-mysql 0.8.6. The advisory still has no patched release. SQLx's MySQL client uses RSA public-key encryption in the non-TLS password exchange path; this source-level reachability note does not mean the advisory is fixed or that TLS is enabled. The exception must be revisited when driver/authentication configuration changes and removed when the dependency is eliminated or fixed.
+
+### Remaining scope after the 6.7.2 runtime slice
+
+The expanded runtime tests for the signed/unsigned widths supported by each dialect, integer boundary failures, nested loader query counts, relation attach/update/detach/cascade semantics, and PostgreSQL backend termination while a deferred trigger is executing inside COMMIT all passed on the exact PR head stated above. Phase 6.7.2 is accepted for final review but remains unmerged. The generated CRUD application and MongoDB ODM remain outside this runtime subphase and are tracked by later Phase 6.7 subphases; the global Phase 6.7 maturity gate remains open.

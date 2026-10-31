@@ -270,7 +270,7 @@ async fn validated_crud_uses_sqlite_sessions_auth_csrf_and_server_rendering() {
             let rows: Vec<String> = rustflow_server::sqlx::query_scalar(
                 "SELECT name FROM rustflow_audit_items ORDER BY id",
             )
-            .fetch_all(database.pool())
+            .fetch_all(database.sqlx_sqlite_pool().expect("SQLite pool"))
             .await
             .map_err(|error| rustflow_server::DatabaseError::from(error).to_http_error())?;
             let mut children = vec![
@@ -380,7 +380,7 @@ async fn validated_crud_uses_sqlite_sessions_auth_csrf_and_server_rendering() {
     assert!(!response_body(&list).contains("<script>"));
     let count: i64 =
         rustflow_server::sqlx::query_scalar("SELECT COUNT(*) FROM rustflow_audit_items")
-            .fetch_one(database.pool())
+            .fetch_one(database.sqlx_sqlite_pool().expect("SQLite pool"))
             .await
             .expect("count");
     assert_eq!(
@@ -394,7 +394,7 @@ async fn validated_crud_uses_sqlite_sessions_auth_csrf_and_server_rendering() {
 async fn sqlx_insert_note(database: &DatabasePool, title: &str) -> Result<(), HttpError> {
     rustflow_server::sqlx::query("INSERT INTO rustflow_audit_items (name) VALUES (?)")
         .bind(title)
-        .execute(database.pool())
+        .execute(database.sqlx_sqlite_pool().expect("SQLite pool"))
         .await
         .map_err(|error| rustflow_server::DatabaseError::from(error).to_http_error())?;
     Ok(())

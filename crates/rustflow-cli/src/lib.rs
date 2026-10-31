@@ -544,10 +544,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     app.get("/health/database", move |_request: Request| {
         let database = Arc::clone(&database_probe);
         async move {
-            rustflow_server::sqlx::query("SELECT 1")
-                .execute(database.pool())
+            database.query_raw("SELECT 1", [])
                 .await
-                .map_err(|error| DatabaseError::from(error).to_http_error())?;
+                .map_err(|error| error.to_http_error())?;
             Ok(Response::text("ok"))
         }
     })?;
