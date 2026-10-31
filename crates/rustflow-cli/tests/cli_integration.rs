@@ -478,8 +478,7 @@ fn rejects_invalid_names_and_existing_project_destinations_before_changes() {
     );
     assert_eq!(unknown_template.status.code(), Some(2));
     assert!(!temp.path().join("unknown-template").exists());
-    let missing_template =
-        invoke(temp.path(), &["new", "missing-template", "--template"]);
+    let missing_template = invoke(temp.path(), &["new", "missing-template", "--template"]);
     assert_eq!(missing_template.status.code(), Some(2));
     assert!(!temp.path().join("missing-template").exists());
 
@@ -749,12 +748,7 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
 }
 
 
-fn exercise_generated_crud_backend(
-    binary: &Path,
-    project: &Path,
-    database_url: &str,
-    label: &str,
-) {
+fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: &str, label: &str) {
     let port = TcpListener::bind(("127.0.0.1", 0))
         .unwrap()
         .local_addr()
@@ -1148,8 +1142,7 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         ("cookie", cookies.as_str()),
         ("x-csrf-token", "invalid-token"),
     ];
-    let invalid_csrf =
-        generated_http_request(port, "POST", "/products", &invalid_csrf_headers, "");
+    let invalid_csrf = generated_http_request(port, "POST", "/products", &invalid_csrf_headers, "");
     assert_eq!(
         generated_response_status(&invalid_csrf),
         403,
