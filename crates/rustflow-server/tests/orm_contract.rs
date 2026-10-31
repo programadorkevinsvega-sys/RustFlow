@@ -1313,7 +1313,7 @@ async fn batch_loader_executes_one_related_query_for_many_parents() {
     assert_eq!(
         query_log.len(),
         1,
-        "batch loading must issue one related query for the whole parent slice"
+        "batch loading must issue one related query for the whole parent slice, including parents without children"
     );
 }
 
