@@ -146,6 +146,14 @@ DatabaseError::kind() exposes the stable categories InvalidConfiguration, Invali
 
 Constraint classification uses SQLSTATE/SQLite codes for PostgreSQL/SQLite and MySQL numeric server codes for MySQL/MariaDB. Server-native constraint semantics are not assumed identical across engines.
 
+### Dialect-specific insert behavior
+
+DatabaseBackend::capabilities() and DatabasePool::capabilities() report two explicit facts: the SeaORM OnConflict builder is available on all four engine targets, while INSERT RETURNING is advertised only for SQLite and PostgreSQL in this build. The MariaDB-specific SeaORM feature stays disabled because the MySQL/MariaDB protocol family is shared with MySQL.
+
+EntityRepository::insert_builder returns SeaORM's native Insert<ActiveModel> builder, so callers can construct an OnConflict policy without concatenating SQL. The 4-engine contract executes an insert followed by an upsert against the same unique email and asserts that the existing row is updated. SQLite/PostgreSQL generate ON CONFLICT; MySQL/MariaDB generate ON DUPLICATE KEY UPDATE. The latter may react to any unique/primary-key duplicate and must not be described as having exactly the same conflict-target semantics.
+
+Check DatabaseCapabilities::insert_returning before requesting exec_with_returning. The MySQL/MariaDB adapter reports false; use exec plus a deliberate follow-up read by a stable key instead. This is a capability statement for the current SeaORM feature configuration, not a statement that MariaDB servers lack all SQL RETURNING support.
+
 ### Type and engine evidence
 
 The integration target runs the same ORM contract against the pinned Phase 6.6 service versions: bundled SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS and MariaDB 11.4.13 LTS. It covers generated keys, insert/update/delete, bulk writes, JSON, optional values/NULL, bytes, UUID, date/time/timestamp and numeric codecs.
