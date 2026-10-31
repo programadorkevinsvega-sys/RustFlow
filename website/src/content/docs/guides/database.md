@@ -36,6 +36,12 @@ El ejemplo representa el contrato de declaración de entidad. Para operaciones p
 
 El SQL ORM cubre SQLite, PostgreSQL, MySQL y MariaDB. MongoDB sigue siendo el adaptador documental BSON separado y no comparte derives, relaciones SQL ni query builder relacional.
 
+## Tipos numéricos y portabilidad
+
+No todos los tipos numéricos de Rust tienen un codec común en los cuatro motores. En particular, SQLx no codifica directamente `u64` para SQLite ni PostgreSQL, incluso cuando el valor es pequeño y cabe en `i64`. MySQL y MariaDB sí admiten el tipo mediante `BIGINT UNSIGNED`; el contrato de integración verifica allí el round-trip de `u64::MAX`.
+
+Para modelos compartidos entre los cuatro motores, usa `i64` cuando el dominio cabe en el rango firmado. No conviertas `u64` a `i64` mediante un cast sin comprobar el rango. El uso de `u64` queda limitado a modelos específicos de MySQL/MariaDB; una representación portable para todo el rango unsigned requiere un codec explícito y todavía no forma parte del contrato común.
+
 ## 1. Configurar el pool
 
 La capa SQL usa SQLx 0.8.6 con un pool tipado por backend y SeaORM 1.1.20 sobre el mismo pool. MySQL y MariaDB comparten el driver `mysql`, así que `DatabaseBackend::MySql` identifica la familia del driver, no el producto servidor. MongoDB conserva un adaptador independiente de SQL. Consulta la [matriz técnica de compatibilidad](/guides/database/#matriz-de-versiones-verificadas) y el [contrato detallado de versiones](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/DATABASE_SUPPORT_MATRIX.md).
