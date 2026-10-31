@@ -564,10 +564,13 @@ impl DatabaseTransaction {
 
     /// Commit all operations in this transaction.
     pub async fn commit(self) -> Result<(), DatabaseError> {
-        self.inner
-            .commit()
-            .await
-            .map_err(DatabaseError::OrmTransaction)
+        self.inner.commit().await.map_err(|error| {
+            if commit_error_outcome_is_unknown(&error) {
+                DatabaseError::CommitOutcomeUnknown(error)
+            } else {
+                DatabaseError::OrmTransaction(error)
+            }
+        })
     }
 
     /// Roll back all operations in this transaction.
@@ -577,6 +580,24 @@ impl DatabaseTransaction {
             .await
             .map_err(DatabaseError::OrmTransaction)
     }
+}
+
+/// Stable category for application handling of database failures.
+///
+/// This classification deliberately omits driver messages, SQL, constraint names and values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DatabaseErrorKind {
+    InvalidConfiguration,
+    InvalidModelState,
+    NotFound,
+    UniqueViolation,
+    ForeignKeyViolation,
+    CheckViolation,
+    Unavailable,
+    Query,
+    Transaction,
+    CommitOutcomeUnknown,
+    Migration,
 }
 
 /// Database failures mapped to generic public messages rather than leaking SQL or URLs.
@@ -592,13 +613,31 @@ pub enum DatabaseError {
     Query(sqlx::Error),
     /// A SeaORM query or execution operation failed.
     OrmQuery(sea_orm::DbErr),
-    /// A SeaORM transaction could not start, commit, roll back, or execute.
+    /// A transaction operation received a definitive server/driver error.
     OrmTransaction(sea_orm::DbErr),
+    /// The connection failed while COMMIT was in flight; the server outcome cannot be inferred.
+    CommitOutcomeUnknown(sea_orm::DbErr),
     /// SQLx could not load, validate, apply, or revert migrations.
     Migration(sqlx::migrate::MigrateError),
 }
 
 impl DatabaseError {
+    /// Return the stable public classification for this failure.
+    pub fn kind(&self) -> DatabaseErrorKind {
+        match self {
+            Self::InvalidConfiguration(_) => DatabaseErrorKind::InvalidConfiguration,
+            Self::InvalidModelState(_) => DatabaseErrorKind::InvalidModelState,
+            Self::Connect(_) => DatabaseErrorKind::Unavailable,
+            Self::Query(error) => classify_sqlx_error(error, DatabaseErrorKind::Query),
+            Self::OrmQuery(error) => classify_orm_error(error, DatabaseErrorKind::Query),
+            Self::OrmTransaction(error) => {
+                classify_orm_error(error, DatabaseErrorKind::Transaction)
+            }
+            Self::CommitOutcomeUnknown(_) => DatabaseErrorKind::CommitOutcomeUnknown,
+            Self::Migration(_) => DatabaseErrorKind::Migration,
+        }
+    }
+
     fn sqlx_error(&self) -> Option<&sqlx::Error> {
         match self {
             Self::Connect(error) | Self::Query(error) => Some(error),
@@ -612,7 +651,9 @@ impl DatabaseError {
 
     fn orm_error(&self) -> Option<&sea_orm::DbErr> {
         match self {
-            Self::OrmQuery(error) | Self::OrmTransaction(error) => Some(error),
+            Self::OrmQuery(error)
+            | Self::OrmTransaction(error)
+            | Self::CommitOutcomeUnknown(error) => Some(error),
             _ => None,
         }
     }
@@ -623,38 +664,35 @@ impl DatabaseError {
     /// exhaustion maps to 503, and everything else is a generic 500. Driver messages,
     /// SQL text, credentials, and connection URLs are never exposed to the caller.
     pub fn to_http_error(&self) -> HttpError {
-        if matches!(self, Self::InvalidModelState(_)) {
-            return HttpError::bad_request("Invalid model state");
-        }
-        if let Some(error) = self.sqlx_error() {
-            return match error {
-                sqlx::Error::RowNotFound => HttpError::not_found("Record not found"),
-                sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed => HttpError::new(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "Database temporarily unavailable",
-                ),
-                sqlx::Error::Database(error) if is_unique_constraint_error(error.as_ref()) => {
-                    HttpError::new(
-                        StatusCode::CONFLICT,
-                        "A record with those values already exists",
-                    )
-                }
-                _ => HttpError::internal_server_error(),
-            };
-        }
-        match self.orm_error() {
-            Some(sea_orm::DbErr::RecordNotFound(_)) => HttpError::not_found("Record not found"),
-            Some(sea_orm::DbErr::ConnectionAcquire(
-                sea_orm::ConnAcquireErr::Timeout | sea_orm::ConnAcquireErr::ConnectionClosed,
-            )) => HttpError::new(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Database temporarily unavailable",
-            ),
-            Some(error) if is_orm_unique_constraint_error(error) => HttpError::new(
+        match self.kind() {
+            DatabaseErrorKind::InvalidModelState => {
+                HttpError::bad_request("Invalid model state")
+            }
+            DatabaseErrorKind::NotFound => HttpError::not_found("Record not found"),
+            DatabaseErrorKind::UniqueViolation => HttpError::new(
                 StatusCode::CONFLICT,
                 "A record with those values already exists",
             ),
-            _ => HttpError::internal_server_error(),
+            DatabaseErrorKind::ForeignKeyViolation => HttpError::new(
+                StatusCode::CONFLICT,
+                "The operation conflicts with related records",
+            ),
+            DatabaseErrorKind::CheckViolation => HttpError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "The record does not satisfy a database constraint",
+            ),
+            DatabaseErrorKind::Unavailable => HttpError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Database temporarily unavailable",
+            ),
+            DatabaseErrorKind::CommitOutcomeUnknown => HttpError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Database commit outcome is unknown; verify the operation before retrying",
+            ),
+            DatabaseErrorKind::InvalidConfiguration
+            | DatabaseErrorKind::Query
+            | DatabaseErrorKind::Transaction
+            | DatabaseErrorKind::Migration => HttpError::internal_server_error(),
         }
     }
 }
@@ -671,6 +709,9 @@ impl fmt::Display for DatabaseError {
             Self::Connect(_) => formatter.write_str("database connection failed"),
             Self::Query(_) | Self::OrmQuery(_) => formatter.write_str("database operation failed"),
             Self::OrmTransaction(_) => formatter.write_str("database transaction failed"),
+            Self::CommitOutcomeUnknown(_) => {
+                formatter.write_str("database commit outcome is unknown")
+            }
             Self::Migration(_) => formatter.write_str("database migration failed"),
         }
     }
@@ -680,16 +721,73 @@ impl Error for DatabaseError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Connect(error) | Self::Query(error) => Some(error),
-            Self::OrmQuery(error) | Self::OrmTransaction(error) => Some(error),
+            Self::OrmQuery(error)
+            | Self::OrmTransaction(error)
+            | Self::CommitOutcomeUnknown(error) => Some(error),
             Self::Migration(error) => Some(error),
             Self::InvalidConfiguration(_) | Self::InvalidModelState(_) => None,
         }
     }
 }
 
-fn is_unique_constraint_error(error: &dyn sqlx::error::DatabaseError) -> bool {
+fn sqlx_constraint_kind(
+    error: &dyn sqlx::error::DatabaseError,
+) -> Option<DatabaseErrorKind> {
     let code = error.code();
-    error.is_unique_violation() || matches!(code.as_deref(), Some("23505" | "1555" | "2067"))
+    if error.is_unique_violation()
+        || matches!(
+            code.as_deref(),
+            Some("23505" | "1555" | "2067" | "1022" | "1062" | "1169" | "1586")
+        )
+    {
+        return Some(DatabaseErrorKind::UniqueViolation);
+    }
+
+    match code.as_deref() {
+        Some("23503" | "787" | "1216" | "1217" | "1451" | "1452" | "1557" | "1761" | "1762") => {
+            Some(DatabaseErrorKind::ForeignKeyViolation)
+        }
+        Some("23514" | "275" | "3819" | "4025") => Some(DatabaseErrorKind::CheckViolation),
+        _ => None,
+    }
+}
+
+fn classify_sqlx_error(error: &sqlx::Error, fallback: DatabaseErrorKind) -> DatabaseErrorKind {
+    match error {
+        sqlx::Error::RowNotFound => DatabaseErrorKind::NotFound,
+        sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed => DatabaseErrorKind::Unavailable,
+        sqlx::Error::Database(error) => sqlx_constraint_kind(error.as_ref()).unwrap_or(fallback),
+        _ => fallback,
+    }
+}
+
+fn classify_orm_error(error: &sea_orm::DbErr, fallback: DatabaseErrorKind) -> DatabaseErrorKind {
+    match error {
+        sea_orm::DbErr::RecordNotFound(_) => DatabaseErrorKind::NotFound,
+        sea_orm::DbErr::ConnectionAcquire(_) => DatabaseErrorKind::Unavailable,
+        sea_orm::DbErr::Conn(runtime)
+        | sea_orm::DbErr::Exec(runtime)
+        | sea_orm::DbErr::Query(runtime) => match runtime {
+            sea_orm::RuntimeErr::SqlxError(error) => classify_sqlx_error(error, fallback),
+            sea_orm::RuntimeErr::Internal(_) => fallback,
+        },
+        sea_orm::DbErr::UpdateGetPrimaryKey | sea_orm::DbErr::AttrNotSet(_) => {
+            DatabaseErrorKind::InvalidModelState
+        }
+        _ => fallback,
+    }
+}
+
+/// A COMMIT error containing a server ErrorResponse is definitive: the server rejected it.
+/// Transport/protocol/connection failures while COMMIT is in flight are ambiguous and must
+/// not be reported as a successful rollback or encouraged to be retried blindly.
+fn commit_error_outcome_is_unknown(error: &sea_orm::DbErr) -> bool {
+    !matches!(
+        error,
+        sea_orm::DbErr::Conn(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(_)))
+            | sea_orm::DbErr::Exec(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(_)))
+            | sea_orm::DbErr::Query(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(_)))
+    )
 }
 
 fn is_orm_unique_constraint_error(error: &sea_orm::DbErr) -> bool {
