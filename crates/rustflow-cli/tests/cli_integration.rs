@@ -715,6 +715,140 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
 }
 
 
+
+fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: &str, label: &str) {
+    let port = TcpListener::bind(("127.0.0.1", 0))
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let child = Command::new(binary)
+        .current_dir(project)
+        .env("RUSTFLOW_ENV", "test")
+        .env("RUSTFLOW_HOST", "127.0.0.1")
+        .env("RUSTFLOW_PORT", port.to_string())
+        .env("RUSTFLOW_DATABASE_URL", database_url)
+        .env("RUSTFLOW_DEMO_USER", "admin")
+        .env("RUSTFLOW_DEMO_PASSWORD", "generated-crud-test-password")
+        .env("RUSTFLOW_CSRF_KEY", "test-only-generated-crud-csrf-key-minimum-32-bytes")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap_or_else(|error| panic!("start generated CRUD on {label}: {error}"));
+    let mut child = ChildGuard::new(child);
+
+    let mut ready = false;
+    for _ in 0..240 {
+        if TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            ready = true;
+            break;
+        }
+        if let Ok(Some(status)) = child.0.try_wait() {
+            panic!("generated CRUD exited on {label} before listening: {status}");
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    assert!(ready, "generated CRUD did not start on {label}");
+
+    let anonymous = generated_http_request(port, "GET", "/products", &[], "");
+    assert_eq!(generated_response_status(&anonymous), 401, "{label}: {anonymous}");
+    let login_page = generated_http_request(port, "GET", "/login", &[], "");
+    assert_eq!(generated_response_status(&login_page), 200, "{label}: {login_page}");
+    let csrf_cookie = generated_response_cookie(&login_page, "rustflow_csrf");
+    let csrf_token = generated_response_body(&login_page)
+        .split_once("name=\"_csrf\" value=\"")
+        .and_then(|(_, rest)| rest.split('"').next())
+        .expect("login page emits CSRF token")
+        .to_owned();
+    let login_headers = [
+        ("content-type", "application/x-www-form-urlencoded"),
+        ("origin", "http://localhost"),
+        ("cookie", csrf_cookie.as_str()),
+    ];
+    let login_body = form_body(&[
+        ("_csrf", &csrf_token),
+        ("username", "admin"),
+        ("password", "generated-crud-test-password"),
+    ]);
+    let login = generated_http_request(port, "POST", "/login", &login_headers, &login_body);
+    assert_eq!(generated_response_status(&login), 303, "{label}: {login}");
+    let session_cookie = generated_response_cookie(&login, "rustflow_session");
+    let cookies = format!("{csrf_cookie}; {session_cookie}");
+    let secured_headers = [
+        ("content-type", "application/x-www-form-urlencoded"),
+        ("origin", "http://localhost"),
+        ("cookie", cookies.as_str()),
+    ];
+
+    let sku = format!("cross-engine-{label}");
+    let name = format!("Cross engine {label}");
+    let create_body = form_body(&[
+        ("_csrf", &csrf_token),
+        ("name", &name),
+        ("sku", &sku),
+        ("description", "Generated application smoke test"),
+        ("price_cents", "2100"),
+    ]);
+    let create = generated_http_request(port, "POST", "/products", &secured_headers, &create_body);
+    assert_eq!(generated_response_status(&create), 303, "{label}: {create}");
+
+    let list = generated_http_request(port, "GET", "/products", &[("cookie", cookies.as_str())], "");
+    assert_eq!(generated_response_status(&list), 200, "{label}: {list}");
+    let html = generated_response_body(&list);
+    let position = html
+        .find(&name)
+        .unwrap_or_else(|| panic!("created product missing from {label} list: {html}"));
+    let link_start = html[..position]
+        .rfind("href=\"/products/")
+        .unwrap_or_else(|| panic!("product detail link missing on {label}: {html}"));
+    let id_start = link_start + "href=\"/products/".len();
+    let id = html[id_start..]
+        .split('"')
+        .next()
+        .expect("product identifier in link")
+        .to_owned();
+    let detail = generated_http_request(port, "GET", &format!("/products/{id}"), &[("cookie", cookies.as_str())], "");
+    assert_eq!(generated_response_status(&detail), 200, "{label}: {detail}");
+
+    let updated_name = format!("Updated {name}");
+    let update_body = form_body(&[
+        ("_csrf", &csrf_token),
+        ("name", &updated_name),
+        ("sku", &sku),
+        ("description", "Updated on SQL engine"),
+        ("price_cents", "2500"),
+    ]);
+    let update = generated_http_request(port, "POST", &format!("/products/{id}"), &secured_headers, &update_body);
+    assert_eq!(generated_response_status(&update), 303, "{label}: {update}");
+    let updated = generated_http_request(port, "GET", &format!("/products/{id}"), &[("cookie", cookies.as_str())], "");
+    assert_eq!(generated_response_status(&updated), 200, "{label}: {updated}");
+    assert!(generated_response_body(&updated).contains(&updated_name), "{label}: {updated}");
+
+    let probe_body = form_body(&[("_csrf", &csrf_token)]);
+    let rollback = generated_http_request(
+        port,
+        "POST",
+        "/admin/transaction-rollback-probe",
+        &secured_headers,
+        &probe_body,
+    );
+    assert_eq!(generated_response_status(&rollback), 409, "{label}: {rollback}");
+    let after_rollback = generated_http_request(port, "GET", "/products", &[("cookie", cookies.as_str())], "");
+    assert_eq!(generated_response_status(&after_rollback), 200, "{label}: {after_rollback}");
+    assert!(!generated_response_body(&after_rollback).contains("Rollback probe"));
+
+    let delete = generated_http_request(
+        port,
+        "POST",
+        &format!("/products/{id}/delete"),
+        &secured_headers,
+        &probe_body,
+    );
+    assert_eq!(generated_response_status(&delete), 303, "{label}: {delete}");
+    let deleted = generated_http_request(port, "GET", &format!("/products/{id}"), &[("cookie", cookies.as_str())], "");
+    assert_eq!(generated_response_status(&deleted), 404, "{label}: {deleted}");
+}
+
 fn form_component(value: &str) -> String {
     let mut encoded = String::new();
     for byte in value.bytes() {
@@ -747,9 +881,9 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         "src/models/product.rs",
         "src/models/mod.rs",
         "src/bin/migrate.rs",
-        "migrations/sqlite/0001_create_products.sql",
-        "migrations/postgres/0001_create_products.sql",
-        "migrations/mysql/0001_create_products.sql",
+        "migrations/sqlite/20261031010001_create_products.sql",
+        "migrations/postgres/20261031010002_create_products.sql",
+        "migrations/mysql/20261031010003_create_products.sql",
         "migrations/mysql/.rustflow-dialect",
     ] {
         assert!(project.join(path).is_file(), "missing generated CRUD file {path}");
@@ -963,6 +1097,22 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
     let after_delete = generated_http_request(port, "GET", "/products/1", &[("cookie", cookies.as_str())], "");
     assert_eq!(generated_response_status(&after_delete), 404, "{after_delete}");
     drop(child);
+
+    for (variable, label) in [
+        ("RUSTFLOW_TEST_DATABASE_URL", "postgres"),
+        ("RUSTFLOW_TEST_MYSQL_URL", "mysql"),
+        ("RUSTFLOW_TEST_MARIADB_URL", "mariadb"),
+    ] {
+        match env::var(variable) {
+            Ok(url) if !url.trim().is_empty() => {
+                exercise_generated_crud_backend(&binary, &project, &url, label);
+            }
+            _ if env::var("CI").is_ok_and(|value| value == "true") => {
+                panic!("{variable} must be configured in CI for generated CRUD engine coverage");
+            }
+            _ => eprintln!("Skipping generated CRUD {label} contract outside CI: {variable} is unset"),
+        }
+    }
 }
 
 #[test]

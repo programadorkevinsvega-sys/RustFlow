@@ -666,36 +666,36 @@ fn crud_scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
             include_str!("../templates/crud/sqlite/.rustflow-dialect").to_owned(),
         ),
         (
-            PathBuf::from("migrations/sqlite/0001_create_products.sql"),
-            include_str!("../templates/crud/sqlite/0001_create_products.sql").to_owned(),
+            PathBuf::from("migrations/sqlite/20261031010001_create_products.sql"),
+            include_str!("../templates/crud/sqlite/20261031010001_create_products.sql").to_owned(),
         ),
         (
-            PathBuf::from("migrations/sqlite/0001_create_products.down.sql"),
-            include_str!("../templates/crud/sqlite/0001_create_products.down.sql").to_owned(),
+            PathBuf::from("migrations/sqlite/20261031010001_create_products.down.sql"),
+            include_str!("../templates/crud/sqlite/20261031010001_create_products.down.sql").to_owned(),
         ),
         (
             PathBuf::from("migrations/postgres/.rustflow-dialect"),
             include_str!("../templates/crud/postgres/.rustflow-dialect").to_owned(),
         ),
         (
-            PathBuf::from("migrations/postgres/0001_create_products.sql"),
-            include_str!("../templates/crud/postgres/0001_create_products.sql").to_owned(),
+            PathBuf::from("migrations/postgres/20261031010002_create_products.sql"),
+            include_str!("../templates/crud/postgres/20261031010002_create_products.sql").to_owned(),
         ),
         (
-            PathBuf::from("migrations/postgres/0001_create_products.down.sql"),
-            include_str!("../templates/crud/postgres/0001_create_products.down.sql").to_owned(),
+            PathBuf::from("migrations/postgres/20261031010002_create_products.down.sql"),
+            include_str!("../templates/crud/postgres/20261031010002_create_products.down.sql").to_owned(),
         ),
         (
             PathBuf::from("migrations/mysql/.rustflow-dialect"),
             include_str!("../templates/crud/mysql/.rustflow-dialect").to_owned(),
         ),
         (
-            PathBuf::from("migrations/mysql/0001_create_products.sql"),
-            include_str!("../templates/crud/mysql/0001_create_products.sql").to_owned(),
+            PathBuf::from("migrations/mysql/20261031010003_create_products.sql"),
+            include_str!("../templates/crud/mysql/20261031010003_create_products.sql").to_owned(),
         ),
         (
-            PathBuf::from("migrations/mysql/0001_create_products.down.sql"),
-            include_str!("../templates/crud/mysql/0001_create_products.down.sql").to_owned(),
+            PathBuf::from("migrations/mysql/20261031010003_create_products.down.sql"),
+            include_str!("../templates/crud/mysql/20261031010003_create_products.down.sql").to_owned(),
         ),
     ]
 }

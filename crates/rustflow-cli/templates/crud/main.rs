@@ -524,7 +524,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     repository.insert(ProductActiveModel {
                         id: NotSet,
                         name: Set("Rollback probe A".to_owned()),
-                        sku: Set("ROLLBACK-PROBE".to_owned()),
+                        sku: Set(format!("ROLLBACK-PROBE-{}", std::process::id())),
                         description: Set(None),
                         price_cents: Set(0),
                     }).await
@@ -538,7 +538,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     repository.insert(ProductActiveModel {
                         id: NotSet,
                         name: Set("Rollback probe B".to_owned()),
-                        sku: Set("ROLLBACK-PROBE".to_owned()),
+                        sku: Set(format!("ROLLBACK-PROBE-{}", std::process::id())),
                         description: Set(None),
                         price_cents: Set(0),
                     }).await
