@@ -304,7 +304,7 @@ impl DocumentQuery {
     /// Include a field in the projection.
     pub fn include(mut self, field: &str) -> Result<Self, MongoError> {
         validate_field_path(field)?;
-        if field != "_id" && self.projection.iter().any(|(_, value)| *value == 0) {
+        if field != "_id" && self.projection.iter().any(|(_, value)| matches!(value, Bson::Int32(0))) {
             return Err(MongoError::InvalidDocumentQuery("inclusion and exclusion projections cannot be mixed"));
         }
         self.projection.insert(field, 1);
@@ -313,7 +313,7 @@ impl DocumentQuery {
     /// Exclude a field from the projection.
     pub fn exclude(mut self, field: &str) -> Result<Self, MongoError> {
         validate_field_path(field)?;
-        if field != "_id" && self.projection.iter().any(|(_, value)| *value == 1) {
+        if field != "_id" && self.projection.iter().any(|(_, value)| matches!(value, Bson::Int32(1))) {
             return Err(MongoError::InvalidDocumentQuery("inclusion and exclusion projections cannot be mixed"));
         }
         self.projection.insert(field, 0);
