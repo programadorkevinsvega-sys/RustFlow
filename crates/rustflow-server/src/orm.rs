@@ -124,7 +124,7 @@ where
             .map_err(DatabaseError::OrmQuery)
     }
 
-    /// Insert if the generated primary key is NotSet; otherwise update the model.
+    /// Insert when the generated primary key is NotSet; otherwise update by that key.
     pub async fn save(&self, active_model: E::ActiveModel) -> Result<E::ActiveModel, DatabaseError>
     where
         E::ActiveModel: ActiveModelBehavior + Send,
