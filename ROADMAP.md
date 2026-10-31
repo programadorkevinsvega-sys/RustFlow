@@ -385,10 +385,10 @@ This phase targets a **mature, cohesive SQL ORM from the outset**, not a CRUD-on
 - [ ] Integrate with the existing migration strategy without implying that migrations are portable across dialects; document and test per-engine migration directories when needed.
 
 **Explicit 6.7.2 acceptance gaps to close before this checklist can be completed:**
-- [ ] Exercise the full signed/unsigned integer width and overflow matrix per dialect; current fixtures cover signed `i64` and MySQL/MariaDB `u64::MAX`, not every width/range.
-- [ ] Add bounded query-count evidence for nested relation-loader hops and verify missing related records for every relation shape.
-- [ ] Exercise relation attach/update/detach/delete semantics beyond the current junction-delete rollback case.
-- [ ] Add a transport-fault integration test that drops a connection during COMMIT, in addition to the synthetic classifier unit test, and confirm the outcome is reported as unknown.
+- [ ] Verify the expanded signed integer boundary matrix (`i8/i16/i32/i64` min/max on all four engines, plus out-of-range inserts for dialect-supported widths) and unsigned `u8/u16/u32` round-trip/overflow tests on SQLite and MySQL/MariaDB. SeaORM 1.1.20 has no PostgreSQL mapping for unsigned primitive fields; `u64` remains MySQL/MariaDB-only and its negative/upper overflow boundaries are tested there.
+- [ ] Verify bounded query-count evidence for nested relation-loader hops: the new mock test requires exactly one batched query per explicit hop and checks an absent belongs-to target; the four-engine contract covers absent has-one, has-many and many-to-many results.
+- [ ] Verify the expanded four-engine relation lifecycle tests for junction attach, update, detach and foreign-key cascade delete, in addition to rollback of a junction delete.
+- [ ] Verify the PostgreSQL transport-fault integration test: a deferred trigger holds the backend inside COMMIT, a separate control connection terminates that backend, and the client must receive `CommitOutcomeUnknown` rather than success or a false rollback.
 - [ ] Complete final validation on the exact PR SHA, including Rust 1.85/stable, Clippy, workspace/four-engine tests, MongoDB regression, rustdoc, CLI smoke, WASM, browser E2E/bundle, website, governance and dependency review.
 
 ### 6.7.3 MongoDB document mapper / ODM
