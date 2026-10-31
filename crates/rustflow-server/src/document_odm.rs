@@ -636,7 +636,7 @@ impl<M: DocumentModel> DocumentRepository<M> {
                 action.await
             })
             .await?;
-        collect_cursor(&self.database, &mut cursor).await
+        collect_cursor(&self.database, cursor).await
     }
     /// Count documents matching a filter.
     pub async fn count(&self, filter: DocumentFilter) -> Result<u64, MongoError> {
@@ -780,7 +780,7 @@ impl<M: DocumentModel> DocumentRepository<M> {
             .database
             .run_owned_with_timeout(async move { collection.aggregate(pipeline).await })
             .await?;
-        collect_cursor(&self.database, &mut cursor).await
+        collect_cursor(&self.database, cursor).await
     }
 
     /// Insert one model using a session created from this repository's MongoDatabase client.
@@ -888,7 +888,7 @@ where
         documents.push(
             cursor
                 .deserialize_current()
-                .map_err(MongoError::Deserialization)?,
+                .map_err(MongoError::Operation)?,
         );
     }
     Ok(documents)
@@ -995,12 +995,11 @@ mod tests {
                 .expect("gte")
                 .lt("age", 65)
                 .expect("lt merges"),
-            DocumentFilter::new()
-                .or([
-                    DocumentFilter::new().eq("status", "active").expect("eq"),
-                    DocumentFilter::new().eq("status", "trial").expect("eq"),
-                ])
-                .expect("or"),
+            DocumentFilter::or([
+                DocumentFilter::new().eq("status", "active").expect("eq"),
+                DocumentFilter::new().eq("status", "trial").expect("eq"),
+            ])
+            .expect("or"),
         ])
         .expect("and");
         assert_eq!(
