@@ -1026,7 +1026,7 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         .local_addr()
         .unwrap()
         .port();
-    let child = Command::new(binary)
+    let child = Command::new(&binary)
         .current_dir(&project)
         .env("RUSTFLOW_ENV", "test")
         .env("RUSTFLOW_HOST", "127.0.0.1")
