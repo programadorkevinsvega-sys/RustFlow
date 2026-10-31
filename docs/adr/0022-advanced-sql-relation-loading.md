@@ -1,6 +1,6 @@
 # ADR 0022: Advanced SQL relation loading and mutation contract
 
-- Status: Proposed for review with the Phase 6.7.4 implementation.
+- Status: Accepted with Phase 6.7.4; PR #62 merged into `main` on 2026-10-31.
 - Phase: 6.7.4 — Relations and loading behavior (advanced extensions).
 - Related: ADR 0020 (SQL ORM/Data Mapper architecture), ADR 0016 (SQLx pools and migrations), ADR 0019 (database support matrix), ORM_MODEL_CONTRACT.md and DATABASES.md.
 - Boundary: SQLite, PostgreSQL, MySQL and MariaDB only. MongoDB remains governed by ADR 0021.
@@ -73,13 +73,17 @@ Junction attach/update/detach remains expressible through the explicit junction 
 - There is no lazy loading, implicit transaction, implicit delete, or generated database schema.
 - MongoDB relationship/population behavior is not changed by this ADR.
 
-## Verification required before acceptance
+## Verification and acceptance record
 
-The Phase 6.7.4 PR must pass:
+PR #62 was accepted and squash-merged into `main` on 2026-10-31. Its final PR head was `28218456db8ac323731054e291023a0765474125`; the resulting merge commit is `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`.
 
-1. Unit/mock tests for filtered and ordered query generation, projected DTO grouping/ordering, graph path typing, duplicate/invalid sibling names, depth bounds and per-edge query counts.
-2. Real integration coverage for SQLite, PostgreSQL, MySQL and MariaDB, including filters, deterministic ordering, projections, nested/multi-branch graphs, absent related rows, reparent/detach/replacement, unique/FK failures, and transaction rollback.
-3. Formatting, Clippy with warnings denied, the complete workspace tests, explicit database integration targets, Rustdoc, stable and Rust 1.85, WASM, Browser E2E/bundle, website/docs, governance and dependency review.
-4. Public documentation whose examples use only the exact committed API and state global limit/offset and projection-key constraints.
+The final PR head passed the required validation workflows before merge:
 
-This ADR remains Proposed until the final PR head satisfies these checks and the decision is accepted.
+1. CI run `41225860253`: Rust 1.85 and stable, workspace tests/Clippy/Rustdoc, the configured SQL-engine integration contracts, WASM and Browser E2E/bundle jobs.
+2. Documentation site run `41225860244`.
+3. Governance checks run `41225860215`.
+4. Dependency review run `41225860245`.
+
+The runtime coverage includes filtered/ordered relation loading, has-many DTO projection and parent grouping, named multi-branch/nested graphs, graph depth/name validation, absent related rows, one-query projected loading, one batched query per configured nested hop, reparenting, one-to-one replacement, detach and transaction rollback on the four SQL engines. The existing ORM contract continues to exercise general unique/foreign-key error classification. Documentation examples and limitations are recorded in `docs/DATABASES.md`, `docs/ORM_MODEL_CONTRACT.md`, the public database guide and API-status reference.
+
+The accepted API intentionally retains these limitations: no per-parent top-N, projected graph branches are leaves, no lazy loading, no implicit delete/cascade, no helper-managed commit/rollback, and no dedicated high-level junction replacement helper. Junction mutations continue to use the explicit junction repository and caller-owned transactions.
