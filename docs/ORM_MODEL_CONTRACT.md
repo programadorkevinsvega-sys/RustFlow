@@ -1,6 +1,6 @@
 # ORM model and SQL type contract (Phase 6.7.1)
 
-**Status: Phase 6.7.1 accepted; Phase 6.7.2 implementation in progress.** SeaORM 1.1.20 and the Data Mapper contract were selected in Phase 6.7.1. The Phase 6.7.2 branch adds the server-only SeaORM dependency/facade and replaces SQLx `AnyPool` with backend-specific typed pools shared by SQLx and SeaORM. This establishes the connection boundary, not completion of ORM runtime behavior: CRUD, relation loading, checked type codecs and the full four-engine integration matrix remain unverified. The type/engine matrix below is the target contract, not runtime evidence.
+**Status: Phase 6.7.1 accepted; Phase 6.7.2 runtime implementation present in PR #59, final acceptance pending.** SeaORM 1.1.20 and the Data Mapper contract were selected in 6.7.1. The 6.7.2 branch adds the server-only SeaORM dependency/facade, replaces SQLx `AnyPool` with one backend-specific typed pool shared by SQLx and SeaORM, and implements `EntityRepository`, typed query execution, explicit relation loaders, mixed ORM/raw transactions, engine-aware error classification and runtime codec fixtures. The four-engine contract now exercises SQLite, PostgreSQL, MySQL and MariaDB; its execution on the exact final PR SHA, full quality gates and remaining edge-case coverage must pass before this subphase is accepted. The type/engine matrix below distinguishes tested cases from explicit limitations and unverified combinations.
 
 ## Selected architecture and model declaration
 
@@ -132,11 +132,11 @@ The Phase 6.7.2 branch now implements the runtime slice below. Its final accepta
 
 EntityRepository exposes select, all, one, find_by_id, insert, update, save, delete, delete_by_id, insert_many, update_many and delete_many. Update/delete by ActiveModel validate that the primary key is present before delegating to SeaORM. Generated values are returned from the database, and bulk methods return SeaORM's affected-row/result metadata.
 
-The query builder deliberately uses SeaORM's typed query surface rather than introducing a second SQL AST. The four-engine integration contract exercises nested AND/OR filters, equality and NULL predicates, text matching, IN subqueries, ordering, distinct, limit/offset pagination, joins, projections, grouping, aggregates and HAVING. Backend SQL generation and driver value codecs remain SeaORM/SQLx behavior; they are not a promise that arbitrary SQL fragments are portable.
+The query builder deliberately uses SeaORM's typed query surface rather than introducing a second SQL AST. The four-engine integration contract exercises nested AND/OR filters, equality/comparison operators, `IS NULL`/`IS NOT NULL`, parameterized `IN` and text matching, ordering, distinct, limit/offset pagination, joins, a projected/aliased column, grouping, aggregates, HAVING and an `IN` subquery. Values are bound through SeaORM's expression/query APIs; identifiers and expressions are represented by typed columns/expressions rather than request-string interpolation. Backend SQL generation and driver value codecs remain SeaORM/SQLx behavior; this is not a promise that arbitrary SQL fragments are portable.
 
 ### Relations and explicit loading
 
-Relationship metadata is defined on SeaORM entities. RustFlow exports explicit batch helpers load_one, load_many and load_many_to_many. They take parent models, the related entity (and junction entity for many-to-many), and an explicit connection. There is no transparent lazy loading. Tests verify one relationship query for a batch of has-many parents and two queries for a many-to-many batch, so query work remains visible and N+1 behavior is not hidden.
+Relationship metadata is defined on SeaORM entities. RustFlow exports explicit batch helpers `load_one`, `load_many` and `load_many_to_many`. They take parent models, the related entity (and junction entity for many-to-many), and an explicit connection. The four-engine integration contract exercises belongs-to, has-one, has-many and many-to-many/junction relations, including a missing has-one result and a junction delete inside an explicit rollback transaction. The mock query-count tests verify one relationship query for a has-many batch and two queries for a many-to-many batch, so those loaders do not issue one query per parent. There is no transparent lazy loading. Nested traversal is an explicit composition of loader calls, not an automatic graph fetch; nested query-count bounds and broader relation mutation APIs remain future coverage.
 
 ### Transactions and error contract
 
@@ -156,7 +156,7 @@ Check DatabaseCapabilities::insert_returning before requesting exec_with_returni
 
 ### Type and engine evidence
 
-The integration target runs the same ORM contract against the pinned Phase 6.6 service versions: bundled SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS and MariaDB 11.4.13 LTS. It covers generated keys, insert/update/delete, bulk writes, JSON, optional values/NULL, bytes, UUID, date/time/timestamp and numeric codecs.
+The integration target runs the same ORM contract against the pinned Phase 6.6 service versions: bundled SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS and MariaDB 11.4.13 LTS. It covers generated keys, insert/update/save/delete, bulk insert/update/delete, affected-row results for bulk update/delete, database defaults, missing rows, unique/FK/check constraints, JSON, optional values/NULL, bytes, UUID, date/time/timestamp and Decimal/BigDecimal codecs. The tested logical integer values currently include signed `i64` across all four engines and full-range unsigned `u64` only on the MySQL/MariaDB protocol; narrower signed/unsigned widths and all overflow boundaries are not yet a complete runtime matrix.
 
 Known explicit limitations:
 - SQLx/SeaORM do not provide a portable direct u64 codec for SQLite/PostgreSQL. Full-range u64 is exercised only with MySQL/MariaDB BIGINT UNSIGNED and engine-specific models.
@@ -170,4 +170,4 @@ Cargo.lock is regenerated from the workspace manifest under Rust 1.85 and includ
 
 ### Remaining scope after the 6.7.2 runtime slice
 
-This branch does not close the full Phase 6.7 ORM/ODM maturity target. Remaining work is tracked in ROADMAP.md and later subphases: dialect capability-specific operations (including upsert/RETURNING where exposed), richer relation mutation and nested loading semantics, generated end-to-end CRUD application, and the separate MongoDB ODM in Phase 6.7.3. Phase 6.7.2 itself is accepted only after every criterion retained in its roadmap gate has corresponding runtime and CI evidence.
+This branch does not close the full Phase 6.7 ORM/ODM maturity target. Remaining work includes nested-loading/query-count evidence and broader relation mutation semantics (Phase 6.7.4), a complete per-width integer/overflow matrix, stronger injected connection-loss/ambiguous-COMMIT integration tests, a generated end-to-end CRUD application, and the separate MongoDB ODM in 6.7.3. Phase 6.7.2 itself remains unaccepted until every criterion retained in its roadmap gate has runtime and CI evidence on the exact final PR SHA. Phase 6.7 overall remains in progress.
