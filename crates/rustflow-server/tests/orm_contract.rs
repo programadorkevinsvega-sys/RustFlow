@@ -7,7 +7,7 @@ use rustflow_server::{
         ActiveValue::{NotSet, Set},
         ColumnTrait, Condition, EntityTrait, JoinType, QueryFilter, QueryOrder, QuerySelect,
         QueryTrait, RelationTrait,
-        sea_query::{Expr, ExprTrait},
+        sea_query::{Expr, ExprTrait, OnConflict},
     },
 };
 
@@ -990,6 +990,52 @@ async fn exercise_orm(database: &DatabasePool) {
         .await
         .expect("database default should populate an omitted field");
     assert_eq!(defaults.alias.as_deref(), Some("database-default"));
+
+    let capabilities = database.capabilities();
+    assert!(capabilities.upsert);
+    assert_eq!(
+        capabilities.insert_returning,
+        matches!(database.backend(), DatabaseBackend::Sqlite | DatabaseBackend::Postgres)
+    );
+
+    let upsert_model = |enabled| entities::account::ActiveModel {
+        email: Set("upsert@example.test".to_owned()),
+        enabled: Set(enabled),
+        alias: NotSet,
+        metadata: Set(serde_json::json!({})),
+        checksum: Set(vec![]),
+        ..Default::default()
+    };
+    accounts
+        .insert_builder(upsert_model(true))
+        .on_conflict(
+            OnConflict::column(entities::account::Column::Email)
+                .update_columns([entities::account::Column::Enabled])
+                .to_owned(),
+        )
+        .exec(database.orm())
+        .await
+        .expect("initial dialect-aware upsert insert");
+    accounts
+        .insert_builder(upsert_model(false))
+        .on_conflict(
+            OnConflict::column(entities::account::Column::Email)
+                .update_columns([entities::account::Column::Enabled])
+                .to_owned(),
+        )
+        .exec(database.orm())
+        .await
+        .expect("repeat dialect-aware upsert update");
+    let upserted = accounts
+        .one(
+            accounts
+                .select()
+                .filter(entities::account::Column::Email.eq("upsert@example.test")),
+        )
+        .await
+        .expect("query dialect-aware upsert result")
+        .expect("upserted account exists");
+    assert!(!upserted.enabled);
 
     let missing_update = accounts
         .update(entities::account::ActiveModel {
