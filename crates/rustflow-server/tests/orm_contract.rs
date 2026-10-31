@@ -794,7 +794,7 @@ async fn exercise_orm(database: &DatabasePool) {
         .column_as(entities::account::Column::Id, "account_identifier")
         .filter(entities::account::Column::Id.gt(first.id - 1))
         .filter(entities::account::Column::Email.is_in([
-            "ada@example.test".to_owned(),
+            "grace@example.test".to_owned(),
             "ada.lovelace@example.test".to_owned(),
         ]))
         .order_by_asc(entities::account::Column::Id)
