@@ -831,16 +831,24 @@ fn classify_orm_error(error: &sea_orm::DbErr, fallback: DatabaseErrorKind) -> Da
     }
 }
 
-/// A COMMIT error containing a server ErrorResponse is definitive: the server rejected it.
-/// Transport/protocol/connection failures while COMMIT is in flight are ambiguous and must
-/// not be reported as a successful rollback or encouraged to be retried blindly.
+/// SQLSTATE connection failures and server shutdown responses are ambiguous during COMMIT.
+/// Ordinary server rejections (for example, constraint or serialization errors) are definitive.
+fn commit_sqlstate_is_unknown(code: Option<&str>) -> bool {
+    code.is_some_and(|code| {
+        code.starts_with("08") || matches!(code, "57P01" | "57P02" | "57P03")
+    })
+}
+
 fn commit_error_outcome_is_unknown(error: &sea_orm::DbErr) -> bool {
-    !matches!(
-        error,
-        sea_orm::DbErr::Conn(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(_)))
-            | sea_orm::DbErr::Exec(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(_)))
-            | sea_orm::DbErr::Query(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(_)))
-    )
+    match error {
+        sea_orm::DbErr::Conn(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(database_error)))
+        | sea_orm::DbErr::Exec(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(database_error)))
+        | sea_orm::DbErr::Query(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(database_error))) => {
+            let code = database_error.code();
+            commit_sqlstate_is_unknown(code.as_deref())
+        }
+        _ => true,
+    }
 }
 
 impl From<sea_orm::DbErr> for DatabaseError {
@@ -1126,6 +1134,25 @@ mod tests {
             Some(DatabaseErrorKind::UniqueViolation)
         );
         assert_eq!(constraint_kind_from_code(Some("08006"), None, false), None);
+    }
+
+    #[test]
+    fn commit_connection_and_shutdown_sqlstates_are_ambiguous() {
+        use super::commit_sqlstate_is_unknown;
+
+        for code in ["08003", "08006", "08S01", "57P01", "57P02", "57P03"] {
+            assert!(
+                commit_sqlstate_is_unknown(Some(code)),
+                "{code} must preserve an unknown COMMIT outcome"
+            );
+        }
+        for code in ["23505", "23514", "40001", "40P01"] {
+            assert!(
+                !commit_sqlstate_is_unknown(Some(code)),
+                "{code} is a definitive server-side transaction rejection"
+            );
+        }
+        assert!(!commit_sqlstate_is_unknown(None));
     }
 
     #[test]
