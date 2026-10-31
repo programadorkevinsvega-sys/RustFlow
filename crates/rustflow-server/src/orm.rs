@@ -15,8 +15,7 @@ use std::{
 use sea_orm::{
     ActiveModelBehavior, ActiveModelTrait, ColumnTrait, ConnectionTrait, DeleteMany, DeleteResult,
     EntityTrait, FromQueryResult, InsertResult, IntoActiveModel, LoaderTrait, ModelTrait,
-    PrimaryKeyTrait, QueryFilter, Related, Select, UpdateMany, Value,
-    query::EntityOrSelect,
+    PrimaryKeyTrait, QueryFilter, Related, Select, UpdateMany, Value, query::EntityOrSelect,
 };
 
 use crate::database::{DatabaseError, DatabaseTransaction};
@@ -264,7 +263,6 @@ where
         .map_err(DatabaseError::OrmQuery)
 }
 
-
 /// Options for one explicit relationship load.
 ///
 /// The wrapped SeaORM Select is executed as part of the batch loader, so filters,
@@ -361,9 +359,7 @@ where
     }
 
     let keys: Vec<K> = parents.iter().map(parent_key).collect();
-    let query = options
-        .into_query()
-        .filter(foreign_key.is_in(keys.clone()));
+    let query = options.into_query().filter(foreign_key.is_in(keys.clone()));
 
     let projected = query
         .into_model::<D>()
@@ -373,20 +369,27 @@ where
 
     let mut grouped: HashMap<K, Vec<D>> = HashMap::new();
     for record in projected {
-        grouped.entry(related_key(&record)).or_default().push(record);
+        grouped
+            .entry(related_key(&record))
+            .or_default()
+            .push(record);
     }
 
     Ok(parents
         .iter()
-        .map(|parent| grouped.get(&parent_key(parent)).cloned().unwrap_or_default())
+        .map(|parent| {
+            grouped
+                .get(&parent_key(parent))
+                .cloned()
+                .unwrap_or_default()
+        })
         .collect())
 }
 
 /// Maximum supported nesting depth for an explicit relation graph.
 pub const MAX_RELATION_GRAPH_DEPTH: usize = 16;
 
-type RelationGraphFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<(), DatabaseError>> + Send + 'a>>;
+type RelationGraphFuture<'a> = Pin<Box<dyn Future<Output = Result<(), DatabaseError>> + Send + 'a>>;
 
 trait RelationGraphNode<P, C>: Send
 where
@@ -556,7 +559,6 @@ where
         Ok(self)
     }
 
-
     /// Add a projected has-many branch using a DTO with its association key.
     ///
     /// The DTO must expose the related foreign-key value through related_key. This edge
@@ -601,8 +603,15 @@ where
     ) -> Result<RelationGraphResults, DatabaseError> {
         let max_depth = self.max_depth;
         let mut results = RelationGraphResults::default();
-        self.load_at(parents, connection, &mut results, String::new(), 0, max_depth)
-            .await?;
+        self.load_at(
+            parents,
+            connection,
+            &mut results,
+            String::new(),
+            0,
+            max_depth,
+        )
+        .await?;
         Ok(results)
     }
 
@@ -818,7 +827,6 @@ where
         })
     }
 }
-
 
 struct ProjectedManyRelationNode<P, R, D, K, ParentKey, RelatedKey, C>
 where

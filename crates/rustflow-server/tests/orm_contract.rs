@@ -3,8 +3,8 @@ use std::{env, str::FromStr};
 use rustflow_server::{
     DatabaseBackend, DatabaseConfig, DatabaseErrorKind, DatabasePool,
     orm::{
-        attach_one_to_many, detach_one_to_many, load_many, load_many_projected, load_many_to_many, load_one,
-        RelationGraph, RelationLoadOptions, replace_one_to_one,
+        RelationGraph, RelationLoadOptions, attach_one_to_many, detach_one_to_many, load_many,
+        load_many_projected, load_many_to_many, load_one, replace_one_to_one,
     },
     sea_orm::{
         ActiveValue::{NotSet, Set, Unchanged},
@@ -1239,9 +1239,8 @@ async fn exercise_orm(database: &DatabasePool) {
     let graph = RelationGraph::<entities::account::Model, _>::new()
         .with_many(
             "notes",
-            RelationLoadOptions::<entities::note::Entity>::new().modify(|query| {
-                query.order_by_desc(entities::note::Column::Id)
-            }),
+            RelationLoadOptions::<entities::note::Entity>::new()
+                .modify(|query| query.order_by_desc(entities::note::Column::Id)),
             note_graph,
         )
         .expect("configure notes graph branch")
@@ -1289,11 +1288,16 @@ async fn exercise_orm(database: &DatabasePool) {
         .one::<entities::account::Model>("notes.author")
         .expect("read nested graph authors");
     assert_eq!(graph_authors.len(), 3);
-    assert!(graph_results
-        .one::<entities::profile::Model>("profile")
-        .is_some());
+    assert!(
+        graph_results
+            .one::<entities::profile::Model>("profile")
+            .is_some()
+    );
     assert_eq!(
-        graph_results.many::<entities::tag::Model>("tags").unwrap().len(),
+        graph_results
+            .many::<entities::tag::Model>("tags")
+            .unwrap()
+            .len(),
         parents.len()
     );
     assert_eq!(
@@ -1313,7 +1317,10 @@ async fn exercise_orm(database: &DatabasePool) {
         .expect("find note to move")
         .expect("third note exists");
     let third_note_id = third_note.id;
-    let mutation = database.begin_transaction().await.expect("begin relation mutation");
+    let mutation = database
+        .begin_transaction()
+        .await
+        .expect("begin relation mutation");
     let moved = attach_one_to_many(
         third_note,
         entities::note::Column::AccountId,
@@ -1323,7 +1330,10 @@ async fn exercise_orm(database: &DatabasePool) {
     .await
     .expect("move a has-many child to another parent");
     assert_eq!(moved.account_id, first.id);
-    mutation.rollback().await.expect("rollback relation reparenting");
+    mutation
+        .rollback()
+        .await
+        .expect("rollback relation reparenting");
     let restored_note = notes
         .find_by_id(third_note_id)
         .await
@@ -1351,7 +1361,10 @@ async fn exercise_orm(database: &DatabasePool) {
         })
         .await
         .expect("create unassociated replacement profile");
-    let replacement = database.begin_transaction().await.expect("begin one-to-one replacement");
+    let replacement = database
+        .begin_transaction()
+        .await
+        .expect("begin one-to-one replacement");
     let replaced_profile = replace_one_to_one(
         Some(old_profile),
         replacement_profile,
@@ -1362,12 +1375,17 @@ async fn exercise_orm(database: &DatabasePool) {
     .await
     .expect("replace one-to-one profile");
     assert_eq!(replaced_profile.bio, "Replacement profile");
-    replacement.commit().await.expect("commit one-to-one replacement");
+    replacement
+        .commit()
+        .await
+        .expect("commit one-to-one replacement");
     let profiles_after_replace = load_one(&parents, entities::profile::Entity, database.orm())
         .await
         .expect("reload one-to-one profiles");
     assert_eq!(
-        profiles_after_replace[0].as_ref().map(|profile| profile.bio.as_str()),
+        profiles_after_replace[0]
+            .as_ref()
+            .map(|profile| profile.bio.as_str()),
         Some("Replacement profile")
     );
     let replacement_for_detach = profiles_after_replace[0]
@@ -1395,7 +1413,6 @@ async fn exercise_orm(database: &DatabasePool) {
     assert!(profiles_after_detach[0].is_none());
 
     assert!(profiles_after_replace[1].is_none());
-
 
     let all_notes = notes
         .all(notes.select().order_by_asc(entities::note::Column::Id))
@@ -2089,7 +2106,6 @@ async fn nested_relation_loading_uses_one_query_per_explicit_hop() {
     );
 }
 
-
 #[tokio::test]
 async fn configured_relation_graph_batches_each_nested_hop() {
     use rustflow_server::sea_orm::{DbBackend, MockDatabase};
@@ -2150,9 +2166,8 @@ async fn configured_relation_graph_batches_each_nested_hop() {
     let graph = RelationGraph::<entities::account::Model, _>::new()
         .with_many(
             "notes",
-            RelationLoadOptions::<entities::note::Entity>::new().modify(|query| {
-                query.filter(entities::note::Column::Title.contains("s"))
-            }),
+            RelationLoadOptions::<entities::note::Entity>::new()
+                .modify(|query| query.filter(entities::note::Column::Title.contains("s"))),
             RelationGraph::<entities::note::Model, _>::new()
                 .with_one(
                     "author",
@@ -2166,9 +2181,18 @@ async fn configured_relation_graph_batches_each_nested_hop() {
         .load(&parents, &database)
         .await
         .expect("execute configured graph");
-    assert_eq!(results.many::<entities::note::Model>("notes").unwrap().len(), 2);
     assert_eq!(
-        results.one::<entities::account::Model>("notes.author").unwrap().len(),
+        results
+            .many::<entities::note::Model>("notes")
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        results
+            .one::<entities::account::Model>("notes.author")
+            .unwrap()
+            .len(),
         2
     );
 
@@ -2252,7 +2276,10 @@ async fn projected_relation_loading_preserves_parent_grouping_and_one_query() {
     .expect("execute projected batch load");
 
     assert_eq!(loaded.len(), 3);
-    assert_eq!(loaded[0].iter().map(|note| note.id).collect::<Vec<_>>(), vec![2, 1]);
+    assert_eq!(
+        loaded[0].iter().map(|note| note.id).collect::<Vec<_>>(),
+        vec![2, 1]
+    );
     assert_eq!(loaded[1][0].title, "third");
     assert!(loaded[2].is_empty());
 
