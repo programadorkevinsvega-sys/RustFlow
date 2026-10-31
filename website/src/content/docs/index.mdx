@@ -19,22 +19,22 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 
 ## Una ruta de aprendizaje
 
-- [1. Crear tu primera aplicación con el CLI](/tutorials/first-cli-app/): scaffold de servidor, configuración inicial, ejecución, build y generadores.
-- [Configurar entornos](/guides/configuration/): precedencia de .env, perfiles test/producción y manejo seguro de ajustes.
-- [2. Empezar desde cero](/getting-started/setup/): clonar el repositorio, ejecutar tests y conocer los workflows actuales.
-- [3. Aprender estado y efectos](/concepts/reactivity/): señales, dependencias, batching, scopes y limpieza.
-- [4. Crear componentes](/guides/components/): vistas, props, eventos, estado y listas keyed.
-- [5. Crear rutas HTTP](/guides/server/): HTML, JSON, parámetros y middleware.
-- [6. Renderizar HTML en servidor](/guides/ssr/): escape, documentos completos, catálogo e hidratación optativa.
-- [7. Compartir estructura con layouts](/guides/layouts/): composición de páginas y datos públicos.
-- [8. Añadir navegación progresiva](/guides/navigation/): historial, enlaces elegibles y formularios GET.
-- [9. Validar formularios del servidor](/guides/forms-validation/): extracción tipada, validación, errores 422, CSRF optativo y redirección local segura.
-- [10. Sesiones y control de acceso](/guides/sessions-and-access/): cookies host-only, rotación, guards previos al handler y políticas de acceso.
-- [11. Conectar una base de datos](/guides/database/): SQLx para motores SQL y un adaptador documental MongoDB separado; transacciones y migraciones versionadas solo para SQL.
-- [12. Construir una página de producto](/tutorials/product-page/): conectar rutas, props, catálogo SSR y layouts.
-- [13. Construir una API JSON](/tutorials/json-api/): comprobar query strings, parámetros de ruta y cuerpo JSON con `curl`.
-- [14. Crear una UI interactiva](/tutorials/reactive-todo/): estado, eventos, listas con claves y limpieza en el navegador.
-- [15. Probar el proyecto](/guides/testing/): ejecutar tests Rust, integración HTTP y Playwright E2E.
+- [1. Empezar desde cero](/getting-started/setup/): instalar los requisitos, clonar RustFlow y validar el workspace.
+- [2. Crear tu primera aplicación con el CLI](/tutorials/first-cli-app/): scaffold de servidor, configuración inicial, ejecución, build y generadores.
+- [3. Configurar entornos](/guides/configuration/): precedencia de .env, perfiles test/producción y manejo seguro de ajustes.
+- [4. Aprender estado y efectos](/concepts/reactivity/): señales, dependencias, batching, scopes y limpieza.
+- [5. Crear componentes](/guides/components/): vistas, props, eventos, estado y listas keyed.
+- [6. Crear rutas HTTP](/guides/server/): HTML, JSON, parámetros y middleware.
+- [7. Renderizar HTML en servidor](/guides/ssr/): escape, documentos completos, catálogo e hidratación optativa.
+- [8. Compartir estructura con layouts](/guides/layouts/): composición de páginas y datos públicos.
+- [9. Añadir navegación progresiva](/guides/navigation/): historial, enlaces elegibles y formularios GET.
+- [10. Validar formularios del servidor](/guides/forms-validation/): extracción tipada, validación, errores 422, CSRF optativo y redirección local segura.
+- [11. Sesiones y control de acceso](/guides/sessions-and-access/): cookies host-only, rotación, guards previos al handler y políticas de acceso.
+- [12. Persistencia SQL y documental](/guides/database/): SQLx y ORM SeaORM para bases relacionales; el [ODM MongoDB](/guides/mongodb-odm/) conserva una API documental independiente.
+- [13. Construir una página de producto](/tutorials/product-page/): conectar rutas, props, catálogo SSR y layouts.
+- [14. Construir una API JSON](/tutorials/json-api/): comprobar query strings, parámetros de ruta y cuerpo JSON con `curl`.
+- [15. Crear una UI interactiva](/tutorials/reactive-todo/): estado, eventos, listas con claves y limpieza en el navegador.
+- [16. Probar el proyecto](/guides/testing/): ejecutar tests Rust, integración HTTP, contratos de persistencia y Playwright E2E.
 
 ## Elige un caso de uso
 
@@ -51,7 +51,8 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 | Validar entradas de formulario/JSON/query y responder con errores 422 | [Formularios y validación](/guides/forms-validation/) |
 | Proteger mutaciones autenticadas por cookie frente a CSRF (opt-in) | [Formularios y validación](/guides/forms-validation/) |
 | Añadir sesiones y guards previos al handler | [Sesiones y control de acceso](/guides/sessions-and-access/) |
-| Persistir datos con consultas SQL parametrizadas o documentos BSON de MongoDB | [Base de datos y migraciones](/guides/database/) |
+| Usar SQLx y SeaORM para persistencia relacional y carga de relaciones explícita | [Base de datos y ORM SQL](/guides/database/) |
+| Mapear documentos BSON, consultar, actualizar y agregar en MongoDB | [ODM tipado para MongoDB](/guides/mongodb-odm/) |
 | Aplicar o revertir migraciones versionadas | [Base de datos y migraciones](/guides/database/) |
 | Denegar permisos sin una política explícita | [Sesiones y control de acceso](/guides/sessions-and-access/) |
 | Evitar redirecciones externas después de enviar un formulario | [Formularios y validación](/guides/forms-validation/) |
@@ -65,6 +66,8 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 - Servicios HTTP con rutas, parámetros, query/JSON, middleware, grupos, respuestas y límites configurables.
 - Endpoints que extraen y validan formularios, JSON y query tipados, devuelven errores 422 estructurados y pueden proteger mutaciones mediante CSRF optativo.
 - Páginas compuestas con un catálogo de componentes compartido, datos de ruta explícitos y layouts anidados.
+- Aplicaciones con persistencia relacional experimental mediante SeaORM sobre pools SQLx tipados y loaders explícitos.
+- Aplicaciones documentales con el ODM MongoDB independiente, filtros/updates BSON, proyecciones, agregaciones e integración explícita con sesiones.
 - Navegación de cliente optativa y mejora progresiva de formularios GET compatibles, conservando el comportamiento nativo cuando la interacción no es compatible.
 
 El [catálogo de ejemplos](/reference/examples/) conecta cada caso con un archivo y un comando. La [guía de pruebas](/guides/testing/) explica cómo verificar el comportamiento localmente.

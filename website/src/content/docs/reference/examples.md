@@ -70,6 +70,31 @@ Esa suite incluye `real_tcp_typed_forms_validate_and_return_structured_errors`, 
 
 Desde la raíz del repositorio puedes ejecutar `cargo test --workspace --all-features`. Para comprobar lint, formato y documentación Rust, consulta [Probar y depurar aplicaciones](/guides/testing/). Para disponibilidad y límites por API, usa [Referencia de disponibilidad de API](/reference/api-status/).
 
+## Contratos de integración de persistencia
+
+Los ejemplos ejecutables anteriores enseñan HTTP, SSR y la interfaz browser/WASM; no son una aplicación que conecte el ORM o el ODM. La persistencia tiene contratos de integración separados:
+
+### SQLx y ORM SeaORM
+
+Desde la raíz del repositorio:
+
+~~~sh
+cargo test -p rustflow-server --test orm_contract -- --test-threads=1
+cargo test -p rustflow-server --test database_engines -- --test-threads=1
+~~~
+
+La suite `orm_contract` cubre el contrato del ORM y sus loaders explícitos, incluidos los grafos y las proyecciones relacionales de la Fase 6.7.4. Para los casos que usan servicios externos, configura `RUSTFLOW_TEST_DATABASE_URL` (PostgreSQL), `RUSTFLOW_TEST_MYSQL_URL` y `RUSTFLOW_TEST_MARIADB_URL`; la suite también incluye casos SQLite locales. `database_engines` comprueba los servidores MySQL y MariaDB contra los targets fijados por CI.
+
+### ODM MongoDB
+
+~~~sh
+cargo test -p rustflow-server --test mongodb_adapter -- --test-threads=1
+~~~
+
+La suite requiere un replica set mediante `RUSTFLOW_TEST_MONGODB_URI` y un servidor standalone mediante `RUSTFLOW_TEST_MONGODB_STANDALONE_URI` para probar contratos distintos, incluidas las transacciones en replica set y el rechazo de transacciones multi-documento en standalone. Consulta [Base de datos](/guides/database/) y [ODM MongoDB](/guides/mongodb-odm/) para configuración y límites.
+
+Estos comandos son pruebas de integración, no demos standalone ni una aplicación CRUD generada. La aplicación CRUD que conectará las capacidades en un flujo de extremo a extremo corresponde a la Fase 6.7.5, todavía pendiente.
+
 ## Lo que los ejemplos no proporcionan
 
 Los datos del catálogo de productos y de la lista de tareas de estos ejemplos no son persistentes. RustFlow ya incluye un ORM SQL experimental para SQLite/PostgreSQL/MySQL/MariaDB y un ODM MongoDB independiente, pero estos ejemplos no los conectan. Todavía no hay una demo canónica full-stack que integre una app CRUD generada con proveedor de usuarios, flujo de autenticación completo, autorización de negocio, CSRF y server actions. Consulta la [guía de base de datos](/guides/database/) y la [guía ODM](/guides/mongodb-odm/) para los contratos de persistencia y sus límites. No extrapoles una aplicación full-stack terminada desde ejemplos aislados de SSR, JSON o browser.
@@ -77,4 +102,4 @@ Los datos del catálogo de productos y de la lista de tareas de estos ejemplos n
 
 ## Sesiones y rutas protegidas — Fase 6.4 integrada en main
 
-La guía [Sesiones, autenticación y autorización](/guides/sessions-and-access/) muestra la API experimental, rotación, guards antes del handler, políticas deny-by-default e integración CSRF de login/logout. No hay proveedor de usuarios ni adaptador persistente para SessionStore. Para la nueva integración SQLx de datos de aplicación, consulta [Base de datos y migraciones](/guides/database/). Comandos de prueba: `cargo test -p rustflow-server --test session_access` y `cargo test -p rustflow-server database::`.
+La guía [Sesiones, autenticación y autorización](/guides/sessions-and-access/) muestra la API experimental, rotación, guards antes del handler, políticas deny-by-default e integración CSRF de login/logout. No hay proveedor de usuarios ni adaptador persistente para SessionStore. Para la nueva integración SQLx de datos de aplicación, consulta [Base de datos y migraciones](/guides/database/). Comando reproducible: `cargo test -p rustflow-server --test session_access`. Los contratos SQL y MongoDB se describen en la sección de pruebas de persistencia más abajo.

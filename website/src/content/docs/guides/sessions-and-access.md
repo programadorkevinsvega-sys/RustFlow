@@ -130,4 +130,4 @@ cargo test -p rustflow-server
 cargo test --workspace --all-features
 ~~~
 
-Las pruebas de regresión cubren expiración, rotación e invalidación, guards previos al handler, verificación de contraseña, CSRF y replay tras cerrar sesión. La fase permanece abierta hasta que pase toda la CI obligatoria.
+Las pruebas de regresión cubren expiración, rotación e invalidación, guards previos al handler, verificación de contraseña, CSRF y replay tras cerrar sesión. La Fase 6.4 se integró en `main` mediante la PR #49; los checks requeridos se verificaron antes de la fusión y la CI post-merge quedó en verde. La API sigue siendo experimental: esta cobertura no equivale a una auditoría de seguridad ni a una garantía de preparación para producción.
