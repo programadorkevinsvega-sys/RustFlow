@@ -731,6 +731,8 @@ fn validate_field_path(field: &str) -> Result<(), MongoError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mongodb_driver::bson::oid::ObjectId;
+    use serde::{Deserialize, Serialize};
 
     #[derive(Clone, Serialize, Deserialize)]
     struct MissingIdRename {
