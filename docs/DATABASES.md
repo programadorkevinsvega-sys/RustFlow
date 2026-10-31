@@ -337,7 +337,7 @@ async fn users(database: &MongoDatabase) -> Result<(), rustflow_server::MongoErr
 }
 ```
 
-The repository exposes `insert`, `insert_many`, `find_by_id`, `find_one`, `find_many`, `find_many_as`, `count`, `exists`, `replace_one`, `update_one`, `update_many`, `delete_one`, `delete_many`, and `aggregate_as`. Bulk insert returns the driver's write error if a batch partially fails; ordered batches stop on the first write error, unordered batches may continue, and neither mode is an all-or-nothing transaction. The ODM does not silently retry non-idempotent writes.
+The repository exposes `insert`, `insert_many`, `find_by_id`, `find_one`, `find_many`, `find_many_as`, `count`, `exists`, `replace_one`, `update_one`, `update_many`, `delete_one`, `delete_many`, and `aggregate_as`. Typed `insert_many` accepts 1–1,000 documents per call and returns the driver's write error if a batch partially fails; ordered batches stop on the first write error, unordered batches may continue, and neither mode is an all-or-nothing transaction. The ODM adds no application-level retries. Eligible single-document operations may still use the driver's own retryable-write behavior; this is distinct from retrying an application callback or a multi-document transaction.
 
 `DocumentFilter` composes equality/comparison, boolean AND/OR, existence, null, membership and array predicates. `DocumentQuery` supports sort, skip/limit and inclusion/exclusion projection. `DocumentUpdate` supports `$set`, `$unset`, `$inc`, `$push` and `$pull`. Field paths reject empty segments, NUL/control characters, and `# SQL pools, SeaORM, transactions, and migrations (Phase 6.7.2)
 
