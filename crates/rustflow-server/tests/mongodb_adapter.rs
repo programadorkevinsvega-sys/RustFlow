@@ -189,6 +189,19 @@ async fn mongodb_7045_real_server_contract() {
         .bootstrap(&bootstrap)
         .await
         .expect("repeat bootstrap is safe");
+    let incompatible_index = DocumentBootstrap::new(collection_name)
+        .expect("valid collection")
+        .with_index(
+            DocumentIndex::new("email_unique", doc! { "email": 1 }, false)
+                .expect("valid but incompatible index declaration"),
+        )
+        .expect("valid index declaration");
+    let index_conflict = database
+        .bootstrap(&incompatible_index)
+        .await
+        .expect_err("bootstrap must reject an index with incompatible uniqueness");
+    assert!(matches!(index_conflict, MongoError::Bootstrap(_)));
+
 
     let collection = database.collection::<Profile>(collection_name);
     let profile = Profile {
@@ -353,6 +366,14 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
         true,
     ).await.expect("ordered bulk insert");
     assert!(bulk.iter().all(|entry| entry.id.is_some()));
+
+    let bulk_update = repository.update_many(
+        DocumentFilter::new().in_values("title", ["beta", "gamma"]).expect("bulk update filter"),
+        DocumentUpdate::new().set("batch_mark", true).expect("bulk update"),
+        false,
+    ).await.expect("update many documents");
+    assert_eq!(bulk_update.matched_count, 2);
+    assert_eq!(bulk_update.modified_count, 2);
 
     let duplicate_id = ObjectId::new();
     let partial_error = repository.insert_many(
