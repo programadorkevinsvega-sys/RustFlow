@@ -834,16 +834,20 @@ fn classify_orm_error(error: &sea_orm::DbErr, fallback: DatabaseErrorKind) -> Da
 /// SQLSTATE connection failures and server shutdown responses are ambiguous during COMMIT.
 /// Ordinary server rejections (for example, constraint or serialization errors) are definitive.
 fn commit_sqlstate_is_unknown(code: Option<&str>) -> bool {
-    code.is_some_and(|code| {
-        code.starts_with("08") || matches!(code, "57P01" | "57P02" | "57P03")
-    })
+    code.is_some_and(|code| code.starts_with("08") || matches!(code, "57P01" | "57P02" | "57P03"))
 }
 
 fn commit_error_outcome_is_unknown(error: &sea_orm::DbErr) -> bool {
     match error {
-        sea_orm::DbErr::Conn(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(database_error)))
-        | sea_orm::DbErr::Exec(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(database_error)))
-        | sea_orm::DbErr::Query(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(database_error))) => {
+        sea_orm::DbErr::Conn(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(
+            database_error,
+        )))
+        | sea_orm::DbErr::Exec(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(
+            database_error,
+        )))
+        | sea_orm::DbErr::Query(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(
+            database_error,
+        ))) => {
             let code = database_error.code();
             commit_sqlstate_is_unknown(code.as_deref())
         }
