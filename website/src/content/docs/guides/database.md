@@ -113,6 +113,64 @@ let row = sqlx::query("SELECT id, title FROM notes WHERE id = ?")
 
 Los accessors disponibles son `sqlx_sqlite_pool()`, `sqlx_postgres_pool()` y `sqlx_mysql_pool()`; el último se utiliza tanto con MySQL como con MariaDB. El SQL y los placeholders siguen siendo específicos del motor: SQLite y MySQL/MariaDB suelen usar `?`, mientras PostgreSQL usa `$1`, `$2`, etc. No uses `format!` para interpolar datos del usuario. Para SQL parametrizado a través de SeaORM también existen `query_raw` y `execute_raw`.
 
+Los modelos son entidades SeaORM de la aplicación; DatabasePool no convierte structs arbitrarios en tablas. El repositorio tipado enlaza una entidad al pool existente y ofrece CRUD/bulk sin abrir conexiones adicionales.
+
+~~~rust
+use rustflow_server::{
+    DatabasePool,
+    sea_orm::{
+        ActiveValue::Set, ColumnTrait, QueryFilter, QueryOrder, QuerySelect,
+    },
+};
+
+let accounts = database.entity::<entities::account::Entity>();
+
+let account = accounts
+    .insert(entities::account::ActiveModel {
+        email: Set("ada@example.test".to_owned()),
+        enabled: Set(true),
+        alias: Set(Some("Ada".to_owned())),
+        metadata: Set(serde_json::json!({"role": "writer"})),
+        checksum: Set(vec![0, 1, 2]),
+        ..Default::default()
+    })
+    .await?;
+
+// La composición conserva el query builder tipado de SeaORM.
+let page = accounts
+    .all(
+        accounts
+            .select()
+            .filter(entities::account::Column::Enabled.eq(true))
+            .order_by_asc(entities::account::Column::Id)
+            .offset(20)
+            .limit(20),
+    )
+    .await?;
+
+// Bulk update y delete requieren un filtro explícito.
+let changed = accounts
+    .update_many()
+    .col_expr(
+        entities::account::Column::Enabled,
+        rustflow_server::sea_orm::sea_query::Expr::value(false).into(),
+    )
+    .filter(entities::account::Column::Id.eq(account.id))
+    .exec(database.orm())
+    .await?;
+assert_eq!(changed.rows_affected, 1);
+~~~
+
+Para relaciones, declara el grafo en las entidades SeaORM y usa loaders explícitos. Por ejemplo, load_many carga las notas para un conjunto de cuentas mediante una consulta por salto; load_many_to_many requiere la entidad de unión. Leer un modelo no dispara consultas ocultas.
+
+~~~rust
+use rustflow_server::orm::load_many;
+
+let parents = accounts.all(accounts.select()).await?;
+let notes_by_account =
+    load_many(&parents, entities::note::Entity, database.orm()).await?;
+~~~
+
 ## 3. Transacciones compartidas
 
 `begin_transaction()` inicia una transacción SeaORM sobre el mismo pool. El acceso `transaction.connection()` implementa `ConnectionTrait`; así, las operaciones ORM y las sentencias SQL parametrizadas pueden participar en la misma transacción.
@@ -202,16 +260,22 @@ La API es experimental. Esta fase no implementa ODM, derives de modelos, relacio
 
 ## 5. Errores de base de datos
 
-DatabaseError::to_http_error traduce fallos conocidos a mensajes públicos genéricos:
+DatabaseError::kind() devuelve una categoría estable sin exponer mensajes del driver, SQL, valores, nombres de restricciones ni URLs.
 
-| Condición | HTTP |
-|---|---:|
-| Fila no encontrada | 404 |
-| Violación reconocida de unicidad | 409 |
-| Pool agotado o cerrado | 503 |
-| Fallo de configuración, consulta o migración no clasificado | 500 |
+| DatabaseErrorKind | Condición | HTTP |
+|---|---|---:|
+| InvalidModelState | Modelo sin clave primaria válida o estado de escritura inválido | 400 |
+| NotFound | Registro requerido ausente | 404 |
+| UniqueViolation | Clave primaria o valor único duplicado | 409 |
+| ForeignKeyViolation | Referencia ausente o eliminación bloqueada por relaciones | 409 |
+| CheckViolation | El valor viola un CHECK de la base de datos | 422 |
+| Unavailable | Pool cerrado o timeout de conexión | 503 |
+| CommitOutcomeUnknown | Se perdió la conexión mientras se enviaba COMMIT | 503 |
+| Query / Transaction / Migration | Fallo no clasificado de base de datos | 500 |
 
-No devuelvas el error del controlador SQLx al usuario: puede contener detalles del SQL, esquema o conexión. Los errores internos deben registrarse con una política segura de logging, sin credenciales ni valores sensibles.
+Los códigos se interpretan según el protocolo: PostgreSQL usa SQLSTATE 23505/23503/23514; SQLite usa 1555/2067/787/275; MySQL y MariaDB se clasifican por sus números de error para unicidad, FK y CHECK. Los mensajes HTTP son genéricos; conserva DatabaseError y su source para diagnóstico interno seguro.
+
+**COMMIT ambiguo no significa rollback.** Cuando falla el transporte durante COMMIT, no se puede inferir si el servidor confirmó la transacción. La API devuelve CommitOutcomeUnknown. Comprueba primero un identificador estable o una clave de idempotencia; no repitas a ciegas una operación no idempotente.
 
 ## 6. Pool sizing y operación
 
@@ -221,14 +285,23 @@ Las migraciones de producción deben ejecutarse como un paso coordinado, antes d
 
 ## Límites actuales
 
-El puente de conexión SeaORM/SQLx tipado y las transacciones compartidas ya están en implementación, pero Phase 6.7.2 todavía no está cerrada. Aún deben implementarse y verificarse CRUD/bulk, composición avanzada de consultas, relaciones y loaders explícitos, mapeo de tipos y NULL, pruebas de precisión/rangos en los cuatro motores, carga sin N+1 y evidencia de errores/commit ambiguo. MongoDB conserva su adaptador documental de la subfase 6.6.2; su ODM pertenece a Phase 6.7.3. Las APIs de base de datos siguen siendo experimentales; sesiones y autorización siguen siendo contratos separados. `InMemorySessionStore` continúa siendo volátil y local al proceso.
+Phase 6.7.2 integra SeaORM 1.1.20 sobre el mismo pool SQLx tipado y cubre CRUD/bulk, query composition, carga explícita de relaciones, codecs y transacciones mixtas ORM/SQL en SQLite, PostgreSQL, MySQL y MariaDB mediante su contrato de integración. La aceptación final depende de los checks del HEAD exacto del PR.
+
+Limitaciones que deben respetarse:
+- u64 no tiene un codec portable para SQLite/PostgreSQL; los valores completos se verifican en modelos específicos MySQL/MariaDB con BIGINT UNSIGNED.
+- El codec Decimal/BigDecimal de SeaORM 1.1.20 para SQLite pasa por f64. No promete precisión decimal arbitraria; el fixture usa 12.5 porque es exactamente representable. Usa enteros escalados o un codec textual canónico cuando el dominio requiera precisión exacta.
+- MySQL y MariaDB comparten el backend/protocolo SQLx MySQL; las pruebas validan por separado la identidad y versión del servidor.
+- Upsert y RETURNING siguen siendo operaciones dependientes del motor; no se promete paridad cuando MySQL/MariaDB y PostgreSQL/SQLite difieren.
+- MongoDB conserva su adaptador documental independiente. Su ODM pertenece a Phase 6.7.3. Sesiones y autorización también tienen contratos separados; InMemorySessionStore continúa siendo volátil y local al proceso.
 
 ## Roadmap de persistencia
 
 - **Phase 6.7.1:** cerrada y fusionada en PR #58; selecciona SeaORM 1.1.20 y define el contrato Data Mapper/ModelDiagnostics.
-- **Phase 6.7.2:** en implementación. El puente de pool tipado, la fachada SeaORM y las transacciones compartidas están en desarrollo; CRUD/query builder, relaciones, codecs, pruebas por motor y gates completos siguen pendientes.
-- **Phase 6.7.3 y posteriores:** ODM MongoDB separado, relaciones/mutaciones ampliadas, CLI/generated apps y quality gate. No se incluyen en esta subfase.
+- **Phase 6.7.2:** implementación en aceptación en PR #59. Incluye pools tipados compartidos, repositorio de entidades, CRUD/bulk, consultas tipadas, loaders explícitos, codecs, transacciones mixtas y clasificación de errores. No se declara cerrada hasta que todos los gates y criterios del roadmap estén completos.
+- **Phase 6.7.3 y posteriores:** ODM MongoDB separado, operaciones específicas de dialecto, mutación/carga de relaciones ampliada, aplicación CRUD generada y quality gate.
 
-Consulta el [roadmap completo](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) para criterios de aceptación. La Phase 6.6.2 ofrece un adaptador experimental disponible en `main`; la matriz consolidada de la fase 6.6 y la API ORM/ODM prevista en la fase 6.7 siguen pendientes.
+La Phase 6.6 ya está completa y su matriz verificada está en docs/DATABASE_SUPPORT_MATRIX.md. El adaptador MongoDB de la 6.6.2 está disponible en main; el ODM independiente se desarrollará en 6.7.3.
 
-Para el alcance completo, consulta la documentación técnica de SQLx y migraciones (docs/DATABASES.md), la referencia de disponibilidad de API (/reference/api-status/) y el roadmap (ROADMAP.md).
+La auditoría de dependencias usa cargo audit en CI. Se mantiene una única excepción documentada para RUSTSEC-2023-0071 (rsa 0.9.10 a través de sqlx-mysql 0.8.6); el advisory no tiene una versión corregida y no se considera resuelto. Consulta ADR 0020 para el análisis de alcance y la condición para retirar esa excepción.
+
+Para el alcance completo, consulta docs/DATABASES.md, docs/ORM_MODEL_CONTRACT.md, la referencia de disponibilidad de API (/reference/api-status/) y ROADMAP.md.
