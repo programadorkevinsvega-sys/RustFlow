@@ -637,7 +637,6 @@ pub enum DatabaseErrorKind {
 }
 
 /// Database failures mapped to generic public messages rather than leaking SQL or URLs.
-#[derive(Debug)]
 pub enum DatabaseError {
     /// Invalid URL, pool sizing, timeout, or migration rollback configuration.
     InvalidConfiguration(&'static str),
@@ -655,6 +654,15 @@ pub enum DatabaseError {
     CommitOutcomeUnknown(sea_orm::DbErr),
     /// SQLx could not load, validate, apply, or revert migrations.
     Migration(sqlx::migrate::MigrateError),
+}
+
+impl fmt::Debug for DatabaseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DatabaseError")
+            .field("kind", &self.kind())
+            .finish_non_exhaustive()
+    }
 }
 
 impl DatabaseError {
@@ -1134,6 +1142,18 @@ mod tests {
         );
         assert!(error.to_string().contains("outcome is unknown"));
         assert!(!error.to_string().contains("connection dropped"));
+    }
+
+    #[test]
+    fn database_error_debug_redacts_driver_details() {
+        let error = DatabaseError::OrmQuery(sea_orm::DbErr::Custom(
+            "postgres://admin:secret@db/internal SELECT secret_column".to_owned(),
+        ));
+        let debug = format!("{error:?}");
+
+        assert!(debug.contains("Query"));
+        assert!(!debug.contains("secret"));
+        assert!(!debug.contains("SELECT"));
     }
 
     #[test]
