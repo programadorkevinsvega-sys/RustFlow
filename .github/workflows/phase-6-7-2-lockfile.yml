@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   generate-lockfile:
@@ -23,10 +23,17 @@ jobs:
       - name: Generate the resolved workspace lockfile
         run: cargo generate-lockfile --verbose
 
-      - name: Publish generated lockfile artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase-6-7-2-cargo-lockfile
-          path: Cargo.lock
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit the generated lockfile to this pull request branch
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- Cargo.lock; then
+            echo "Cargo.lock already matches the manifest graph."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.lock
+          git commit -m "chore(deps): lock SeaORM ORM dependency graph"
+          git push origin "HEAD:${BRANCH}"
