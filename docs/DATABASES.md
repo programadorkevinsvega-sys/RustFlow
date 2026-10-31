@@ -64,6 +64,57 @@ let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM notes")
 
 The available accessors are `sqlx_sqlite_pool()`, `sqlx_postgres_pool()`, and `sqlx_mysql_pool()`; the last is used for both MySQL and MariaDB. Direct SQLx queries remain backend-specific: placeholders, codecs and SQL syntax are not translated.
 
+### EntityRepository CRUD and query composition
+
+Define entities with SeaORM's `DeriveEntityModel`/`DeriveRelation` derives and RustFlow's optional `ModelDiagnostics` validator. Then bind a repository to the existing pool or an explicit transaction:
+
+~~~rust
+use rustflow_server::{
+    sea_orm::{ActiveValue::Set, ColumnTrait, QueryFilter, QueryOrder},
+    DatabasePool,
+};
+
+let accounts = database.entity::<entities::account::Entity>();
+
+let inserted = accounts
+    .insert(entities::account::ActiveModel {
+        email: Set("ada@example.test".to_owned()),
+        enabled: Set(true),
+        alias: Set(None),
+        metadata: Set(serde_json::json!({})),
+        checksum: Set(vec![]),
+        ..Default::default()
+    })
+    .await?;
+
+let found = accounts.find_by_id(inserted.id).await?;
+let updated = accounts
+    .update(entities::account::ActiveModel {
+        id: Set(inserted.id),
+        alias: Set(Some("Ada Lovelace".to_owned())),
+        ..Default::default()
+    })
+    .await?;
+
+let page = accounts
+    .all(
+        accounts
+            .select()
+            .filter(entities::account::Column::Enabled.eq(true))
+            .order_by_asc(entities::account::Column::Id)
+            .offset(0)
+            .limit(25),
+    )
+    .await?;
+
+let removed = accounts.delete_by_id(updated.id).await?;
+assert_eq!(removed.rows_affected, 1);
+~~~
+
+The repository surface also includes `one`, `save`, `delete` by ActiveModel, `insert_many`, `update_many`, and `delete_many`. A new model passed to `save` has its generated primary key unset; an existing model has its full primary key set. `update` and `delete` reject ActiveModels with incomplete primary-key state. `update_many`/`delete_many` are SeaORM builders and require an explicit filter unless intentionally acting on the whole table. They return `rows_affected`; bulk insert returns SeaORM's `InsertResult`, whose metadata is not a portable row-count contract.
+
+The `select()` method returns SeaORM's typed `Select<E>` builder. Use typed columns/expressions and bound values for nested filters, comparisons, NULL/IN/LIKE predicates, aliases/projections, joins, grouping, aggregates, HAVING, subqueries, ordering, and pagination. Do not create SQL text from request-provided identifiers or fragments.
+
 ### Dialect capabilities and upsert
 
 DatabasePool::capabilities() exposes the selected adapter contract:
