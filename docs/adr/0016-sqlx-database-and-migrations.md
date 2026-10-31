@@ -1,6 +1,6 @@
 # ADR 0016: SQLx, connection pools, and versioned migrations
 
-- Status: Proposed for review with Phase 6.5.
+- Status: Proposed for formal architectural review; the Phase 6.5 SQLx runtime implementation was merged in PR #51 on 2026-10-29 (merge commit `bf747b7c59fe10043e60f76caf3689ab6a19672e`). The proposed decision is therefore implemented within its documented scope; this status does not imply that the ADR received formal approval.
 - Phase: 6.5 — Database and migrations.
 - Related: ADR 0013 (configuration), ADR 0014 (input validation/CSRF), ADR 0015 (sessions/access control).
 
