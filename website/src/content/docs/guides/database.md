@@ -7,7 +7,7 @@ La capa de base de datos de RustFlow continúa siendo experimental y pre-1.0. Ph
 
 SeaORM se construye a partir de un clone del mismo pool SQLx; no se crea una segunda pool para la misma URL. La integración relacional cubre SQLite, PostgreSQL, MySQL y MariaDB. MongoDB conserva su adaptador documental independiente, con BSON, colecciones e índices; su ODM pertenece a la subfase 6.7.3.
 
-La subfase 6.7.2 sigue en aceptación. La rama ya expone <code>DatabasePool::entity</code> y <code>EntityRepository</code> para CRUD/bulk y queries SeaORM tipadas, loaders de relaciones explícitos y transacciones ORM/SQL compartidas. El contrato de integración incluye SQLite, PostgreSQL, MySQL y MariaDB; los checks de la punta final de la PR deben pasar antes de declarar la subfase aceptada. Los límites de codecs, relaciones y pruebas pendientes están enumerados más abajo y en el contrato técnico.
+La subfase 6.7.2 quedó aceptada en el HEAD de la PR #59 para revisión final (PR abierta, todavía sin merge). <code>DatabasePool::entity</code> y <code>EntityRepository</code> ofrecen CRUD/bulk y queries SeaORM tipadas, loaders de relaciones explícitos y transacciones ORM/SQL compartidas. El contrato ejecutó SQLite, PostgreSQL, MySQL y MariaDB; también pasaron los límites numéricos por dialecto, los conteos de consultas anidadas, las mutaciones relacionales y la inyección real de pérdida de conexión durante <code>COMMIT</code>. Los 8 checks requeridos quedaron verdes en el SHA <code>2cadce73c19c37c2f088f572ea37a83c65c72380</code>. La API sigue siendo experimental; consulta los límites de codec y las fases pendientes descritos más abajo y en el contrato técnico.
 
 ## Foundation seleccionado para SQL ORM
 

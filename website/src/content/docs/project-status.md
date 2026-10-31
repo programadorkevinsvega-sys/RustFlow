@@ -74,11 +74,11 @@ La PR #47 se fusionó en `main` mediante squash en el commit `0a307e84bafabbc7df
 
 PR #58 integró ADR 0020, el patrón Data Mapper sobre SeaORM 1.1.20 y el derive de validación <code>ModelDiagnostics</code>. Esta subfase definió el modelo/metadata, los límites de tipos, los estados ActiveModel, hooks, errores y transacciones; no añadía todavía persistencia ejecutable.
 
-### Fase 6.7.2 — ORM SQL (PR #59 en aceptación)
+### Fase 6.7.2 — ORM SQL (PR #59 aceptada; pendiente de merge)
 
 La rama de la PR #59 integra SeaORM 1.1.20 en <code>rustflow-server</code> sobre un único pool SQLx tipado compartido por backend. <code>DatabasePool::entity</code> crea repositorios enlazados a la conexión o transacción existente; la API incluye CRUD/bulk, composición de consultas tipadas, loaders explícitos, parámetros SQL seguros, transacciones mixtas ORM/SQL y clasificación de errores. El contrato de integración está preparado para SQLite, PostgreSQL 16.15, MySQL 8.4.13 y MariaDB 11.4.13.
 
-La rama de la PR #59 ya incorpora pruebas ampliadas para límites de `i8/i16/i32/i64`, unsigned soportados por dialecto, conteos de consultas en dos saltos relacionales, mutaciones attach/update/detach/cascade y terminación del backend PostgreSQL mientras `COMMIT` está activo. Estos casos aún deben pasar en CI sobre el SHA final antes de aceptar la subfase; no se confunde la existencia de las pruebas con evidencia verde. MongoDB conserva su adaptador documental separado; su ODM no forma parte del SQL ORM y está previsto para 6.7.3. Phase 6.7 global sigue en progreso.
+La aceptación de 6.7.2 quedó cerrada sobre el HEAD `2cadce73c19c37c2f088f572ea37a83c65c72380`: los tests de límites numéricos, unsigned soportados por dialecto, conteos de consultas en dos saltos relacionales, mutaciones attach/update/detach/cascade y terminación real del backend PostgreSQL durante `COMMIT` pasaron. También pasaron los 8 checks requeridos (Rust estable/1.85, WASM, Browser E2E/bundle, documentación, gobernanza, dependencias y Cloudflare Pages). La PR #59 está preparada para revisión final, pero aún no se ha fusionado. MongoDB conserva su adaptador documental separado; su ODM no forma parte del SQL ORM y está previsto para 6.7.3. Phase 6.7 global sigue en progreso.
 
 ## Matriz rápida: ¿qué puedes hacer?
 
@@ -98,10 +98,10 @@ La rama de la PR #59 ya incorpora pruebas ampliadas para límites de `i8/i16/i32
 | <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> | No | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
 | Protección CSRF en mutaciones mediante cookies | Experimental, opt-in; requiere conectar middleware y proveer clave | [Formularios y validación](/guides/forms-validation/) |
 | Sesiones server-side y guards de acceso | Experimental, integrado en `main` (Fase 6.4); sin proveedor de usuarios ni persistencia durable | [Guía de sesiones](/guides/sessions-and-access/) |
-| Pools SQLx tipados para SQLite/PostgreSQL/MySQL/MariaDB | Experimental en aceptación (Phase 6.7.2, PR #59) | Un pool compartido con SeaORM por backend; CRUD/bulk, queries tipadas y transacciones mixtas en el branch. La aceptación espera CI final. [Base de datos](/guides/database/) |
+| Pools SQLx tipados para SQLite/PostgreSQL/MySQL/MariaDB | Experimental; aceptación 6.7.2 verificada en PR #59 (sin merge aún) | Un pool compartido con SeaORM por backend; CRUD/bulk, queries tipadas y transacciones mixtas. Los 8 checks requeridos pasaron en el HEAD verificado. [Base de datos](/guides/database/) |
 | MySQL y MariaDB | Experimental integrados (6.6.1); target contract actual verificado en 6.6.3 | SQLx 0.8.6 driver `mysql`; MySQL 8.4.13 LTS/MariaDB 11.4.13 LTS se validaron con aserciones de versión en Rust 1.85/stable. [Guía](/guides/database/) · [Matriz](/guides/database/#matriz-de-versiones-verificadas) |
 | MongoDB | Adaptador documental experimental integrado en `main` (subfase 6.6.2, PR #55) | `MongoConfig`, `MongoDatabase`, colecciones nativas, BSON, bootstrap e índices; independiente de SQLx. CI final aprobada con Rust estable/1.85 e integración MongoDB 7.0.45. [Guía](/guides/database/) |
-| ORM SQL para SQLite/PostgreSQL/MySQL/MariaDB | Implementación experimental en aceptación (PR #59, Phase 6.7.2) | SeaORM 1.1.20 sobre un único pool SQLx tipado por backend; `EntityRepository` CRUD/bulk, queries SeaORM tipadas, loaders explícitos y transacciones mixtas. No se anuncia como estable ni se cierra hasta pasar todos los checks y casos de borde. [Guía](/guides/database/) · [Contrato](/guides/database/#roadmap-de-persistencia). |
+| ORM SQL para SQLite/PostgreSQL/MySQL/MariaDB | Experimental; 6.7.2 aceptada en PR #59 (sin merge aún) | SeaORM 1.1.20 sobre un único pool SQLx tipado por backend; `EntityRepository` CRUD/bulk, queries tipadas, loaders explícitos y transacciones mixtas. Los cuatro motores y checks de aceptación se verificaron en el HEAD de la PR. No se anuncia como estable. [Guía](/guides/database/) · [Contrato](/guides/database/#roadmap-de-persistencia). |
 | ODM MongoDB | Planificado (Phase 6.7.3), independiente del SQL ORM | El adaptador documental MongoDB 6.6.2 está disponible; el ODM tipado tendrá sus propios modelos BSON, queries, actualizaciones e índices. [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
 
 ## Cómo interpretar las pruebas
@@ -130,10 +130,10 @@ La subfase 6.6.2 quedó integrada en `main` mediante PR #55, con el commit `e3ce
 La fase se divide en subfases para mantener contratos separados, pero **el objetivo obligatorio es una capa madura desde el principio, no un ORM mínimo que se declare terminado tras CRUD**. El cierre global exige que el contrato completo de modelos, consultas, relaciones/carga, transacciones, diagnósticos, compatibilidad y CI pase conjuntamente.
 
 - **6.7.1 — Arquitectura y contrato de modelos:** cerrada e integrada mediante PR #58; ADR 0020 selecciona Data Mapper/SeaORM 1.1.20 y define el contrato `ModelDiagnostics`.
-- **6.7.2 — ORM SQL:** implementación presente en PR #59, pendiente de aceptación final; pools SQLx tipados compartidos con SeaORM, EntityRepository, CRUD/bulk, query composition, loaders explícitos y transacciones mixtas para SQLite/PostgreSQL/MySQL/MariaDB.
+- **6.7.2 — ORM SQL:** criterios de aceptación cerrados sobre el HEAD de PR #59 (abierta, sin merge); pools SQLx tipados compartidos con SeaORM, EntityRepository, CRUD/bulk, query composition, loaders explícitos y transacciones mixtas para SQLite/PostgreSQL/MySQL/MariaDB.
 - **6.7.3 — Mapeador documental/ODM:** pendiente; modelos BSON, colecciones, IDs y operaciones MongoDB nativas, sin reutilizar semántica SQL.
-- **6.7.4 — Relaciones y carga:** pendiente de cobertura ampliada de mutaciones, nested loading y presupuestos de consultas sin N+1.
+- **6.7.4 — Relaciones y carga avanzada:** pendiente de opciones de carga filtrada/ordenada, grafos más profundos y helpers de mutación one-to-one/one-to-many más allá de la cobertura baseline ya aceptada en 6.7.2.
 - **6.7.5 — CLI, ejemplos y documentación:** pendiente una aplicación CRUD generada que pruebe validación, persistencia y salida renderizada.
 - **6.7.6 — Calidad y compatibilidad:** gate final de integración, seguridad, MSRV, compile-fail, navegador y compatibilidad.
 
-La fase completa no se cerrará con un CRUD mínimo. La PR #59 sigue en aceptación hasta que el SHA final pase todos los checks y cierre los criterios explícitos del roadmap.
+La fase global no se cerrará con un CRUD mínimo: aunque 6.7.2 ya cumple sus criterios y la PR #59 está preparada para revisión final, todavía no está fusionada. El ODM MongoDB, la aplicación CRUD generada y los gates de madurez/compatibilidad global siguen pendientes.
