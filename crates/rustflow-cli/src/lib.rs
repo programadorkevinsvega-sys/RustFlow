@@ -87,7 +87,9 @@ fn print_help() {
 
 fn new_command(args: &[OsString]) -> Result<i32, CliError> {
     if args.is_empty() || is_help(&args[0]) {
-        println!("Usage: rustflow new <name> [--path <existing-parent-directory>] [--template server|crud]");
+        println!(
+            "Usage: rustflow new <name> [--path <existing-parent-directory>] [--template server|crud]"
+        );
         return if args.is_empty() {
             Err("missing project name".into())
         } else {
@@ -117,7 +119,10 @@ fn new_command(args: &[OsString]) -> Result<i32, CliError> {
                 };
                 template = argument_text(value, "template name")?;
                 if !matches!(template, "server" | "crud") {
-                    return Err(format!("unknown application template `{template}`; choose server or crud").into());
+                    return Err(format!(
+                        "unknown application template `{template}`; choose server or crud"
+                    )
+                    .into());
                 }
                 index += 2;
             }
@@ -379,7 +384,12 @@ fn is_rust_keyword(name: &str) -> bool {
     )
 }
 
-fn create_project(name: &str, parent: &Path, revision: &str, template: &str) -> Result<PathBuf, CliError> {
+fn create_project(
+    name: &str,
+    parent: &Path,
+    revision: &str,
+    template: &str,
+) -> Result<PathBuf, CliError> {
     validate_project_name(name)?;
     if !is_revision(revision) {
         return Err("RustFlow source revision must be a full 40-character commit SHA".into());
@@ -621,7 +631,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     ];
     if template == "crud" {
         for (path, contents) in crud_scaffold_files(name, revision) {
-            if let Some((_, existing)) = files.iter_mut().find(|(existing_path, _)| existing_path == &path) {
+            if let Some((_, existing)) = files
+                .iter_mut()
+                .find(|(existing_path, _)| existing_path == &path)
+            {
                 *existing = contents;
             } else {
                 files.push((path, contents));
@@ -630,7 +643,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     files
 }
- 
+
 // This template is opt-in and carries explicit SeaORM metadata/migrations. Its
 // migration versions are namespaced above the simple four-digit generator so
 // an application's demo schema does not reuse the generator's incremental IDs.
@@ -674,7 +687,8 @@ fn crud_scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
         ),
         (
             PathBuf::from("migrations/sqlite/20261031010001_create_products.down.sql"),
-            include_str!("../templates/crud/sqlite/20261031010001_create_products.down.sql").to_owned(),
+            include_str!("../templates/crud/sqlite/20261031010001_create_products.down.sql")
+                .to_owned(),
         ),
         (
             PathBuf::from("migrations/postgres/.rustflow-dialect"),
@@ -682,11 +696,13 @@ fn crud_scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
         ),
         (
             PathBuf::from("migrations/postgres/20261031010002_create_products.sql"),
-            include_str!("../templates/crud/postgres/20261031010002_create_products.sql").to_owned(),
+            include_str!("../templates/crud/postgres/20261031010002_create_products.sql")
+                .to_owned(),
         ),
         (
             PathBuf::from("migrations/postgres/20261031010002_create_products.down.sql"),
-            include_str!("../templates/crud/postgres/20261031010002_create_products.down.sql").to_owned(),
+            include_str!("../templates/crud/postgres/20261031010002_create_products.down.sql")
+                .to_owned(),
         ),
         (
             PathBuf::from("migrations/mysql/.rustflow-dialect"),
@@ -698,7 +714,8 @@ fn crud_scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
         ),
         (
             PathBuf::from("migrations/mysql/20261031010003_create_products.down.sql"),
-            include_str!("../templates/crud/mysql/20261031010003_create_products.down.sql").to_owned(),
+            include_str!("../templates/crud/mysql/20261031010003_create_products.down.sql")
+                .to_owned(),
         ),
     ]
 }

@@ -472,10 +472,14 @@ fn creates_a_project_and_generates_all_five_file_types_without_overwrite() {
 fn rejects_invalid_names_and_existing_project_destinations_before_changes() {
     let temp = TempDir::new("project-collisions");
 
-    let unknown_template = invoke(temp.path(), &["new", "unknown-template", "--template", "not-a-template"]);
+    let unknown_template = invoke(
+        temp.path(),
+        &["new", "unknown-template", "--template", "not-a-template"],
+    );
     assert_eq!(unknown_template.status.code(), Some(2));
     assert!(!temp.path().join("unknown-template").exists());
-    let missing_template = invoke(temp.path(), &["new", "missing-template", "--template"]);
+    let missing_template =
+        invoke(temp.path(), &["new", "missing-template", "--template"]);
     assert_eq!(missing_template.status.code(), Some(2));
     assert!(!temp.path().join("missing-template").exists());
 
@@ -590,7 +594,10 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
     .unwrap();
 
     let snapshot_temp = TempDir::new("generated-crud-snapshot");
-    let snapshot_create = invoke(snapshot_temp.path(), &["new", "generated-crud-app", "--template", "crud"]);
+    let snapshot_create = invoke(
+        snapshot_temp.path(),
+        &["new", "generated-crud-app", "--template", "crud"],
+    );
     assert_success(&snapshot_create);
     let snapshot_project = snapshot_temp.path().join("generated-crud-app");
     for path in [
@@ -603,7 +610,11 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
         "migrations/postgres/20261031010002_create_products.sql",
         "migrations/mysql/20261031010003_create_products.sql",
     ] {
-        assert_eq!(fs::read(project.join(path)).unwrap(), fs::read(snapshot_project.join(path)).unwrap(), "CRUD scaffold snapshot drift for {path}");
+        assert_eq!(
+            fs::read(project.join(path)).unwrap(),
+            fs::read(snapshot_project.join(path)).unwrap(),
+            "CRUD scaffold snapshot drift for {path}"
+        );
     }
     localize_framework_dependencies(&project);
     let target_dir = cargo_target_dir(&temp);
@@ -738,8 +749,12 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
 }
 
 
-
-fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: &str, label: &str) {
+fn exercise_generated_crud_backend(
+    binary: &Path,
+    project: &Path,
+    database_url: &str,
+    label: &str,
+) {
     let port = TcpListener::bind(("127.0.0.1", 0))
         .unwrap()
         .local_addr()
@@ -753,7 +768,10 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         .env("RUSTFLOW_DATABASE_URL", database_url)
         .env("RUSTFLOW_DEMO_USER", "admin")
         .env("RUSTFLOW_DEMO_PASSWORD", "generated-crud-test-password")
-        .env("RUSTFLOW_CSRF_KEY", "test-only-generated-crud-csrf-key-minimum-32-bytes")
+        .env(
+            "RUSTFLOW_CSRF_KEY",
+            "test-only-generated-crud-csrf-key-minimum-32-bytes",
+        )
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -774,9 +792,17 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
     assert!(ready, "generated CRUD did not start on {label}");
 
     let anonymous = generated_http_request(port, "GET", "/products", &[], "");
-    assert_eq!(generated_response_status(&anonymous), 401, "{label}: {anonymous}");
+    assert_eq!(
+        generated_response_status(&anonymous),
+        401,
+        "{label}: {anonymous}"
+    );
     let login_page = generated_http_request(port, "GET", "/login", &[], "");
-    assert_eq!(generated_response_status(&login_page), 200, "{label}: {login_page}");
+    assert_eq!(
+        generated_response_status(&login_page),
+        200,
+        "{label}: {login_page}"
+    );
     let csrf_cookie = generated_response_cookie(&login_page, "rustflow_csrf");
     let csrf_token = generated_response_body(&login_page)
         .split_once("name=\"_csrf\" value=\"")
@@ -815,7 +841,13 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
     let create = generated_http_request(port, "POST", "/products", &secured_headers, &create_body);
     assert_eq!(generated_response_status(&create), 303, "{label}: {create}");
 
-    let list = generated_http_request(port, "GET", "/products", &[("cookie", cookies.as_str())], "");
+    let list = generated_http_request(
+        port,
+        "GET",
+        "/products",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
     assert_eq!(generated_response_status(&list), 200, "{label}: {list}");
     let html = generated_response_body(&list);
     let position = html
@@ -830,7 +862,13 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         .next()
         .expect("product identifier in link")
         .to_owned();
-    let detail = generated_http_request(port, "GET", &format!("/products/{id}"), &[("cookie", cookies.as_str())], "");
+    let detail = generated_http_request(
+        port,
+        "GET",
+        &format!("/products/{id}"),
+        &[("cookie", cookies.as_str())],
+        "",
+    );
     assert_eq!(generated_response_status(&detail), 200, "{label}: {detail}");
 
     let updated_name = format!("Updated {name}");
@@ -841,11 +879,30 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         ("description", "Updated on SQL engine"),
         ("price_cents", "2500"),
     ]);
-    let update = generated_http_request(port, "POST", &format!("/products/{id}"), &secured_headers, &update_body);
+    let update = generated_http_request(
+        port,
+        "POST",
+        &format!("/products/{id}"),
+        &secured_headers,
+        &update_body,
+    );
     assert_eq!(generated_response_status(&update), 303, "{label}: {update}");
-    let updated = generated_http_request(port, "GET", &format!("/products/{id}"), &[("cookie", cookies.as_str())], "");
-    assert_eq!(generated_response_status(&updated), 200, "{label}: {updated}");
-    assert!(generated_response_body(&updated).contains(&updated_name), "{label}: {updated}");
+    let updated = generated_http_request(
+        port,
+        "GET",
+        &format!("/products/{id}"),
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&updated),
+        200,
+        "{label}: {updated}"
+    );
+    assert!(
+        generated_response_body(&updated).contains(&updated_name),
+        "{label}: {updated}"
+    );
 
     let probe_body = form_body(&[("_csrf", &csrf_token)]);
     let rollback = generated_http_request(
@@ -855,9 +912,23 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         &secured_headers,
         &probe_body,
     );
-    assert_eq!(generated_response_status(&rollback), 409, "{label}: {rollback}");
-    let after_rollback = generated_http_request(port, "GET", "/products", &[("cookie", cookies.as_str())], "");
-    assert_eq!(generated_response_status(&after_rollback), 200, "{label}: {after_rollback}");
+    assert_eq!(
+        generated_response_status(&rollback),
+        409,
+        "{label}: {rollback}"
+    );
+    let after_rollback = generated_http_request(
+        port,
+        "GET",
+        "/products",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&after_rollback),
+        200,
+        "{label}: {after_rollback}"
+    );
     assert!(!generated_response_body(&after_rollback).contains("Rollback probe"));
 
     let delete = generated_http_request(
@@ -868,8 +939,18 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         &probe_body,
     );
     assert_eq!(generated_response_status(&delete), 303, "{label}: {delete}");
-    let deleted = generated_http_request(port, "GET", &format!("/products/{id}"), &[("cookie", cookies.as_str())], "");
-    assert_eq!(generated_response_status(&deleted), 404, "{label}: {deleted}");
+    let deleted = generated_http_request(
+        port,
+        "GET",
+        &format!("/products/{id}"),
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&deleted),
+        404,
+        "{label}: {deleted}"
+    );
 }
 
 fn form_component(value: &str) -> String {
@@ -895,7 +976,10 @@ fn form_body(fields: &[(&str, &str)]) -> String {
 #[test]
 fn generated_crud_template_builds_and_runs_the_real_orm_application() {
     let temp = TempDir::new("generated-crud");
-    let creation = invoke(temp.path(), &["new", "generated-crud-app", "--template", "crud"]);
+    let creation = invoke(
+        temp.path(),
+        &["new", "generated-crud-app", "--template", "crud"],
+    );
     assert_success(&creation);
     let project = temp.path().join("generated-crud-app");
 
@@ -909,10 +993,16 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         "migrations/mysql/20261031010003_create_products.sql",
         "migrations/mysql/.rustflow-dialect",
     ] {
-        assert!(project.join(path).is_file(), "missing generated CRUD file {path}");
+        assert!(
+            project.join(path).is_file(),
+            "missing generated CRUD file {path}"
+        );
     }
     let generated_main = fs::read_to_string(project.join("src/main.rs")).unwrap();
-    assert!(generated_main.contains("DatabasePool::entity") || generated_main.contains("entity::<ProductEntity>"));
+    assert!(
+        generated_main.contains("DatabasePool::entity")
+            || generated_main.contains("entity::<ProductEntity>")
+    );
     assert!(generated_main.contains("validated_form::<ProductForm>"));
     assert!(generated_main.contains("begin_transaction"));
     assert!(generated_main.contains("route_authorized"));
@@ -951,7 +1041,10 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         .env("RUSTFLOW_DATABASE_URL", "sqlite://rustflow.db?mode=rwc")
         .env("RUSTFLOW_DEMO_USER", "admin")
         .env("RUSTFLOW_DEMO_PASSWORD", "generated-crud-test-password")
-        .env("RUSTFLOW_CSRF_KEY", "test-only-generated-crud-csrf-key-minimum-32-bytes")
+        .env(
+            "RUSTFLOW_CSRF_KEY",
+            "test-only-generated-crud-csrf-key-minimum-32-bytes",
+        )
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -994,8 +1087,13 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         ("username", "admin"),
         ("password", "wrong-password"),
     ]);
-    let wrong_login = generated_http_request(port, "POST", "/login", &login_headers, &wrong_login_body);
-    assert_eq!(generated_response_status(&wrong_login), 401, "{wrong_login}");
+    let wrong_login =
+        generated_http_request(port, "POST", "/login", &login_headers, &wrong_login_body);
+    assert_eq!(
+        generated_response_status(&wrong_login),
+        401,
+        "{wrong_login}"
+    );
 
     let login_body = form_body(&[
         ("_csrf", &csrf_token),
@@ -1012,11 +1110,23 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         ("cookie", cookies.as_str()),
     ];
 
-    let products = generated_http_request(port, "GET", "/products", &[("cookie", cookies.as_str())], "");
+    let products = generated_http_request(
+        port,
+        "GET",
+        "/products",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
     assert_eq!(generated_response_status(&products), 200, "{products}");
     assert!(generated_response_body(&products).contains("No products have been created yet."));
 
-    let denied = generated_http_request(port, "GET", "/admin/denied-demo", &[("cookie", cookies.as_str())], "");
+    let denied = generated_http_request(
+        port,
+        "GET",
+        "/admin/denied-demo",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
     assert_eq!(generated_response_status(&denied), 403, "{denied}");
 
     let missing_csrf = generated_http_request(
@@ -1026,7 +1136,11 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         &authenticated_headers,
         "name=No+token",
     );
-    assert_eq!(generated_response_status(&missing_csrf), 403, "{missing_csrf}");
+    assert_eq!(
+        generated_response_status(&missing_csrf),
+        403,
+        "{missing_csrf}"
+    );
 
     let invalid_csrf_headers = [
         ("content-type", "application/x-www-form-urlencoded"),
@@ -1034,8 +1148,13 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         ("cookie", cookies.as_str()),
         ("x-csrf-token", "invalid-token"),
     ];
-    let invalid_csrf = generated_http_request(port, "POST", "/products", &invalid_csrf_headers, "");
-    assert_eq!(generated_response_status(&invalid_csrf), 403, "{invalid_csrf}");
+    let invalid_csrf =
+        generated_http_request(port, "POST", "/products", &invalid_csrf_headers, "");
+    assert_eq!(
+        generated_response_status(&invalid_csrf),
+        403,
+        "{invalid_csrf}"
+    );
 
     let invalid_form_body = form_body(&[
         ("_csrf", &csrf_token),
@@ -1044,8 +1163,18 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         ("description", ""),
         ("price_cents", "-1"),
     ]);
-    let invalid_form = generated_http_request(port, "POST", "/products", &authenticated_headers, &invalid_form_body);
-    assert_eq!(generated_response_status(&invalid_form), 422, "{invalid_form}");
+    let invalid_form = generated_http_request(
+        port,
+        "POST",
+        "/products",
+        &authenticated_headers,
+        &invalid_form_body,
+    );
+    assert_eq!(
+        generated_response_status(&invalid_form),
+        422,
+        "{invalid_form}"
+    );
     assert!(generated_response_body(&invalid_form).contains("validation_failed"));
 
     let malformed_form_body = form_body(&[
@@ -1055,8 +1184,18 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         ("description", ""),
         ("price_cents", "not-an-integer"),
     ]);
-    let malformed_form = generated_http_request(port, "POST", "/products", &authenticated_headers, &malformed_form_body);
-    assert_eq!(generated_response_status(&malformed_form), 400, "{malformed_form}");
+    let malformed_form = generated_http_request(
+        port,
+        "POST",
+        "/products",
+        &authenticated_headers,
+        &malformed_form_body,
+    );
+    assert_eq!(
+        generated_response_status(&malformed_form),
+        400,
+        "{malformed_form}"
+    );
 
     let create_body = form_body(&[
         ("_csrf", &csrf_token),
@@ -1065,22 +1204,63 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         ("description", "User supplied <script> text"),
         ("price_cents", "1250"),
     ]);
-    let created = generated_http_request(port, "POST", "/products", &authenticated_headers, &create_body);
+    let created = generated_http_request(
+        port,
+        "POST",
+        "/products",
+        &authenticated_headers,
+        &create_body,
+    );
     assert_eq!(generated_response_status(&created), 303, "{created}");
 
-    let list_after_create = generated_http_request(port, "GET", "/products", &[("cookie", cookies.as_str())], "");
-    assert_eq!(generated_response_status(&list_after_create), 200, "{list_after_create}");
-    assert!(generated_response_body(&list_after_create).contains("Desk &lt;script&gt;alert(1)&lt;/script&gt;"));
+    let list_after_create = generated_http_request(
+        port,
+        "GET",
+        "/products",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&list_after_create),
+        200,
+        "{list_after_create}"
+    );
+    assert!(
+        generated_response_body(&list_after_create)
+            .contains("Desk &lt;script&gt;alert(1)&lt;/script&gt;")
+    );
     assert!(!generated_response_body(&list_after_create).contains("<script>"));
 
-    let detail = generated_http_request(port, "GET", "/products/1", &[("cookie", cookies.as_str())], "");
+    let detail = generated_http_request(
+        port,
+        "GET",
+        "/products/1",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
     assert_eq!(generated_response_status(&detail), 200, "{detail}");
     assert!(generated_response_body(&detail).contains("User supplied &lt;script&gt; text"));
 
-    let invalid_id = generated_http_request(port, "GET", "/products/not-an-id", &[("cookie", cookies.as_str())], "");
+    let invalid_id = generated_http_request(
+        port,
+        "GET",
+        "/products/not-an-id",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
     assert_eq!(generated_response_status(&invalid_id), 400, "{invalid_id}");
-    let missing_product = generated_http_request(port, "GET", "/products/9999", &[("cookie", cookies.as_str())], "");
-    assert_eq!(generated_response_status(&missing_product), 404, "{missing_product}");
+    let missing_product = generated_http_request(
+        port,
+        "GET",
+        "/products/9999",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&missing_product),
+        404,
+        "{missing_product}"
+    );
 
     let update_body = form_body(&[
         ("_csrf", &csrf_token),
@@ -1089,10 +1269,26 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         ("description", "Updated product"),
         ("price_cents", "1499"),
     ]);
-    let updated = generated_http_request(port, "POST", "/products/1", &authenticated_headers, &update_body);
+    let updated = generated_http_request(
+        port,
+        "POST",
+        "/products/1",
+        &authenticated_headers,
+        &update_body,
+    );
     assert_eq!(generated_response_status(&updated), 303, "{updated}");
-    let updated_detail = generated_http_request(port, "GET", "/products/1", &[("cookie", cookies.as_str())], "");
-    assert_eq!(generated_response_status(&updated_detail), 200, "{updated_detail}");
+    let updated_detail = generated_http_request(
+        port,
+        "GET",
+        "/products/1",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&updated_detail),
+        200,
+        "{updated_detail}"
+    );
     assert!(generated_response_body(&updated_detail).contains("Desk Pro"));
     assert!(generated_response_body(&updated_detail).contains("1499 cents"));
 
@@ -1105,8 +1301,18 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         &rollback_body,
     );
     assert_eq!(generated_response_status(&rollback), 409, "{rollback}");
-    let after_rollback = generated_http_request(port, "GET", "/products", &[("cookie", cookies.as_str())], "");
-    assert_eq!(generated_response_status(&after_rollback), 200, "{after_rollback}");
+    let after_rollback = generated_http_request(
+        port,
+        "GET",
+        "/products",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&after_rollback),
+        200,
+        "{after_rollback}"
+    );
     assert!(!generated_response_body(&after_rollback).contains("Rollback probe"));
 
     let deleted = generated_http_request(
@@ -1117,8 +1323,18 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         &rollback_body,
     );
     assert_eq!(generated_response_status(&deleted), 303, "{deleted}");
-    let after_delete = generated_http_request(port, "GET", "/products/1", &[("cookie", cookies.as_str())], "");
-    assert_eq!(generated_response_status(&after_delete), 404, "{after_delete}");
+    let after_delete = generated_http_request(
+        port,
+        "GET",
+        "/products/1",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&after_delete),
+        404,
+        "{after_delete}"
+    );
     drop(child);
 
     for (variable, label) in [
@@ -1133,7 +1349,9 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
             _ if env::var("CI").is_ok_and(|value| value == "true") => {
                 panic!("{variable} must be configured in CI for generated CRUD engine coverage");
             }
-            _ => eprintln!("Skipping generated CRUD {label} contract outside CI: {variable} is unset"),
+            _ => eprintln!(
+                "Skipping generated CRUD {label} contract outside CI: {variable} is unset"
+            ),
         }
     }
 }
