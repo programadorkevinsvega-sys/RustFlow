@@ -701,30 +701,71 @@ async fn mongodb_typed_odm_uses_real_replica_set_transactions_for_commit_and_abo
         .expect("valid MongoDB replica-set URI")
         .with_operation_timeout(Duration::from_secs(5))
         .expect("valid operation timeout");
-    let database = MongoDatabase::connect(&config).await.expect("connect to replica set");
+    let database = MongoDatabase::connect(&config)
+        .await
+        .expect("connect to replica set");
     let repository: DocumentRepository<OdmEntry> = database.repository();
 
-    let mut committed_session = database.start_session().await.expect("start client session");
-    committed_session.start_transaction().await.expect("start replica-set transaction");
-    let committed = repository.insert_with_session(
-        odm_entry("committed", 1, &["transaction"]),
-        &mut committed_session,
-    ).await.expect("insert within transaction");
+    let mut committed_session = database
+        .start_session()
+        .await
+        .expect("start client session");
+    committed_session
+        .start_transaction()
+        .await
+        .expect("start replica-set transaction");
+    let committed = repository
+        .insert_with_session(
+            odm_entry("committed", 1, &["transaction"]),
+            &mut committed_session,
+        )
+        .await
+        .expect("insert within transaction");
     let committed_id = committed.id.clone().expect("generated ID");
-    committed_session.commit_transaction().await.expect("commit transaction");
-    assert!(repository.find_by_id(committed_id).await.expect("read committed doc").is_some());
+    committed_session
+        .commit_transaction()
+        .await
+        .expect("commit transaction");
+    assert!(
+        repository
+            .find_by_id(committed_id)
+            .await
+            .expect("read committed doc")
+            .is_some()
+    );
 
-    let mut aborted_session = database.start_session().await.expect("start rollback session");
-    aborted_session.start_transaction().await.expect("start rollback transaction");
-    let aborted = repository.insert_with_session(
-        odm_entry("aborted", 2, &["transaction"]),
-        &mut aborted_session,
-    ).await.expect("insert before abort");
+    let mut aborted_session = database
+        .start_session()
+        .await
+        .expect("start rollback session");
+    aborted_session
+        .start_transaction()
+        .await
+        .expect("start rollback transaction");
+    let aborted = repository
+        .insert_with_session(
+            odm_entry("aborted", 2, &["transaction"]),
+            &mut aborted_session,
+        )
+        .await
+        .expect("insert before abort");
     let aborted_id = aborted.id.expect("generated ID");
-    aborted_session.abort_transaction().await.expect("abort transaction");
-    assert!(repository.find_by_id(aborted_id).await.expect("read aborted doc").is_none());
+    aborted_session
+        .abort_transaction()
+        .await
+        .expect("abort transaction");
+    assert!(
+        repository
+            .find_by_id(aborted_id)
+            .await
+            .expect("read aborted doc")
+            .is_none()
+    );
 
-    database.run_with_timeout(database.database().drop()).await.expect("drop isolated transaction database");
+    database
+        .run_with_timeout(database.database().drop())
+        .await
+        .expect("drop isolated transaction database");
 }
 
 #[tokio::test]
