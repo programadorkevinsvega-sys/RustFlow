@@ -281,7 +281,7 @@ The adapter does not add an ODM, model derives, a portable query builder, SQL-li
 
 ### Typed MongoDB ODM (Phase 6.7.3 — experimental implementation)
 
-The typed ODM uses an explicit document Data Mapper. Models are ordinary Serde values and own no connection or session. Each model declares a collection and an ID type through `DocumentModel`; the identifier property must serialize to BSON `_id`. Before writes, RustFlow verifies that a supplied typed ID equals the serialized `_id` and rejects missing or mismatched ID mappings. RustFlow uses Serde/BSON for embedded structs, arrays, custom serializers, skipped fields and defaults.
+The typed ODM uses an explicit document Data Mapper. Models are ordinary Serde values and own no connection or session. Each model declares a collection and an ID type through `DocumentModel`; the identifier property must serialize to BSON `_id`. Before writes, RustFlow verifies that a supplied typed ID equals the serialized `_id` and rejects missing or mismatched ID mappings. When an insert has no ID, the associated `Id` type must accept a BSON `ObjectId`; String/UUID/custom IDs must be supplied explicitly. `replace_one` requires an explicit model ID. RustFlow uses Serde/BSON for embedded structs, arrays, custom serializers, skipped fields and defaults.
 
 ```rust
 use rustflow_server::{
