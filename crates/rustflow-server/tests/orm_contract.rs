@@ -214,6 +214,45 @@ mod entities {
         impl ActiveModelBehavior for ActiveModel {}
     }
 
+    pub mod signed_integer_widths {
+        use rustflow_server::sea_orm::entity::prelude::*;
+
+        #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+        #[sea_orm(table_name = "rustflow_orm_signed_widths")]
+        pub struct Model {
+            #[sea_orm(primary_key)]
+            pub id: i64,
+            pub i8_value: i8,
+            pub i16_value: i16,
+            pub i32_value: i32,
+            pub i64_value: i64,
+        }
+
+        #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+        pub enum Relation {}
+
+        impl ActiveModelBehavior for ActiveModel {}
+    }
+
+    pub mod unsigned_integer_widths {
+        use rustflow_server::sea_orm::entity::prelude::*;
+
+        #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+        #[sea_orm(table_name = "rustflow_orm_unsigned_widths")]
+        pub struct Model {
+            #[sea_orm(primary_key)]
+            pub id: i64,
+            pub u8_value: u8,
+            pub u16_value: u16,
+            pub u32_value: u32,
+        }
+
+        #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+        pub enum Relation {}
+
+        impl ActiveModelBehavior for ActiveModel {}
+    }
+
     pub mod note {
         use rustflow_server::sea_orm::entity::prelude::*;
 
@@ -261,6 +300,14 @@ fn integration_url(variable: &str) -> Option<String> {
 }
 
 async fn create_schema(database: &DatabasePool) {
+    database
+        .execute_raw("DROP TABLE IF EXISTS rustflow_orm_unsigned_widths", [])
+        .await
+        .expect("drop unsigned integer width contract table");
+    database
+        .execute_raw("DROP TABLE IF EXISTS rustflow_orm_signed_widths", [])
+        .await
+        .expect("drop signed integer width contract table");
     database
         .execute_raw("DROP TABLE IF EXISTS rustflow_orm_constraints", [])
         .await
@@ -488,6 +535,89 @@ async fn create_schema(database: &DatabasePool) {
             .await
             .expect("create MySQL-family unsigned codec table");
     }
+    let (integer_id_type, i8_type, i16_type, i32_type, i64_type, i8_check, i16_check, i32_check, i64_check) =
+        match database.backend() {
+            DatabaseBackend::Sqlite => (
+                "INTEGER PRIMARY KEY AUTOINCREMENT",
+                "INTEGER",
+                "INTEGER",
+                "INTEGER",
+                "INTEGER",
+                " CHECK (i8_value BETWEEN -128 AND 127)",
+                " CHECK (i16_value BETWEEN -32768 AND 32767)",
+                " CHECK (i32_value BETWEEN -2147483648 AND 2147483647)",
+                " CHECK (i64_value BETWEEN -9223372036854775808 AND 9223372036854775807)",
+            ),
+            DatabaseBackend::Postgres => (
+                "BIGSERIAL PRIMARY KEY",
+                "\"char\"",
+                "SMALLINT",
+                "INTEGER",
+                "BIGINT",
+                "",
+                "",
+                "",
+                "",
+            ),
+            DatabaseBackend::MySql => (
+                "BIGINT AUTO_INCREMENT PRIMARY KEY",
+                "TINYINT",
+                "SMALLINT",
+                "INT",
+                "BIGINT",
+                "",
+                "",
+                "",
+                "",
+            ),
+        };
+    let signed_widths = format!(
+        "CREATE TABLE rustflow_orm_signed_widths (
+            id {integer_id_type},
+            i8_value {i8_type} NULL{i8_check},
+            i16_value {i16_type} NULL{i16_check},
+            i32_value {i32_type} NULL{i32_check},
+            i64_value {i64_type} NULL{i64_check}
+        )"
+    );
+    database
+        .execute_raw(&signed_widths, [])
+        .await
+        .expect("create signed integer width contract table");
+
+    // SeaORM 1.1.x has no PostgreSQL mapping for unsigned primitive columns.
+    // Exercise SQLite's checked integer representation and MySQL/MariaDB's
+    // native unsigned integer widths instead of claiming PostgreSQL parity.
+    if database.backend() != DatabaseBackend::Postgres {
+        let (unsigned_id_type, u8_type, u16_type, u32_type) =
+            match database.backend() {
+                DatabaseBackend::Sqlite => (
+                    "INTEGER PRIMARY KEY AUTOINCREMENT",
+                    "INTEGER NULL CHECK (u8_value BETWEEN 0 AND 255)",
+                    "INTEGER NULL CHECK (u16_value BETWEEN 0 AND 65535)",
+                    "INTEGER NULL CHECK (u32_value BETWEEN 0 AND 4294967295)",
+                ),
+                DatabaseBackend::MySql => (
+                    "BIGINT AUTO_INCREMENT PRIMARY KEY",
+                    "TINYINT UNSIGNED NULL",
+                    "SMALLINT UNSIGNED NULL",
+                    "INT UNSIGNED NULL",
+                ),
+                DatabaseBackend::Postgres => unreachable!("PostgreSQL unsigned contract is excluded"),
+            };
+        let unsigned_widths = format!(
+            "CREATE TABLE rustflow_orm_unsigned_widths (
+                id {unsigned_id_type},
+                u8_value {u8_type},
+                u16_value {u16_type},
+                u32_value {u32_type}
+            )"
+        );
+        database
+            .execute_raw(&unsigned_widths, [])
+            .await
+            .expect("create unsigned integer width contract table");
+    }
 }
 
 async fn exercise_type_codecs(database: &DatabasePool) {
@@ -567,11 +697,146 @@ async fn exercise_type_codecs(database: &DatabasePool) {
             .expect("query MySQL-family unsigned value")
             .expect("unsigned codec row exists");
         assert_eq!(decoded.value, u64::MAX);
+
+        for (label, invalid) in [
+            ("negative u64", "-1"),
+            ("u64 upper overflow", "18446744073709551616"),
+        ] {
+            let sql = format!(
+                "INSERT INTO rustflow_orm_mysql_unsigned (value) VALUES ({invalid})"
+            );
+            database
+                .execute_raw(&sql, [])
+                .await
+                .expect_err(label);
+        }
+    }
+}
+
+async fn exercise_integer_widths(database: &DatabasePool) {
+    let signed = database.entity::<entities::signed_integer_widths::Entity>();
+    let minimum = signed
+        .insert(entities::signed_integer_widths::ActiveModel {
+            i8_value: Set(i8::MIN),
+            i16_value: Set(i16::MIN),
+            i32_value: Set(i32::MIN),
+            i64_value: Set(i64::MIN),
+            ..Default::default()
+        })
+        .await
+        .expect("insert signed minimum values for every supported width");
+    let decoded_minimum = signed
+        .find_by_id(minimum.id)
+        .await
+        .expect("read signed minimum values")
+        .expect("signed minimum row exists");
+    assert_eq!(decoded_minimum.i8_value, i8::MIN);
+    assert_eq!(decoded_minimum.i16_value, i16::MIN);
+    assert_eq!(decoded_minimum.i32_value, i32::MIN);
+    assert_eq!(decoded_minimum.i64_value, i64::MIN);
+
+    let maximum = signed
+        .insert(entities::signed_integer_widths::ActiveModel {
+            i8_value: Set(i8::MAX),
+            i16_value: Set(i16::MAX),
+            i32_value: Set(i32::MAX),
+            i64_value: Set(i64::MAX),
+            ..Default::default()
+        })
+        .await
+        .expect("insert signed maximum values for every supported width");
+    let decoded_maximum = signed
+        .find_by_id(maximum.id)
+        .await
+        .expect("read signed maximum values")
+        .expect("signed maximum row exists");
+    assert_eq!(decoded_maximum.i8_value, i8::MAX);
+    assert_eq!(decoded_maximum.i16_value, i16::MAX);
+    assert_eq!(decoded_maximum.i32_value, i32::MAX);
+    assert_eq!(decoded_maximum.i64_value, i64::MAX);
+
+    let mut signed_overflow_cases = vec![
+        ("i16 upper overflow", "INSERT INTO rustflow_orm_signed_widths (i16_value) VALUES (32768)"),
+        ("i16 lower overflow", "INSERT INTO rustflow_orm_signed_widths (i16_value) VALUES (-32769)"),
+        ("i32 upper overflow", "INSERT INTO rustflow_orm_signed_widths (i32_value) VALUES (2147483648)"),
+        ("i32 lower overflow", "INSERT INTO rustflow_orm_signed_widths (i32_value) VALUES (-2147483649)"),
+        ("i64 upper overflow", "INSERT INTO rustflow_orm_signed_widths (i64_value) VALUES (9223372036854775808)"),
+        ("i64 lower overflow", "INSERT INTO rustflow_orm_signed_widths (i64_value) VALUES (-9223372036854775809)"),
+    ];
+    // PostgreSQL represents i8 through its one-byte internal "char" type.
+    // Its signed boundary values are round-tripped above; the remaining
+    // dialects enforce the TINYINT/SQLite CHECK overflow boundary directly.
+    if database.backend() != DatabaseBackend::Postgres {
+        signed_overflow_cases.extend([
+            ("i8 upper overflow", "INSERT INTO rustflow_orm_signed_widths (i8_value) VALUES (128)"),
+            ("i8 lower overflow", "INSERT INTO rustflow_orm_signed_widths (i8_value) VALUES (-129)"),
+        ]);
+    }
+    for (label, sql) in signed_overflow_cases {
+        database
+            .execute_raw(sql, [])
+            .await
+            .expect_err(label);
+    }
+
+    if database.backend() != DatabaseBackend::Postgres {
+        let unsigned = database.entity::<entities::unsigned_integer_widths::Entity>();
+        let zero = unsigned
+            .insert(entities::unsigned_integer_widths::ActiveModel {
+                u8_value: Set(0),
+                u16_value: Set(0),
+                u32_value: Set(0),
+                ..Default::default()
+            })
+            .await
+            .expect("insert unsigned zero values");
+        let decoded_zero = unsigned
+            .find_by_id(zero.id)
+            .await
+            .expect("read unsigned zero values")
+            .expect("unsigned zero row exists");
+        assert_eq!(decoded_zero.u8_value, 0);
+        assert_eq!(decoded_zero.u16_value, 0);
+        assert_eq!(decoded_zero.u32_value, 0);
+
+        let maxima = unsigned
+            .insert(entities::unsigned_integer_widths::ActiveModel {
+                u8_value: Set(u8::MAX),
+                u16_value: Set(u16::MAX),
+                u32_value: Set(u32::MAX),
+                ..Default::default()
+            })
+            .await
+            .expect("insert unsigned maximum values for every supported width");
+        let decoded_maxima = unsigned
+            .find_by_id(maxima.id)
+            .await
+            .expect("read unsigned maximum values")
+            .expect("unsigned maximum row exists");
+        assert_eq!(decoded_maxima.u8_value, u8::MAX);
+        assert_eq!(decoded_maxima.u16_value, u16::MAX);
+        assert_eq!(decoded_maxima.u32_value, u32::MAX);
+
+        let unsigned_overflow_cases = [
+            ("u8 upper overflow", "INSERT INTO rustflow_orm_unsigned_widths (u8_value) VALUES (256)"),
+            ("u8 negative overflow", "INSERT INTO rustflow_orm_unsigned_widths (u8_value) VALUES (-1)"),
+            ("u16 upper overflow", "INSERT INTO rustflow_orm_unsigned_widths (u16_value) VALUES (65536)"),
+            ("u16 negative overflow", "INSERT INTO rustflow_orm_unsigned_widths (u16_value) VALUES (-1)"),
+            ("u32 upper overflow", "INSERT INTO rustflow_orm_unsigned_widths (u32_value) VALUES (4294967296)"),
+            ("u32 negative overflow", "INSERT INTO rustflow_orm_unsigned_widths (u32_value) VALUES (-1)"),
+        ];
+        for (label, sql) in unsigned_overflow_cases {
+            database
+                .execute_raw(sql, [])
+                .await
+                .expect_err(label);
+        }
     }
 }
 
 async fn exercise_orm(database: &DatabasePool) {
     create_schema(database).await;
+    exercise_integer_widths(database).await;
     exercise_type_codecs(database).await;
 
     let accounts = database.entity::<entities::account::Entity>();
@@ -939,6 +1204,84 @@ async fn exercise_orm(database: &DatabasePool) {
         .rollback()
         .await
         .expect("rollback relation mutation");
+
+    // Exercise the complete explicit many-to-many mutation lifecycle:
+    // attach a junction row, change its target, detach it, then verify that
+    // deleting a related tag cascades to its junction row.
+    let tags = database.entity::<entities::tag::Entity>();
+    let mutation_tag = tags
+        .insert(entities::tag::ActiveModel {
+            name: Set("mutation-target".to_owned()),
+            ..Default::default()
+        })
+        .await
+        .expect("create relation mutation target");
+    let attached = account_tags
+        .insert(entities::account_tag::ActiveModel {
+            account_id: Set(second.id),
+            tag_id: Set(mutation_tag.id),
+            ..Default::default()
+        })
+        .await
+        .expect("attach a tag through a junction row");
+    assert_eq!(attached.account_id, second.id);
+    assert_eq!(attached.tag_id, mutation_tag.id);
+
+    let updated_link = account_tags
+        .update(entities::account_tag::ActiveModel {
+            id: Set(attached.id),
+            tag_id: Set(first_tag.id),
+            ..Default::default()
+        })
+        .await
+        .expect("update the related target through its junction row");
+    assert_eq!(updated_link.account_id, second.id);
+    assert_eq!(updated_link.tag_id, first_tag.id);
+
+    let detached = account_tags
+        .delete_by_id(attached.id)
+        .await
+        .expect("detach the updated junction row");
+    assert_eq!(detached.rows_affected, 1);
+    let detached_link = account_tags
+        .one(
+            account_tags
+                .select()
+                .filter(entities::account_tag::Column::Id.eq(attached.id)),
+        )
+        .await
+        .expect("verify detached junction row");
+    assert!(detached_link.is_none());
+
+    let cascade_tag = tags
+        .insert(entities::tag::ActiveModel {
+            name: Set("cascade-target".to_owned()),
+            ..Default::default()
+        })
+        .await
+        .expect("create tag for cascade-delete test");
+    let cascade_link = account_tags
+        .insert(entities::account_tag::ActiveModel {
+            account_id: Set(first.id),
+            tag_id: Set(cascade_tag.id),
+            ..Default::default()
+        })
+        .await
+        .expect("attach cascade-delete tag");
+    let deleted_tag = tags
+        .delete_by_id(cascade_tag.id)
+        .await
+        .expect("delete related tag");
+    assert_eq!(deleted_tag.rows_affected, 1);
+    let cascaded_link = account_tags
+        .one(
+            account_tags
+                .select()
+                .filter(entities::account_tag::Column::Id.eq(cascade_link.id)),
+        )
+        .await
+        .expect("verify foreign-key cascade removed junction row");
+    assert!(cascaded_link.is_none());
 
     let grouped: Vec<(i64, i64)> = entities::note::Entity::find()
         .select_only()
@@ -1405,4 +1748,219 @@ async fn many_to_many_loader_uses_two_queries_for_many_parents() {
         2,
         "many-to-many loading should issue one junction and one target query for the whole batch"
     );
+}
+
+#[tokio::test]
+async fn nested_relation_loading_uses_one_query_per_explicit_hop() {
+    use rustflow_server::sea_orm::{DbBackend, MockDatabase};
+
+    let database = MockDatabase::new(DbBackend::Sqlite)
+        .append_query_results([vec![
+            entities::note::Model {
+                id: 1,
+                account_id: 10,
+                title: "first hop".to_owned(),
+                body: None,
+            },
+            entities::note::Model {
+                id: 2,
+                account_id: 99,
+                title: "missing owner".to_owned(),
+                body: None,
+            },
+        ]])
+        .append_query_results([vec![entities::account::Model {
+            id: 10,
+            email: "present@example.test".to_owned(),
+            enabled: true,
+            alias: None,
+            metadata: serde_json::json!({}),
+            checksum: vec![],
+        }]])
+        .into_connection();
+    let parents = vec![
+        entities::account::Model {
+            id: 10,
+            email: "present@example.test".to_owned(),
+            enabled: true,
+            alias: None,
+            metadata: serde_json::json!({}),
+            checksum: vec![],
+        },
+        entities::account::Model {
+            id: 99,
+            email: "missing@example.test".to_owned(),
+            enabled: true,
+            alias: None,
+            metadata: serde_json::json!({}),
+            checksum: vec![],
+        },
+    ];
+
+    let notes = load_many(&parents, entities::note::Entity, &database)
+        .await
+        .expect("first explicit has-many hop");
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0].len(), 1);
+    assert_eq!(notes[1].len(), 1);
+
+    let nested_parents: Vec<_> = notes.into_iter().flatten().collect();
+    let owners = load_one(&nested_parents, entities::account::Entity, &database)
+        .await
+        .expect("second explicit belongs-to hop");
+    assert_eq!(owners.len(), 2);
+    assert_eq!(owners[0].as_ref().map(|owner| owner.id), Some(10));
+    assert!(owners[1].is_none(), "missing belongs-to rows remain None");
+
+    let query_log = database.into_transaction_log();
+    assert_eq!(
+        query_log.len(),
+        2,
+        "a two-hop graph must use one batched query per explicit hop, never one query per parent"
+    );
+}
+
+#[tokio::test]
+async fn postgres_commit_transport_loss_is_reported_as_unknown() {
+    use std::time::{Duration, Instant};
+
+    let Some(url) = integration_url("RUSTFLOW_TEST_DATABASE_URL") else {
+        return;
+    };
+
+    let database = database_from_url(&url).await;
+    let admin = rustflow_server::sqlx::PgPool::connect(&url)
+        .await
+        .expect("connect PostgreSQL fault-injection control pool");
+
+    rustflow_server::sqlx::query("DROP TABLE IF EXISTS rustflow_orm_commit_fault")
+        .execute(&admin)
+        .await
+        .expect("remove prior commit fault table");
+    rustflow_server::sqlx::query("DROP FUNCTION IF EXISTS rustflow_orm_wait_before_commit()")
+        .execute(&admin)
+        .await
+        .expect("remove prior commit fault trigger function");
+    rustflow_server::sqlx::query(
+        "CREATE TABLE rustflow_orm_commit_fault (value INTEGER NOT NULL)",
+    )
+    .execute(&admin)
+    .await
+    .expect("create commit fault table");
+    rustflow_server::sqlx::query(
+        r#"
+        CREATE FUNCTION rustflow_orm_wait_before_commit() RETURNS trigger
+        LANGUAGE plpgsql AS $
+        BEGIN
+            PERFORM pg_sleep(30);
+            RETURN NEW;
+        END;
+        $
+        "#,
+    )
+    .execute(&admin)
+    .await
+    .expect("create deferred commit trigger function");
+    rustflow_server::sqlx::query(
+        r#"
+        CREATE CONSTRAINT TRIGGER rustflow_orm_commit_fault_trigger
+        AFTER INSERT ON rustflow_orm_commit_fault
+        DEFERRABLE INITIALLY DEFERRED
+        FOR EACH ROW
+        EXECUTE FUNCTION rustflow_orm_wait_before_commit()
+        "#,
+    )
+    .execute(&admin)
+    .await
+    .expect("create deferred trigger that pauses inside COMMIT");
+
+    let transaction = database
+        .begin_transaction()
+        .await
+        .expect("begin transaction for live COMMIT fault injection");
+    let pid_rows = transaction
+        .query_raw("SELECT pg_backend_pid() AS backend_pid", [])
+        .await
+        .expect("read PostgreSQL backend PID inside transaction");
+    let backend_pid: i32 = pid_rows
+        .first()
+        .expect("backend PID query returns one row")
+        .try_get("", "backend_pid")
+        .expect("decode PostgreSQL backend PID");
+    transaction
+        .execute_raw(
+            "INSERT INTO rustflow_orm_commit_fault (value) VALUES (1)",
+            [],
+        )
+        .await
+        .expect("insert row whose deferred trigger runs during COMMIT");
+
+    let commit_task = tokio::spawn(async move { transaction.commit().await });
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut observed_commit_wait = false;
+    while Instant::now() < deadline {
+        let in_commit_trigger = rustflow_server::sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (
+                SELECT 1
+                FROM pg_stat_activity
+                WHERE pid = $1
+                  AND state = 'active'
+                  AND upper(query) LIKE 'COMMIT%'
+                  AND wait_event = 'PgSleep'
+            )",
+        )
+        .bind(backend_pid)
+        .fetch_one(&admin)
+        .await
+        .expect("inspect PostgreSQL commit backend activity");
+        if in_commit_trigger {
+            observed_commit_wait = true;
+            break;
+        }
+        if commit_task.is_finished() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+
+    if !observed_commit_wait {
+        let _ = rustflow_server::sqlx::query_scalar::<_, bool>(
+            "SELECT pg_terminate_backend($1)",
+        )
+        .bind(backend_pid)
+        .fetch_one(&admin)
+        .await;
+        let _ = commit_task.await;
+        panic!("PostgreSQL COMMIT never reached the deferred-trigger PgSleep fault window");
+    }
+
+    let terminated = rustflow_server::sqlx::query_scalar::<_, bool>(
+        "SELECT pg_terminate_backend($1)",
+    )
+    .bind(backend_pid)
+    .fetch_one(&admin)
+    .await
+    .expect("terminate the backend while COMMIT is executing");
+    assert!(terminated, "PostgreSQL must terminate the active COMMIT backend");
+
+    let commit_error = commit_task
+        .await
+        .expect("commit task must finish after its backend is terminated")
+        .expect_err("a transport drop during COMMIT must not be reported as success");
+    assert_eq!(
+        commit_error.kind(),
+        DatabaseErrorKind::CommitOutcomeUnknown,
+        "a lost PostgreSQL connection while COMMIT is in flight has an unknown client-visible outcome"
+    );
+
+    rustflow_server::sqlx::query("DROP TABLE IF EXISTS rustflow_orm_commit_fault")
+        .execute(&admin)
+        .await
+        .expect("clean up commit fault table");
+    rustflow_server::sqlx::query("DROP FUNCTION IF EXISTS rustflow_orm_wait_before_commit()")
+        .execute(&admin)
+        .await
+        .expect("clean up deferred commit trigger function");
+    admin.close().await;
+    database.close().await;
 }
