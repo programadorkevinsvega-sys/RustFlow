@@ -61,7 +61,7 @@ No implicit relation or lazy-loading API is provided. Embedded values use nested
 
 ### 5. Index and collection lifecycle
 
-Continue to use DocumentBootstrap as an explicit, repeatable collection/index declaration. A declared compound index is a native ordered BSON key document. Verification must compare the declared key document and every option RustFlow claims to manage (at least name and uniqueness), not just the name. Existing incompatible resources must cause a clear conflict/error; bootstrap must never silently drop or replace an index. TTL, sparse, partial, collation, wildcard and other index options may only be advertised when represented, compared and integration-tested. No BSON schema migration/versioning system is implied.
+Continue to use DocumentBootstrap as an explicit, repeatable collection/index declaration. A declared compound index is a native ordered BSON key document. Verification must compare the declared key document and every option RustFlow claims to manage (at least name and uniqueness), not just the name. `_id` is immutable: ODM update helpers reject updates targeting `_id` or its nested paths. Existing incompatible resources must cause a clear conflict/error; bootstrap must never silently drop or replace an index. TTL, sparse, partial, collation, wildcard and other index options may only be advertised when represented, compared and integration-tested. No BSON schema migration/versioning system is implied.
 
 ### 6. Sessions and transaction semantics
 
