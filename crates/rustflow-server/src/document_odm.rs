@@ -553,6 +553,9 @@ impl<M: DocumentModel> DocumentRepository<M> {
 
     /// Insert one model and return it with its database-generated or supplied ID.
     pub async fn insert(&self, mut model: M) -> Result<M, MongoError> {
+        if model.id().is_none() {
+            validate_generated_id_type::<M>()?;
+        }
         let document = serialize_document_model(&model)?;
         let collection = self.database.collection::<Document>(self.collection_name);
         let result = self
@@ -573,6 +576,9 @@ impl<M: DocumentModel> DocumentRepository<M> {
         validate_bulk_size(models.len())?;
         let mut documents = Vec::with_capacity(models.len());
         for model in &models {
+            if model.id().is_none() {
+                validate_generated_id_type::<M>()?;
+            }
             documents.push(serialize_document_model(model)?);
         }
         let collection = self.database.collection::<Document>(self.collection_name);
@@ -668,6 +674,11 @@ impl<M: DocumentModel> DocumentRepository<M> {
         replacement: &M,
         upsert: bool,
     ) -> Result<DocumentUpdateOutcome, MongoError> {
+        if replacement.id().is_none() {
+            return Err(MongoError::InvalidDocumentModel(
+                "replace_one requires an explicit model ID",
+            ));
+        }
         let replacement = serialize_document_model(replacement)?;
         let collection = self.database.collection::<Document>(self.collection_name);
         let result = self
@@ -796,6 +807,9 @@ impl<M: DocumentModel> DocumentRepository<M> {
         mut model: M,
         session: &mut ClientSession,
     ) -> Result<M, MongoError> {
+        if model.id().is_none() {
+            validate_generated_id_type::<M>()?;
+        }
         let document = serialize_document_model(&model)?;
         let collection = self.database.collection::<Document>(self.collection_name);
         let result = collection
@@ -900,6 +914,16 @@ where
     Ok(documents)
 }
 
+fn validate_generated_id_type<M: DocumentModel>() -> Result<(), MongoError> {
+    bson::from_bson::<M::Id>(Bson::ObjectId(bson::oid::ObjectId::new()))
+        .map(|_| ())
+        .map_err(|_| {
+            MongoError::InvalidDocumentModel(
+                "MongoDB-generated IDs are ObjectId values; provide an explicit ID for this model type",
+            )
+        })
+}
+
 fn serialize_document_model<M: DocumentModel>(model: &M) -> Result<Document, MongoError> {
     let mut document = to_bson_document(model)?;
     match model.id() {
@@ -991,6 +1015,31 @@ mod tests {
             id: bson::oid::ObjectId::new(),
         };
         assert!(serialize_document_model(&model).is_err());
+    }
+
+    #[derive(Clone, Serialize, Deserialize)]
+    struct StringIdWithoutValue {
+        #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+    }
+
+    impl DocumentModel for StringIdWithoutValue {
+        type Id = String;
+        const COLLECTION: &'static str = "string_ids";
+
+        fn id(&self) -> Option<Self::Id> {
+            self.id.clone()
+        }
+
+        fn set_id(&mut self, id: Self::Id) {
+            self.id = Some(id);
+        }
+    }
+
+    #[test]
+    fn generated_object_ids_are_rejected_for_non_object_id_models_before_writes() {
+        assert!(validate_generated_id_type::<StringIdWithoutValue>().is_err());
+        assert!(validate_generated_id_type::<MissingIdRename>().is_ok());
     }
 
     #[test]
