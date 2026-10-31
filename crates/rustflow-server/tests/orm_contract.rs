@@ -995,7 +995,10 @@ async fn exercise_orm(database: &DatabasePool) {
     assert!(capabilities.upsert);
     assert_eq!(
         capabilities.insert_returning,
-        matches!(database.backend(), DatabaseBackend::Sqlite | DatabaseBackend::Postgres)
+        matches!(
+            database.backend(),
+            DatabaseBackend::Sqlite | DatabaseBackend::Postgres
+        )
     );
 
     let upsert_model = |enabled| entities::account::ActiveModel {
@@ -1060,7 +1063,10 @@ async fn exercise_orm(database: &DatabasePool) {
         .expect("deleting a missing key is a zero-row result");
     assert_eq!(missing_delete.rows_affected, 0);
 
-    let cleanup = accounts.delete_by_id(defaults.id).await.expect("cleanup default row");
+    let cleanup = accounts
+        .delete_by_id(defaults.id)
+        .await
+        .expect("cleanup default row");
     assert_eq!(cleanup.rows_affected, 1);
 }
 
