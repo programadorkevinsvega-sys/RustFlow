@@ -342,244 +342,244 @@ async fn create_schema(database: &DatabasePool) {
         .expect("drop accounts table");
 
     let (account_id, enabled, alias, metadata, checksum, note_id, body) = match database.backend() {
-        DatabaseBackend::Sqlite => (
-            "INTEGER PRIMARY KEY AUTOINCREMENT",
-            "BOOLEAN NOT NULL",
-            "TEXT NULL DEFAULT 'database-default'",
-            "JSON NOT NULL",
-            "BLOB NOT NULL",
-            "INTEGER PRIMARY KEY AUTOINCREMENT",
-            "TEXT NULL",
-        ),
-        DatabaseBackend::Postgres => (
-            "BIGSERIAL PRIMARY KEY",
-            "BOOLEAN NOT NULL",
-            "VARCHAR(255) NULL DEFAULT 'database-default'",
-            "JSONB NOT NULL",
-            "BYTEA NOT NULL",
-            "BIGSERIAL PRIMARY KEY",
-            "TEXT NULL",
-        ),
-        DatabaseBackend::MySql => (
-            "BIGINT AUTO_INCREMENT PRIMARY KEY",
-            "BOOLEAN NOT NULL",
-            "VARCHAR(255) NULL DEFAULT 'database-default'",
-            "JSON NOT NULL",
-            "LONGBLOB NOT NULL",
-            "BIGINT AUTO_INCREMENT PRIMARY KEY",
-            "TEXT NULL",
-        ),
-    };
+    DatabaseBackend::Sqlite => (
+        "INTEGER PRIMARY KEY AUTOINCREMENT",
+        "BOOLEAN NOT NULL",
+        "TEXT NULL DEFAULT 'database-default'",
+        "JSON NOT NULL",
+        "BLOB NOT NULL",
+        "INTEGER PRIMARY KEY AUTOINCREMENT",
+        "TEXT NULL",
+    ),
+    DatabaseBackend::Postgres => (
+        "BIGSERIAL PRIMARY KEY",
+        "BOOLEAN NOT NULL",
+        "VARCHAR(255) NULL DEFAULT 'database-default'",
+        "JSONB NOT NULL",
+        "BYTEA NOT NULL",
+        "BIGSERIAL PRIMARY KEY",
+        "TEXT NULL",
+    ),
+    DatabaseBackend::MySql => (
+        "BIGINT AUTO_INCREMENT PRIMARY KEY",
+        "BOOLEAN NOT NULL",
+        "VARCHAR(255) NULL DEFAULT 'database-default'",
+        "JSON NOT NULL",
+        "LONGBLOB NOT NULL",
+        "BIGINT AUTO_INCREMENT PRIMARY KEY",
+        "TEXT NULL",
+    ),
+};
 
-    let accounts = format!(
-        "CREATE TABLE rustflow_orm_accounts (
-            id {account_id},
-            email VARCHAR(255) NOT NULL UNIQUE,
-            enabled {enabled},
-            alias {alias},
-            metadata {metadata},
-            checksum {checksum}
-        )"
-    );
-    let notes = format!(
-        "CREATE TABLE rustflow_orm_notes (
-            id {note_id},
-            account_id BIGINT NOT NULL,
-            title VARCHAR(255) NOT NULL,
-            body {body},
-            FOREIGN KEY (account_id) REFERENCES rustflow_orm_accounts(id) ON DELETE CASCADE
-        )"
-    );
-    database
-        .execute_raw(&accounts, [])
-        .await
-        .expect("create accounts table");
-    database
-        .execute_raw(&notes, [])
-        .await
-        .expect("create notes table");
+let accounts = format!(
+    "CREATE TABLE rustflow_orm_accounts (
+        id {account_id},
+        email VARCHAR(255) NOT NULL UNIQUE,
+        enabled {enabled},
+        alias {alias},
+        metadata {metadata},
+        checksum {checksum}
+    )"
+);
+let notes = format!(
+    "CREATE TABLE rustflow_orm_notes (
+        id {note_id},
+        account_id BIGINT NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        body {body},
+        FOREIGN KEY (account_id) REFERENCES rustflow_orm_accounts(id) ON DELETE CASCADE
+    )"
+);
+database
+    .execute_raw(&accounts, [])
+    .await
+    .expect("create accounts table");
+database
+    .execute_raw(&notes, [])
+    .await
+    .expect("create notes table");
+database
+    .execute_raw(
+        "CREATE TABLE rustflow_orm_constraints (
+            positive_value INTEGER NOT NULL CHECK (positive_value > 0)
+        )",
+        [],
+    )
+    .await
+    .expect("create check-constraint contract table");
+let profiles = format!(
+    "CREATE TABLE rustflow_orm_profiles (
+        id {note_id},
+        account_id BIGINT NOT NULL UNIQUE,
+        bio VARCHAR(255) NOT NULL,
+        FOREIGN KEY (account_id) REFERENCES rustflow_orm_accounts(id) ON DELETE CASCADE
+    )"
+);
+database
+    .execute_raw(&profiles, [])
+    .await
+    .expect("create profiles table");
+let tags = format!(
+    "CREATE TABLE rustflow_orm_tags (
+        id {note_id},
+        name VARCHAR(100) NOT NULL UNIQUE
+    )"
+);
+let account_tags = format!(
+    "CREATE TABLE rustflow_orm_account_tags (
+        id {note_id},
+        account_id BIGINT NOT NULL,
+        tag_id BIGINT NOT NULL,
+        UNIQUE (account_id, tag_id),
+        FOREIGN KEY (account_id) REFERENCES rustflow_orm_accounts(id) ON DELETE CASCADE,
+        FOREIGN KEY (tag_id) REFERENCES rustflow_orm_tags(id) ON DELETE CASCADE
+    )"
+);
+database
+    .execute_raw(&tags, [])
+    .await
+    .expect("create tags table");
+database
+    .execute_raw(&account_tags, [])
+    .await
+    .expect("create account tags table");
+
+let (
+    codec_id,
+    signed_type,
+    ratio_type,
+    decimal_type,
+    big_decimal_type,
+    uuid_type,
+    date_type,
+    time_type,
+    timestamp_type,
+    state_type,
+    json_type,
+    bytes_type,
+) = match database.backend() {
+    DatabaseBackend::Sqlite => (
+        "INTEGER PRIMARY KEY AUTOINCREMENT",
+        "INTEGER",
+        "REAL",
+        "REAL",
+        "REAL",
+        "BLOB",
+        "TEXT",
+        "TEXT",
+        "TEXT",
+        "VARCHAR(12)",
+        "JSON",
+        "BLOB",
+    ),
+    DatabaseBackend::Postgres => (
+        "BIGSERIAL PRIMARY KEY",
+        "BIGINT",
+        "DOUBLE PRECISION",
+        "NUMERIC(20,4)",
+        "NUMERIC(35,10)",
+        "UUID",
+        "DATE",
+        "TIME(6)",
+        "TIMESTAMP(6)",
+        "VARCHAR(12)",
+        "JSONB",
+        "BYTEA",
+    ),
+    DatabaseBackend::MySql => (
+        "BIGINT AUTO_INCREMENT PRIMARY KEY",
+        "BIGINT",
+        "DOUBLE",
+        "DECIMAL(20,4)",
+        "DECIMAL(35,10)",
+        "BINARY(16)",
+        "DATE",
+        "TIME(6)",
+        "DATETIME(6)",
+        "VARCHAR(12)",
+        "JSON",
+        "LONGBLOB",
+    ),
+};
+let codecs = format!(
+    "CREATE TABLE rustflow_orm_codecs (
+        id {codec_id},
+        signed_value {signed_type} NOT NULL,
+        ratio {ratio_type} NOT NULL,
+        decimal_value {decimal_type} NOT NULL,
+        big_decimal_value {big_decimal_type} NOT NULL,
+        uuid_value {uuid_type} NOT NULL,
+        event_date {date_type} NOT NULL,
+        event_time {time_type} NOT NULL,
+        timestamp_value {timestamp_type} NOT NULL,
+        state {state_type} NOT NULL,
+        optional_value TEXT NULL,
+        json_value {json_type} NOT NULL,
+        bytes_value {bytes_type} NOT NULL
+    )"
+);
+database
+    .execute_raw(&codecs, [])
+    .await
+    .expect("create codec table");
+
+if database.backend() == DatabaseBackend::MySql {
     database
         .execute_raw(
-            "CREATE TABLE rustflow_orm_constraints (
-                positive_value INTEGER NOT NULL CHECK (positive_value > 0)
+            "CREATE TABLE rustflow_orm_mysql_unsigned (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                value BIGINT UNSIGNED NOT NULL
             )",
             [],
         )
         .await
-        .expect("create check-constraint contract table");
-    let profiles = format!(
-        "CREATE TABLE rustflow_orm_profiles (
-            id {note_id},
-            account_id BIGINT NOT NULL UNIQUE,
-            bio VARCHAR(255) NOT NULL,
-            FOREIGN KEY (account_id) REFERENCES rustflow_orm_accounts(id) ON DELETE CASCADE
-        )"
-    );
-    database
-        .execute_raw(&profiles, [])
-        .await
-        .expect("create profiles table");
-    let tags = format!(
-        "CREATE TABLE rustflow_orm_tags (
-            id {note_id},
-            name VARCHAR(100) NOT NULL UNIQUE
-        )"
-    );
-    let account_tags = format!(
-        "CREATE TABLE rustflow_orm_account_tags (
-            id {note_id},
-            account_id BIGINT NOT NULL,
-            tag_id BIGINT NOT NULL,
-            UNIQUE (account_id, tag_id),
-            FOREIGN KEY (account_id) REFERENCES rustflow_orm_accounts(id) ON DELETE CASCADE,
-            FOREIGN KEY (tag_id) REFERENCES rustflow_orm_tags(id) ON DELETE CASCADE
-        )"
-    );
-    database
-        .execute_raw(&tags, [])
-        .await
-        .expect("create tags table");
-    database
-        .execute_raw(&account_tags, [])
-        .await
-        .expect("create account tags table");
-
-    let (
-        codec_id,
-        signed_type,
-        ratio_type,
-        decimal_type,
-        big_decimal_type,
-        uuid_type,
-        date_type,
-        time_type,
-        timestamp_type,
-        state_type,
-        json_type,
-        bytes_type,
-    ) = match database.backend() {
+        .expect("create MySQL-family unsigned codec table");
+}
+let (
+    integer_id_type,
+    i8_type,
+    i16_type,
+    i32_type,
+    i64_type,
+    i8_check,
+    i16_check,
+    i32_check,
+    i64_check,
+) = match database.backend() {
         DatabaseBackend::Sqlite => (
             "INTEGER PRIMARY KEY AUTOINCREMENT",
             "INTEGER",
-            "REAL",
-            "REAL",
-            "REAL",
-            "BLOB",
-            "TEXT",
-            "TEXT",
-            "TEXT",
-            "VARCHAR(12)",
-            "JSON",
-            "BLOB",
+            "INTEGER",
+            "INTEGER",
+            "INTEGER",
+            " CHECK (i8_value BETWEEN -128 AND 127)",
+            " CHECK (i16_value BETWEEN -32768 AND 32767)",
+            " CHECK (i32_value BETWEEN -2147483648 AND 2147483647)",
+            " CHECK (typeof(i64_value) = 'integer' AND i64_value BETWEEN -9223372036854775808 AND 9223372036854775807)",
         ),
         DatabaseBackend::Postgres => (
             "BIGSERIAL PRIMARY KEY",
+            "\"char\"",
+            "SMALLINT",
+            "INTEGER",
             "BIGINT",
-            "DOUBLE PRECISION",
-            "NUMERIC(20,4)",
-            "NUMERIC(35,10)",
-            "UUID",
-            "DATE",
-            "TIME(6)",
-            "TIMESTAMP(6)",
-            "VARCHAR(12)",
-            "JSONB",
-            "BYTEA",
+            "",
+            "",
+            "",
+            "",
         ),
         DatabaseBackend::MySql => (
             "BIGINT AUTO_INCREMENT PRIMARY KEY",
+            "TINYINT",
+            "SMALLINT",
+            "INT",
             "BIGINT",
-            "DOUBLE",
-            "DECIMAL(20,4)",
-            "DECIMAL(35,10)",
-            "BINARY(16)",
-            "DATE",
-            "TIME(6)",
-            "DATETIME(6)",
-            "VARCHAR(12)",
-            "JSON",
-            "LONGBLOB",
+            "",
+            "",
+            "",
+            "",
         ),
     };
-    let codecs = format!(
-        "CREATE TABLE rustflow_orm_codecs (
-            id {codec_id},
-            signed_value {signed_type} NOT NULL,
-            ratio {ratio_type} NOT NULL,
-            decimal_value {decimal_type} NOT NULL,
-            big_decimal_value {big_decimal_type} NOT NULL,
-            uuid_value {uuid_type} NOT NULL,
-            event_date {date_type} NOT NULL,
-            event_time {time_type} NOT NULL,
-            timestamp_value {timestamp_type} NOT NULL,
-            state {state_type} NOT NULL,
-            optional_value TEXT NULL,
-            json_value {json_type} NOT NULL,
-            bytes_value {bytes_type} NOT NULL
-        )"
-    );
-    database
-        .execute_raw(&codecs, [])
-        .await
-        .expect("create codec table");
-
-    if database.backend() == DatabaseBackend::MySql {
-        database
-            .execute_raw(
-                "CREATE TABLE rustflow_orm_mysql_unsigned (
-                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                    value BIGINT UNSIGNED NOT NULL
-                )",
-                [],
-            )
-            .await
-            .expect("create MySQL-family unsigned codec table");
-    }
-    let (
-        integer_id_type,
-        i8_type,
-        i16_type,
-        i32_type,
-        i64_type,
-        i8_check,
-        i16_check,
-        i32_check,
-        i64_check,
-    ) = match database.backend() {
-            DatabaseBackend::Sqlite => (
-                "INTEGER PRIMARY KEY AUTOINCREMENT",
-                "INTEGER",
-                "INTEGER",
-                "INTEGER",
-                "INTEGER",
-                " CHECK (i8_value BETWEEN -128 AND 127)",
-                " CHECK (i16_value BETWEEN -32768 AND 32767)",
-                " CHECK (i32_value BETWEEN -2147483648 AND 2147483647)",
-                " CHECK (typeof(i64_value) = 'integer' AND i64_value BETWEEN -9223372036854775808 AND 9223372036854775807)",
-            ),
-            DatabaseBackend::Postgres => (
-                "BIGSERIAL PRIMARY KEY",
-                "\"char\"",
-                "SMALLINT",
-                "INTEGER",
-                "BIGINT",
-                "",
-                "",
-                "",
-                "",
-            ),
-            DatabaseBackend::MySql => (
-                "BIGINT AUTO_INCREMENT PRIMARY KEY",
-                "TINYINT",
-                "SMALLINT",
-                "INT",
-                "BIGINT",
-                "",
-                "",
-                "",
-                "",
-            ),
-        };
     let signed_widths = format!(
         "CREATE TABLE rustflow_orm_signed_widths (
             id {integer_id_type},
@@ -599,20 +599,20 @@ async fn create_schema(database: &DatabasePool) {
     // native unsigned integer widths instead of claiming PostgreSQL parity.
     if database.backend() != DatabaseBackend::Postgres {
         let (unsigned_id_type, u8_type, u16_type, u32_type) = match database.backend() {
-                DatabaseBackend::Sqlite => (
-                    "INTEGER PRIMARY KEY AUTOINCREMENT",
-                    "INTEGER NULL CHECK (u8_value BETWEEN 0 AND 255)",
-                    "INTEGER NULL CHECK (u16_value BETWEEN 0 AND 65535)",
-                    "INTEGER NULL CHECK (u32_value BETWEEN 0 AND 4294967295)",
-                ),
-                DatabaseBackend::MySql => (
-                    "BIGINT AUTO_INCREMENT PRIMARY KEY",
-                    "TINYINT UNSIGNED NULL",
-                    "SMALLINT UNSIGNED NULL",
-                    "INT UNSIGNED NULL",
-                ),
-                DatabaseBackend::Postgres => unreachable!("PostgreSQL unsigned contract is excluded"),
-            };
+            DatabaseBackend::Sqlite => (
+                "INTEGER PRIMARY KEY AUTOINCREMENT",
+                "INTEGER NULL CHECK (u8_value BETWEEN 0 AND 255)",
+                "INTEGER NULL CHECK (u16_value BETWEEN 0 AND 65535)",
+                "INTEGER NULL CHECK (u32_value BETWEEN 0 AND 4294967295)",
+            ),
+            DatabaseBackend::MySql => (
+                "BIGINT AUTO_INCREMENT PRIMARY KEY",
+                "TINYINT UNSIGNED NULL",
+                "SMALLINT UNSIGNED NULL",
+                "INT UNSIGNED NULL",
+            ),
+            DatabaseBackend::Postgres => unreachable!("PostgreSQL unsigned contract is excluded"),
+        };
         let unsigned_widths = format!(
             "CREATE TABLE rustflow_orm_unsigned_widths (
                 id {unsigned_id_type},
