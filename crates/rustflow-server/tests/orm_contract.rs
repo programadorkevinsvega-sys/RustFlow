@@ -4,7 +4,7 @@ use rustflow_server::{
     DatabaseBackend, DatabaseConfig, DatabaseErrorKind, DatabasePool,
     orm::{load_many, load_many_to_many, load_one},
     sea_orm::{
-        ActiveValue::{NotSet, Set},
+        ActiveValue::{NotSet, Set, Unchanged},
         ColumnTrait, Condition, EntityTrait, JoinType, QueryFilter, QueryOrder, QuerySelect,
         QueryTrait, RelationTrait,
         sea_query::{Expr, ExprTrait, OnConflict},
@@ -617,9 +617,11 @@ async fn exercise_orm(database: &DatabasePool) {
         })
         .await
         .expect("save inserts a new ActiveModel");
+    // SeaORM turns the returned Model into an ActiveModel with persisted
+    // attributes marked Unchanged rather than Set.
     let saved_id = match saved_new.id {
-        Set(id) => id,
-        _ => panic!("save must return the generated primary key"),
+        Set(id) | Unchanged(id) => id,
+        NotSet => panic!("save must return the generated primary key"),
     };
     let saved_existing = accounts
         .save(entities::account::ActiveModel {
@@ -631,7 +633,7 @@ async fn exercise_orm(database: &DatabasePool) {
         .expect("save updates an existing ActiveModel");
     assert!(matches!(
         &saved_existing.alias,
-        Set(Some(alias)) if alias == "saved-existing"
+        Set(Some(alias)) | Unchanged(Some(alias)) if alias == "saved-existing"
     ));
     let deleted_saved = accounts
         .delete(saved_existing)
