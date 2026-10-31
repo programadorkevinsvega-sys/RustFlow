@@ -155,9 +155,9 @@ Phase 6.7.2 adds SeaORM to the resolved dependency graph. `Cargo.lock` has been 
 
 - **Verified from official manifests:** SeaORM 1.1.20 declares Rust 1.81, edition 2021, MIT OR Apache-2.0, SQLx 0.8.4-compatible dependency range and SeaQuery 0.32.5-compatible dependency range. SeaORM 2.0.4 declares Rust 1.94 and SQLx 0.9.0. Diesel 2.3.14 declares Rust 1.86. Toasty's current 0.11.0 workspace manifest declares Rust 1.95 and SQLx 0.9.0.
 - **Verified from official driver docs/source:** SeaORM 1.1.x lists sqlx-mysql (MySQL and MariaDB), sqlx-postgres and sqlx-sqlite. SeaORM's DatabaseConnection has typed SQLx pool accessors. SeaORM's ConnectionTrait and TransactionTrait require explicit connection/transaction values; its loader API exposes load_one/load_many/load_many_to_many. Its MariaDB RETURNING feature is compile-time and shares the MySQL backend flag.
-- **Verified from RustFlow's repository:** the workspace currently pins SQLx 0.8.6, exposes AnyPool and uses SQLx's migration runner. MySQL and MariaDB use the same MySQL protocol backend family. MongoDB is a separate driver and adapter.
+- **Verified at the Phase 6.7.1 decision point:** the workspace pinned SQLx 0.8.6, exposed AnyPool and used SQLx's migration runner. MySQL and MariaDB used the same MySQL protocol backend family. MongoDB was a separate driver and adapter. PR #59 replaces that historical AnyPool boundary with typed SQLx pools shared with SeaORM; this ADR's design snapshot should not be read as a description of the current branch API.
 - **Design inference:** SeaORM 1.1.20 is a better maintained foundation than a RustFlow-authored ORM because it already provides the model, query, transaction and relation abstractions required by the maturity gate while staying inside the current MSRV and SQLx major/minor boundary. The typed-pool bridge is necessary because AnyPool is not accepted directly by SeaORM.
-- **Not yet verified by this subphase:** SeaORM 1.1.20 end-to-end behavior against the exact RustFlow service matrix (PostgreSQL 16.15, MySQL 8.4.13, MariaDB 11.4.13 and bundled SQLite 3.46.0); runtime type codecs; CRUD semantics through RustFlow's DatabasePool; relation query counts; and the complete generated application. These are gates in later subphases, not claims made by this ADR.
+- **Phase 6.7.1 boundary (historical):** at the time this ADR was accepted, SeaORM 1.1.20 end-to-end behavior against RustFlow's exact service matrix, runtime codecs, CRUD through DatabasePool, relation query counts and the generated application were not yet verified. PR #59 now implements and tests part of this runtime contract; the exact final SHA still needs all CI and edge-case acceptance evidence before 6.7.2 can be accepted.
 
 ## Capability matrix: final maturity target and 6.7.1 boundary
 
@@ -174,6 +174,12 @@ Phase 6.7.2 adds SeaORM to the resolved dependency graph. `Cargo.lock` has been 
 | Raw SQL | Explicit parameterized escape hatch and engine-specific SQL | Statement/typed-pool strategy defined; no untrusted interpolation |
 | Migrations | Existing SQLx migrations, dialect-specific DDL and honest non-atomic DDL limitations | Existing migration strategy retained; typed pool adaptation in 6.7.2 |
 | MongoDB ODM | Separate BSON/document contract and verified MongoDB-native behavior | Explicitly outside SQL ORM; 6.7.3 |
+
+### Phase 6.7.2 implementation snapshot — PR #59
+
+The 6.7.2 implementation now places SeaORM 1.1.20 inside `rustflow-server`, shares one typed SQLx pool per configured backend with SeaORM, retains backend-specific SQLx accessors/migrations, and exposes borrowed `EntityRepository` values. The repository provides insert/update/save/delete/find and bulk builders; typed SeaORM query composition is used for filters, projections, aliases, joins, grouping, aggregates and subqueries. Explicit loaders cover belongs-to, has-one, has-many and many-to-many metadata, with no transparent lazy loading. ORM and parameterized raw SQL can use the same explicit transaction. `DatabaseError` maps stable categories and its `Debug` representation reports only the category, not the underlying driver/SQL text.
+
+The test contract now exercises these paths across SQLite, PostgreSQL, MySQL and MariaDB with CI service variables required when `CI=true`. The present tests do not yet establish a complete integer-width/overflow matrix, nested-loader query-count budget, all relation mutation variants, or an injected live connection drop during COMMIT. These remain explicit acceptance tasks; synthetic ambiguity classification alone is not proof of transport-failure behavior. Do not mark the 6.7.2 roadmap criteria complete until the final PR SHA runs Rust 1.85/stable, Clippy, workspace and four-engine integration, rustdoc, dependency audit/review, WASM/browser, website and governance gates successfully.
 
 ## Failure and transaction semantics
 
