@@ -53,8 +53,8 @@ pub use document_database::{
     to_bson_document,
 };
 pub use document_odm::{
-    DocumentDeleteOutcome, DocumentField, DocumentFilter, DocumentModel, DocumentQuery, DocumentRepository,
-    DocumentUpdate, DocumentUpdateOutcome, MAX_DOCUMENT_BULK_SIZE,
+    DocumentDeleteOutcome, DocumentField, DocumentFilter, DocumentModel, DocumentQuery,
+    DocumentRepository, DocumentUpdate, DocumentUpdateOutcome, MAX_DOCUMENT_BULK_SIZE,
 };
 pub use group::RouteGroup;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
