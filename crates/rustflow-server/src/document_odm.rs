@@ -34,10 +34,18 @@ pub trait DocumentModel: Serialize + DeserializeOwned + Clone + Send + Sync + 's
 ///
 /// The type parameter prevents passing a value of the wrong Rust type to typed filter
 /// and update helpers. It does not inspect arbitrary Serde rename attributes at runtime.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct DocumentField<T> {
     path: &'static str,
     marker: PhantomData<fn() -> T>,
+}
+
+impl<T> Copy for DocumentField<T> {}
+
+impl<T> Clone for DocumentField<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 impl<T> DocumentField<T> {
@@ -225,15 +233,6 @@ impl DocumentFilter {
         let mut document = Document::new();
         document.insert(operator, Bson::Array(filters.into_iter().map(Bson::Document).collect()));
         Ok(Self { document })
-    }
-
-    fn insert_value(&mut self, field: &str, value: Bson) -> Result<(), MongoError> {
-        validate_field_path(field)?;
-        if self.document.contains_key(field) {
-            return Err(MongoError::InvalidDocumentQuery("filter has duplicate or conflicting field conditions"));
-        }
-        self.document.insert(field, value);
-        Ok(())
     }
 
     fn insert_operator(&mut self, field: &str, operator: &'static str, value: Bson) -> Result<(), MongoError> {
