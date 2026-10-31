@@ -64,7 +64,39 @@ let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM notes")
 
 The available accessors are `sqlx_sqlite_pool()`, `sqlx_postgres_pool()`, and `sqlx_mysql_pool()`; the last is used for both MySQL and MariaDB. Direct SQLx queries remain backend-specific: placeholders, codecs and SQL syntax are not translated.
 
-### Numeric codecs and decimal precision
+### Dialect capabilities and upsert
+
+DatabasePool::capabilities() exposes the selected adapter contract:
+
+| Capability | SQLite | PostgreSQL | MySQL | MariaDB |
+|---|---:|---:|---:|---:|
+| SeaORM OnConflict upsert builder | Yes | Yes | Yes | Yes |
+| INSERT RETURNING in this SeaORM configuration | Yes | Yes | No | No |
+
+The MariaDB row is intentionally conservative: SQLx/SeaORM use one MySQL backend family, and the SeaORM mariadb-use-returning feature remains disabled so it cannot accidentally enable the same behavior for MySQL.
+
+EntityRepository::insert_builder exposes SeaORM's native Insert builder for operations whose semantics differ by dialect:
+
+~~~rust
+use rustflow_server::sea_orm::sea_query::OnConflict;
+
+let accounts = database.entity::<entities::account::Entity>();
+let result = accounts
+    .insert_builder(new_account)
+    .on_conflict(
+        OnConflict::column(entities::account::Column::Email)
+            .update_columns([entities::account::Column::Enabled])
+            .to_owned(),
+    )
+    .exec(database.orm())
+    .await?;
+~~~
+
+The four-engine ORM contract executes this upsert twice against the same unique key and verifies that the second call updates the row rather than creating another one.
+
+SQLite/PostgreSQL use ON CONFLICT syntax. The MySQL-family builder maps to ON DUPLICATE KEY UPDATE, whose conflict selection is not equivalent to a PostgreSQL/SQLite conflict target: a duplicate on any applicable unique/primary key can trigger the update. Do not assume identical target semantics or use this as a substitute for a deliberate uniqueness design. Check capabilities.insert_returning before calling SeaORM's exec_with_returning; when false, use exec and perform an explicit follow-up read using a stable key.
+
+## Numeric codecs and decimal precision
 
 SeaORM 1.1.20 with SeaQuery uses an SQLite-specific f64 path for both Decimal and BigDecimal: values are bound as floating point and read back through f64. The SQLite fixture therefore uses REAL columns and tests 12.5 only, because it is exactly representable in binary f64. Other decimal-looking values may be rounded or expanded when reconstructed from f64. This is not arbitrary-precision decimal storage; do not use SQLite Decimal/BigDecimal for money or other precision-sensitive values. Use scaled integers or a separately designed canonical-text codec when exact decimal semantics are required on SQLite. PostgreSQL uses NUMERIC, while MySQL and MariaDB use DECIMAL; their integration contracts exercise a high-precision BigDecimal round-trip.
 
@@ -112,7 +144,7 @@ DatabaseError::kind() classifies failures without exposing driver messages, SQL,
 | CommitOutcomeUnknown | Transport/protocol failure while COMMIT was in flight | 503 | Inspect the persisted state or idempotency key before retrying |
 | Query / Transaction / Migration | Other query, transaction or migration failure | 500 | Handle as an internal database error |
 
-MySQL and MariaDB report a general SQLSTATE for some constraints, so the mapper inspects MySQL protocol error numbers (unique: 1022/1062/1169/1586; foreign key: 1216/1217/1451/1452/1557/1761/1762; CHECK: MySQL 3819, MariaDB 4025). PostgreSQL uses SQLSTATE 23505/23503/23514; SQLite uses 1555/2067/787/275. These mappings are backed by integration tests and are not inferred from an error's text.
+MySQL and MariaDB report a general SQLSTATE for some constraints, so the mapper inspects MySQL protocol error numbers (unique: 1022/1062/1169/1586/1859; foreign key: 1216/1217/1451/1452/1557/1761/1762/1830/1834; CHECK: MySQL 3819, MariaDB 4025 with SQLSTATE 23000). PostgreSQL uses SQLSTATE 23505/23503/23514; SQLite uses 1555/2067/787/275. These mappings are backed by integration tests and are not inferred from an error's text.
 
 A failed COMMIT is not automatically equivalent to a rollback. If the connection is lost before the client receives the server's result, the transaction outcome is uncertain. DatabaseTransaction returns CommitOutcomeUnknown for that case. Do not blindly repeat non-idempotent writes; query a stable application identifier or idempotency record first.
 
