@@ -867,16 +867,20 @@ async fn exercise_orm(database: &DatabasePool) {
         .all(notes.select().order_by_asc(entities::note::Column::Id))
         .await
         .expect("load notes for belongs-to relationship");
-    let note_accounts = load_many(&all_notes, entities::account::Entity, database.orm())
+    let note_accounts = load_one(&all_notes, entities::account::Entity, database.orm())
         .await
         .expect("batch load belongs-to accounts");
     assert_eq!(note_accounts.len(), 3);
-    assert_eq!(note_accounts[0][0].id, first.id);
-    assert_eq!(note_accounts[1][0].id, first.id);
-    assert_eq!(note_accounts[2][0].id, second.id);
+    let note_accounts: Vec<_> = note_accounts
+        .into_iter()
+        .map(|account| account.expect("each note has a parent account"))
+        .collect();
+    assert_eq!(note_accounts[0].id, first.id);
+    assert_eq!(note_accounts[1].id, first.id);
+    assert_eq!(note_accounts[2].id, second.id);
 
     // Compose a second explicit loader hop to demonstrate nested traversal without lazy I/O.
-    let nested_profiles = load_one(&note_accounts[0], entities::profile::Entity, database.orm())
+    let nested_profiles = load_one(&note_accounts, entities::profile::Entity, database.orm())
         .await
         .expect("explicitly load profiles for previously loaded note accounts");
     assert_eq!(
@@ -885,6 +889,13 @@ async fn exercise_orm(database: &DatabasePool) {
             .map(|profile| profile.bio.as_str()),
         Some("Analytical engine notes")
     );
+    assert_eq!(
+        nested_profiles[1]
+            .as_ref()
+            .map(|profile| profile.bio.as_str()),
+        Some("Analytical engine notes")
+    );
+    assert!(nested_profiles[2].is_none());
 
     let profiles = load_one(&parents, entities::profile::Entity, database.orm())
         .await
