@@ -141,4 +141,4 @@ La fase se divide en subfases para mantener contratos separados, pero **el objet
 - **6.7.5 — CLI, ejemplos y documentación:** pendiente una aplicación CRUD generada que pruebe validación, persistencia y salida renderizada.
 - **6.7.6 — Calidad y compatibilidad:** gate final de integración, seguridad, MSRV, compile-fail, navegador y compatibilidad.
 
-La fase global no se cerrará con un CRUD mínimo: aunque 6.7.2 ya cumple sus criterios y la PR #59 está preparada para revisión final, todavía no está fusionada. El ODM MongoDB, la aplicación CRUD generada y los gates de madurez/compatibilidad global siguen pendientes.
+La fase global no se cerrará con un CRUD mínimo: 6.7.2 ya está fusionada, pero el ODM MongoDB (6.7.3), la aplicación CRUD generada (6.7.5) y los gates de madurez/compatibilidad global (6.7.6) siguen abiertos. La PR #60 de 6.7.3 permanece en Draft hasta validar su SHA final.
