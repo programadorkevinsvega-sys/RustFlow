@@ -402,8 +402,8 @@ async fn create_schema(database: &DatabasePool) {
             "INTEGER PRIMARY KEY AUTOINCREMENT",
             "INTEGER",
             "REAL",
-            "TEXT",
-            "TEXT",
+            "REAL",
+            "REAL",
             "BLOB",
             "TEXT",
             "TEXT",
@@ -487,8 +487,16 @@ async fn exercise_type_codecs(database: &DatabasePool) {
     let timestamp = DateTime::new(date, time);
     let uuid = Uuid::from_u128(0x1234_5678_1234_5678_1234_5678_1234_5678);
     let decimal = Decimal::new(12_345, 2);
-    let big_decimal = BigDecimal::from_str("12345678901234567890.1234567890")
-        .expect("valid arbitrary precision decimal");
+    // SeaORM 1.1.20's SQLite codec binds and decodes Decimal/BigDecimal through f64.
+    // Keep SQLite fixtures within a safely representable decimal range; exercise
+    // arbitrary precision only on PostgreSQL and the MySQL protocol backends.
+    let big_decimal_text = if database.backend() == DatabaseBackend::Sqlite {
+        "123.45"
+    } else {
+        "12345678901234567890.1234567890"
+    };
+    let big_decimal =
+        BigDecimal::from_str(big_decimal_text).expect("valid integration decimal value");
     let json = serde_json::json!({"engine": "sql", "nullable": null});
     let bytes = vec![0, 1, 127, 128, 255];
 
