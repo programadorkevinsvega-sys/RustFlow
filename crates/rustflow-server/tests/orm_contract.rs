@@ -546,7 +546,7 @@ async fn create_schema(database: &DatabasePool) {
                 " CHECK (i8_value BETWEEN -128 AND 127)",
                 " CHECK (i16_value BETWEEN -32768 AND 32767)",
                 " CHECK (i32_value BETWEEN -2147483648 AND 2147483647)",
-                " CHECK (i64_value BETWEEN -9223372036854775808 AND 9223372036854775807)",
+                " CHECK (typeof(i64_value) = 'integer' AND i64_value BETWEEN -9223372036854775808 AND 9223372036854775807)",
             ),
             DatabaseBackend::Postgres => (
                 "BIGSERIAL PRIMARY KEY",
@@ -1943,9 +1943,11 @@ async fn postgres_commit_transport_loss_is_reported_as_unknown() {
     .expect("terminate the backend while COMMIT is executing");
     assert!(terminated, "PostgreSQL must terminate the active COMMIT backend");
 
-    let commit_error = commit_task
+    let commit_result = tokio::time::timeout(Duration::from_secs(10), commit_task)
         .await
-        .expect("commit task must finish after its backend is terminated")
+        .expect("commit task must finish promptly after its backend is terminated")
+        .expect("commit task must not panic after transport loss");
+    let commit_error = commit_result
         .expect_err("a transport drop during COMMIT must not be reported as success");
     assert_eq!(
         commit_error.kind(),
