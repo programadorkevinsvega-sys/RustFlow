@@ -740,6 +740,51 @@ mod tests {
         });
     }
 
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct SerdeFieldSemantics {
+        optional: Option<String>,
+        #[serde(default = "default_score")]
+        score: i32,
+    }
+
+    fn default_score() -> i32 {
+        7
+    }
+
+    #[test]
+    fn serde_missing_null_default_and_present_values_are_explicit() {
+        let missing: SerdeFieldSemantics =
+            bson::from_document(Document::new()).expect("missing optional/defaulted fields");
+        assert_eq!(missing, SerdeFieldSemantics { optional: None, score: 7 });
+
+        let explicit_null: SerdeFieldSemantics =
+            bson::from_document(doc! { "optional": Bson::Null }).expect("null optional field");
+        assert_eq!(explicit_null, SerdeFieldSemantics { optional: None, score: 7 });
+
+        let present: SerdeFieldSemantics =
+            bson::from_document(doc! { "optional": "value", "score": 12 })
+                .expect("present values");
+        assert_eq!(present, SerdeFieldSemantics { optional: Some("value".to_owned()), score: 12 });
+    }
+
+    #[test]
+    fn array_and_nested_filter_operators_are_native_bson() {
+        let filter = DocumentFilter::new()
+            .all("tags", ["rust", "mongodb"])
+            .expect("all values")
+            .elem_match(
+                "comments",
+                DocumentFilter::new().gte("votes", 3).expect("nested votes filter"),
+            )
+            .expect("element match");
+        assert_eq!(filter.into_document(), doc! {
+            "tags": { "$all": ["rust", "mongodb"] },
+            "comments": { "$elemMatch": { "votes": { "$gte": 3 } } }
+        });
+        assert!(DocumentFilter::new().in_values("tags", ["rust"]).is_ok());
+        assert!(DocumentFilter::new().not_in("tags", ["unsafe"]).is_ok());
+    }
+
     #[test]
     fn query_sort_projection_and_pagination_are_bounded() {
         let query = DocumentQuery::new(
