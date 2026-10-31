@@ -1343,17 +1343,17 @@ async fn exercise_orm(database: &DatabasePool) {
 
     // One-to-one replacement explicitly detaches the old nullable FK and attaches the
     // replacement inside one transaction; no related row is deleted.
-    let profiles = database.entity::<entities::profile::Entity>();
-    let old_profile = profiles
+    let profile_repo = database.entity::<entities::profile::Entity>();
+    let old_profile = profile_repo
         .one(
-            profiles
+            profile_repo
                 .select()
                 .filter(entities::profile::Column::AccountId.eq(Some(first.id))),
         )
         .await
         .expect("find existing profile")
         .expect("profile exists");
-    let replacement_profile = profiles
+    let replacement_profile = profile_repo
         .insert(entities::profile::ActiveModel {
             account_id: Set(None),
             bio: Set("Replacement profile".to_owned()),
@@ -1457,7 +1457,7 @@ async fn exercise_orm(database: &DatabasePool) {
         .commit()
         .await
         .expect("commit explicit one-to-one detach");
-    let persisted_detached_profile = profiles
+    let persisted_detached_profile = profile_repo
         .find_by_id(detached_profile_id)
         .await
         .expect("query detached profile")
