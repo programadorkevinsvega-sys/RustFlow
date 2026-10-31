@@ -1388,30 +1388,6 @@ async fn exercise_orm(database: &DatabasePool) {
             .map(|profile| profile.bio.as_str()),
         Some("Replacement profile")
     );
-    let replacement_for_detach = profiles_after_replace[0]
-        .clone()
-        .expect("replacement profile is associated");
-    let detach_transaction = database
-        .begin_transaction()
-        .await
-        .expect("begin explicit one-to-one detach");
-    let detached_profile = detach_one_to_many(
-        replacement_for_detach,
-        entities::profile::Column::AccountId,
-        detach_transaction.connection(),
-    )
-    .await
-    .expect("detach a nullable one-to-one foreign key without deleting the row");
-    assert!(detached_profile.account_id.is_none());
-    detach_transaction
-        .commit()
-        .await
-        .expect("commit explicit one-to-one detach");
-    let profiles_after_detach = load_one(&parents, entities::profile::Entity, database.orm())
-        .await
-        .expect("reload detached profiles");
-    assert!(profiles_after_detach[0].is_none());
-
     assert!(profiles_after_replace[1].is_none());
 
     let all_notes = notes
@@ -1438,13 +1414,13 @@ async fn exercise_orm(database: &DatabasePool) {
         nested_profiles[0]
             .as_ref()
             .map(|profile| profile.bio.as_str()),
-        Some("Analytical engine notes")
+        Some("Replacement profile")
     );
     assert_eq!(
         nested_profiles[1]
             .as_ref()
             .map(|profile| profile.bio.as_str()),
-        Some("Analytical engine notes")
+        Some("Replacement profile")
     );
     assert!(nested_profiles[2].is_none());
 
@@ -1454,10 +1430,43 @@ async fn exercise_orm(database: &DatabasePool) {
     assert_eq!(profiles.len(), 3);
     assert_eq!(
         profiles[0].as_ref().map(|profile| profile.bio.as_str()),
-        Some("Analytical engine notes")
+        Some("Replacement profile")
     );
     assert!(profiles[1].is_none());
     assert!(profiles[2].is_none());
+
+    // Detach only after the relationship loaders have asserted the replacement.
+    // The nullable FK becomes NULL, but the related row remains persisted.
+    let replacement_for_detach = profiles[0]
+        .clone()
+        .expect("replacement profile is associated");
+    let detached_profile_id = replacement_for_detach.id;
+    let detach_transaction = database
+        .begin_transaction()
+        .await
+        .expect("begin explicit one-to-one detach");
+    let detached_profile = detach_one_to_many(
+        replacement_for_detach,
+        entities::profile::Column::AccountId,
+        detach_transaction.connection(),
+    )
+    .await
+    .expect("detach a nullable one-to-one foreign key without deleting the row");
+    assert!(detached_profile.account_id.is_none());
+    detach_transaction
+        .commit()
+        .await
+        .expect("commit explicit one-to-one detach");
+    let persisted_detached_profile = profiles
+        .find_by_id(detached_profile_id)
+        .await
+        .expect("query detached profile")
+        .expect("detaching a relation must not delete the profile");
+    assert!(persisted_detached_profile.account_id.is_none());
+    let profiles_after_detach = load_one(&parents, entities::profile::Entity, database.orm())
+        .await
+        .expect("reload detached profiles");
+    assert!(profiles_after_detach[0].is_none());
 
     let loaded_tags = load_many_to_many(
         &parents,
