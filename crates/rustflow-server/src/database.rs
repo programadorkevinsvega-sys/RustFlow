@@ -816,7 +816,7 @@ fn classify_orm_error(error: &sea_orm::DbErr, fallback: DatabaseErrorKind) -> Da
     match error {
         sea_orm::DbErr::RecordNotFound(_) | sea_orm::DbErr::RecordNotUpdated => {
             DatabaseErrorKind::NotFound
-        },
+        }
         sea_orm::DbErr::ConnectionAcquire(_) => DatabaseErrorKind::Unavailable,
         sea_orm::DbErr::Conn(runtime)
         | sea_orm::DbErr::Exec(runtime)
@@ -1148,12 +1148,8 @@ mod tests {
 
     #[test]
     fn orm_missing_record_updates_map_to_not_found_for_queries_and_transactions() {
-        let query_error =
-            super::DatabaseError::OrmQuery(sea_orm::DbErr::RecordNotUpdated);
-        assert_eq!(
-            query_error.kind(),
-            super::DatabaseErrorKind::NotFound
-        );
+        let query_error = super::DatabaseError::OrmQuery(sea_orm::DbErr::RecordNotUpdated);
+        assert_eq!(query_error.kind(), super::DatabaseErrorKind::NotFound);
         assert_eq!(
             query_error.to_http_error().status_code(),
             http::StatusCode::NOT_FOUND
@@ -1161,10 +1157,7 @@ mod tests {
 
         let transaction_error =
             super::DatabaseError::OrmTransaction(sea_orm::DbErr::RecordNotUpdated);
-        assert_eq!(
-            transaction_error.kind(),
-            super::DatabaseErrorKind::NotFound
-        );
+        assert_eq!(transaction_error.kind(), super::DatabaseErrorKind::NotFound);
         assert_eq!(
             transaction_error.to_http_error().status_code(),
             http::StatusCode::NOT_FOUND
