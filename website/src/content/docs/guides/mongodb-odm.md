@@ -120,7 +120,7 @@ let removed = users.delete_one(
 assert_eq!(removed.deleted_count, 1);
 ```
 
-El repositorio incluye `insert_many`, `replace_one`, `update_many` y `delete_many`. Los bulk writes conservan los errores del driver. Una escritura masiva puede aplicar algunos documentos antes de fallar: ni las opciones ordered ni unordered convierten un bulk en transacción.
+El repositorio incluye `insert_many`, `replace_one`, `update_many` y `delete_many`. `insert_many` acepta lotes de 1 a 1.000 documentos. Los bulk writes conservan los errores del driver. Una escritura masiva puede aplicar algunos documentos antes de fallar: ni las opciones ordered ni unordered convierten un bulk en transacción. RustFlow no añade reintentos a nivel de aplicación; las operaciones individuales elegibles aún pueden utilizar el comportamiento retryable-write nativo del driver.
 
 ## 5. Proyecciones y agregaciones
 
