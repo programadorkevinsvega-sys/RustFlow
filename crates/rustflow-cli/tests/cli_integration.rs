@@ -472,6 +472,13 @@ fn creates_a_project_and_generates_all_five_file_types_without_overwrite() {
 fn rejects_invalid_names_and_existing_project_destinations_before_changes() {
     let temp = TempDir::new("project-collisions");
 
+    let unknown_template = invoke(temp.path(), &["new", "unknown-template", "--template", "not-a-template"]);
+    assert_eq!(unknown_template.status.code(), Some(2));
+    assert!(!temp.path().join("unknown-template").exists());
+    let missing_template = invoke(temp.path(), &["new", "missing-template", "--template"]);
+    assert_eq!(missing_template.status.code(), Some(2));
+    assert!(!temp.path().join("missing-template").exists());
+
     for invalid in ["../escape", "9invalid", "bad/name", "bad name"] {
         let output = invoke(temp.path(), &["new", invalid]);
         assert_eq!(output.status.code(), Some(2), "{invalid}");
@@ -582,6 +589,22 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
     )
     .unwrap();
 
+    let snapshot_temp = TempDir::new("generated-crud-snapshot");
+    let snapshot_create = invoke(snapshot_temp.path(), &["new", "generated-crud-app", "--template", "crud"]);
+    assert_success(&snapshot_create);
+    let snapshot_project = snapshot_temp.path().join("generated-crud-app");
+    for path in [
+        "Cargo.toml",
+        "README.md",
+        ".env.example",
+        "src/main.rs",
+        "src/models/product.rs",
+        "migrations/sqlite/20261031010001_create_products.sql",
+        "migrations/postgres/20261031010002_create_products.sql",
+        "migrations/mysql/20261031010003_create_products.sql",
+    ] {
+        assert_eq!(fs::read(project.join(path)).unwrap(), fs::read(snapshot_project.join(path)).unwrap(), "CRUD scaffold snapshot drift for {path}");
+    }
     localize_framework_dependencies(&project);
     let target_dir = cargo_target_dir(&temp);
 
