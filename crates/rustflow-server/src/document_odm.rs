@@ -465,14 +465,7 @@ impl<M: DocumentModel> DocumentRepository<M> {
     /// Insert multiple documents. Partial write failures are returned as driver errors;
     /// ordered controls whether the server stops after the first write error.
     pub async fn insert_many(&self, mut models: Vec<M>, ordered: bool) -> Result<Vec<M>, MongoError> {
-        if models.is_empty() {
-            return Err(MongoError::InvalidDocumentModel("insert_many requires at least one document"));
-        }
-        if models.len() > MAX_DOCUMENT_BULK_SIZE {
-            return Err(MongoError::InvalidDocumentModel(
-                "insert_many exceeds the maximum batch size of 1000 documents",
-            ));
-        }
+        validate_bulk_size(models.len())?;
         let mut documents = Vec::with_capacity(models.len());
         for model in &models {
             let mut document = to_bson_document(model)?;
@@ -694,6 +687,20 @@ where P: DeserializeOwned + Send + Sync + 'static {
     Ok(documents)
 }
 
+fn validate_bulk_size(size: usize) -> Result<(), MongoError> {
+    if size == 0 {
+        return Err(MongoError::InvalidDocumentModel(
+            "insert_many requires at least one document",
+        ));
+    }
+    if size > MAX_DOCUMENT_BULK_SIZE {
+        return Err(MongoError::InvalidDocumentModel(
+            "insert_many exceeds the maximum batch size of 1000 documents",
+        ));
+    }
+    Ok(())
+}
+
 fn bson_value<T: Serialize>(value: &T) -> Result<Bson, MongoError> {
     bson::to_bson(value).map_err(MongoError::Serialization)
 }
@@ -826,8 +833,12 @@ mod tests {
     }
 
     #[test]
-    fn bulk_insert_size_limit_is_explicit() {
+    fn bulk_insert_size_limit_is_enforced() {
         assert_eq!(MAX_DOCUMENT_BULK_SIZE, 1_000);
+        assert!(validate_bulk_size(0).is_err());
+        assert!(validate_bulk_size(1).is_ok());
+        assert!(validate_bulk_size(MAX_DOCUMENT_BULK_SIZE).is_ok());
+        assert!(validate_bulk_size(MAX_DOCUMENT_BULK_SIZE + 1).is_err());
     }
 
     #[test]
