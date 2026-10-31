@@ -956,7 +956,6 @@ fn validate_field_path(field: &str) -> Result<(), MongoError> {
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
