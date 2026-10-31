@@ -1,6 +1,6 @@
 # ADR 0007: Isolate HTTP server integration behind RustFlow-owned types
 
-- **Status:** Proposed for review
+- **Status:** Proposed for formal review; the RustFlow-owned HTTP adapter is implemented in `rustflow-server`. This status tracks formal ADR approval, not runtime availability.
 - **Date:** 2026-10-26
 - **Phase:** 4.1–4.3 — HTTP foundation
 
@@ -18,5 +18,5 @@ The adapter provides bounded body reads, a per-request timeout, a global concurr
 
 - The core and view model remain independent of Axum/Tokio/Tower.
 - Route dispatch and response helpers can be tested in memory without opening a TCP listener.
-- This is not production hardening: subscriber/export setup, automatic OS-signal wiring, rate limiting, auth/CSRF, persistence, and deployment recipes remain later work. Route groups, route-scoped middleware, local TLS, and reverse-proxy trust policy are part of the Phase 4 adapter.
+- **Historical Phase 4 boundary:** this initial HTTP adapter was not production hardening. Later phases added opt-in CSRF protection (6.3), experimental sessions/identity guards (6.4), and SQLx pools/transactions/migrations (6.5). The server still does not provide an integrated user/credential provider, application rate limiting, automatic OS-signal policy, tracing subscriber/export setup, or a validated production deployment recipe. Route groups, route-scoped middleware, local TLS and reverse-proxy trust policy are part of the implemented adapter.
 - `Response::html` is an explicit raw-string response helper and is not a sanitizer. Prefer `html_view` for structural content.
