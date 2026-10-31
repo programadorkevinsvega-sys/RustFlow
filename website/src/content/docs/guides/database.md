@@ -389,7 +389,7 @@ Las migraciones de producción deben ejecutarse como un paso coordinado, antes d
 
 ## Límites actuales
 
-Phase 6.7.2 integra SeaORM 1.1.20 sobre el mismo pool SQLx tipado. La rama de la PR #59 añade pruebas de límites numéricos signed/unsigned por dialecto, conteos de consultas en carga anidada, mutaciones de relaciones y una inyección real de terminación del backend PostgreSQL mientras `COMMIT` está activo. Estos casos siguen pendientes de validación por CI en el SHA final; su presencia en la rama no equivale todavía a aceptación.
+Phase 6.7.2 integra SeaORM 1.1.20 sobre el mismo pool SQLx tipado. Las pruebas de límites numéricos signed/unsigned por dialecto, conteos de consultas en carga anidada, mutaciones de relaciones y terminación real del backend PostgreSQL mientras `COMMIT` está activo pasaron en el SHA final de PR #59, que fue fusionada en `main` el 2026-10-31.
 
 Limitaciones que deben respetarse:
 - PostgreSQL no ofrece mapeo unsigned para `u8/u16/u32/u64` en SeaORM 1.1.20. `u8/u16/u32` se prueban en SQLite y MySQL/MariaDB; `u64` no tiene codec directo para SQLite y solo se prueba en MySQL/MariaDB mediante `BIGINT UNSIGNED`.
