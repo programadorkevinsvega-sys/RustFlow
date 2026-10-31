@@ -42,6 +42,8 @@ No todos los tipos numéricos de Rust tienen un codec común en los cuatro motor
 
 Para modelos compartidos entre los cuatro motores, usa `i64` cuando el dominio cabe en el rango firmado. No conviertas `u64` a `i64` mediante un cast sin comprobar el rango. El uso de `u64` queda limitado a modelos específicos de MySQL/MariaDB; una representación portable para todo el rango unsigned requiere un codec explícito y todavía no forma parte del contrato común.
 
+La matriz de pruebas ampliada round-tripea los límites mínimo y máximo de `i8`, `i16`, `i32` e `i64` en SQLite, PostgreSQL, MySQL y MariaDB, y comprueba que los inserts fuera de rango sean rechazados por los tipos o restricciones de cada dialecto. `u8`, `u16` y `u32` se prueban en SQLite y MySQL/MariaDB, incluidos los límites inferior y superior; PostgreSQL no tiene mapeo para esos primitivos unsigned en SeaORM 1.1.20, por lo que no se anuncia como soportado. Para `u64`, solo se prueba el rango completo `BIGINT UNSIGNED` de MySQL/MariaDB, incluidos los valores negativos y superiores a `u64::MAX`.
+
 Hay otra diferencia importante con los decimales: SeaORM 1.1.20/SeaQuery enlaza y recupera `Decimal` y `BigDecimal` en SQLite mediante `f64`. Por eso el esquema de prueba usa columnas `REAL` y limita el round-trip SQLite a `12.5`, que sí es exactamente representable en binario. Otros valores decimales pueden redondearse o expandirse al reconstruirse desde `f64`. No uses esos tipos en SQLite para dinero ni para cálculos que exijan precisión decimal arbitraria. Para ello usa enteros escalados o un codec de texto canónico diseñado expresamente. PostgreSQL usa `NUMERIC` y MySQL/MariaDB usan `DECIMAL`; las pruebas de integración verifican allí un `BigDecimal` de alta precisión.
 
 ## 1. Configurar el pool
@@ -263,7 +265,7 @@ accounts
 
 SQLite/PostgreSQL generan ON CONFLICT. MySQL/MariaDB generan ON DUPLICATE KEY UPDATE; una colisión en cualquier clave única aplicable puede activar el update, por lo que no debes asumir el mismo targeting exacto entre motores.
 
-Para relaciones, declara el grafo en las entidades SeaORM y usa loaders explícitos. Por ejemplo, load_many carga las notas para un conjunto de cuentas mediante una consulta por salto; load_many_to_many requiere la entidad de unión. Leer un modelo no dispara consultas ocultas.
+Para relaciones, declara el grafo en las entidades SeaORM y usa loaders explícitos. Por ejemplo, `load_many` carga las notas para un conjunto de cuentas mediante una consulta por salto; `load_many_to_many` requiere la entidad de unión. Leer un modelo no dispara consultas ocultas. La suite ampliada verifica dos saltos anidados con exactamente una consulta batch por salto, comprueba que un destino `belongs_to` ausente se representa como `None`, y cubre attach, update, detach y borrado en cascada de filas de unión. Las pruebas de integración aplican el ciclo de mutación a los cuatro motores.
 
 ~~~rust
 use rustflow_server::orm::load_many;
@@ -387,10 +389,10 @@ Las migraciones de producción deben ejecutarse como un paso coordinado, antes d
 
 ## Límites actuales
 
-Phase 6.7.2 integra SeaORM 1.1.20 sobre el mismo pool SQLx tipado y cubre CRUD/bulk, query composition, carga explícita de relaciones, codecs y transacciones mixtas ORM/SQL en SQLite, PostgreSQL, MySQL y MariaDB mediante su contrato de integración. La aceptación final depende de los checks del HEAD exacto del PR.
+Phase 6.7.2 integra SeaORM 1.1.20 sobre el mismo pool SQLx tipado. La rama de la PR #59 añade pruebas de límites numéricos signed/unsigned por dialecto, conteos de consultas en carga anidada, mutaciones de relaciones y una inyección real de terminación del backend PostgreSQL mientras `COMMIT` está activo. Estos casos siguen pendientes de validación por CI en el SHA final; su presencia en la rama no equivale todavía a aceptación.
 
 Limitaciones que deben respetarse:
-- u64 no tiene un codec portable para SQLite/PostgreSQL; los valores completos se verifican en modelos específicos MySQL/MariaDB con BIGINT UNSIGNED.
+- PostgreSQL no ofrece mapeo unsigned para `u8/u16/u32/u64` en SeaORM 1.1.20. `u8/u16/u32` se prueban en SQLite y MySQL/MariaDB; `u64` no tiene codec directo para SQLite y solo se prueba en MySQL/MariaDB mediante `BIGINT UNSIGNED`.
 - El codec Decimal/BigDecimal de SeaORM 1.1.20 para SQLite pasa por f64. No promete precisión decimal arbitraria; el fixture usa 12.5 porque es exactamente representable. Usa enteros escalados o un codec textual canónico cuando el dominio requiera precisión exacta.
 - MySQL y MariaDB comparten el backend/protocolo SQLx MySQL; las pruebas validan por separado la identidad y versión del servidor.
 - Upsert y RETURNING siguen siendo operaciones dependientes del motor; no se promete paridad cuando MySQL/MariaDB y PostgreSQL/SQLite difieren.
@@ -399,7 +401,7 @@ Limitaciones que deben respetarse:
 ## Roadmap de persistencia
 
 - **Phase 6.7.1:** cerrada y fusionada en PR #58; selecciona SeaORM 1.1.20 y define el contrato Data Mapper/ModelDiagnostics.
-- **Phase 6.7.2:** implementación en aceptación en PR #59. Ya incluye pools tipados compartidos, repositorio de entidades, CRUD/bulk, consultas tipadas, loaders explícitos, codecs, transacciones mixtas y clasificación de errores. No se declara cerrada hasta que las pruebas de aceptación adicionales y todos los gates pasen sobre el SHA final.
+- **Phase 6.7.2:** implementación en aceptación en PR #59. La rama incorpora pruebas de límites numéricos por dialecto, conteos de carga relacional anidada, mutaciones attach/update/detach/cascade y fallo de transporte durante `COMMIT`. No se declara cerrada hasta que esos casos y todos los gates pasen sobre el SHA final.
 - **Phase 6.7.3 y posteriores:** ODM MongoDB separado, cobertura ampliada de mutación/carga de relaciones, aplicación CRUD generada y quality gate.
 
 La Phase 6.6 ya está completa y su matriz verificada está en docs/DATABASE_SUPPORT_MATRIX.md. El adaptador MongoDB de la 6.6.2 está disponible en main; el ODM independiente se desarrollará en 6.7.3.
