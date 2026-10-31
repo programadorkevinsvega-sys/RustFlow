@@ -791,12 +791,10 @@ async fn exercise_orm(database: &DatabasePool) {
         .select_only()
         .column_as(entities::account::Column::Id, "account_identifier")
         .filter(entities::account::Column::Id.gt(first.id - 1))
-        .filter(
-            entities::account::Column::Email.is_in([
-                "ada@example.test".to_owned(),
-                "ada.lovelace@example.test".to_owned(),
-            ]),
-        )
+        .filter(entities::account::Column::Email.is_in([
+            "ada@example.test".to_owned(),
+            "ada.lovelace@example.test".to_owned(),
+        ]))
         .order_by_asc(entities::account::Column::Id)
         .into_tuple()
         .all(database.orm())
@@ -864,11 +862,7 @@ async fn exercise_orm(database: &DatabasePool) {
     assert!(children[2].is_empty(), "parent has no has-many children");
 
     let all_notes = notes
-        .all(
-            notes
-                .select()
-                .order_by_asc(entities::note::Column::Id),
-        )
+        .all(notes.select().order_by_asc(entities::note::Column::Id))
         .await
         .expect("load notes for belongs-to relationship");
     let note_accounts = load_many(&all_notes, entities::account::Entity, database.orm())
@@ -884,7 +878,9 @@ async fn exercise_orm(database: &DatabasePool) {
         .await
         .expect("explicitly load profiles for previously loaded note accounts");
     assert_eq!(
-        nested_profiles[0].as_ref().map(|profile| profile.bio.as_str()),
+        nested_profiles[0]
+            .as_ref()
+            .map(|profile| profile.bio.as_str()),
         Some("Analytical engine notes")
     );
 
