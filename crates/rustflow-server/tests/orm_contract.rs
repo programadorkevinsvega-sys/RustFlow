@@ -606,6 +606,50 @@ async fn exercise_orm(database: &DatabasePool) {
     assert_eq!(first.checksum, [0, 1, 2, 255]);
     assert_eq!(second.alias, None);
 
+    let saved_new = accounts
+        .save(entities::account::ActiveModel {
+            email: Set("save-new@example.test".to_owned()),
+            enabled: Set(true),
+            alias: NotSet,
+            metadata: Set(serde_json::json!({})),
+            checksum: Set(vec![]),
+            ..Default::default()
+        })
+        .await
+        .expect("save inserts a new ActiveModel");
+    let saved_id = match saved_new.id {
+        Set(id) => id,
+        _ => panic!("save must return the generated primary key"),
+    };
+    let saved_existing = accounts
+        .save(entities::account::ActiveModel {
+            id: Set(saved_id),
+            alias: Set(Some("saved-existing".to_owned())),
+            ..Default::default()
+        })
+        .await
+        .expect("save updates an existing ActiveModel");
+    assert!(matches!(
+        saved_existing.alias,
+        Set(Some(ref alias)) if alias == "saved-existing"
+    ));
+    let deleted_saved = accounts
+        .delete(saved_existing)
+        .await
+        .expect("delete accepts a model ActiveModel");
+    assert_eq!(deleted_saved.rows_affected, 1);
+
+    let invalid_update = accounts
+        .update(entities::account::ActiveModel::default())
+        .await
+        .expect_err("update without a primary key must be rejected");
+    assert_eq!(invalid_update.kind(), DatabaseErrorKind::InvalidModelState);
+    let invalid_delete = accounts
+        .delete(entities::account::ActiveModel::default())
+        .await
+        .expect_err("delete without a primary key must be rejected");
+    assert_eq!(invalid_delete.kind(), DatabaseErrorKind::InvalidModelState);
+
     let invalid_foreign_key = notes
         .insert(entities::note::ActiveModel {
             account_id: Set(i64::MAX),
@@ -742,6 +786,34 @@ async fn exercise_orm(database: &DatabasePool) {
     let matching = accounts.all(filtered).await.expect("nested filter query");
     assert_eq!(matching.len(), 2);
 
+    let projected_ids: Vec<i64> = accounts
+        .select()
+        .select_only()
+        .column_as(entities::account::Column::Id, "account_identifier")
+        .filter(entities::account::Column::Id.gt(first.id - 1))
+        .filter(
+            entities::account::Column::Email.is_in([
+                "ada@example.test".to_owned(),
+                "ada.lovelace@example.test".to_owned(),
+            ]),
+        )
+        .order_by_asc(entities::account::Column::Id)
+        .into_tuple()
+        .all(database.orm())
+        .await
+        .expect("projection alias, comparison and parameterized IN query");
+    assert_eq!(projected_ids, vec![first.id, second.id]);
+
+    let null_aliases = accounts
+        .all(
+            accounts
+                .select()
+                .filter(entities::account::Column::Alias.is_null()),
+        )
+        .await
+        .expect("IS NULL query");
+    assert!(!null_aliases.is_empty());
+
     let second_page = accounts
         .all(
             accounts
@@ -778,6 +850,22 @@ async fn exercise_orm(database: &DatabasePool) {
     assert_eq!(children[0].len(), 2);
     assert_eq!(children[1].len(), 1);
 
+    let all_notes = notes
+        .all(
+            notes
+                .select()
+                .order_by_asc(entities::note::Column::Id),
+        )
+        .await
+        .expect("load notes for belongs-to relationship");
+    let note_accounts = load_many(&all_notes, entities::account::Entity, database.orm())
+        .await
+        .expect("batch load belongs-to accounts");
+    assert_eq!(note_accounts.len(), 3);
+    assert_eq!(note_accounts[0][0].id, first.id);
+    assert_eq!(note_accounts[1][0].id, first.id);
+    assert_eq!(note_accounts[2][0].id, second.id);
+
     let profiles = load_one(&parents, entities::profile::Entity, database.orm())
         .await
         .expect("batch load one-to-one relation");
@@ -801,6 +889,23 @@ async fn exercise_orm(database: &DatabasePool) {
     assert_eq!(loaded_tags[1].len(), 1);
     assert_eq!(loaded_tags[0][0].id, first_tag.id);
     assert_eq!(loaded_tags[0][1].id, second_tag.id);
+
+    let relation_transaction = database
+        .begin_transaction()
+        .await
+        .expect("begin relation mutation transaction");
+    let relation_delete = relation_transaction
+        .entity::<entities::account_tag::Entity>()
+        .delete_many()
+        .filter(entities::account_tag::Column::AccountId.eq(first.id))
+        .exec(relation_transaction.connection())
+        .await
+        .expect("remove junction rows inside transaction");
+    assert_eq!(relation_delete.rows_affected, 2);
+    relation_transaction
+        .rollback()
+        .await
+        .expect("rollback relation mutation");
 
     let grouped: Vec<(i64, i64)> = entities::note::Entity::find()
         .select_only()
