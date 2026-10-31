@@ -3,7 +3,12 @@
 //! The low-level adapter owns the official driver client, BSON helpers and collection lifecycle.
 //! The independent typed document ODM is implemented in the sibling document_odm module.
 
-use std::{error::Error as StdError, fmt, future::{Future, IntoFuture}, time::Duration};
+use std::{
+    error::Error as StdError,
+    fmt,
+    future::{Future, IntoFuture},
+    time::Duration,
+};
 
 use crate::mongodb_driver::{
     Client, Collection, Database, IndexModel,
@@ -379,10 +384,7 @@ impl MongoDatabase {
     /// The driver future is polled to completion even if the caller times out, avoiding
     /// cancellation of an in-flight driver operation. A timeout does not reveal whether a
     /// write reached or was applied by the server; callers must reconcile that outcome.
-    pub(crate) async fn run_owned_with_timeout<T, F>(
-        &self,
-        operation: F,
-    ) -> Result<T, MongoError>
+    pub(crate) async fn run_owned_with_timeout<T, F>(&self, operation: F) -> Result<T, MongoError>
     where
         T: Send + 'static,
         F: Future<Output = Result<T, crate::mongodb_driver::error::Error>> + Send + 'static,
@@ -414,7 +416,10 @@ impl MongoDatabase {
             .await
             .map_err(MongoError::into_bootstrap)?;
 
-        if !collection_names.iter().any(|name| name == &declaration.collection) {
+        if !collection_names
+            .iter()
+            .any(|name| name == &declaration.collection)
+        {
             let database = self.database.clone();
             let collection_name = declaration.collection.clone();
             self.run_owned_with_timeout(async move {
@@ -436,11 +441,9 @@ impl MongoDatabase {
                 .options(options)
                 .build();
             let collection = collection.clone();
-            self.run_owned_with_timeout(async move {
-                collection.create_index(model).await
-            })
-            .await
-            .map_err(MongoError::into_bootstrap)?;
+            self.run_owned_with_timeout(async move { collection.create_index(model).await })
+                .await
+                .map_err(MongoError::into_bootstrap)?;
         }
 
         let collection = collection.clone();
@@ -554,9 +557,8 @@ impl MongoError {
     /// The caller must not assume the transaction committed or rolled back when this is true.
     pub fn is_unknown_transaction_commit_result(&self) -> bool {
         match self {
-            Self::Operation(error) => error.contains_label(
-                crate::mongodb_driver::error::UNKNOWN_TRANSACTION_COMMIT_RESULT,
-            ),
+            Self::Operation(error) => error
+                .contains_label(crate::mongodb_driver::error::UNKNOWN_TRANSACTION_COMMIT_RESULT),
             _ => false,
         }
     }
@@ -569,16 +571,24 @@ impl MongoError {
     pub fn to_http_error(&self) -> HttpError {
         match self {
             Self::Operation(error) | Self::Bootstrap(error) if is_duplicate_key(error) => {
-                HttpError::new(StatusCode::CONFLICT, "A document with those values already exists")
+                HttpError::new(
+                    StatusCode::CONFLICT,
+                    "A document with those values already exists",
+                )
             }
             Self::Operation(error) | Self::Bootstrap(error) if is_unavailable(error) => {
-                HttpError::new(StatusCode::SERVICE_UNAVAILABLE, "Document database temporarily unavailable")
+                HttpError::new(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Document database temporarily unavailable",
+                )
             }
             Self::Timeout | Self::Connect(_) => HttpError::new(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "Document database temporarily unavailable",
             ),
-            Self::InvalidDocumentModel(_) | Self::InvalidDocumentQuery(_) | Self::InvalidDocumentUpdate(_) => {
+            Self::InvalidDocumentModel(_)
+            | Self::InvalidDocumentQuery(_)
+            | Self::InvalidDocumentUpdate(_) => {
                 HttpError::new(StatusCode::BAD_REQUEST, "Invalid document operation")
             }
             _ => HttpError::internal_server_error(),
