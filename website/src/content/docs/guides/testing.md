@@ -44,7 +44,7 @@ El ejemplo demuestra documento HTML, componente SSR, catálogo y layout comparti
 cargo test -p rustflow-server --test http_integration
 ~~~
 
-La suite prueba rutas por TCP local, datos malformados, grupos, middleware, request IDs, páginas de error, límites, timeouts, TLS local, proxies confiables, abortos de cliente y concurrencia acotada. Los casos de la Fase 6.3 incluyen formularios tipados, validación JSON/query, errores estructurados 422, content-types no admitidos, campos inesperados, CSRF ausente/inválido/válido y redirecciones de retorno seguras. Consulta también la [guía de formularios y validación](/guides/forms-validation/).
+La suite HTTP/TCP prueba rutas, datos malformados, grupos, middleware, request IDs, páginas de error, límites, timeouts, TLS local, proxies confiables, abortos de cliente y concurrencia acotada. Los casos de la Fase 6.3 incluyen formularios tipados, validación JSON/query, errores estructurados 422, content-types no admitidos, campos inesperados, CSRF ausente/inválido/válido y redirecciones seguras. Para persistencia, hay contratos de integración separados para el ORM SQL de cuatro motores, el soporte MySQL/MariaDB y el ODM MongoDB (incluidos replica set y servidor standalone); sus variables de servicio y comandos específicos se documentan en [Base de datos](/guides/database/). Consulta también la [guía de formularios y validación](/guides/forms-validation/).
 
 ## 3. Compilar y probar el navegador WebAssembly
 
@@ -90,6 +90,8 @@ cargo check -p rustflow-dom --target wasm32-unknown-unknown
 ## 5. ¿Qué significa una CI verde?
 
 Una CI verde significa que los jobs definidos para esa revisión pasaron. No comprueba automáticamente los dominios, variables, certificados, secretos, políticas de acceso, persistencia o escalado de tu despliegue. Por separado, la publicación del website depende de la acción de documentación y del proveedor de Pages.
+
+Para ejecutar localmente los contratos de base de datos, configura los servicios desechables correspondientes y sus variables `RUSTFLOW_TEST_DATABASE_URL`, `RUSTFLOW_TEST_MYSQL_URL`, `RUSTFLOW_TEST_MARIADB_URL`, `RUSTFLOW_TEST_MONGODB_URI` y `RUSTFLOW_TEST_MONGODB_STANDALONE_URI`; los tests de servicios externos se omiten fuera de CI cuando falta una URL. Comandos específicos: `cargo test -p rustflow-server --test orm_contract -- --test-threads=1`, `cargo test -p rustflow-server --test database_engines -- --test-threads=1` y `cargo test -p rustflow-server --test mongodb_adapter -- --test-threads=1`.
 
 Antes de presentar una nueva guía como ejemplo canónico, verifica que el comando existe, que la API está implementada, que el ejemplo relevante compila o tiene una prueba que lo cubre y que se explican los límites conocidos. Sigue las [normas de documentación](/contributing/documentation/).
 

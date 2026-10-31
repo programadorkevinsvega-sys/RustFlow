@@ -1,6 +1,6 @@
 # ADR 0005: Initial WebAssembly DOM adapter
 
-- **Status:** Proposed for review
+- **Status:** Proposed for formal review; the initial adapter and subsequent Phase 3 browser runtime are implemented in `main` (PR #25, merge commit `43f5fb9c12996ea600b47930553a9f91dc6055e9`). This proposal status tracks formal ADR approval, not runtime availability.
 - **Date:** 2026-10-26
 - **Phase:** 3.1–3.2 — Browser runtime
 
@@ -26,5 +26,5 @@ The renderer rejects elements outside its allowlist, inline `style` attributes, 
 
 - The workspace gets a dedicated WASM compile check for the DOM adapter.
 - Native workspace tests remain browser-independent.
-- This first slice does not complete Phase 3: browser-loadable bundles, keyed reconciliation, targeted dirty-subtree patching, counter/todo examples, E2E tests, and cross-browser verification remain pending.
+- **Historical boundary:** when this initial adapter slice was proposed, browser-loadable bundles, keyed reconciliation, targeted DOM reconciliation, counter/todo examples, E2E tests and cross-browser verification were still pending. The later Phase 3 implementation delivered that runtime and was merged in PR #25 on 2026-10-26 (`43f5fb9c12996ea600b47930553a9f91dc6055e9`).
 - SSR, hydration, HTTP server/routing, and CLI are not part of this ADR.

@@ -1,6 +1,6 @@
 # ADR 0008: Safe HTML document shells and configurable error pages
 
-- **Status:** Proposed for review
+- **Status:** Proposed for formal review; safe HTML document shells and configurable error-page support are implemented in the current server/SSR runtime. This status tracks formal ADR approval, not runtime availability.
 - **Date:** 2026-10-26
 - **Phase:** 4.4 — Safe server rendering
 
@@ -19,4 +19,4 @@ Add `ErrorPages` as a server configuration value keyed by 4xx/5xx `StatusCode`. 
 - A full HTML document can be returned without bypassing the SSR safety policy.
 - Router-generated 404/405 responses can use custom safe pages and still echo `x-request-id`.
 - `Response::html(String)` remains an explicit raw-string escape hatch for trusted content only; it is not an HTML sanitizer.
-- Hydration, layout composition, and broader HTTP E2E coverage remain separate work.
+- Hydration, layout composition and broader HTTP E2E coverage were separate workstreams at the time of this ADR; later phases implemented them with narrower opt-in contracts (see ADR 0010/0011 and `docs/SSR_RENDERING.md`).

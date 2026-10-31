@@ -72,7 +72,7 @@ Estas pruebas son una fuente de comportamiento verificable, pero no demuestran c
 
 Un buen ejercicio es añadir un campo visual a cada tarea (por ejemplo, una etiqueta), pasarla como prop y conservar la clave existente. Otro es añadir un filtro local a la lista usando una señal y una región dinámica. Ejecuta los tests después de cambiar la estructura DOM, los eventos o las claves.
 
-Antes de añadir persistencia, login o mutaciones de servidor recuerda que el framework todavía no ofrece un modelo integrado de datos, sesiones, autenticación ni server actions. Para patrones de ruta y datos HTTP, sigue el [tutorial de API JSON](/tutorials/json-api/); para SSR y catálogo de páginas, sigue el [tutorial de producto](/tutorials/product-page/).
+Este ejemplo mantiene la lista en memoria y no conecta persistencia, sesiones ni guards. RustFlow ofrece APIs experimentales separadas para ORM SQL (SeaORM), ODM MongoDB, sesiones y control de acceso; todavía no hay proveedor de usuarios, almacenamiento SQL durable de sesiones ni server actions, y el scaffold no genera automáticamente una aplicación CRUD completa. Para patrones de ruta y datos HTTP, sigue el [tutorial de API JSON](/tutorials/json-api/); para SSR y catálogo de páginas, sigue el [tutorial de producto](/tutorials/product-page/); para persistencia, consulta la [guía de base de datos](/guides/database/).
 
 ## Referencias
 

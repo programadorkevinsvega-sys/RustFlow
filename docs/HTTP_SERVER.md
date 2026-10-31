@@ -50,7 +50,7 @@ The experimental Phase 6.4 API provides SessionManager, SessionContext and the S
 
 Install sessions.middleware() before guards. Use route_protected or route_authorized to check access before the handler. A missing identity returns 401, an authorization denial returns 403, and storage/policy failures return a generic 500. Missing policies and permission rules deny by default. Identity and roles are read from server-side session records only.
 
-InMemorySessionStore is volatile, process-local, and does not coordinate instances. A durable adapter and database transaction/migration policy belong to Phase 6.5. The application must verify credentials before calling SessionContext::authenticate. OAuth/OIDC, MFA, account recovery, rate limiting and user-provider integration are not implemented. Sessions do not replace CSRF: keep CsrfProtection on cookie-authenticated mutating routes, including login/logout. See the public sessions guide and ADR 0015.
+InMemorySessionStore is volatile, process-local, and does not coordinate instances. Phase 6.5 introduced SQL pools, transactions and migrations for application data, but it did not implement a SQL-backed `SessionStore`; durable multi-instance sessions remain a separate, unimplemented persistence adapter. The application must verify credentials before calling SessionContext::authenticate. OAuth/OIDC, MFA, account recovery, rate limiting and user-provider integration are not implemented. Sessions do not replace CSRF: keep CsrfProtection on cookie-authenticated mutating routes, including login/logout. See the public sessions guide and ADR 0015.
 
 ## Resource limits
 

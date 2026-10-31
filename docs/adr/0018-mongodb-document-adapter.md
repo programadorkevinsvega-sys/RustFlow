@@ -24,7 +24,7 @@ RustFlow currently exposes experimental SQLx pools and SQL migrations for relati
 
 - SQLx AnyPool: rejected because MongoDB is not an SQL engine and the driver cannot be forced into SQLx's relational contracts.
 - Reuse SQL migrations: rejected because collection/index lifecycle and BSON documents are not SQL DDL migrations.
-- Add an ODM in this phase: rejected because the roadmap reserves a separate mature document mapper/ODM contract for Phase 6.7.3.
+- Add an ODM in this phase: rejected because Phase 6.6.2 was scoped to the low-level native document adapter; the separate mature document mapper/ODM contract was reserved for Phase 6.7.3 and subsequently implemented in main through PR #60.
 - Use the latest driver release regardless of MSRV: rejected because this phase must retain Rust 1.85 compatibility; the chosen exact version will be re-evaluated when the project's MSRV policy changes.
 - Implement an independent connection pool: rejected because the official driver owns and manages its client connection pools.
 
@@ -39,4 +39,4 @@ Final verification evidence: PR #55 head `8c1a33c261769bd731f00c371bac17a569611c
 - The adapter is experimental and MongoDB-specific. It does not imply compatibility with other server versions than the one actually tested.
 - Client cancellation after the operation timeout does not guarantee that a server-side operation has no side effects; MongoDB's own timeouts, retry and write-concern semantics remain driver/server-specific.
 - The bootstrap contract only creates missing collections/indexes and verifies index names. It does not reconcile an existing index's full key/options definition or manage versions of document shape.
-- The adapter provides no ODM, generated models, query builder, SQL-like relationships, cross-engine transaction abstraction, or MongoDB schema migrations. Phase 6.6.3 and Phase 6.7 remain separate roadmap work.
+- The Phase 6.6.2 adapter itself provided no ODM, generated models, query builder, SQL-like relationships, cross-engine transaction abstraction, or MongoDB schema migrations. Phase 6.7.3 subsequently added the independent trait-based ODM and merged it into `main` through PR #60; it does not change the limitations listed for this low-level adapter or add document migrations. Phase 6.6.3 is complete, while the global Phase 6.7 maturity gate remains open.

@@ -72,7 +72,7 @@ Desde la raíz del repositorio puedes ejecutar `cargo test --workspace --all-fea
 
 ## Lo que los ejemplos no proporcionan
 
-Los datos del catálogo de productos y de la lista de tareas no son persistentes. La API SQLx experimental permite conectar una base SQLite/PostgreSQL y aplicar migraciones, pero todavía no hay una demo canónica full-stack que integre CRUD persistente, proveedor de usuarios, flujo de autenticación completo, autorización de negocio, CSRF y server actions. Consulta la [guía de base de datos](/guides/database/) para el contrato de pool/consultas/migraciones y las pruebas reproducibles. No extrapoles una aplicación full-stack terminada desde ejemplos aislados de SSR, JSON o browser.
+Los datos del catálogo de productos y de la lista de tareas de estos ejemplos no son persistentes. RustFlow ya incluye un ORM SQL experimental para SQLite/PostgreSQL/MySQL/MariaDB y un ODM MongoDB independiente, pero estos ejemplos no los conectan. Todavía no hay una demo canónica full-stack que integre una app CRUD generada con proveedor de usuarios, flujo de autenticación completo, autorización de negocio, CSRF y server actions. Consulta la [guía de base de datos](/guides/database/) y la [guía ODM](/guides/mongodb-odm/) para los contratos de persistencia y sus límites. No extrapoles una aplicación full-stack terminada desde ejemplos aislados de SSR, JSON o browser.
 
 
 ## Sesiones y rutas protegidas — Fase 6.4 integrada en main

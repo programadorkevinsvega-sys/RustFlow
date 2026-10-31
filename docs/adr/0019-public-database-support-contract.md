@@ -1,6 +1,6 @@
 # ADR 0019: Public database support contract and verified engine matrix
 
-- Status: Verified on PR #57 code head `51ac4c212b3d6bf68483ee2ef8e28b5c3a75f421`; Rust 1.85/stable and all required checks passed. The PR's final documentation sync must retain green CI before merge.
+- Status: Accepted and merged through PR #57 on 2026-10-29 (merge commit `67f006fde879100fc2ea468262d8d9fff6c87914`). The final PR head `b28b36cf52443809cc75b47cb8ed33b292b24879` passed Rust 1.85/stable and all required checks.
 - Phase: 6.6.3 — Public support contract.
 - Related: ADR 0016 (SQLx pools and migrations), ADR 0017 (MySQL/MariaDB driver), ADR 0018 (MongoDB document adapter), `docs/DATABASE_SUPPORT_MATRIX.md`.
 
