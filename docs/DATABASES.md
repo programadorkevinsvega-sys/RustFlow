@@ -1,6 +1,6 @@
-# SQL pools, SeaORM, transactions, and migrations (Phase 6.7.2)
+# SQL ORM and MongoDB ODM, pools, transactions, and migrations (Phase 6.7)
 
-The database API remains experimental and pre-1.0. Phase 6.7.1 selected SeaORM 1.1.20 and defined the Data Mapper/model contract. Phase 6.7.2 is accepted on the PR #59 head for final review (the PR remains open and unmerged): SeaORM runs in `rustflow-server` over one backend-specific SQLx pool shared by SQLx and SeaORM. `EntityRepository` exposes CRUD/bulk operations, typed SeaORM query composition, explicit relation loaders, parameterized raw SQL and mixed ORM/SQL transactions. SQLite, PostgreSQL, MySQL and MariaDB integration contracts, the expanded boundary/relationship/COMMIT-fault tests, and all eight required checks passed on `2cadce73c19c37c2f088f572ea37a83c65c72380`. MongoDB continues to use its independent document adapter.
+The database API remains experimental and pre-1.0. Phase 6.7.1 selected SeaORM 1.1.20 and defined the Data Mapper/model contract. Phase 6.7.2 was merged through PR #59 on 2026-10-31 (merge commit `8d387943d5f6ccb4d3f33ba3708311442e238c5f`): SeaORM runs in `rustflow-server` over one backend-specific SQLx pool shared by SQLx and SeaORM. `EntityRepository` exposes CRUD/bulk operations, typed SeaORM query composition, explicit relation loaders, parameterized raw SQL and mixed ORM/SQL transactions. SQLite, PostgreSQL, MySQL and MariaDB integration contracts, expanded boundary/relationship/COMMIT-fault tests, and all eight required checks passed on the final PR head. MongoDB remains a separate document adapter with its own typed ODM, introduced in Phase 6.7.3.
 
 ## Supported engines
 
@@ -236,7 +236,7 @@ When running locally outside CI, a test skips if its corresponding URL is absent
 
 ## MongoDB document adapter (Phase 6.6.2)
 
-MongoDB is document-oriented and uses its own adapter, independent of SQLx, typed SQLx pool, SQL transactions, and SQL migrations. The current API is experimental and exposes the official driver's native collection API rather than an ODM.
+MongoDB is document-oriented and uses its own adapter, independent of SQLx, typed SQLx pools, SQL transactions, and SQL migrations. Phase 6.6.2 provides the low-level official-driver adapter and native collection escape hatch. Phase 6.7.3 adds an experimental typed ODM facade over the same `MongoDatabase` client and official driver; it does not introduce another client/pool or reuse SeaORM entities, SQL relationships, or migrations.
 
 The official MongoDB Rust driver is pinned to =3.6.0 because that release retains the repository's Rust 1.85 MSRV. The DNS SRV resolver feature is intentionally disabled because its Hickory 0.25 dependency triggered a high-severity dependency-review advisory; only standard mongodb:// URIs are supported by this initial adapter. Re-evaluate the pin and optional features during dependency/security reviews. The initial CI server contract is MongoDB 7.0.45.
 
@@ -274,19 +274,93 @@ let bootstrap = DocumentBootstrap::new("notes")?
 database.bootstrap(&bootstrap).await?;
 ~~~
 
-The bootstrap contract creates a missing collection, creates declared indexes (including explicitly unique indexes), and verifies declared index names. Re-running an unchanged declaration is intended to be idempotent. It does not drop resources, replace indexes, validate arbitrary document schemas, or implement versioned document migrations. A unique-index violation is mapped to HTTP 409 only when the MongoDB driver reports duplicate-key code 11000, including native write errors; other internal driver errors are not exposed in client-facing responses.
+The bootstrap contract creates a missing collection, creates declared indexes (including explicitly unique indexes), and verifies each declared index's name, ordered key document, and uniqueness. Re-running an unchanged declaration is intended to be idempotent. It does not drop resources, replace indexes, validate arbitrary document schemas, or implement versioned document migrations. The current `DocumentIndex` surface manages only keys and uniqueness; TTL, sparse, partial, collation and other index options are not claimed. A unique-index violation is mapped to HTTP 409 only when the MongoDB driver reports duplicate-key code 11000, including native write errors; other internal driver errors are not exposed in client-facing responses.
 
-The adapter does not add an ODM, model derives, a portable query builder, SQL-like relations, or transaction/migration abstractions. Those capabilities are outside Phase 6.6.2 and belong to the separate Phase 6.7 document-mapper/ODM contract.
+### Typed MongoDB ODM (Phase 6.7.3 — accepted implementation in PR #60; not merged)
+
+**Acceptance status (2026-10-31):** the ODM implementation and its compile-fail, unit, replica-set and standalone integration coverage passed CI on PR #60 head `c91a558934851ea17e10dd9ebde13b8869fbbcf1`. Rust 1.85/stable, Clippy, workspace/database tests, MongoDB 7.0.45 topology tests, Rustdoc, CLI/benchmark smoke, WASM, Browser E2E, documentation site, governance and dependency review all passed. PR #60 remains open and unmerged; this acceptance does not close Phase 6.7 globally.
+
+The MongoDB ODM is a document Data Mapper, not an extension of the SQL ORM. Models are ordinary Serde values and own no client, collection, session, identity map, or implicit I/O. Each model declares its collection and identifier type through `DocumentModel`; its identifier property must serialize as BSON `_id`. Before writes, RustFlow verifies that the typed ID matches the serialized `_id`. If an insert has no ID, the associated `Id` type must be able to deserialize a BSON `ObjectId`; otherwise the ODM rejects the operation before sending it. Custom String/UUID IDs must be supplied explicitly. `replace_one` requires an explicit model ID.
+
+```rust
+use rustflow_server::{
+    DocumentField, DocumentFilter, DocumentModel, DocumentQuery, DocumentUpdate,
+    MongoDatabase,
+    mongodb_driver::bson::oid::ObjectId,
+};
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct User {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    id: Option<ObjectId>,
+    email: String,
+    age: i32,
+}
+
+impl DocumentModel for User {
+    type Id = ObjectId;
+    const COLLECTION: &'static str = "users";
+
+    fn id(&self) -> Option<Self::Id> { self.id.clone() }
+    fn set_id(&mut self, id: Self::Id) { self.id = Some(id); }
+}
+
+const EMAIL: DocumentField<String> = DocumentField::new("email");
+const AGE: DocumentField<i32> = DocumentField::new("age");
+
+async fn users(database: &MongoDatabase) -> Result<(), rustflow_server::MongoError> {
+    let users = database.repository::<User>();
+    let saved = users.insert(User {
+        id: None,
+        email: "ada@example.test".to_owned(),
+        age: 37,
+    }).await?;
+
+    let filter = DocumentFilter::new()
+        .eq_field(EMAIL, "ada@example.test".to_owned())?
+        .gte_field(AGE, 18)?;
+    let page = DocumentQuery::new(filter)
+        .sort_desc("age")?
+        .limit(50)?;
+    let _matches = users.find_many(page).await?;
+
+    users.update_one(
+        DocumentFilter::new().eq_field(EMAIL, "ada@example.test".to_owned())?,
+        DocumentUpdate::new().inc_field(AGE, 1)?,
+        false,
+    ).await?;
+
+    users.find_by_id(saved.id.expect("insert populated the ObjectId")).await?;
+    Ok(())
+}
+```
+
+The repository exposes `insert`, `insert_many`, `find_by_id`, `find_one`, `find_many`, `find_many_as`, `count`, `exists`, `replace_one`, `update_one`, `update_many`, `delete_one`, `delete_many`, and `aggregate_as`. `insert_many` accepts 1–1,000 documents. Ordered bulk insert stops on the first write error; unordered bulk insert may continue. A batch can partially apply before an error, and neither mode is a transaction. The ODM preserves the driver's write error and does not add application-level retries; eligible single-document operations may still use native retryable-write behavior.
+
+`DocumentFilter` composes equality/comparison, boolean AND/OR, existence, null, membership, array predicates and nested dotted paths. `DocumentQuery` supports sorting, skip/limit pagination and inclusion/exclusion projections. `DocumentUpdate` supports `$set`, `$unset`, `$inc`, `$push` and `$pull`. Field paths reject empty segments, NUL/control characters, and `$`-prefixed segments. Update helpers also reject writes to `_id` and nested `_id.*` paths because MongoDB document identifiers are immutable. `DocumentField<T>` statically associates a declared field path with the Rust value type accepted by typed filter/update helpers; the application still owns the mapping between that path and its Serde field name. Use `DocumentFilter::native` only for trusted, deliberately constructed BSON operators outside the helper surface; it does not validate query authorization scope or semantics.
+
+For projections, use `find_many_as::<Dto>` and define a DTO whose required fields match the selected projection. Do not deserialize a partial projection into the full model unless all required model fields are included. For aggregation, pass native MongoDB pipeline stages to `aggregate_as::<ResultDto>`; the ODM does not translate SQL joins or SQL aggregation syntax. Embedded structs and arrays use ordinary BSON nested documents. References are explicit IDs and require explicit repository reads or aggregation stages such as `$lookup`; there is no lazy loading or automatic cascade behavior.
+
+Serde controls missing/null/default behavior. With ordinary `Option<T>`, an absent field and explicit BSON `null` both normally deserialize to `None`; use a custom tri-state representation or raw BSON if that distinction matters. `#[serde(default)]` supplies a value when a field is absent; it does not preserve missing-versus-null information.
+
+The ODM retains the driver's native collection API as an escape hatch. It does not provide a procedural model derive, SQL-style relationships, automatic cascades, a global identity map, document migrations, or every native bulk-write/index/aggregation option. The index declaration currently manages ordered keys and uniqueness only. The API remains experimental and pre-1.0.
+
+### Sessions and transactions
+
+Sessions are created from the same official client by `MongoDatabase::start_session`. Pass `&mut ClientSession` explicitly to each repository operation participating in a transaction. The current session-aware repository subset is insert, find-by-ID, update-one and delete-one. A session alone is not a transaction. Multi-document transactions require a replica set or sharded deployment; a standalone server is insufficient. The integration CI uses a MongoDB 7.0.45 single-node replica set for commit/abort coverage and a separate standalone server to verify the topology restriction. Parallel operations on one transaction session are unsupported.
+
+The driver reports `UnknownTransactionCommitResult` when the outcome of commit is ambiguous; inspect `MongoError::is_unknown_transaction_commit_result()` and reconcile persisted state rather than assuming rollback or rerunning a non-idempotent operation. Owned repository actions continue running if the caller's configured timeout elapses, avoiding cancellation of an in-flight driver future; a timeout still does not reveal whether the server applied a write. Session-borrowing methods are not wrapped in the generic cancellable timeout path.
 
 ## Roadmap status
 
 Phase 6.6 is complete: its SQL and MongoDB support contracts, runtime versions and evidence are recorded in docs/DATABASE_SUPPORT_MATRIX.md, ADR 0019 and ROADMAP.md. Phase 6.7.1 is complete and merged in PR #58 (36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1); ADR 0020 selects Data Mapper with SeaORM 1.1.20 and the validation-only ModelDiagnostics derive.
 
-Phase 6.7.2 is accepted on PR #59 head `2cadce73c19c37c2f088f572ea37a83c65c72380`. The typed-pool bridge, SeaORM repository facade, CRUD/bulk methods, typed query composition, explicit batch loaders, cross-engine codec contracts, shared ORM/raw transactions, typed constraint errors and ambiguous-COMMIT category are covered by the four-engine integration contract. The expanded integer-width/boundary tests, nested-loader query-count assertions, relation attach/update/detach/cascade tests and PostgreSQL live backend-termination test during COMMIT all passed on that exact SHA; all eight required checks are green. The PR is awaiting final review and merge. MongoDB remains a separate document adapter; its ODM is Phase 6.7.3. The global Phase 6.7 maturity gate remains open.
+Phase 6.7.2 was merged through PR #59 on 2026-10-31 at `8d387943d5f6ccb4d3f33ba3708311442e238c5f`. The typed-pool bridge, SeaORM repository facade, CRUD/bulk methods, typed query composition, explicit batch loaders, cross-engine codec contracts, shared ORM/raw transactions, typed constraint errors and ambiguous-COMMIT category are covered by the four-engine integration contract. The expanded integer-width/boundary tests, nested-loader query-count assertions, relation attach/update/detach/cascade tests and PostgreSQL live backend-termination test during COMMIT passed on the final PR head; all eight required checks passed. Phase 6.7.3 was accepted by CI on PR #60 head `c91a558934851ea17e10dd9ebde13b8869fbbcf1`; PR #60 remains open and unmerged. The global Phase 6.7 maturity gate remains open.
 
 ## Testing
 
-The ORM contract target executes the same entity/query/relation/type contract on SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 and MariaDB 11.4.13. It covers generated keys, CRUD and bulk writes, nested filters, ordering and offset pagination, joins, projections, grouping/aggregates/HAVING, subqueries, one-to-one/one-to-many/many-to-many batch loading, NULL/JSON/bytes/UUID/date/time/timestamp/numeric codecs, FK/unique/CHECK constraints, and mixed ORM/raw writes inside committed and rolled-back transactions. The expanded branch contract round-trips signed `i8/i16/i32/i64` boundaries on all four engines, tests supported unsigned widths and overflow behavior on SQLite/MySQL/MariaDB, asserts one query per nested loader hop, exercises junction attach/update/detach/cascade, and injects a PostgreSQL backend termination while COMMIT is in flight. These newly added cases remain unaccepted until CI passes on the exact PR head. The support-specific `database_engines` target independently verifies MySQL and MariaDB service identity and migration behavior.
+The ORM contract target executes the same entity/query/relation/type contract on SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 and MariaDB 11.4.13. It covers generated keys, CRUD and bulk writes, nested filters, ordering and offset pagination, joins, projections, grouping/aggregates/HAVING, subqueries, one-to-one/one-to-many/many-to-many batch loading, NULL/JSON/bytes/UUID/date/time/timestamp/numeric codecs, FK/unique/CHECK constraints, and mixed ORM/raw writes inside committed and rolled-back transactions. The expanded branch contract round-trips signed `i8/i16/i32/i64` boundaries on all four engines, tests supported unsigned widths and overflow behavior on SQLite/MySQL/MariaDB, asserts one query per nested loader hop, exercises junction attach/update/detach/cascade, and injects a PostgreSQL backend termination while COMMIT is in flight. The expanded Phase 6.7.2 cases passed on the final PR head before PR #59 was merged. The independent Phase 6.7.3 MongoDB integration suite passed on PR #60 head `c91a558934851ea17e10dd9ebde13b8869fbbcf1`, including replica-set commit/abort, standalone transaction rejection, nested-document/projection, CRUD/bulk/query/index/ID tests and all required CI checks. PR #60 remains open and unmerged. The support-specific `database_engines` target independently verifies MySQL and MariaDB service identity and migration behavior.
 
 The Rust CI matrix runs the workspace and database services under Rust 1.85 and stable, and includes Clippy, tests, Rustdoc and an explicit RustSec cargo audit. Dependency Review remains a separate workflow. The only audit exception is RUSTSEC-2023-0071 for the inherited rsa 0.9.10 dependency of sqlx-mysql 0.8.6; it has no patched release and is documented in ADR 0020 and .cargo/audit.toml. A green audit does not mean that exception is fixed.
 
@@ -300,4 +374,4 @@ cargo test --workspace --all-features
 cargo audit --deny warnings
 ~~~
 
-The API remains experimental and pre-1.0. PostgreSQL unsigned primitive mapping is unavailable in the selected SeaORM 1.1.20 foundation; unsigned `u8/u16/u32` coverage is therefore limited to SQLite and MySQL/MariaDB, while `u64` is MySQL/MariaDB-only. Dialect-specific upsert/RETURNING capabilities, generated CRUD application proof and the separate MongoDB ODM remain tracked in ROADMAP.md and later subphases. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.
+The API remains experimental and pre-1.0. PostgreSQL unsigned primitive mapping is unavailable in the selected SeaORM 1.1.20 foundation; unsigned `u8/u16/u32` coverage is therefore limited to SQLite and MySQL/MariaDB, while `u64` is MySQL/MariaDB-only. Dialect-specific upsert/RETURNING capabilities, the generated CRUD application proof, advanced relation/loading extensions and the global maturity/compatibility gate remain tracked in ROADMAP.md and later subphases. The independent MongoDB ODM was accepted by CI on PR #60 but remains experimental until that PR is merged. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.

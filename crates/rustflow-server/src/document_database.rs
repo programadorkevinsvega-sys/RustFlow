@@ -1,9 +1,14 @@
 //! A document-oriented MongoDB adapter kept separate from SQLx and SQL migrations.
 //!
-//! The adapter intentionally exposes the official driver's collection API rather than
-//! introducing an ODM, query builder, or relational abstraction.
+//! The low-level adapter owns the official driver client, BSON helpers and collection lifecycle.
+//! The independent typed document ODM is implemented in the sibling document_odm module.
 
-use std::{error::Error as StdError, fmt, future::IntoFuture, time::Duration};
+use std::{
+    error::Error as StdError,
+    fmt,
+    future::{Future, IntoFuture},
+    time::Duration,
+};
 
 use crate::mongodb_driver::{
     Client, Collection, Database, IndexModel,
@@ -239,8 +244,8 @@ impl DocumentIndex {
 
 /// An explicit, repeatable declaration of a collection and its indexes.
 ///
-/// Bootstrap creates missing collections and declared indexes, verifies their
-/// names, and never drops existing resources. It does not manage schema migrations.
+/// Bootstrap creates missing collections and declared indexes, verifies declared
+/// index key documents and uniqueness, and never drops existing resources. It does not manage schema migrations.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocumentBootstrap {
     collection: String,
@@ -374,6 +379,24 @@ impl MongoDatabase {
             .map_err(MongoError::Operation)
     }
 
+    /// Execute an owned driver future in a detached task and time out only its JoinHandle.
+    ///
+    /// The driver future is polled to completion even if the caller times out, avoiding
+    /// cancellation of an in-flight driver operation. A timeout does not reveal whether a
+    /// write reached or was applied by the server; callers must reconcile that outcome.
+    pub(crate) async fn run_owned_with_timeout<T, F>(&self, operation: F) -> Result<T, MongoError>
+    where
+        T: Send + 'static,
+        F: Future<Output = Result<T, crate::mongodb_driver::error::Error>> + Send + 'static,
+    {
+        let task = tokio::spawn(operation);
+        let result = tokio::time::timeout(self.operation_timeout, task)
+            .await
+            .map_err(|_| MongoError::Timeout)?
+            .map_err(MongoError::TaskJoin)?;
+        result.map_err(MongoError::Operation)
+    }
+
     /// Check connectivity with MongoDB's ping command.
     pub async fn ping(&self) -> Result<(), MongoError> {
         self.run_with_timeout(self.database.run_command(doc! { "ping": 1 }))
@@ -381,23 +404,29 @@ impl MongoDatabase {
         Ok(())
     }
 
-    /// Ensure a collection and declared indexes exist, then verify index names.
+    /// Ensure a collection and declared indexes exist, then verify their managed properties.
     ///
     /// Re-running bootstrap is intended to be idempotent for unchanged declarations.
     /// Existing collections are preserved; this operation never drops collections or
-    /// indexes and it does not promise schema migration or index replacement semantics.
+    /// indexes and it does not provide schema migration or index replacement semantics.
     pub async fn bootstrap(&self, declaration: &DocumentBootstrap) -> Result<(), MongoError> {
+        let database = self.database.clone();
         let collection_names = self
-            .run_with_timeout(self.database.list_collection_names())
+            .run_owned_with_timeout(async move { database.list_collection_names().await })
             .await
             .map_err(MongoError::into_bootstrap)?;
+
         if !collection_names
             .iter()
             .any(|name| name == &declaration.collection)
         {
-            self.run_with_timeout(self.database.create_collection(&declaration.collection))
-                .await
-                .map_err(MongoError::into_bootstrap)?;
+            let database = self.database.clone();
+            let collection_name = declaration.collection.clone();
+            self.run_owned_with_timeout(async move {
+                database.create_collection(&collection_name).await
+            })
+            .await
+            .map_err(MongoError::into_bootstrap)?;
         }
 
         let collection = self
@@ -411,22 +440,61 @@ impl MongoDatabase {
                 .keys(declared_index.keys.clone())
                 .options(options)
                 .build();
-            self.run_with_timeout(collection.create_index(model))
+            let collection = collection.clone();
+            self.run_owned_with_timeout(async move { collection.create_index(model).await })
                 .await
                 .map_err(MongoError::into_bootstrap)?;
         }
 
-        let existing_indexes = self
-            .run_with_timeout(collection.list_index_names())
+        let collection = collection.clone();
+        let mut cursor = self
+            .run_owned_with_timeout(async move { collection.list_indexes().await })
             .await
             .map_err(MongoError::into_bootstrap)?;
+
+        let mut existing_indexes = Vec::new();
+        loop {
+            let (available, next_cursor) = self
+                .run_owned_with_timeout(async move {
+                    let mut cursor = cursor;
+                    let available = cursor.advance().await?;
+                    Ok((available, cursor))
+                })
+                .await
+                .map_err(MongoError::into_bootstrap)?;
+            cursor = next_cursor;
+            if !available {
+                break;
+            }
+            existing_indexes.push(
+                cursor
+                    .deserialize_current()
+                    .map_err(MongoError::Bootstrap)?,
+            );
+        }
+
         for declared_index in &declaration.indexes {
-            if !existing_indexes
-                .iter()
-                .any(|name| name == &declared_index.name)
-            {
+            let existing = existing_indexes.iter().find(|index| {
+                index
+                    .options
+                    .as_ref()
+                    .and_then(|options| options.name.as_deref())
+                    == Some(declared_index.name.as_str())
+            });
+            let Some(existing) = existing else {
                 return Err(MongoError::BootstrapVerification(
                     "MongoDB did not report a declared index after bootstrap",
+                ));
+            };
+
+            let existing_unique = existing
+                .options
+                .as_ref()
+                .and_then(|options| options.unique)
+                .unwrap_or(false);
+            if existing.keys != declared_index.keys || existing_unique != declared_index.unique {
+                return Err(MongoError::BootstrapVerification(
+                    "an existing MongoDB index has an incompatible key or uniqueness definition",
                 ));
             }
         }
@@ -464,44 +532,100 @@ pub enum MongoError {
     Timeout,
     /// Bootstrap completed without the expected declared index being reported.
     BootstrapVerification(&'static str),
+    /// A document model declaration or serialization contract is invalid.
+    InvalidDocumentModel(&'static str),
+    /// A filter, query option, or field path is invalid.
+    InvalidDocumentQuery(&'static str),
+    /// An update document is empty or contains conflicting operations.
+    InvalidDocumentUpdate(&'static str),
+    /// A spawned driver task failed before returning its operation result.
+    TaskJoin(tokio::task::JoinError),
 }
 
 impl MongoError {
     fn into_bootstrap(self) -> Self {
         match self {
-            Self::Operation(error) | Self::Connect(error) | Self::InvalidUri(error) => {
-                Self::Bootstrap(error)
-            }
+            Self::Operation(error) => Self::Bootstrap(error),
+            Self::Connect(error) => Self::Connect(error),
+            Self::InvalidUri(error) => Self::InvalidUri(error),
             other => other,
+        }
+    }
+
+    /// Return whether a preserved driver error indicates an unknown transaction commit result.
+    ///
+    /// The caller must not assume the transaction committed or rolled back when this is true.
+    pub fn is_unknown_transaction_commit_result(&self) -> bool {
+        match self {
+            Self::Operation(error) => error
+                .contains_label(crate::mongodb_driver::error::UNKNOWN_TRANSACTION_COMMIT_RESULT),
+            _ => false,
         }
     }
 
     /// Convert an adapter failure into a safe HTTP response.
     ///
-    /// HTTP 409 is used only for a driver-reported duplicate-key command error.
-    /// Timeouts and connection failures are reported as temporary unavailability;
-    /// internal driver messages and connection credentials are never returned.
+    /// HTTP 409 is used only for driver-confirmed duplicate-key errors.
+    /// Connection, server-selection, pool and timeout failures map to temporary
+    /// unavailability; internal driver messages and credentials are never returned.
     pub fn to_http_error(&self) -> HttpError {
         match self {
-            Self::Operation(error) if is_duplicate_key(error) => HttpError::new(
-                StatusCode::CONFLICT,
-                "A document with those values already exists",
-            ),
+            Self::Operation(error) | Self::Bootstrap(error) if is_duplicate_key(error) => {
+                HttpError::new(
+                    StatusCode::CONFLICT,
+                    "A document with those values already exists",
+                )
+            }
+            Self::Operation(error) | Self::Bootstrap(error) if is_unavailable(error) => {
+                HttpError::new(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Document database temporarily unavailable",
+                )
+            }
             Self::Timeout | Self::Connect(_) => HttpError::new(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "Document database temporarily unavailable",
             ),
+            Self::InvalidDocumentModel(_)
+            | Self::InvalidDocumentQuery(_)
+            | Self::InvalidDocumentUpdate(_) => {
+                HttpError::new(StatusCode::BAD_REQUEST, "Invalid document operation")
+            }
             _ => HttpError::internal_server_error(),
         }
     }
 }
 
-fn is_duplicate_key(error: &crate::mongodb_driver::error::Error) -> bool {
+fn is_unavailable(error: &crate::mongodb_driver::error::Error) -> bool {
+    use crate::mongodb_driver::error::{ErrorKind, WriteFailure};
+
     match error.kind.as_ref() {
-        crate::mongodb_driver::error::ErrorKind::Command(command) => command.code == 11000,
-        crate::mongodb_driver::error::ErrorKind::Write(
-            crate::mongodb_driver::error::WriteFailure::WriteError(write_error),
-        ) => write_error.code == 11000,
+        ErrorKind::Io(_)
+        | ErrorKind::ConnectionPoolCleared { .. }
+        | ErrorKind::ServerSelection { .. }
+        | ErrorKind::Shutdown => true,
+        ErrorKind::Command(command) => command.code == 50,
+        ErrorKind::Write(WriteFailure::WriteConcernError(write_concern)) => {
+            matches!(write_concern.code, 50 | 64)
+        }
+        ErrorKind::InsertMany(insert_many) => insert_many
+            .write_concern_error
+            .as_ref()
+            .is_some_and(|write_concern| matches!(write_concern.code, 50 | 64)),
+        _ => error.contains_label(crate::mongodb_driver::error::RETRYABLE_ERROR),
+    }
+}
+
+fn is_duplicate_key(error: &crate::mongodb_driver::error::Error) -> bool {
+    use crate::mongodb_driver::error::{ErrorKind, WriteFailure};
+
+    match error.kind.as_ref() {
+        ErrorKind::Command(command) => command.code == 11000,
+        ErrorKind::Write(WriteFailure::WriteError(write_error)) => write_error.code == 11000,
+        ErrorKind::InsertMany(insert_many) => insert_many
+            .write_errors
+            .as_ref()
+            .is_some_and(|errors| errors.iter().any(|write_error| write_error.code == 11000)),
         _ => false,
     }
 }
@@ -518,6 +642,10 @@ impl fmt::Debug for MongoError {
             Self::Deserialization(_) => "Deserialization",
             Self::Timeout => "Timeout",
             Self::BootstrapVerification(_) => "BootstrapVerification",
+            Self::InvalidDocumentModel(_) => "InvalidDocumentModel",
+            Self::InvalidDocumentQuery(_) => "InvalidDocumentQuery",
+            Self::InvalidDocumentUpdate(_) => "InvalidDocumentUpdate",
+            Self::TaskJoin(_) => "TaskJoin",
         };
         formatter
             .debug_struct("MongoError")
@@ -529,7 +657,11 @@ impl fmt::Debug for MongoError {
 impl fmt::Display for MongoError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
-            Self::InvalidConfiguration(message) | Self::BootstrapVerification(message) => {
+            Self::InvalidConfiguration(message)
+            | Self::BootstrapVerification(message)
+            | Self::InvalidDocumentModel(message)
+            | Self::InvalidDocumentQuery(message)
+            | Self::InvalidDocumentUpdate(message) => {
                 return write!(formatter, "{message}");
             }
             Self::InvalidUri(_) => "MongoDB connection settings are invalid",
@@ -539,6 +671,7 @@ impl fmt::Display for MongoError {
             Self::Serialization(_) => "Rust value could not be serialized to BSON",
             Self::Deserialization(_) => "BSON document could not be deserialized",
             Self::Timeout => "MongoDB operation timed out",
+            Self::TaskJoin(_) => "MongoDB operation task failed",
         };
         formatter.write_str(message)
     }
@@ -553,7 +686,13 @@ impl StdError for MongoError {
             | Self::Bootstrap(error) => Some(error),
             Self::Serialization(error) => Some(error),
             Self::Deserialization(error) => Some(error),
-            Self::InvalidConfiguration(_) | Self::Timeout | Self::BootstrapVerification(_) => None,
+            Self::TaskJoin(error) => Some(error),
+            Self::InvalidConfiguration(_)
+            | Self::Timeout
+            | Self::BootstrapVerification(_)
+            | Self::InvalidDocumentModel(_)
+            | Self::InvalidDocumentQuery(_)
+            | Self::InvalidDocumentUpdate(_) => None,
         }
     }
 }

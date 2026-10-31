@@ -1,15 +1,122 @@
-use std::{
-    env,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
-
 use http::StatusCode;
 use rustflow_server::mongodb_driver::bson::{Document, doc, oid::ObjectId};
 use rustflow_server::{
     DocumentBootstrap, DocumentIndex, MongoConfig, MongoDatabase, MongoError, from_bson_document,
     to_bson_document,
 };
+use rustflow_server::{
+    DocumentDeleteOutcome, DocumentFilter, DocumentModel, DocumentQuery, DocumentRepository,
+    DocumentUpdate,
+};
 use serde::{Deserialize, Serialize};
+use std::{
+    env,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct OdmEntry {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    id: Option<ObjectId>,
+    title: String,
+    score: i32,
+    tags: Vec<String>,
+}
+
+impl DocumentModel for OdmEntry {
+    type Id = ObjectId;
+    const COLLECTION: &'static str = "odm_entries";
+
+    fn id(&self) -> Option<Self::Id> {
+        self.id
+    }
+
+    fn set_id(&mut self, id: Self::Id) {
+        self.id = Some(id);
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct NamedOdmEntry {
+    #[serde(rename = "_id")]
+    id: String,
+    title: String,
+}
+
+impl DocumentModel for NamedOdmEntry {
+    type Id = String;
+    const COLLECTION: &'static str = "named_odm_entries";
+
+    fn id(&self) -> Option<Self::Id> {
+        Some(self.id.clone())
+    }
+
+    fn set_id(&mut self, id: Self::Id) {
+        self.id = id;
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct OdmAddress {
+    city: String,
+    coordinates: Vec<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct NestedOdmEntry {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    id: Option<ObjectId>,
+    email: String,
+    address: OdmAddress,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    nickname: Option<String>,
+}
+
+impl DocumentModel for NestedOdmEntry {
+    type Id = ObjectId;
+    const COLLECTION: &'static str = "nested_odm_entries";
+
+    fn id(&self) -> Option<Self::Id> {
+        self.id
+    }
+
+    fn set_id(&mut self, id: Self::Id) {
+        self.id = Some(id);
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct ProjectedOdmAddress {
+    city: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct NestedOdmSummary {
+    address: ProjectedOdmAddress,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct OdmEntrySummary {
+    #[serde(rename = "_id")]
+    id: ObjectId,
+    title: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct OdmScoreGroup {
+    #[serde(rename = "_id")]
+    score: i32,
+    entries: i32,
+}
+
+fn odm_entry(title: &str, score: i32, tags: &[&str]) -> OdmEntry {
+    OdmEntry {
+        id: None,
+        title: title.to_owned(),
+        score,
+        tags: tags.iter().map(|tag| (*tag).to_owned()).collect(),
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 struct Address {
@@ -38,6 +145,16 @@ fn test_uri() -> Option<String> {
         Ok(uri) if !uri.trim().is_empty() => Some(uri),
         _ if env::var("CI").is_ok_and(|value| value == "true") => {
             panic!("RUSTFLOW_TEST_MONGODB_URI must be set in CI");
+        }
+        _ => None,
+    }
+}
+
+fn standalone_test_uri() -> Option<String> {
+    match env::var("RUSTFLOW_TEST_MONGODB_STANDALONE_URI") {
+        Ok(uri) if !uri.trim().is_empty() => Some(uri),
+        _ if env::var("CI").is_ok_and(|value| value == "true") => {
+            panic!("RUSTFLOW_TEST_MONGODB_STANDALONE_URI must be set in CI");
         }
         _ => None,
     }
@@ -119,6 +236,18 @@ async fn mongodb_7045_real_server_contract() {
         .bootstrap(&bootstrap)
         .await
         .expect("repeat bootstrap is safe");
+    let incompatible_index = DocumentBootstrap::new(collection_name)
+        .expect("valid collection")
+        .with_index(
+            DocumentIndex::new("email_unique", doc! { "email": 1 }, false)
+                .expect("valid but incompatible index declaration"),
+        )
+        .expect("valid index declaration");
+    let index_conflict = database
+        .bootstrap(&incompatible_index)
+        .await
+        .expect_err("bootstrap must reject an index with incompatible uniqueness");
+    assert!(matches!(index_conflict, MongoError::Bootstrap(_)));
 
     let collection = database.collection::<Profile>(collection_name);
     let profile = Profile {
@@ -239,6 +368,514 @@ async fn mongodb_7045_real_server_contract() {
         .run_with_timeout(database.database().drop())
         .await
         .expect("clean up isolated test database");
+}
+
+#[tokio::test]
+async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation() {
+    let Some(uri) = test_uri() else {
+        eprintln!("Skipping typed ODM integration test outside CI: MongoDB URI is unset");
+        return;
+    };
+    let database_name = database_name();
+    let config = MongoConfig::new(uri, database_name.clone())
+        .expect("valid MongoDB integration URI")
+        .with_operation_timeout(Duration::from_secs(5))
+        .expect("valid operation timeout");
+    let database = MongoDatabase::connect(&config)
+        .await
+        .expect("connect to MongoDB replica set");
+    let repository = database.repository::<OdmEntry>();
+    assert_eq!(repository.collection_name(), "odm_entries");
+
+    let inserted = repository
+        .insert(odm_entry("alpha", 10, &["rust", "database"]))
+        .await
+        .expect("insert typed document");
+    let alpha_id = inserted.id.expect("server generated ObjectId");
+    assert_eq!(
+        repository.find_by_id(alpha_id).await.expect("find by id"),
+        Some(inserted.clone())
+    );
+
+    let named_repository = database.repository::<NamedOdmEntry>();
+    let named = named_repository
+        .insert(NamedOdmEntry {
+            id: "stable-user-key".to_owned(),
+            title: "custom id".to_owned(),
+        })
+        .await
+        .expect("insert custom string ID");
+    assert_eq!(
+        named_repository
+            .find_by_id("stable-user-key".to_owned())
+            .await
+            .expect("find string ID"),
+        Some(named),
+    );
+
+    let bulk = repository
+        .insert_many(
+            vec![
+                odm_entry("beta", 20, &["rust"]),
+                odm_entry("gamma", 30, &["wasm"]),
+            ],
+            true,
+        )
+        .await
+        .expect("ordered bulk insert");
+    assert!(bulk.iter().all(|entry| entry.id.is_some()));
+
+    let bulk_update = repository
+        .update_many(
+            DocumentFilter::new()
+                .in_values("title", ["beta", "gamma"])
+                .expect("bulk update filter"),
+            DocumentUpdate::new()
+                .set("batch_mark", true)
+                .expect("bulk update"),
+            false,
+        )
+        .await
+        .expect("update many documents");
+    assert_eq!(bulk_update.matched_count, 2);
+    assert_eq!(bulk_update.modified_count, 2);
+
+    let duplicate_id = ObjectId::new();
+    let partial_error = repository
+        .insert_many(
+            vec![
+                OdmEntry {
+                    id: Some(duplicate_id),
+                    title: "bulk-first".to_owned(),
+                    score: 1,
+                    tags: vec![],
+                },
+                OdmEntry {
+                    id: Some(duplicate_id),
+                    title: "bulk-conflict".to_owned(),
+                    score: 2,
+                    tags: vec![],
+                },
+            ],
+            true,
+        )
+        .await
+        .expect_err("ordered bulk stops at a duplicate _id");
+    assert!(std::error::Error::source(&partial_error).is_some());
+    assert_eq!(
+        partial_error.to_http_error().status_code(),
+        StatusCode::CONFLICT,
+        "a positively identified duplicate in insert_many maps to HTTP 409",
+    );
+    assert!(
+        repository
+            .find_by_id(duplicate_id)
+            .await
+            .expect("read partial insert")
+            .is_some()
+    );
+    repository
+        .delete_one(
+            DocumentFilter::new()
+                .eq("_id", duplicate_id)
+                .expect("delete partial insert"),
+        )
+        .await
+        .expect("clean partial insert fixture");
+
+    let filter = DocumentFilter::and([
+        DocumentFilter::new()
+            .gte("score", 10)
+            .expect("gte filter")
+            .lt("score", 30)
+            .expect("lt filter"),
+        DocumentFilter::or([
+            DocumentFilter::new()
+                .eq("title", "alpha")
+                .expect("title filter"),
+            DocumentFilter::new()
+                .eq("title", "beta")
+                .expect("title filter"),
+        ])
+        .expect("or composition"),
+        DocumentFilter::new()
+            .exists("tags", true)
+            .expect("field existence"),
+    ])
+    .expect("and composition");
+    let page = repository
+        .find_many(
+            DocumentQuery::new(filter)
+                .sort_desc("score")
+                .expect("sort")
+                .limit(10)
+                .expect("page size"),
+        )
+        .await
+        .expect("query page");
+    assert_eq!(
+        page.iter()
+            .map(|entry| entry.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["beta", "alpha"]
+    );
+
+    let summaries = repository
+        .find_many_as::<OdmEntrySummary>(
+            DocumentQuery::new(
+                DocumentFilter::new()
+                    .in_values("title", ["alpha", "beta"])
+                    .expect("in filter"),
+            )
+            .include("title")
+            .expect("projection")
+            .sort_asc("title")
+            .expect("sort"),
+        )
+        .await
+        .expect("typed projection");
+    assert_eq!(
+        summaries
+            .iter()
+            .map(|entry| entry.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["alpha", "beta"]
+    );
+
+    let updated = repository
+        .update_one(
+            DocumentFilter::new()
+                .eq("_id", inserted.id.expect("id"))
+                .expect("filter"),
+            DocumentUpdate::new()
+                .inc("score", 5)
+                .expect("increment")
+                .push("tags", "odm")
+                .expect("array push"),
+            false,
+        )
+        .await
+        .expect("update typed document");
+    assert_eq!(updated.matched_count, 1);
+    assert_eq!(updated.modified_count, 1);
+    let after_update = repository
+        .find_by_id(inserted.id.expect("id"))
+        .await
+        .expect("read after update")
+        .expect("document remains");
+    assert_eq!(after_update.score, 15);
+    assert!(after_update.tags.contains(&"odm".to_owned()));
+
+    let pulled = repository
+        .update_one(
+            DocumentFilter::new()
+                .eq("_id", inserted.id.expect("id"))
+                .expect("filter"),
+            DocumentUpdate::new()
+                .pull("tags", "rust")
+                .expect("pull array item"),
+            false,
+        )
+        .await
+        .expect("pull an array element");
+    assert_eq!(pulled.modified_count, 1);
+    let after_pull = repository
+        .find_by_id(inserted.id.expect("id"))
+        .await
+        .expect("read after pull")
+        .expect("document remains");
+    assert!(!after_pull.tags.contains(&"rust".to_owned()));
+
+    let replaced = repository
+        .replace_one(
+            DocumentFilter::new()
+                .eq("_id", inserted.id.expect("id"))
+                .expect("filter"),
+            &OdmEntry {
+                score: 16,
+                ..after_update.clone()
+            },
+            false,
+        )
+        .await
+        .expect("replace typed document");
+    assert_eq!(replaced.matched_count, 1);
+    assert_eq!(
+        repository
+            .find_by_id(inserted.id.expect("id"))
+            .await
+            .expect("read replacement")
+            .expect("replacement exists")
+            .score,
+        16
+    );
+
+    let groups = repository
+        .aggregate_as::<OdmScoreGroup>(vec![
+            doc! { "$match": { "title": { "$in": ["alpha", "beta", "gamma"] } } },
+            doc! { "$group": { "_id": "$score", "entries": { "$sum": 1 } } },
+            doc! { "$sort": { "_id": 1 } },
+        ])
+        .await
+        .expect("typed aggregation");
+    assert_eq!(groups.len(), 3);
+    assert_eq!(groups[0].score, 16);
+    assert_eq!(groups[0].entries, 1);
+
+    assert_eq!(
+        repository
+            .count(DocumentFilter::new())
+            .await
+            .expect("count"),
+        3
+    );
+    assert!(
+        repository
+            .exists(DocumentFilter::new().eq("title", "gamma").expect("filter"))
+            .await
+            .expect("exists query")
+    );
+    let upsert = repository
+        .update_one(
+            DocumentFilter::new()
+                .eq("title", "created-by-upsert")
+                .expect("filter"),
+            DocumentUpdate::new()
+                .set("score", 40)
+                .expect("set score")
+                .set("tags", Vec::<String>::new())
+                .expect("set tags"),
+            true,
+        )
+        .await
+        .expect("upsert document");
+    assert!(upsert.upserted_id.is_some());
+    assert!(
+        repository
+            .find_one(
+                DocumentFilter::new()
+                    .eq("title", "created-by-upsert")
+                    .expect("filter")
+            )
+            .await
+            .expect("read upsert")
+            .is_some()
+    );
+
+    let deleted: DocumentDeleteOutcome = repository
+        .delete_many(
+            DocumentFilter::new()
+                .in_values("title", ["alpha", "beta", "gamma", "created-by-upsert"])
+                .expect("delete filter"),
+        )
+        .await
+        .expect("delete fixtures");
+    assert_eq!(deleted.deleted_count, 4);
+    assert_eq!(
+        repository
+            .count(DocumentFilter::new())
+            .await
+            .expect("empty collection"),
+        0
+    );
+
+    database
+        .run_with_timeout(database.database().drop())
+        .await
+        .expect("drop isolated test database");
+}
+
+#[tokio::test]
+async fn mongodb_typed_odm_round_trips_embedded_documents_and_nested_projections() {
+    let Some(uri) = test_uri() else {
+        eprintln!("Skipping nested ODM integration test outside CI: MongoDB URI is unset");
+        return;
+    };
+    let database_name = database_name();
+    let config = MongoConfig::new(uri, database_name.clone())
+        .expect("valid MongoDB integration URI")
+        .with_operation_timeout(Duration::from_secs(5))
+        .expect("valid operation timeout");
+    let database = MongoDatabase::connect(&config)
+        .await
+        .expect("connect to MongoDB replica set");
+    let repository = database.repository::<NestedOdmEntry>();
+
+    let saved = repository
+        .insert(NestedOdmEntry {
+            id: None,
+            email: "embedded@example.test".to_owned(),
+            address: OdmAddress {
+                city: "Medellin".to_owned(),
+                coordinates: vec![-75.5812, 6.2442],
+            },
+            nickname: None,
+        })
+        .await
+        .expect("insert nested document");
+    let id = saved.id.expect("generated ObjectId");
+    let loaded = repository
+        .find_by_id(id)
+        .await
+        .expect("read nested document")
+        .expect("nested document exists");
+    assert_eq!(loaded, saved);
+    assert_eq!(loaded.address.city, "Medellin");
+    assert_eq!(loaded.address.coordinates.len(), 2);
+    assert_eq!(loaded.nickname, None);
+
+    let filter = DocumentFilter::new()
+        .eq("address.city", "Medellin")
+        .expect("nested dotted path")
+        .exists("nickname", false)
+        .expect("missing optional field filter");
+    let projected = repository
+        .find_many_as::<NestedOdmSummary>(
+            DocumentQuery::new(filter)
+                .include("address.city")
+                .expect("nested projection")
+                .limit(10)
+                .expect("bounded projection"),
+        )
+        .await
+        .expect("decode nested projection DTO");
+    assert_eq!(
+        projected,
+        vec![NestedOdmSummary {
+            address: ProjectedOdmAddress {
+                city: "Medellin".to_owned(),
+            },
+        }],
+    );
+
+    repository
+        .delete_one(DocumentFilter::new().eq("_id", id).expect("ID filter"))
+        .await
+        .expect("delete nested fixture");
+    database
+        .run_with_timeout(database.database().drop())
+        .await
+        .expect("drop isolated nested ODM database");
+}
+
+#[tokio::test]
+async fn mongodb_typed_odm_rejects_multi_document_transactions_on_standalone() {
+    let Some(uri) = standalone_test_uri() else {
+        eprintln!("Skipping standalone transaction restriction test outside CI: URI is unset");
+        return;
+    };
+    let database_name = database_name();
+    let config = MongoConfig::new(uri, database_name.clone())
+        .expect("valid MongoDB standalone URI")
+        .with_operation_timeout(Duration::from_secs(5))
+        .expect("valid operation timeout");
+    let database = MongoDatabase::connect(&config)
+        .await
+        .expect("connect to MongoDB standalone");
+    let repository = database.repository::<OdmEntry>();
+
+    let mut session = database
+        .start_session()
+        .await
+        .expect("start standalone session");
+    session
+        .start_transaction()
+        .await
+        .expect("transaction state is local until operation");
+    let error = repository
+        .insert_with_session(
+            odm_entry("standalone-transaction-must-fail", 1, &[]),
+            &mut session,
+        )
+        .await
+        .expect_err("standalone MongoDB must reject multi-document transaction writes");
+    assert!(
+        std::error::Error::source(&error).is_some(),
+        "the server's transaction topology error must remain available as a source",
+    );
+
+    database
+        .run_with_timeout(database.database().drop())
+        .await
+        .expect("drop isolated standalone test database");
+}
+
+#[tokio::test]
+async fn mongodb_typed_odm_uses_real_replica_set_transactions_for_commit_and_abort() {
+    let Some(uri) = test_uri() else {
+        eprintln!("Skipping ODM transaction test outside CI: MongoDB URI is unset");
+        return;
+    };
+    let database_name = database_name();
+    let config = MongoConfig::new(uri, database_name.clone())
+        .expect("valid MongoDB replica-set URI")
+        .with_operation_timeout(Duration::from_secs(5))
+        .expect("valid operation timeout");
+    let database = MongoDatabase::connect(&config)
+        .await
+        .expect("connect to replica set");
+    let repository: DocumentRepository<OdmEntry> = database.repository();
+
+    let mut committed_session = database
+        .start_session()
+        .await
+        .expect("start client session");
+    committed_session
+        .start_transaction()
+        .await
+        .expect("start replica-set transaction");
+    let committed = repository
+        .insert_with_session(
+            odm_entry("committed", 1, &["transaction"]),
+            &mut committed_session,
+        )
+        .await
+        .expect("insert within transaction");
+    let committed_id = committed.id.expect("generated ID");
+    committed_session
+        .commit_transaction()
+        .await
+        .expect("commit transaction");
+    assert!(
+        repository
+            .find_by_id(committed_id)
+            .await
+            .expect("read committed doc")
+            .is_some()
+    );
+
+    let mut aborted_session = database
+        .start_session()
+        .await
+        .expect("start rollback session");
+    aborted_session
+        .start_transaction()
+        .await
+        .expect("start rollback transaction");
+    let aborted = repository
+        .insert_with_session(
+            odm_entry("aborted", 2, &["transaction"]),
+            &mut aborted_session,
+        )
+        .await
+        .expect("insert before abort");
+    let aborted_id = aborted.id.expect("generated ID");
+    aborted_session
+        .abort_transaction()
+        .await
+        .expect("abort transaction");
+    assert!(
+        repository
+            .find_by_id(aborted_id)
+            .await
+            .expect("read aborted doc")
+            .is_none()
+    );
+
+    database
+        .run_with_timeout(database.database().drop())
+        .await
+        .expect("drop isolated transaction database");
 }
 
 #[tokio::test]

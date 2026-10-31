@@ -1,6 +1,6 @@
 # ADR 0020: SQL ORM architecture, foundation and model contract
 
-- Status: Accepted with Phase 6.7.1 (PR #58, merge commit `36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1`); Phase 6.7.2 implementation in progress.
+- Status: Accepted with Phase 6.7.1 (PR #58, merge commit `36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1`); Phase 6.7.2 accepted and merged in PR #59 (merge commit `8d387943d5f6ccb4d3f33ba3708311442e238c5f`).
 - Phase: 6.7.1 — Model contract and architecture.
 - Related: ADR 0016 (SQLx pools and migrations), ADR 0017 (MySQL/MariaDB driver), ADR 0018 (MongoDB document adapter), ADR 0019 (database support matrix), [ORM model contract](../ORM_MODEL_CONTRACT.md).
 
@@ -127,7 +127,7 @@ Errors must distinguish validation/metadata, encode/decode, not-found, constrain
 
 This SQL ORM covers only SQLite, PostgreSQL, MySQL and MariaDB. It uses relational metadata, SQL query expressions, SQL transactions and the existing engine-specific SQLx migration strategy.
 
-MongoDB remains the separate document adapter introduced in Phase 6.6.2. Its future ODM is Phase 6.7.3 and owns BSON/document models, _id mapping, serializers/deserializers, collection/index lifecycle, document filters/updates, and MongoDB-native session/transaction limitations. No SQL model derive, relational query builder, SQL relationship or SQL migration behavior is shared with MongoDB by implication.
+MongoDB remains the separate document adapter introduced in Phase 6.6.2. Its independent Phase 6.7.3 ODM is implemented and accepted by CI on PR #60 head `c91a558934851ea17e10dd9ebde13b8869fbbcf1` (2026-10-31); PR #60 remains open and unmerged. It owns BSON/document models, `_id` mapping, serializers/deserializers, collection/index lifecycle, document filters/updates, and MongoDB-native session/transaction limitations. No SQL model derive, relational query builder, SQL relationship or SQL migration behavior is shared with MongoDB by implication.
 
 ## Alternatives compared
 
@@ -157,7 +157,7 @@ Phase 6.7.2 adds SeaORM to the resolved dependency graph. `Cargo.lock` has been 
 - **Verified from official driver docs/source:** SeaORM 1.1.x lists sqlx-mysql (MySQL and MariaDB), sqlx-postgres and sqlx-sqlite. SeaORM's DatabaseConnection has typed SQLx pool accessors. SeaORM's ConnectionTrait and TransactionTrait require explicit connection/transaction values; its loader API exposes load_one/load_many/load_many_to_many. Its MariaDB RETURNING feature is compile-time and shares the MySQL backend flag.
 - **Verified at the Phase 6.7.1 decision point:** the workspace pinned SQLx 0.8.6, exposed AnyPool and used SQLx's migration runner. MySQL and MariaDB used the same MySQL protocol backend family. MongoDB was a separate driver and adapter. PR #59 replaces that historical AnyPool boundary with typed SQLx pools shared with SeaORM; this ADR's design snapshot should not be read as a description of the current branch API.
 - **Design inference:** SeaORM 1.1.20 is a better maintained foundation than a RustFlow-authored ORM because it already provides the model, query, transaction and relation abstractions required by the maturity gate while staying inside the current MSRV and SQLx major/minor boundary. The typed-pool bridge is necessary because AnyPool is not accepted directly by SeaORM.
-- **Phase 6.7.1 boundary (historical):** at the time this ADR was accepted, SeaORM 1.1.20 end-to-end behavior against RustFlow's exact service matrix, runtime codecs, CRUD through DatabasePool, relation query counts and the generated application were not yet verified. PR #59 subsequently implemented the SQL runtime contract; its integer-boundary, relationship-loading/mutation and live PostgreSQL COMMIT fault tests passed, together with all eight required CI checks, on head `2cadce73c19c37c2f088f572ea37a83c65c72380` (2026-10-31). Phase 6.7.2 is accepted for final review but is not yet merged. The generated application and independent MongoDB ODM remain future Phase 6.7 work.
+- **Phase 6.7.1 boundary (historical):** at the time this ADR was accepted, SeaORM 1.1.20 end-to-end behavior against RustFlow's exact service matrix, runtime codecs, CRUD through DatabasePool, relation query counts and the generated application were not yet verified. PR #59 subsequently implemented the SQL runtime contract; its integer-boundary, relationship-loading/mutation and live PostgreSQL COMMIT fault tests passed, together with all eight required CI checks, on head `2cadce73c19c37c2f088f572ea37a83c65c72380` (2026-10-31). Phase 6.7.2 was merged into `main` on 2026-10-31 at `8d387943d5f6ccb4d3f33ba3708311442e238c5f`. The generated application and advanced ORM maturity work remain separate Phase 6.7 work. The independent MongoDB ODM was accepted by CI in PR #60 on 2026-10-31 and remains separate from the SQL ORM.
 
 ## Capability matrix: final maturity target and 6.7.1 boundary
 
