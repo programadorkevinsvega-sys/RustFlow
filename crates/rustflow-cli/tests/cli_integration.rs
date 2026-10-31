@@ -637,7 +637,7 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
         .local_addr()
         .unwrap()
         .port();
-    let child = Command::new(binary)
+    let child = Command::new(&binary)
         .current_dir(&project)
         .env("RUSTFLOW_ENV", "test")
         .env("RUSTFLOW_HOST", "127.0.0.1")
