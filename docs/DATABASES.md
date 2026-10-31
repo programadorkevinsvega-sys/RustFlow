@@ -88,6 +88,7 @@ let inserted = accounts
     .await?;
 
 let found = accounts.find_by_id(inserted.id).await?;
+assert!(found.is_some());
 let updated = accounts
     .update(entities::account::ActiveModel {
         id: Set(inserted.id),
