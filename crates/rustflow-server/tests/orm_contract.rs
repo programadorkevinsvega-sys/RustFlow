@@ -835,6 +835,18 @@ async fn exercise_orm(database: &DatabasePool) {
         .expect("left join query");
     assert_eq!(joined.len(), 2);
 
+    accounts
+        .insert(entities::account::ActiveModel {
+            email: Set("empty@example.test".to_owned()),
+            enabled: Set(false),
+            alias: Set(None),
+            metadata: Set(serde_json::json!({})),
+            checksum: Set(vec![]),
+            ..Default::default()
+        })
+        .await
+        .expect("insert parent without any related rows");
+
     let parents = accounts
         .all(
             accounts
@@ -846,9 +858,10 @@ async fn exercise_orm(database: &DatabasePool) {
     let children = load_many(&parents, entities::note::Entity, database.orm())
         .await
         .expect("batch load one-to-many relation");
-    assert_eq!(children.len(), 2);
+    assert_eq!(children.len(), 3);
     assert_eq!(children[0].len(), 2);
     assert_eq!(children[1].len(), 1);
+    assert!(children[2].is_empty(), "parent has no has-many children");
 
     let all_notes = notes
         .all(
@@ -878,12 +891,13 @@ async fn exercise_orm(database: &DatabasePool) {
     let profiles = load_one(&parents, entities::profile::Entity, database.orm())
         .await
         .expect("batch load one-to-one relation");
-    assert_eq!(profiles.len(), 2);
+    assert_eq!(profiles.len(), 3);
     assert_eq!(
         profiles[0].as_ref().map(|profile| profile.bio.as_str()),
         Some("Analytical engine notes")
     );
     assert!(profiles[1].is_none());
+    assert!(profiles[2].is_none());
 
     let loaded_tags = load_many_to_many(
         &parents,
@@ -893,9 +907,10 @@ async fn exercise_orm(database: &DatabasePool) {
     )
     .await
     .expect("batch load many-to-many tags");
-    assert_eq!(loaded_tags.len(), 2);
+    assert_eq!(loaded_tags.len(), 3);
     assert_eq!(loaded_tags[0].len(), 2);
     assert_eq!(loaded_tags[1].len(), 1);
+    assert!(loaded_tags[2].is_empty());
     assert_eq!(loaded_tags[0][0].id, first_tag.id);
     assert_eq!(loaded_tags[0][1].id, second_tag.id);
 
@@ -1276,14 +1291,23 @@ async fn batch_loader_executes_one_related_query_for_many_parents() {
             metadata: serde_json::json!({}),
             checksum: vec![],
         },
+        entities::account::Model {
+            id: 12,
+            email: "three@example.test".to_owned(),
+            enabled: true,
+            alias: None,
+            metadata: serde_json::json!({}),
+            checksum: vec![],
+        },
     ];
 
     let loaded = load_many(&parents, entities::note::Entity, &database)
         .await
         .expect("load related rows in one batch");
-    assert_eq!(loaded.len(), 2);
+    assert_eq!(loaded.len(), 3);
     assert_eq!(loaded[0].len(), 2);
     assert_eq!(loaded[1].len(), 1);
+    assert!(loaded[2].is_empty());
 
     let query_log = database.into_transaction_log();
     assert_eq!(
@@ -1343,6 +1367,14 @@ async fn many_to_many_loader_uses_two_queries_for_many_parents() {
             metadata: serde_json::json!({}),
             checksum: vec![],
         },
+        entities::account::Model {
+            id: 12,
+            email: "three@example.test".to_owned(),
+            enabled: true,
+            alias: None,
+            metadata: serde_json::json!({}),
+            checksum: vec![],
+        },
     ];
 
     let loaded = load_many_to_many(
@@ -1353,9 +1385,10 @@ async fn many_to_many_loader_uses_two_queries_for_many_parents() {
     )
     .await
     .expect("batch load many-to-many relation");
-    assert_eq!(loaded.len(), 2);
+    assert_eq!(loaded.len(), 3);
     assert_eq!(loaded[0].len(), 2);
     assert_eq!(loaded[1].len(), 1);
+    assert!(loaded[2].is_empty());
 
     let query_log = database.into_transaction_log();
     assert_eq!(
