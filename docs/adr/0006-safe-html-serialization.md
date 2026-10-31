@@ -1,6 +1,6 @@
 # ADR 0006: Safe HTML serialization for structural views
 
-- **Status:** Proposed for review
+- **Status:** Proposed for formal review; safe structural HTML serialization is implemented in the current `rustflow-ssr` runtime. This status tracks formal ADR approval, not whether the serializer exists.
 - **Date:** 2026-10-26
 - **Phase:** 4.4 — Safe server rendering foundation
 
