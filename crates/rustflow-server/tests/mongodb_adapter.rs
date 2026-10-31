@@ -56,6 +56,45 @@ impl DocumentModel for NamedOdmEntry {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct OdmAddress {
+    city: String,
+    coordinates: Vec<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct NestedOdmEntry {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    id: Option<ObjectId>,
+    email: String,
+    address: OdmAddress,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    nickname: Option<String>,
+}
+
+impl DocumentModel for NestedOdmEntry {
+    type Id = ObjectId;
+    const COLLECTION: &'static str = "nested_odm_entries";
+
+    fn id(&self) -> Option<Self::Id> {
+        self.id
+    }
+
+    fn set_id(&mut self, id: Self::Id) {
+        self.id = Some(id);
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct ProjectedOdmAddress {
+    city: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct NestedOdmSummary {
+    address: ProjectedOdmAddress,
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 struct OdmEntrySummary {
     #[serde(rename = "_id")]
@@ -644,6 +683,79 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
         .run_with_timeout(database.database().drop())
         .await
         .expect("drop isolated test database");
+}
+
+#[tokio::test]
+async fn mongodb_typed_odm_round_trips_embedded_documents_and_nested_projections() {
+    let Some(uri) = test_uri() else {
+        eprintln!("Skipping nested ODM integration test outside CI: MongoDB URI is unset");
+        return;
+    };
+    let database_name = database_name();
+    let config = MongoConfig::new(uri, database_name.clone())
+        .expect("valid MongoDB integration URI")
+        .with_operation_timeout(Duration::from_secs(5))
+        .expect("valid operation timeout");
+    let database = MongoDatabase::connect(&config)
+        .await
+        .expect("connect to MongoDB replica set");
+    let repository = database.repository::<NestedOdmEntry>();
+
+    let saved = repository
+        .insert(NestedOdmEntry {
+            id: None,
+            email: "embedded@example.test".to_owned(),
+            address: OdmAddress {
+                city: "Medellin".to_owned(),
+                coordinates: vec![-75.5812, 6.2442],
+            },
+            nickname: None,
+        })
+        .await
+        .expect("insert nested document");
+    let id = saved.id.expect("generated ObjectId");
+    let loaded = repository
+        .find_by_id(id)
+        .await
+        .expect("read nested document")
+        .expect("nested document exists");
+    assert_eq!(loaded, saved);
+    assert_eq!(loaded.address.city, "Medellin");
+    assert_eq!(loaded.address.coordinates.len(), 2);
+    assert_eq!(loaded.nickname, None);
+
+    let filter = DocumentFilter::new()
+        .eq("address.city", "Medellin")
+        .expect("nested dotted path")
+        .exists("nickname", false)
+        .expect("missing optional field filter");
+    let projected = repository
+        .find_many_as::<NestedOdmSummary>(
+            DocumentQuery::new(filter)
+                .include("address.city")
+                .expect("nested projection")
+                .limit(10)
+                .expect("bounded projection"),
+        )
+        .await
+        .expect("decode nested projection DTO");
+    assert_eq!(
+        projected,
+        vec![NestedOdmSummary {
+            address: ProjectedOdmAddress {
+                city: "Medellin".to_owned(),
+            },
+        }],
+    );
+
+    repository
+        .delete_one(DocumentFilter::new().eq("_id", id).expect("ID filter"))
+        .await
+        .expect("delete nested fixture");
+    database
+        .run_with_timeout(database.database().drop())
+        .await
+        .expect("drop isolated nested ODM database");
 }
 
 #[tokio::test]
