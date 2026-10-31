@@ -1223,7 +1223,7 @@ async fn exercise_orm(database: &DatabasePool) {
     assert_eq!(projected_notes.len(), parents.len());
     assert_eq!(projected_notes[0].len(), 2);
     assert_eq!(projected_notes[0][0].title, "second note");
-    assert_eq!(projected_notes[0][0].id > projected_notes[0][1].id, true);
+    assert!(projected_notes[0][0].id > projected_notes[0][1].id);
     assert_eq!(projected_notes[1][0].title, "third note");
     assert!(projected_notes[2].is_empty());
 
@@ -2186,20 +2186,23 @@ async fn projected_relation_loading_preserves_parent_grouping_and_one_query() {
 
     let database = MockDatabase::new(DbBackend::Sqlite)
         .append_query_results([vec![
-            NotePreview {
+            entities::note::Model {
                 id: 2,
                 account_id: 10,
                 title: "second".to_owned(),
+                body: None,
             },
-            NotePreview {
+            entities::note::Model {
                 id: 1,
                 account_id: 10,
                 title: "first".to_owned(),
+                body: None,
             },
-            NotePreview {
+            entities::note::Model {
                 id: 3,
                 account_id: 11,
                 title: "third".to_owned(),
+                body: None,
             },
         ]])
         .into_connection();
