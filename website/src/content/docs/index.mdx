@@ -19,22 +19,22 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 
 ## Una ruta de aprendizaje
 
-- [1. Crear tu primera aplicación con el CLI](/tutorials/first-cli-app/): scaffold de servidor, configuración inicial, ejecución, build y generadores.
-- [Configurar entornos](/guides/configuration/): precedencia de .env, perfiles test/producción y manejo seguro de ajustes.
-- [2. Empezar desde cero](/getting-started/setup/): clonar el repositorio, ejecutar tests y conocer los workflows actuales.
-- [3. Aprender estado y efectos](/concepts/reactivity/): señales, dependencias, batching, scopes y limpieza.
-- [4. Crear componentes](/guides/components/): vistas, props, eventos, estado y listas keyed.
-- [5. Crear rutas HTTP](/guides/server/): HTML, JSON, parámetros y middleware.
-- [6. Renderizar HTML en servidor](/guides/ssr/): escape, documentos completos, catálogo e hidratación optativa.
-- [7. Compartir estructura con layouts](/guides/layouts/): composición de páginas y datos públicos.
-- [8. Añadir navegación progresiva](/guides/navigation/): historial, enlaces elegibles y formularios GET.
-- [9. Validar formularios del servidor](/guides/forms-validation/): extracción tipada, validación, errores 422, CSRF optativo y redirección local segura.
-- [10. Sesiones y control de acceso](/guides/sessions-and-access/): cookies host-only, rotación, guards previos al handler y políticas de acceso.
-- [11. Conectar una base de datos](/guides/database/): SQLx para motores SQL y un adaptador documental MongoDB separado; transacciones y migraciones versionadas solo para SQL.
-- [12. Construir una página de producto](/tutorials/product-page/): conectar rutas, props, catálogo SSR y layouts.
-- [13. Construir una API JSON](/tutorials/json-api/): comprobar query strings, parámetros de ruta y cuerpo JSON con `curl`.
-- [14. Crear una UI interactiva](/tutorials/reactive-todo/): estado, eventos, listas con claves y limpieza en el navegador.
-- [15. Probar el proyecto](/guides/testing/): ejecutar tests Rust, integración HTTP y Playwright E2E.
+- [1. Empezar desde cero](/getting-started/setup/): instalar los requisitos, clonar RustFlow y validar el workspace.
+- [2. Crear tu primera aplicación con el CLI](/tutorials/first-cli-app/): scaffold de servidor, configuración inicial, ejecución, build y generadores.
+- [3. Configurar entornos](/guides/configuration/): precedencia de .env, perfiles test/producción y manejo seguro de ajustes.
+- [4. Aprender estado y efectos](/concepts/reactivity/): señales, dependencias, batching, scopes y limpieza.
+- [5. Crear componentes](/guides/components/): vistas, props, eventos, estado y listas keyed.
+- [6. Crear rutas HTTP](/guides/server/): HTML, JSON, parámetros y middleware.
+- [7. Renderizar HTML en servidor](/guides/ssr/): escape, documentos completos, catálogo e hidratación optativa.
+- [8. Compartir estructura con layouts](/guides/layouts/): composición de páginas y datos públicos.
+- [9. Añadir navegación progresiva](/guides/navigation/): historial, enlaces elegibles y formularios GET.
+- [10. Validar formularios del servidor](/guides/forms-validation/): extracción tipada, validación, errores 422, CSRF optativo y redirección local segura.
+- [11. Sesiones y control de acceso](/guides/sessions-and-access/): cookies host-only, rotación, guards previos al handler y políticas de acceso.
+- [12. Persistencia SQL y documental](/guides/database/): SQLx y ORM SeaORM para bases relacionales; el [ODM MongoDB](/guides/mongodb-odm/) conserva una API documental independiente.
+- [13. Construir una página de producto](/tutorials/product-page/): conectar rutas, props, catálogo SSR y layouts.
+- [14. Construir una API JSON](/tutorials/json-api/): comprobar query strings, parámetros de ruta y cuerpo JSON con `curl`.
+- [15. Crear una UI interactiva](/tutorials/reactive-todo/): estado, eventos, listas con claves y limpieza en el navegador.
+- [16. Probar el proyecto](/guides/testing/): ejecutar tests Rust, integración HTTP, contratos de persistencia y Playwright E2E.
 
 ## Elige un caso de uso
 
@@ -51,7 +51,8 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 | Validar entradas de formulario/JSON/query y responder con errores 422 | [Formularios y validación](/guides/forms-validation/) |
 | Proteger mutaciones autenticadas por cookie frente a CSRF (opt-in) | [Formularios y validación](/guides/forms-validation/) |
 | Añadir sesiones y guards previos al handler | [Sesiones y control de acceso](/guides/sessions-and-access/) |
-| Persistir datos con consultas SQL parametrizadas o documentos BSON de MongoDB | [Base de datos y migraciones](/guides/database/) |
+| Usar SQLx y SeaORM para persistencia relacional y carga de relaciones explícita | [Base de datos y ORM SQL](/guides/database/) |
+| Mapear documentos BSON, consultar, actualizar y agregar en MongoDB | [ODM tipado para MongoDB](/guides/mongodb-odm/) |
 | Aplicar o revertir migraciones versionadas | [Base de datos y migraciones](/guides/database/) |
 | Denegar permisos sin una política explícita | [Sesiones y control de acceso](/guides/sessions-and-access/) |
 | Evitar redirecciones externas después de enviar un formulario | [Formularios y validación](/guides/forms-validation/) |
@@ -65,6 +66,8 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 - Servicios HTTP con rutas, parámetros, query/JSON, middleware, grupos, respuestas y límites configurables.
 - Endpoints que extraen y validan formularios, JSON y query tipados, devuelven errores 422 estructurados y pueden proteger mutaciones mediante CSRF optativo.
 - Páginas compuestas con un catálogo de componentes compartido, datos de ruta explícitos y layouts anidados.
+- Aplicaciones con persistencia relacional experimental mediante SeaORM sobre pools SQLx tipados y loaders explícitos.
+- Aplicaciones documentales con el ODM MongoDB independiente, filtros/updates BSON, proyecciones, agregaciones y operaciones explícitas con sesiones de MongoDB.
 - Navegación de cliente optativa y mejora progresiva de formularios GET compatibles, conservando el comportamiento nativo cuando la interacción no es compatible.
 
 El [catálogo de ejemplos](/reference/examples/) conecta cada caso con un archivo y un comando. La [guía de pruebas](/guides/testing/) explica cómo verificar el comportamiento localmente.
@@ -73,9 +76,9 @@ El [catálogo de ejemplos](/reference/examples/) conecta cada caso con un archiv
 
 El CLI experimental genera aplicaciones de servidor nativo y delega compilación a Cargo; no incluye hot reload ni un bundler integrado para browser/WASM. El generador `rustflow generate model` sigue produciendo un struct de dominio plano: no crea automáticamente entidades SeaORM ni implementaciones `DocumentModel`. La configuración de la Fase 6.2 cubre perfil, host y puerto. `use_memo`, `use_ref` y `use_context` siguen pendientes. Las APIs de sesión y guards de la Fase 6.4 son experimentales; `InMemorySessionStore` es volátil y local al proceso, no hay proveedor de usuarios y todavía no existe un `SessionStore` SQL durable.
 
-La Fase 6.6 está completa, con la matriz verificada publicada: SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS y MongoDB 7.0.45. La Fase 6.7.2 integra el ORM SQL experimental SeaORM 1.1.20 sobre un único pool SQLx tipado compartido; `DatabasePool::entity` proporciona `EntityRepository` para CRUD/bulk, consultas tipadas, loaders explícitos y transacciones ORM/SQL combinadas. La Fase 6.7.3 integra un ODM MongoDB independiente sobre el cliente oficial existente, con `DocumentModel`, `DocumentRepository`, filtros y updates BSON, proyecciones, agregaciones y un subconjunto explícito de operaciones con sesiones. PR #60 se fusionó en `main` el 2026-10-31 como `7ffb89b5ca36017a428cf3f828b68f590f8d404b`; tanto el ORM como el ODM siguen siendo APIs experimentales/pre-1.0. Consulta la [matriz de versiones](/guides/database/#matriz-de-versiones-verificadas), la [guía de base de datos](/guides/database/) y la [guía ODM](/guides/mongodb-odm/).
+La Fase 6.6 está completa, con la matriz verificada publicada: SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS y MongoDB 7.0.45. La Fase 6.7.2 integra el ORM SQL experimental SeaORM 1.1.20 sobre un único pool SQLx tipado compartido; `DatabasePool::entity` proporciona `EntityRepository` para CRUD/bulk, consultas tipadas, loaders explícitos y transacciones ORM/SQL combinadas. La Fase 6.7.3 integra un ODM MongoDB independiente sobre el cliente oficial existente, con `DocumentModel`, `DocumentRepository`, filtros y updates BSON, proyecciones, agregaciones y un subconjunto explícito de operaciones con sesiones. La Fase 6.7.4 añade carga relacional SQL avanzada: filtros/orden por relación, proyecciones has-many a DTO, grafos explícitos con profundidad acotada y helpers de asociación/desasociación/reemplazo uno-a-uno. PR #62 se fusionó en `main` el 2026-10-31 como `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`. El ORM y el ODM continúan siendo APIs experimentales/pre-1.0. Consulta la [matriz de versiones](/guides/database/#matriz-de-versiones-verificadas), la [guía de base de datos](/guides/database/), la [guía ODM](/guides/mongodb-odm/) y [Estado del proyecto](/project-status/).
 
-La Fase 6.7 global continúa en progreso: 6.7.4 ampliará las relaciones y la carga SQL avanzada; 6.7.5 demostrará una aplicación CRUD generada; y 6.7.6 cerrará los gates globales de madurez y compatibilidad. La prueba de integración del CLI ya verifica un flujo scaffold con validación/persistencia/sesión/CSRF/SSR, pero el scaffold predeterminado no genera por sí solo esa aplicación de negocio. Siguen pendientes server actions, proveedor de usuarios, sesiones durables y una receta de despliegue de producción validada. El callback de navegación cliente no es un router general y la mejora progresiva de formularios se limita a GET URL-encoded compatibles; no procesa uploads ni mutaciones. Consulta la [guía de formularios](/guides/forms-validation/), la [guía de sesiones](/guides/sessions-and-access/), [Estado del proyecto](/project-status/) y [referencia de disponibilidad de API](/reference/api-status/).
+La Fase 6.7 global continúa en progreso: 6.7.1–6.7.4 están implementadas e integradas en `main`; 6.7.5 demostrará una aplicación CRUD generada; y 6.7.6 cerrará los gates globales de madurez y compatibilidad. La prueba de integración del CLI ya verifica un flujo scaffold con validación/persistencia/sesión/CSRF/SSR, pero el scaffold predeterminado no genera por sí solo esa aplicación de negocio. Siguen pendientes server actions, proveedor de usuarios, sesiones durables y una receta de despliegue de producción validada. El callback de navegación cliente no es un router general y la mejora progresiva de formularios se limita a GET URL-encoded compatibles; no procesa uploads ni mutaciones. Consulta la [guía de formularios](/guides/forms-validation/), la [guía de sesiones](/guides/sessions-and-access/), [Estado del proyecto](/project-status/) y [referencia de disponibilidad de API](/reference/api-status/).
 
 ## Si ya conoces React
 

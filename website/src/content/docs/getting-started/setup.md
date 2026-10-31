@@ -87,8 +87,9 @@ Esta demo muestra Counter, estado reactivo, eventos, una lista de tareas con cla
 3. [Servidor HTTP](/guides/server/): rutas, handlers, parámetros y respuestas.
 4. [SSR y documentos HTML](/guides/ssr/): escape, catálogo de componentes e hidratación optativa.
 5. [Layouts](/guides/layouts/): composición de páginas.
-6. [Página de producto](/tutorials/product-page/): tutorial integrado que conecta las piezas.
-7. [Catálogo de ejemplos](/reference/examples/): mapa de todos los ejecutables verificados del repositorio.
+6. [Persistencia](/guides/database/): pool SQLx, ORM SeaORM, consultas, relaciones, transacciones y migraciones; para documentos BSON, consulta también el [ODM MongoDB](/guides/mongodb-odm/).
+7. [Página de producto](/tutorials/product-page/): tutorial integrado que conecta rutas, componentes SSR y layouts.
+8. [Catálogo de ejemplos](/reference/examples/): mapa de los ejecutables y de los contratos de integración verificados del repositorio.
 
 ## Instalación y límites del CLI
 

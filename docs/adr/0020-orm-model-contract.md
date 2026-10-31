@@ -1,6 +1,6 @@
 # ADR 0020: SQL ORM architecture, foundation and model contract
 
-- Status: Accepted with Phase 6.7.1 (PR #58, merge commit `36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1`); Phase 6.7.2 accepted and merged in PR #59 (merge commit `8d387943d5f6ccb4d3f33ba3708311442e238c5f`).
+- Status: Accepted with Phase 6.7.1 (PR #58, merge commit `36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1`); Phase 6.7.2 accepted and merged in PR #59 (merge commit `8d387943d5f6ccb4d3f33ba3708311442e238c5f`); Phase 6.7.4 accepted and merged in PR #62 (merge commit `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`).
 - Phase: 6.7.1 — Model contract and architecture.
 - Related: ADR 0016 (SQLx pools and migrations), ADR 0017 (MySQL/MariaDB driver), ADR 0018 (MongoDB document adapter), ADR 0019 (database support matrix), [ORM model contract](../ORM_MODEL_CONTRACT.md).
 
@@ -196,7 +196,7 @@ The accepted 6.7.2 contract exercises these paths across SQLite, PostgreSQL, MyS
 - **6.7.1:** this ADR and the Data Mapper/foundation decision; model/metadata/type/operation/hook/transaction contract; validation-only ModelDiagnostics derive; positive and compile-fail tests; technical and public documentation updates; all relevant required checks green on the final PR SHA. The SeaORM dependency/facade and typed pool are introduced together in 6.7.2. This phase does not integrate CRUD into RustFlow's legacy AnyPool or close Phase 6.7.
 - **6.7.2:** typed-pool bridge to SeaORM without a second pool; migration and raw-SQL accessor evolution; checked runtime type codecs; query execution; CRUD/bulk operations; per-engine error classification; explicit transaction composition; real-service tests on the four SQL engines.
 - **6.7.3:** MongoDB's separate BSON document mapper/ODM, including native IDs, queries, update operators, indexes and MongoDB-specific transaction/session semantics.
-- **6.7.4:** relational associations, relation mutations, explicit eager/batch/nested loading, query-count and concurrency tests.
+- **6.7.4:** relational associations, relation mutations, explicit eager/batch/nested loading, query-count and concurrency tests. Delivered and accepted in PR #62; see [ADR 0022](0022-advanced-sql-relation-loading.md) for the detailed API, tested limits and acceptance evidence.
 - **6.7.5:** CLI/generated application and complete developer docs/examples against the accepted public APIs.
 - **6.7.6:** final dependency/security, Rust 1.85/stable, compile-fail, runtime integration, WASM/browser, website, governance and quality maturity gate.
 

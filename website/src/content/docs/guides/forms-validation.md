@@ -3,7 +3,7 @@ title: Formularios y validación
 description: Extrae entradas tipadas, devuelve errores de campo, protege mutaciones con cookies mediante CSRF y vuelve a una ruta local segura.
 ---
 
-Esta guía cubre las APIs experimentales de la Fase 6.3 del servidor RustFlow. Un dato recibido es siempre no confiable: primero decodifícalo a un tipo, después valida las reglas de aplicación y realiza la comprobación de permisos por separado. La Fase 6.4 de sesiones y guards ya está integrada en `main`, también como API experimental. La validación y el middleware CSRF deben integrarse deliberadamente en las rutas con cookies. No hay persistencia de base de datos ni un proveedor de usuarios.
+Esta guía cubre las APIs experimentales de la Fase 6.3 del servidor RustFlow. Un dato recibido es siempre no confiable: primero decodifícalo a un tipo, después valida las reglas de aplicación y realiza la comprobación de permisos por separado. La Fase 6.4 de sesiones y guards ya está integrada en `main`, también como API experimental. La validación y el middleware CSRF deben integrarse deliberadamente en las rutas con cookies. La Fase 6.3 no añade persistencia ni un proveedor de usuarios; RustFlow ofrece por separado un ORM SQL experimental y un ODM documental para MongoDB, que no se conectan automáticamente a los formularios de esta guía.
 
 ## 1. Extrae un formulario tipado
 
@@ -127,7 +127,7 @@ Tras aceptar una mutación, Request::redirect_back("/profile") usa la ruta de Re
 
 Las pruebas deben cubrir entradas válidas, errores de campo/formulario, content-types no admitidos, datos inesperados, payloads demasiado grandes, tokens ausentes/incompatibles, tokens firmados válidos y Referer externo. La suite de integración TCP canónica se ejecuta desde la raíz con `cargo test -p rustflow-server --test http_integration`; cubre el contrato de red real del servidor. Para toda la verificación del workspace, consulta [Probar y depurar aplicaciones](/guides/testing/). Consulta también el contrato técnico en [HTTP_SERVER.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/HTTP_SERVER.md) y el [estado del proyecto](/project-status/).
 
-Sesiones, login, autorización integrada, almacenamiento, bases de datos, uploads y server actions no forman parte de esta fase. RustFlow sigue siendo un prototipo pre-1.0.
+Las sesiones, la identidad y los guards pertenecen a la Fase 6.4 y se documentan por separado en la [guía de sesiones y control de acceso](/guides/sessions-and-access/). La persistencia SQL y el ODM MongoDB también tienen guías independientes en [Base de datos](/guides/database/) y [ODM MongoDB](/guides/mongodb-odm/); esta fase no conecta automáticamente los formularios con repositorios ni define transacciones de negocio. Los uploads y las server actions no forman parte de las capacidades actuales de formulario. RustFlow sigue siendo un prototipo pre-1.0.
 
 
 ## CSRF cuando se usan sesiones

@@ -34,6 +34,7 @@ export default defineConfig({
             { label: 'Formularios y validación', slug: 'guides/forms-validation' },
             { label: 'Sesiones y control de acceso', slug: 'guides/sessions-and-access' },
             { label: 'Base de datos, SQLx y migraciones', slug: 'guides/database' },
+            { label: 'ODM tipado para MongoDB', slug: 'guides/mongodb-odm' },
             { label: 'SSR e hidratación', slug: 'guides/ssr' },
             { label: 'Layouts y páginas', slug: 'guides/layouts' },
             { label: 'Navegación y formularios', slug: 'guides/navigation' },

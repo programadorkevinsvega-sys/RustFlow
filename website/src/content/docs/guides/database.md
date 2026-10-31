@@ -3,7 +3,7 @@ title: Base de datos, SeaORM, SQLx y migraciones
 description: Configura SeaORM sobre pools SQLx tipados compartidos, consultas parametrizadas, transacciones y migraciones; MongoDB conserva su adaptador documental separado.
 ---
 
-La capa de base de datos de RustFlow continúa siendo experimental y pre-1.0. Phase 6.7.1 seleccionó **Data Mapper con SeaORM 1.1.20** y añadió el derive de validación <code>rustflow::ModelDiagnostics</code>. La implementación de Phase 6.7.2 en la PR #59 conecta SeaORM en <code>rustflow-server</code> y sustituye <code>AnyPool</code> por un pool SQLx tipado por backend compartido con SeaORM.
+La capa de base de datos de RustFlow continúa siendo experimental y pre-1.0. Phase 6.7.1 seleccionó **Data Mapper con SeaORM 1.1.20** y añadió el derive de validación <code>rustflow::ModelDiagnostics</code>. Phase 6.7.2 incorporó SeaORM en <code>rustflow-server</code> sobre un único pool SQLx tipado por backend, compartido por SQLx y SeaORM. Phase 6.7.4 añadió la capa de carga relacional avanzada y quedó integrada mediante PR #62, squash merge <code>f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7</code>.
 
 SeaORM se construye a partir de un clone del mismo pool SQLx; no se crea una segunda pool para la misma URL. La integración relacional cubre SQLite, PostgreSQL, MySQL y MariaDB. MongoDB conserva su adaptador documental independiente, con BSON, colecciones e índices. El ODM tipado de Phase 6.7.3 se implementó como una capa Data Mapper separada sobre el mismo cliente. PR #60 pasó los gates requeridos en su HEAD final `659f1750d611e57315263216167d43375da23574` y se fusionó en `main` el 2026-10-31 mediante squash (`7ffb89b5ca36017a428cf3f828b68f590f8d404b`); consulta la [guía ODM MongoDB](/guides/mongodb-odm/).
 
@@ -545,9 +545,11 @@ Limitaciones que deben respetarse:
 ## Roadmap de persistencia
 
 - **Phase 6.7.1:** cerrada y fusionada en PR #58; selecciona SeaORM 1.1.20 y define el contrato Data Mapper/ModelDiagnostics.
-- **Phase 6.7.2:** integrada en `main` mediante PR #59; la implementación incluye pruebas de límites numéricos por dialecto, conteos de carga relacional anidada, mutaciones attach/update/detach/cascade y fallo de transporte durante `COMMIT`. Los casos ampliados pasaron sobre el SHA final aceptado y la integración quedó completada en `main`.
+- **Phase 6.7.2:** integrada en `main` mediante PR #59; la implementación incluye CRUD/bulk, consultas tipadas, transacciones mixtas, codecs y loaders explícitos, con contrato en los cuatro motores SQL.
 - **Phase 6.7.3:** ODM MongoDB tipado independiente, fusionado en `main` mediante PR #60 (HEAD final `659f1750d611e57315263216167d43375da23574`; merge `7ffb89b5ca36017a428cf3f828b68f590f8d404b`). La implementación y sus límites están en la [guía ODM MongoDB](/guides/mongodb-odm/) y [ADR 0021](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0021-mongodb-odm-architecture.md).
-- **Phase 6.7.4–6.7.6:** extensiones avanzadas de carga relacional SQL, aplicación CRUD generada y quality gate global.
+- **Phase 6.7.4:** aceptada y fusionada mediante PR #62 (HEAD final `28218456db8ac323731054e291023a0765474125`; merge `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`). Añade `RelationLoadOptions` para filtros/orden por relación, `load_many_projected` para DTOs has-many, `RelationGraph` con ramas/niveles explícitos (profundidad predeterminada 8, máxima 16) y helpers `attach_one_to_many`, `detach_one_to_many` y `replace_one_to_one`. Los límites (offset/limit global al batch, proyecciones como hojas, sin lazy loading ni cascadas implícitas) están documentados en [ADR 0022](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0022-advanced-sql-relation-loading.md).
+- **Phase 6.7.5:** pendiente; aplicación CRUD generada que pruebe persistencia, relaciones, validación, transacciones y salida renderizada.
+- **Phase 6.7.6:** pendiente; gate global de calidad, compatibilidad y madurez ORM/ODM.
 
 La Phase 6.6 ya está completa y su matriz verificada está en `docs/DATABASE_SUPPORT_MATRIX.md`. El adaptador MongoDB de la 6.6.2 y el ODM independiente de Phase 6.7.3 están disponibles en `main`; el último se fusionó mediante PR #60 (`7ffb89b5ca36017a428cf3f828b68f590f8d404b`).
 

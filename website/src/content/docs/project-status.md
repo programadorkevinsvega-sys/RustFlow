@@ -70,6 +70,22 @@ CsrfProtection ofrece middleware optativo basado en tokens firmados y expiran en
 
 La PR #47 se fusionó en `main` mediante squash en el commit `0a307e84bafabbc7dfaa5d4e361723b82fce042e`. Los checks requeridos pasaron en el HEAD final de la PR antes de la fusión, incluidos Rust 1.85/stable, WASM, E2E de navegador y presupuesto del bundle, build del sitio, gobernanza y revisión de dependencias. Esto confirma la verificación del HEAD de la PR; la consulta de estados combinados del commit de merge no devolvió estados individuales, así que no se afirma una ejecución post-merge verificada. Consulta la [guía de formularios y validación](/guides/forms-validation/).
 
+### Fase 6.4 — Sesiones y control de acceso (integrada en main)
+
+La PR #49 se fusionó mediante squash en el commit `d53036410fc0d51900acf0c59b52c85f64cd1640`. Los checks requeridos pasaron en el HEAD final de la PR y la CI post-merge terminó en verde para Rust, WASM, Browser E2E/presupuesto de bundle, documentación, gobernanza y Cloudflare Pages. La implementación aporta sesiones server-side, cookies host-only seguras, rotación e invalidación, identidad extraída desde la sesión, guards previos al handler, políticas deny-by-default y hashing de contraseñas con `ring`. El adaptador incluido es volátil y local al proceso; no hay proveedor de usuarios ni persistencia durable. Consulta la [guía de sesiones](/guides/sessions-and-access/) y el [ADR 0015](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0015-sessions-and-access-control.md).
+
+### Fase 6.5 — Base de datos y migraciones (implementación verificada)
+
+La implementación de la Fase 6.5 añade SQLx con pools configurables para SQLite/PostgreSQL, transacciones explícitas, mapeo seguro de errores HTTP, migraciones versionadas y rollback explícito cuando existan archivos `.down.sql`. El scaffold inicializa una pool, comprueba `/health/database`, aplica migraciones en desarrollo/test y ofrece `cargo run --bin migrate` como paso único de despliegue en producción. La guía técnica y la guía pública documentan pool sizing, consultas parametrizadas y responsabilidades de despliegue.
+
+La prueba de integración del CLI genera una aplicación y verifica validación, persistencia, verificación de contraseña, sesión/autenticación, CSRF, SSR y escape HTML. RustFlow ya incluye APIs ORM SQL y ODM MongoDB experimentales, pero el scaffold predeterminado no genera automáticamente entidades, repositorios ni una aplicación CRUD completa. Siguen pendientes sesiones SQL durables y proveedor de usuarios. La revisión de despliegue y seguridad de producción continúa siendo responsabilidad de la aplicación.
+
+### Fase 6.6 — Motores de base de datos adicionales (completada e integrada en main)
+
+La subfase 6.6.1 quedó integrada en `main` mediante PR #54 y el commit `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`; sus pruebas originales cubrieron MySQL 8.0 y MariaDB 11.4. En aquel hito, el driver SQLx `mysql` se usaba mediante `AnyPool`; la integración ORM posterior de la Fase 6.7.2 adoptó pools SQLx tipados por backend y comparte el mismo pool con SeaORM. `DatabaseBackend::MySql` representa el driver compartido, no identifica el producto servidor. Las URLs usan `mysql://` y las migraciones de esa familia requieren `.rustflow-dialect` con `mysql`. En la subfase 6.6.3 se actualiza el target público a MySQL 8.4.13 LTS y MariaDB 11.4.13 LTS.
+
+La subfase 6.6.2 quedó integrada en `main` mediante PR #55, con el commit `e3ceb86d757bb7aa1a07e16a1e21b462adb69841`. Añade un adaptador MongoDB independiente de SQLx, configuración y timeout, BSON, acceso CRUD a colecciones nativas, bootstrap de colecciones/índices y mapeo seguro de errores. La CI de su HEAD final pasó con integración MongoDB 7.0.45 en Rust estable/1.85. La subfase 6.6.3 verificó el contrato público completo: SQLite 3.46.0 bundled, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS y MongoDB 7.0.45, con MSRV, configuraciones y pruebas del scaffold documentados. El code head `51ac4c212b3d6bf68483ee2ef8e28b5c3a75f421` pasó CI en Rust estable/1.85 y los gates de documentación, gobernanza, dependencias, WebAssembly y Browser E2E/bundle. La Phase 6.6 queda completa con este contrato; el ORM SQL y el ODM MongoDB se implementaron en 6.7.2/6.7.3, mientras que la madurez global de persistencia sigue siendo trabajo abierto de la Fase 6.7.
+
 ### Fase 6.7.1 — Contrato de modelos y arquitectura
 
 PR #58 integró ADR 0020, el patrón Data Mapper sobre SeaORM 1.1.20 y el derive de validación <code>ModelDiagnostics</code>. Esta subfase definió el modelo/metadata, los límites de tipos, los estados ActiveModel, hooks, errores y transacciones; no añadía todavía persistencia ejecutable.
@@ -84,7 +100,13 @@ La aceptación de 6.7.2 quedó cerrada sobre el HEAD `2cadce73c19c37c2f088f572ea
 
 La arquitectura queda registrada en ADR 0021: Data Mapper documental basado en `DocumentModel`, BSON/Serde y el único cliente oficial `MongoDatabase` existente. No incorpora otro driver/cliente, SeaORM, relaciones SQL ni carga perezosa. La implementación aporta `DocumentRepository`, `DocumentFilter`, `DocumentField<T>`, `DocumentQuery`, `DocumentUpdate`, CRUD/bulk acotado, proyecciones, agregaciones, operaciones explícitas con sesiones, verificación de índices y cobertura de documentos embebidos. PR #60 pasó CI en el HEAD final `659f1750d611e57315263216167d43375da23574` y se fusionó mediante squash en `main` el 2026-10-31, commit `7ffb89b5ca36017a428cf3f828b68f590f8d404b`. La API sigue experimental; la aceptación de 6.7.3 no cierra la Phase 6.7 global.
 
-## Matriz rápida: ¿qué puedes hacer?
+### Fase 6.7.4 — Relaciones y carga SQL avanzada (integrada en main)
+
+PR #62 se fusionó mediante squash en `main` el 2026-10-31, commit `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7` (HEAD final `28218456db8ac323731054e291023a0765474125`). Añade `RelationLoadOptions<E>` para filtros/orden por relación, `load_many_projected` para DTOs de relaciones has-many con claves de agrupación explícitas y `RelationGraph` para ramas múltiples y carga anidada. El grafo admite `with_many`, `with_one`, `with_many_to_many` y ramas proyectadas hoja; la profundidad predeterminada es 8 y el máximo configurable es 16. Los helpers de mutación son `attach_one_to_many`, `detach_one_to_many` y `replace_one_to_one`.
+
+Los loaders siguen siendo explícitos y por lotes, sin carga perezosa. Limit/offset aplica al conjunto relacionado completo, no a cada padre; no se promete top-N por padre. Los DTOs proyectados no sirven como nodos padre de relaciones anidadas. Attach/detach actualizan la FK de una fila existente y nunca borran; replacement one-to-one usa una transacción proporcionada por el caller, que también controla commit/rollback. MongoDB mantiene su semántica ODM independiente. El HEAD de la PR pasó CI, build del sitio, gobernanza y revisión de dependencias antes de la fusión. La Fase 6.7 global sigue abierta para la aplicación CRUD generada y el gate de madurez.
+
+### Matriz rápida: ¿qué puedes hacer?
 
 | Tarea | ¿Disponible hoy? | Qué leer |
 |---|---|---|
@@ -106,38 +128,23 @@ La arquitectura queda registrada en ADR 0021: Data Mapper documental basado en `
 | MySQL y MariaDB | Experimental integrados (6.6.1); target contract actual verificado en 6.6.3 | SQLx 0.8.6 driver `mysql`; MySQL 8.4.13 LTS/MariaDB 11.4.13 LTS se validaron con aserciones de versión en Rust 1.85/stable. [Guía](/guides/database/) · [Matriz](/guides/database/#matriz-de-versiones-verificadas) |
 | MongoDB | Adaptador documental experimental integrado en `main` (subfase 6.6.2, PR #55) | `MongoConfig`, `MongoDatabase`, colecciones nativas, BSON, bootstrap e índices; independiente de SQLx. CI final aprobada con Rust estable/1.85 e integración MongoDB 7.0.45. [Guía](/guides/database/) |
 | ORM SQL para SQLite/PostgreSQL/MySQL/MariaDB | Experimental, 6.7.2 integrada en main mediante PR #59 | SeaORM 1.1.20 sobre un único pool SQLx tipado por backend; `EntityRepository` CRUD/bulk, queries tipadas, loaders explícitos y transacciones mixtas. Los cuatro motores y checks de aceptación se verificaron en el HEAD de la PR. No se anuncia como estable. [Guía](/guides/database/) · [Contrato](/guides/database/#roadmap-de-persistencia). |
+| Extensiones ORM de relaciones/carga | Experimental, 6.7.4 integrada en `main` mediante PR #62 | Filtros/orden por edge, proyección DTO has-many, grafos explícitos/nested (profundidad 8 por defecto, máximo 16), helpers attach/detach/reemplazo uno-a-uno. Sin lazy loading, top-N por padre ni cascadas implícitas; proyección como hoja. [Guía](/guides/database/) · [ADR 0022](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0022-advanced-sql-relation-loading.md) |
 | ODM MongoDB | Experimental, integrada en `main` (Phase 6.7.3 / PR #60) | `DocumentModel`, `DocumentRepository`, filtros y updates BSON, paginación/proyecciones, agregación, sesiones, IDs y documentos embebidos. PR #60 pasó los checks requeridos en el HEAD final `659f1750d611e57315263216167d43375da23574` y se fusionó como `7ffb89b5ca36017a428cf3f828b68f590f8d404b`. La API sigue pre-1.0. [Guía ODM](/guides/mongodb-odm/) · [ADR 0021](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0021-mongodb-odm-architecture.md) |
 
-## Cómo interpretar las pruebas
+### Cómo interpretar las pruebas
 
 Las pruebas unitarias, de integración HTTP/TCP y E2E Chromium demuestran los casos que ejercitan. No son una garantía de que se hayan probado todas las combinaciones ni sustituyen un modelo de amenazas, la operación real de producción o una promesa de compatibilidad. Antes de tomar decisiones de adopción, consulta el HEAD actual de <code>main</code>, la CI correspondiente y las limitaciones de cada guía.
 
 
-## Fase 6.4 — Sesiones y control de acceso (integrada en main)
-
-La PR #49 se fusionó mediante squash en el commit `d53036410fc0d51900acf0c59b52c85f64cd1640`. Los checks requeridos pasaron en el HEAD final de la PR y la CI post-merge terminó en verde para Rust, WASM, Browser E2E/presupuesto de bundle, documentación, gobernanza y Cloudflare Pages. La implementación aporta sesiones server-side, cookies host-only seguras, rotación e invalidación, identidad extraída desde la sesión, guards previos al handler, políticas deny-by-default y hashing de contraseñas con `ring`. El adaptador incluido es volátil y local al proceso; no hay proveedor de usuarios ni persistencia durable. Consulta la [guía de sesiones](/guides/sessions-and-access/) y el [ADR 0015](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0015-sessions-and-access-control.md).
-
-## Fase 6.5 — Base de datos y migraciones (implementación verificada)
-
-La implementación de la Fase 6.5 añade SQLx con pools configurables para SQLite/PostgreSQL, transacciones explícitas, mapeo seguro de errores HTTP, migraciones versionadas y rollback explícito cuando existan archivos `.down.sql`. El scaffold inicializa una pool, comprueba `/health/database`, aplica migraciones en desarrollo/test y ofrece `cargo run --bin migrate` como paso único de despliegue en producción. La guía técnica y la guía pública documentan pool sizing, consultas parametrizadas y responsabilidades de despliegue.
-
-La prueba de integración del CLI genera una aplicación y verifica validación, persistencia, verificación de contraseña, sesión/autenticación, CSRF, SSR y escape HTML. RustFlow ya incluye APIs ORM SQL y ODM MongoDB experimentales, pero el scaffold predeterminado no genera automáticamente entidades, repositorios ni una aplicación CRUD completa. Siguen pendientes sesiones SQL durables y proveedor de usuarios. La revisión de despliegue y seguridad de producción continúa siendo responsabilidad de la aplicación.
-
-## Fase 6.6 — Motores de base de datos adicionales (completada e integrada en main)
-
-La subfase 6.6.1 quedó integrada en `main` mediante PR #54 y el commit `48a491d660c71005b58ed88a4f6a7e8ba3390c9d`; sus pruebas originales cubrieron MySQL 8.0 y MariaDB 11.4. Usa el driver SQLx `mysql` mediante `AnyPool`. `DatabaseBackend::MySql` representa el driver compartido, no identifica el producto servidor. Las URLs usan `mysql://` y las migraciones de esa familia requieren `.rustflow-dialect` con `mysql`. En la subfase 6.6.3 se actualiza el target público a MySQL 8.4.13 LTS y MariaDB 11.4.13 LTS.
-
-La subfase 6.6.2 quedó integrada en `main` mediante PR #55, con el commit `e3ceb86d757bb7aa1a07e16a1e21b462adb69841`. Añade un adaptador MongoDB independiente de SQLx, configuración y timeout, BSON, acceso CRUD a colecciones nativas, bootstrap de colecciones/índices y mapeo seguro de errores. La CI de su HEAD final pasó con integración MongoDB 7.0.45 en Rust estable/1.85. La subfase 6.6.3 verificó el contrato público completo: SQLite 3.46.0 bundled, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS y MongoDB 7.0.45, con MSRV, configuraciones y pruebas del scaffold documentados. El code head `51ac4c212b3d6bf68483ee2ef8e28b5c3a75f421` pasó CI en Rust estable/1.85 y los gates de documentación, gobernanza, dependencias, WebAssembly y Browser E2E/bundle. La Phase 6.6 queda completa con este contrato; el ORM SQL y el ODM MongoDB se implementaron en 6.7.2/6.7.3, mientras que la madurez global de persistencia sigue siendo trabajo abierto de la Fase 6.7.
-
-## Fase 6.7 — ORM SQL y mapeo documental (en progreso)
+### Fase 6.7 — ORM SQL y mapeo documental (en progreso)
 
 La fase se divide en subfases para mantener contratos separados, pero **el objetivo obligatorio es una capa madura desde el principio, no un ORM mínimo que se declare terminado tras CRUD**. El cierre global exige que el contrato completo de modelos, consultas, relaciones/carga, transacciones, diagnósticos, compatibilidad y CI pase conjuntamente.
 
 - **6.7.1 — Arquitectura y contrato de modelos:** cerrada e integrada mediante PR #58; ADR 0020 selecciona Data Mapper/SeaORM 1.1.20 y define el contrato `ModelDiagnostics`.
 - **6.7.2 — ORM SQL:** criterios de aceptación cerrados e integrados en `main` mediante PR #59 (Squash Merge, commit `8d387943d5f6ccb4d3f33ba3708311442e238c5f`); pools SQLx tipados compartidos con SeaORM, EntityRepository, CRUD/bulk, query composition, loaders explícitos y transacciones mixtas para SQLite/PostgreSQL/MySQL/MariaDB.
 - **6.7.3 — ODM MongoDB:** integrado en `main` mediante PR #60, fusionada el 2026-10-31 (merge commit `7ffb89b5ca36017a428cf3f828b68f590f8d404b`). La implementación incluye Data Mapper documental independiente, CRUD/bulk, filtros/updates, proyecciones, agregaciones, IDs, documentos embebidos y operaciones explícitas con sesiones. Consulta el [ADR 0021](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0021-mongodb-odm-architecture.md) y la [guía ODM](/guides/mongodb-odm/).
-- **6.7.4 — Relaciones y carga avanzada:** pendiente de opciones de carga filtrada/ordenada, grafos más profundos y helpers de mutación one-to-one/one-to-many más allá de la cobertura baseline ya aceptada en 6.7.2.
+- **6.7.4 — Relaciones y carga avanzada:** integrada en `main` mediante PR #62, squash merge `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`; opciones de filtro/orden, has-many projections, grafos anidados y helpers explícitos de asociación, desasociación y reemplazo one-to-one. Véase la [guía de base de datos](/guides/database/) y [ADR 0022](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0022-advanced-sql-relation-loading.md).
 - **6.7.5 — CLI, ejemplos y documentación:** pendiente una aplicación CRUD generada que pruebe validación, persistencia y salida renderizada.
 - **6.7.6 — Calidad y compatibilidad:** gate final de integración, seguridad, MSRV, compile-fail, navegador y compatibilidad.
 
-La fase global no se cerrará con un CRUD mínimo: 6.7.2 (ORM SQL) y 6.7.3 (ODM MongoDB) ya están fusionadas en `main`. Siguen pendientes las extensiones avanzadas de relaciones/carga (6.7.4), la aplicación CRUD generada (6.7.5) y los gates de madurez/compatibilidad global (6.7.6).
+La fase global no se cerrará con un CRUD mínimo: 6.7.1–6.7.4 están integradas en `main`, incluyendo SQL ORM, ODM MongoDB y la extensión avanzada de relaciones/carga. Siguen pendientes la aplicación CRUD generada (6.7.5) y los gates de madurez/compatibilidad global (6.7.6).

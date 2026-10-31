@@ -47,10 +47,22 @@ Para cambios de website:
 ~~~sh
 cd website
 npm install
+npm run check
 npm run build
 ~~~
 
 Si se modifica el ejemplo de navegador, ejecuta además las instrucciones Playwright de [examples/browser/README.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/examples/browser/README.md). Los ejemplos de servidor deben compilarse por el CI de Rust (Clippy con todos los targets) y, cuando sea posible, ejecutarse como test smoke.
+
+## Auditoría integral del website público
+
+Antes de cerrar una fase o un cambio documental que afecte al sitio, revisa el árbol completo `website/src/content/docs/`, no solo las páginas que parecen relacionadas a primera vista:
+
+1. **Inventario:** enumera todos los archivos `.md` y `.mdx`; comprueba que cada guía, tutorial, referencia y página de verificación siga teniendo un propósito vigente.
+2. **Contrato real:** verifica nombres, firmas, tipos, límites, errores y disponibilidad de cada API contra el código de la revisión objetivo y sus pruebas. Distingue implementado, experimental, limitado, pendiente y retirado.
+3. **Ejemplos:** comprueba que los ejemplos anunciados como ejecutables tengan una ruta y un comando reales. Marca como fragmentos los snippets que omitan imports, contexto o configuración; nunca presentes pseudocódigo como programa compilable.
+4. **Navegación:** comprueba que cada página esté enlazada desde el lugar adecuado y que las páginas nuevas/renombradas aparezcan en `website/astro.config.mjs`. Revisa rutas internas y anchors, enlaces a fuentes y referencias cruzadas.
+5. **Consistencia:** contrasta el estado de fase, los hashes/PRs y las limitaciones con `ROADMAP.md`, `README.md`, `docs/`, ADRs y pruebas. Identifica expresamente como históricas las decisiones o contratos de fases anteriores que hayan cambiado después.
+6. **Experiencia de aprendizaje:** revisa que el recorrido permita pasar de la instalación a un caso funcional y que cada guía explique propósito, uso, casos apropiados, fallos comunes, seguridad y límites.
 
 ## Mantenimiento de la fuente de verdad
 
