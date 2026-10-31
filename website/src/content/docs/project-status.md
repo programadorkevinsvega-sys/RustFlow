@@ -72,7 +72,13 @@ La PR #47 se fusionó en `main` mediante squash en el commit `0a307e84bafabbc7df
 
 ### Fase 6.7.1 — Contrato de modelos y arquitectura
 
-ADR 0020 selecciona Data Mapper sobre SeaORM 1.1.20 como foundation SQL compatible con el MSRV Rust 1.85 y SQLx 0.8.6. RustFlow añade <code>ModelDiagnostics</code> como derive de validación, sin incorporar todavía SeaORM al grafo de dependencias. El crate/facade y la persistencia se añadirán en 6.7.2 junto con la transición del AnyPool a un único pool tipado por backend. La matriz de tipos es un contrato objetivo; los codecs deben probarse por motor. MongoDB conserva su propio adaptador y ODM separado. Phase 6.7 sigue incompleta y no se cerrará con un CRUD mínimo.
+PR #58 integró ADR 0020, el patrón Data Mapper sobre SeaORM 1.1.20 y el derive de validación <code>ModelDiagnostics</code>. Esta subfase definió el modelo/metadata, los límites de tipos, los estados ActiveModel, hooks, errores y transacciones; no añadía todavía persistencia ejecutable.
+
+### Fase 6.7.2 — ORM SQL (PR #59 en aceptación)
+
+La rama de la PR #59 integra SeaORM 1.1.20 en <code>rustflow-server</code> sobre un único pool SQLx tipado compartido por backend. <code>DatabasePool::entity</code> crea repositorios enlazados a la conexión o transacción existente; la API incluye CRUD/bulk, composición de consultas tipadas, loaders explícitos, parámetros SQL seguros, transacciones mixtas ORM/SQL y clasificación de errores. El contrato de integración está preparado para SQLite, PostgreSQL 16.15, MySQL 8.4.13 y MariaDB 11.4.13.
+
+La subfase aún no se declara cerrada: la aceptación depende de CI verde sobre el SHA final y de completar/validar los límites señalados en el contrato (en particular, cobertura de anchos/overflow de enteros, fallos reales con resultado de COMMIT ambiguo y semánticas anidadas de relaciones). MongoDB conserva su adaptador documental separado; su ODM no forma parte del SQL ORM y está previsto para 6.7.3. Phase 6.7 global sigue en progreso.
 
 ## Matriz rápida: ¿qué puedes hacer?
 
@@ -95,7 +101,8 @@ ADR 0020 selecciona Data Mapper sobre SeaORM 1.1.20 como foundation SQL compatib
 | Pool SQLx para SQLite/PostgreSQL | Experimental, disponible (Fase 6.5) | [Base de datos](/guides/database/); no incluye ORM |
 | MySQL y MariaDB | Experimental integrados (6.6.1); target contract actual verificado en 6.6.3 | SQLx 0.8.6 driver `mysql`; MySQL 8.4.13 LTS/MariaDB 11.4.13 LTS se validaron con aserciones de versión en Rust 1.85/stable. [Guía](/guides/database/) · [Matriz](/guides/database/#matriz-de-versiones-verificadas) |
 | MongoDB | Adaptador documental experimental integrado en `main` (subfase 6.6.2, PR #55) | `MongoConfig`, `MongoDatabase`, colecciones nativas, BSON, bootstrap e índices; independiente de SQLx. CI final aprobada con Rust estable/1.85 e integración MongoDB 7.0.45. [Guía](/guides/database/) |
-| ORM SQL / mapeo documental MongoDB | No disponible; planificado para la Fase 6.7 | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
+| ORM SQL para SQLite/PostgreSQL/MySQL/MariaDB | Implementación experimental en aceptación (PR #59, Phase 6.7.2) | SeaORM 1.1.20 sobre un único pool SQLx tipado por backend; `EntityRepository` CRUD/bulk, queries SeaORM tipadas, loaders explícitos y transacciones mixtas. No se anuncia como estable ni se cierra hasta pasar todos los checks y casos de borde. [Guía](/guides/database/) · [Contrato](/guides/database/#roadmap-de-persistencia). |
+| ODM MongoDB | Planificado (Phase 6.7.3), independiente del SQL ORM | El adaptador documental MongoDB 6.6.2 está disponible; el ODM tipado tendrá sus propios modelos BSON, queries, actualizaciones e índices. [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
 
 ## Cómo interpretar las pruebas
 
