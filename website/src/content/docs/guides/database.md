@@ -137,7 +137,7 @@ let account = accounts
     .await?;
 
 // La composición conserva el query builder tipado de SeaORM.
-let page = accounts
+let _page = accounts
     .all(
         accounts
             .select()
@@ -184,7 +184,7 @@ let updated = accounts
     .await?;
 
 // save inserta si la clave autogenerada no está definida.
-let saved = accounts
+let _saved = accounts
     .save(entities::account::ActiveModel {
         email: Set("grace@example.test".to_owned()),
         enabled: Set(true),
@@ -197,7 +197,7 @@ let saved = accounts
 
 // INSERT bulk devuelve InsertResult de SeaORM. UPDATE/DELETE bulk
 // devuelven rows_affected y deben ejecutarse con un filtro deliberado.
-let inserted = accounts
+let _inserted = accounts
     .insert_many(vec![
         entities::account::ActiveModel {
             email: Set("bulk-one@example.test".to_owned()),
@@ -228,8 +228,6 @@ let removed_bulk = accounts
     .await?;
 assert_eq!(removed_bulk.rows_affected, 2);
 
-// `saved` es un ActiveModel; su primary key está disponible como ActiveValue.
-let saved_id = saved.id;
 ~~~
 
 No interpretes `InsertResult` como un contador portable de filas afectadas: los metadatos de inserción dependen del motor. `update_many` y `delete_many` informan `rows_affected`. Los métodos `update`/`delete` rechazan un ActiveModel sin todos los campos de clave primaria, en lugar de ejecutar una modificación ambigua.
