@@ -649,7 +649,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 // an application's demo schema does not reuse the generator's incremental IDs.
 fn crud_scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
     let manifest = format!(
-        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.85\"\ndefault-run = \"{name}\"\n\n[package.metadata.rustflow]\ntemplate = \"crud\"\n\n[[bin]]\nname = \"migrate\"\npath = \"src/bin/migrate.rs\"\n\n[dependencies]\nrustflow = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\nrustflow-server = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\", \"net\"] }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\nhttp = \"1\"\n"
+        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.85\"\ndefault-run = \"{name}\"\n\n[package.metadata.rustflow]\ntemplate = \"crud\"\n\n[[bin]]\nname = \"migrate\"\npath = \"src/bin/migrate.rs\"\n\n[dependencies]\nrustflow = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\nrustflow-server = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\", \"net\"] }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\nsea-orm = {{ version = \\\"=1.1.20\\\", default-features = false, features = [\\\"macros\\\", \\\"with-json\\\", \\\"with-chrono\\\", \\\"with-rust_decimal\\\", \\\"with-bigdecimal\\\", \\\"with-uuid\\\", \\\"with-time\\\", \\\"sqlx-sqlite\\\", \\\"sqlx-postgres\\\", \\\"sqlx-mysql\\\", \\\"runtime-tokio-rustls\\\"] }}\\nhttp = \"1\"\n"
     );
     vec![
         (PathBuf::from("Cargo.toml"), manifest),
