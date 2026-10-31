@@ -29,6 +29,37 @@ pub enum DatabaseBackend {
     MySql,
 }
 
+impl DatabaseBackend {
+    /// Return the stable capability contract for this driver family.
+    pub const fn capabilities(self) -> DatabaseCapabilities {
+        match self {
+            Self::Sqlite | Self::Postgres => DatabaseCapabilities {
+                upsert: true,
+                insert_returning: true,
+            },
+            Self::MySql => DatabaseCapabilities {
+                upsert: true,
+                // The SeaORM MariaDB-only RETURNING feature is deliberately disabled because
+                // SQLx/SeaORM expose MySQL and MariaDB through the same compile-time backend.
+                insert_returning: false,
+            },
+        }
+    }
+}
+
+/// Database features that the configured SeaORM/SQLx backend can expose.
+///
+/// Upsert is available through SeaORM's typed OnConflict builder on each backend, but its
+/// conflict-target and duplicate-key semantics are dialect-specific. INSERT RETURNING is
+/// deliberately not advertised for the shared MySQL/MariaDB backend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DatabaseCapabilities {
+    /// A backend-specific upsert builder is available.
+    pub upsert: bool,
+    /// SeaORM can return the inserted model from an INSERT statement.
+    pub insert_returning: bool,
+}
+
 /// Configuration for a SQLx connection pool.
 ///
 /// The connection URL is intentionally omitted from Debug output because it may contain
@@ -396,6 +427,11 @@ impl DatabasePool {
     /// Return which SQLx driver this pool uses.
     pub fn backend(&self) -> DatabaseBackend {
         self.backend
+    }
+
+    /// Return the explicitly supported query capabilities for this database.
+    pub fn capabilities(&self) -> DatabaseCapabilities {
+        self.backend.capabilities()
     }
 
     /// Return the configured maximum number of connections.
