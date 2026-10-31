@@ -619,7 +619,7 @@ impl<M: DocumentModel> DocumentRepository<M> {
         let projection = query.projection;
         let skip = query.skip;
         let limit = query.limit;
-        let mut cursor = self
+        let cursor = self
             .database
             .run_owned_with_timeout(async move {
                 let mut action = collection.find(filter);
@@ -775,8 +775,8 @@ impl<M: DocumentModel> DocumentRepository<M> {
                 "aggregation pipeline cannot be empty",
             ));
         }
-        let collection = self.database.collection::<Document>(self.collection_name);
-        let mut cursor = self
+        let collection = self.database.collection::<R>(self.collection_name);
+        let cursor = self
             .database
             .run_owned_with_timeout(async move { collection.aggregate(pipeline).await })
             .await?;
