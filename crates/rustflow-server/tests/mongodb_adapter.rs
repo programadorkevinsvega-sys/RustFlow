@@ -384,6 +384,11 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
         true,
     ).await.expect_err("ordered bulk stops at a duplicate _id");
     assert!(std::error::Error::source(&partial_error).is_some());
+    assert_eq!(
+        partial_error.to_http_error().status_code(),
+        StatusCode::CONFLICT,
+        "a positively identified duplicate in insert_many maps to HTTP 409",
+    );
     assert!(repository.find_by_id(duplicate_id).await.expect("read partial insert").is_some());
     repository.delete_one(
         DocumentFilter::new().eq("_id", duplicate_id).expect("delete partial insert"),
