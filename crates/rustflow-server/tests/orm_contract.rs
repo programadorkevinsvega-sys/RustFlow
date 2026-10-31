@@ -178,7 +178,6 @@ mod entities {
             #[sea_orm(primary_key)]
             pub id: i64,
             pub signed_value: i64,
-            pub unsigned_value: u64,
             pub ratio: f64,
             pub decimal_value: Decimal,
             pub big_decimal_value: BigDecimal,
