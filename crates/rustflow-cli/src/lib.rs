@@ -631,6 +631,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     files
 }
  
+// This template is opt-in and carries explicit SeaORM metadata/migrations. Its
+// migration versions are namespaced above the simple four-digit generator so
+// an application's demo schema does not reuse the generator's incremental IDs.
 fn crud_scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
     let manifest = format!(
         "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.85\"\ndefault-run = \"{name}\"\n\n[package.metadata.rustflow]\ntemplate = \"crud\"\n\n[[bin]]\nname = \"migrate\"\npath = \"src/bin/migrate.rs\"\n\n[dependencies]\nrustflow = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\nrustflow-server = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\", \"net\"] }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\nhttp = \"1\"\n"
