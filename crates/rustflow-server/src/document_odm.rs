@@ -943,7 +943,18 @@ fn validate_field_path(field: &str) -> Result<(), MongoError> {
     if field.is_empty()
         || field.split('.').any(|part| {
             part.is_empty()
-                || part.starts_with('
+                || part.starts_with('$')
+                || part
+                    .chars()
+                    .any(|character| character == '\0' || character.is_control() || character == '$')
+        })
+    {
+        return Err(MongoError::InvalidDocumentQuery(
+            "field path is empty or contains an unsupported segment",
+        ));
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
