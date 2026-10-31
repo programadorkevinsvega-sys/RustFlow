@@ -352,7 +352,7 @@ Transport coverage in Phase 4.2 includes local TLS, trusted-proxy header reconst
 
 ## Phase 6.7 — ORM and model persistence (in progress)
 
-**Status: in progress.** ADR 0020 accepts **Data Mapper on SeaORM 1.1.20**. Phase 6.7.2 is implementing the single-pool bridge: the phase branch adds SeaORM only to `rustflow-server`, replaces `AnyPool` with backend-specific SQLx pools, and constructs SeaORM connectors from those same typed pool handles. SQLx migrations and direct raw-SQL access use the matching typed pool; mixed ORM/raw operations are routed through SeaORM transactions. This is an implementation slice, not completion evidence: all 6.7.2 acceptance criteria remain open until model CRUD, query builder, relations/loaders, cross-engine type codecs, integration tests, security review and all quality gates pass. No second pool is permitted.
+**Status: in progress.** ADR 0020 accepts **Data Mapper on SeaORM 1.1.20** and Phase 6.7.1 is merged. PR #59 now contains the Phase 6.7.2 runtime implementation: SeaORM is isolated to `rustflow-server`; the legacy `AnyPool` boundary is replaced by one backend-specific SQLx pool per database; SeaORM connectors clone those same pool handles; and SQLx migrations/direct raw-SQL access use matching typed pools. The branch also includes `EntityRepository`, typed query composition, explicit relationship loaders, mixed ORM/raw transactions, codec fixtures and error classification. This is implementation evidence, not phase acceptance: the criteria below remain open until runtime tests and every required quality gate pass on the exact final PR SHA. No second pool or hidden lazy I/O is permitted.
 
 This phase targets a **mature, cohesive SQL ORM from the outset**, not a CRUD-only ORM/MVP. The term **SQL ORM** applies only to SQLite, PostgreSQL, MySQL and MariaDB. MongoDB is document-oriented and belongs to a separate ODM subphase; it must not be forced into a SQL model, query builder, relationships or migration system. SeaORM is selected only for the SQL subsystem.
 
@@ -371,7 +371,7 @@ This phase targets a **mature, cohesive SQL ORM from the outset**, not a CRUD-on
 
 ### 6.7.2 SQL ORM core
 
-**Implementation status:** the typed SQLx/SeaORM shared-pool bridge and backend-checked accessors are present in the phase branch; the rest of this checklist remains pending. No criterion is marked complete until CI and runtime evidence support it.
+**Implementation status:** PR #59 contains the shared-pool bridge, EntityRepository CRUD/bulk API, SeaORM query composition, explicit relation loaders, transaction composition, type-codec fixtures, error classification and updated technical/public guides. The expanded test contract includes `save`, invalid ActiveModel states, projected aliases, comparison/NULL/IN predicates, belongs-to traversal and transactional junction mutation. Final validation is pending: do not check roadmap items until the final SHA passes the matching runtime suite and required CI jobs. Known gaps are listed beneath this phase.
 
 - [ ] Integrate SeaORM's backend-specific SQLx typed pools as the single shared pool for SQLite, PostgreSQL, MySQL and MariaDB; migrate the existing AnyPool/raw connection API deliberately without opening a second pool, preserving URL configuration, timeouts, secret redaction, SQLx migrations and parameterized raw SQL.
 - [ ] Implement checked runtime model mapping/row decoding and RustFlow wrappers over SeaORM entities/ActiveModels for SQLite, PostgreSQL, MySQL and MariaDB against the Phase 6.6 verified services.
@@ -383,6 +383,13 @@ This phase targets a **mature, cohesive SQL ORM from the outset**, not a CRUD-on
 - [ ] Integrate model operations with explicit transactions, including rollback on errors, and test bulk operations, conflict paths, and partial failure semantics.
 - [ ] Maintain a tested type-mapping matrix per supported SQL engine, including NULLs, JSON, timestamps, numeric/decimal, UUID and generated/default values where supported.
 - [ ] Integrate with the existing migration strategy without implying that migrations are portable across dialects; document and test per-engine migration directories when needed.
+
+**Explicit 6.7.2 acceptance gaps to close before this checklist can be completed:**
+- [ ] Exercise the full signed/unsigned integer width and overflow matrix per dialect; current fixtures cover signed `i64` and MySQL/MariaDB `u64::MAX`, not every width/range.
+- [ ] Add bounded query-count evidence for nested relation-loader hops and verify missing related records for every relation shape.
+- [ ] Exercise relation attach/update/detach/delete semantics beyond the current junction-delete rollback case.
+- [ ] Add a transport-fault integration test that drops a connection during COMMIT, in addition to the synthetic classifier unit test, and confirm the outcome is reported as unknown.
+- [ ] Complete final validation on the exact PR SHA, including Rust 1.85/stable, Clippy, workspace/four-engine tests, MongoDB regression, rustdoc, CLI smoke, WASM, browser E2E/bundle, website, governance and dependency review.
 
 ### 6.7.3 MongoDB document mapper / ODM
 - [ ] Define and document a separate typed document model/derive contract based on BSON, collections, `_id`, serializers/deserializers, and MongoDB's own query/update operators.
