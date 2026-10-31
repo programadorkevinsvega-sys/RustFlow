@@ -153,7 +153,7 @@ let changed = accounts
     .update_many()
     .col_expr(
         entities::account::Column::Enabled,
-        rustflow_server::sea_orm::sea_query::Expr::value(false).into(),
+        rustflow_server::sea_orm::sea_query::Expr::val(false).into(),
     )
     .filter(entities::account::Column::Id.eq(account.id))
     .exec(database.orm())
