@@ -3,15 +3,7 @@
 //! This module deliberately does not install a global tracing subscriber or bind
 //! the framework to a monitoring, cache, queue, email, or object-storage vendor.
 
-use std::{
-    error::Error,
-    fmt,
-    future::Future,
-    pin::Pin,
-    str::FromStr,
-    sync::Arc,
-    time::Duration,
-};
+use std::{error::Error, fmt, future::Future, pin::Pin, str::FromStr, sync::Arc, time::Duration};
 
 use crate::AppConfig;
 
@@ -186,8 +178,7 @@ fn validate_health_path(path: &str) -> Result<(), OperationalConfigError> {
         || !path.starts_with('/')
         || path.starts_with("//")
         || path.chars().any(|character| {
-            character.is_control()
-                || matches!(character, '?' | '#' | '{' | '}' | '*' | '\\')
+            character.is_control() || matches!(character, '?' | '#' | '{' | '}' | '*' | '\\')
         })
         || path
             .split('/')
@@ -483,9 +474,7 @@ mod tests {
             })
             .is_err()
         );
-        assert!(
-            ReadinessCheck::new("database", Duration::ZERO, || async { Ok(()) }).is_err()
-        );
+        assert!(ReadinessCheck::new("database", Duration::ZERO, || async { Ok(()) }).is_err());
     }
 
     #[test]
