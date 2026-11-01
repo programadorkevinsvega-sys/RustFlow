@@ -1,4 +1,4 @@
-use std::{env, str::FromStr};
+use std::{env, str::FromStr, time::Duration};
 
 use rustflow_server::{
     DatabaseBackend, DatabaseConfig, DatabaseErrorKind, DatabasePool,
@@ -1844,6 +1844,39 @@ async fn exercise_orm(database: &DatabasePool) {
         .await
         .expect("cleanup default row");
     assert_eq!(cleanup.rows_affected, 1);
+
+    // Query expressions must bind hostile-looking values as data, never SQL fragments.
+    let hostile_email = "attacker@example.test' OR 1=1; DROP TABLE rustflow_orm_accounts; --";
+    let hostile_account = accounts
+        .insert(entities::account::ActiveModel {
+            email: Set(hostile_email.to_owned()),
+            enabled: Set(true),
+            alias: Set(None),
+            metadata: Set(serde_json::json!({})),
+            checksum: Set(vec![]),
+            ..Default::default()
+        })
+        .await
+        .expect("hostile-looking input is stored as a bound value");
+    let exact_match = accounts
+        .one(
+            accounts
+                .select()
+                .filter(entities::account::Column::Email.eq(hostile_email)),
+        )
+        .await
+        .expect("hostile-looking input is queried as a bound value")
+        .expect("exact hostile-looking value is present");
+    assert_eq!(exact_match.id, hostile_account.id);
+    let surviving_rows = accounts
+        .all(accounts.select())
+        .await
+        .expect("account table remains queryable after hostile-looking input");
+    assert!(surviving_rows.iter().any(|row| row.id == hostile_account.id));
+    accounts
+        .delete_by_id(hostile_account.id)
+        .await
+        .expect("remove query-safety fixture");
 }
 
 async fn database_from_url(url: &str) -> DatabasePool {
@@ -1893,6 +1926,76 @@ async fn mariadb_orm_contract() {
     };
     let database = database_from_url(&url).await;
     exercise_orm(&database).await;
+}
+
+async fn assert_pool_exhaustion_is_bounded_and_classified(url: &str) {
+    let config = DatabaseConfig::new(url)
+        .expect("valid pool-exhaustion test URL")
+        .with_max_connections(1)
+        .expect("single-connection pool")
+        .with_acquire_timeout(Duration::from_millis(150))
+        .expect("bounded acquire timeout");
+    let database = DatabasePool::connect(&config)
+        .await
+        .expect("connect pool-exhaustion test database");
+
+    // Holding the only pooled connection makes the following operation exercise the
+    // real acquire-timeout path instead of a synthetic driver error.
+    let transaction = database
+        .begin_transaction()
+        .await
+        .expect("acquire the only connection");
+    let error = tokio::time::timeout(
+        Duration::from_secs(2),
+        database.query_raw("SELECT 1", []),
+    )
+    .await
+    .expect("pool exhaustion must be bounded")
+    .expect_err("a second operation must not exceed the configured pool size");
+    assert_eq!(
+        error.kind(),
+        DatabaseErrorKind::Unavailable,
+        "pool-acquire timeout must have the stable unavailable classification: {error:?}"
+    );
+
+    transaction
+        .rollback()
+        .await
+        .expect("release the only pooled connection");
+    database
+        .query_raw("SELECT 1", [])
+        .await
+        .expect("pool remains usable after the connection is released");
+    database.close().await;
+}
+
+#[tokio::test]
+async fn sqlite_pool_exhaustion_is_bounded_and_classified() {
+    assert_pool_exhaustion_is_bounded_and_classified("sqlite::memory:").await;
+}
+
+#[tokio::test]
+async fn postgres_pool_exhaustion_is_bounded_and_classified() {
+    let Some(url) = integration_url("RUSTFLOW_TEST_DATABASE_URL") else {
+        return;
+    };
+    assert_pool_exhaustion_is_bounded_and_classified(&url).await;
+}
+
+#[tokio::test]
+async fn mysql_pool_exhaustion_is_bounded_and_classified() {
+    let Some(url) = integration_url("RUSTFLOW_TEST_MYSQL_URL") else {
+        return;
+    };
+    assert_pool_exhaustion_is_bounded_and_classified(&url).await;
+}
+
+#[tokio::test]
+async fn mariadb_pool_exhaustion_is_bounded_and_classified() {
+    let Some(url) = integration_url("RUSTFLOW_TEST_MARIADB_URL") else {
+        return;
+    };
+    assert_pool_exhaustion_is_bounded_and_classified(&url).await;
 }
 
 #[tokio::test]
