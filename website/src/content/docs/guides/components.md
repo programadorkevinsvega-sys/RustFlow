@@ -149,9 +149,9 @@ La limpieza es síncrona y ocurre al volver a evaluar/limpiar efectos según su 
 
 ## Límites actuales
 
-- <code>use_memo</code>, <code>use_ref</code> y los contextos tipados están incorporados en la rama Phase 7.2, pendientes de validación CI y merge.
+- <code>use_memo</code>, <code>use_ref</code> y los contextos tipados están disponibles de forma experimental desde Phase 7.2; consulta [Reactividad](/concepts/reactivity/) y [Composición de UI](/guides/ui-foundations/).
 - Los nuevos helpers se ejecutan en el setup owner-scoped; no son hooks posicionales ni ofrecen compatibilidad semántica con React.
-- <code>use_ref</code> solo es almacenamiento Rust no reactivo; las referencias a elementos DOM siguen pendientes.
+- <code>use_ref</code> es almacenamiento Rust no reactivo. Las referencias DOM son una API separada, <code>rustflow_dom::ElementRef</code>, disponible en browser/WASM y documentada en [Composición de UI](/guides/ui-foundations/).
 - La macro acepta un subconjunto intencional de tipos de props y de expresiones de vista.
 - Expresiones arbitrarias que lean señales necesitan una región dinámica explícita.
 - El render SSR no conecta automáticamente listeners de navegador. La hidratación es optativa y debe configurarse explícitamente.
