@@ -39,7 +39,7 @@ use axum::{
     body::{Body, to_bytes},
     extract::{Path, Request as AxumRequest, State},
     response::Response as AxumResponse,
-    routing::{get, MethodFilter, MethodRouter},
+    routing::{MethodFilter, MethodRouter, get},
 };
 
 use bytes::Bytes;
@@ -58,15 +58,14 @@ pub use document_odm::{
     DocumentRepository, DocumentUpdate, DocumentUpdateOutcome, MAX_DOCUMENT_BULK_SIZE,
 };
 pub use group::RouteGroup;
-pub use operational::{
-    ErrorReport, ErrorReportKind, ErrorReporter, ErrorReporterError, ErrorReporterFuture,
-    HealthEndpoints,
-    LogLevel, OperationalConfigError, ReadinessCheck, ReadinessCheckError, TracingConfig,
-    MAX_READINESS_CHECKS,
-};
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
 pub use mongodb as mongodb_driver;
+pub use operational::{
+    ErrorReport, ErrorReportKind, ErrorReporter, ErrorReporterError, ErrorReporterFuture,
+    HealthEndpoints, LogLevel, MAX_READINESS_CHECKS, OperationalConfigError, ReadinessCheck,
+    ReadinessCheckError, TracingConfig,
+};
 pub use orm::{
     EntityRepository, MAX_RELATION_GRAPH_DEPTH, RelationGraph, RelationGraphResults,
     RelationLoadOptions, attach_one_to_many, detach_one_to_many, load_many_projected,
@@ -1167,19 +1166,31 @@ impl fmt::Display for ServerError {
             Self::InvalidTlsMaterial(message) => write!(f, "invalid TLS material: {message}"),
             Self::MiddlewareRegistryPoisoned => write!(f, "middleware registry is unavailable"),
             Self::HealthEndpointRouteConflict(path) => {
-                write!(f, "health endpoint path conflicts with an application route: {path}")
+                write!(
+                    f,
+                    "health endpoint path conflicts with an application route: {path}"
+                )
             }
             Self::HealthEndpointsNotConfigured => {
-                write!(f, "configure health endpoints before registering readiness checks")
+                write!(
+                    f,
+                    "configure health endpoints before registering readiness checks"
+                )
             }
             Self::DuplicateReadinessCheck(name) => {
                 write!(f, "readiness check is already registered: {name}")
             }
             Self::TooManyReadinessChecks => {
-                write!(f, "at most {MAX_READINESS_CHECKS} readiness checks may be registered")
+                write!(
+                    f,
+                    "at most {MAX_READINESS_CHECKS} readiness checks may be registered"
+                )
             }
             Self::ShutdownTimedOut(timeout) => {
-                write!(f, "graceful shutdown exceeded the configured limit of {timeout:?}")
+                write!(
+                    f,
+                    "graceful shutdown exceeded the configured limit of {timeout:?}"
+                )
             }
             Self::Io(error) => write!(f, "server I/O failed: {error}"),
         }
@@ -1245,8 +1256,10 @@ impl Application {
     where
         R: ErrorReporter,
     {
-        *self.error_reporter.write().unwrap_or_else(|poisoned| poisoned.into_inner()) =
-            Some(Arc::new(reporter));
+        *self
+            .error_reporter
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Arc::new(reporter));
         self
     }
 
@@ -1289,8 +1302,14 @@ impl Application {
         if self.readiness_checks.len() >= MAX_READINESS_CHECKS {
             return Err(ServerError::TooManyReadinessChecks);
         }
-        if self.readiness_checks.iter().any(|existing| existing.name() == check.name()) {
-            return Err(ServerError::DuplicateReadinessCheck(check.name().to_owned()));
+        if self
+            .readiness_checks
+            .iter()
+            .any(|existing| existing.name() == check.name())
+        {
+            return Err(ServerError::DuplicateReadinessCheck(
+                check.name().to_owned(),
+            ));
         }
         self.readiness_checks.push(check);
         Ok(self)
@@ -1641,7 +1660,8 @@ impl Application {
                                 status,
                                 ErrorReportKind::RequestTimeout,
                             ),
-                        ).await;
+                        )
+                        .await;
                         attach_request_id(HttpError::gateway_timeout().into_response(), &request_id)
                             .into_axum_response()
                     }
@@ -1871,9 +1891,7 @@ async fn liveness_endpoint() -> AxumResponse {
     operational_response(StatusCode::OK, r#"{"status":"alive"}"#)
 }
 
-async fn readiness_endpoint(
-    State(checks): State<Arc<Vec<ReadinessCheck>>>,
-) -> AxumResponse {
+async fn readiness_endpoint(State(checks): State<Arc<Vec<ReadinessCheck>>>) -> AxumResponse {
     let mut tasks = tokio::task::JoinSet::new();
     for check in checks.iter().cloned() {
         let timeout = check.timeout();
@@ -1902,10 +1920,7 @@ async fn readiness_endpoint(
     if ready {
         operational_response(StatusCode::OK, r#"{"status":"ready"}"#)
     } else {
-        operational_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            r#"{"status":"not_ready"}"#,
-        )
+        operational_response(StatusCode::SERVICE_UNAVAILABLE, r#"{"status":"not_ready"}"#)
     }
 }
 
@@ -2002,7 +2017,8 @@ async fn dispatch_request(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         ErrorReportKind::Middleware,
                     ),
-                ).await;
+                )
+                .await;
                 let response = HttpError::internal_server_error().into_response();
                 return attach_request_id(response, &request_id_for_response).into_axum_response();
             }
@@ -2029,7 +2045,8 @@ async fn dispatch_request(
                             error.status,
                             ErrorReportKind::Handler,
                         ),
-                    ).await;
+                    )
+                    .await;
                 }
                 tracing::warn!(status = %error.status, "request failed");
                 error.into_response()
@@ -2259,10 +2276,9 @@ fn is_safe_redirect_location(location: &str) -> bool {
 mod tests {
     use super::{
         Application, BindKind, ClientAddressPolicy, DeploymentProfile, ErrorPageConfigError,
-        ErrorPages, ErrorReport, ErrorReportKind, ErrorReporterError, HealthEndpoints,
-        HtmlPage, HttpError, HttpMethod, IpNetwork, Middleware, ReadinessCheck,
-        ReadinessCheckError, Response, RouteInfo, ServerConfig, ServerError, View,
-        html_document, html_view,
+        ErrorPages, ErrorReport, ErrorReportKind, ErrorReporterError, HealthEndpoints, HtmlPage,
+        HttpError, HttpMethod, IpNetwork, Middleware, ReadinessCheck, ReadinessCheckError,
+        Response, RouteInfo, ServerConfig, ServerError, View, html_document, html_view,
     };
     use axum::{
         body::{Body, to_bytes},
@@ -3089,8 +3105,10 @@ mod tests {
     #[test]
     fn health_routes_cannot_shadow_application_routes() {
         let mut app = Application::new();
-        app.get("/health/live", |_request| async { Ok(Response::text("application route")) })
-            .expect("route");
+        app.get("/health/live", |_request| async {
+            Ok(Response::text("application route"))
+        })
+        .expect("route");
         assert!(matches!(
             app.enable_health_endpoints(),
             Err(ServerError::HealthEndpointRouteConflict(path)) if path == "/health/live"
@@ -3159,9 +3177,7 @@ mod tests {
     #[tokio::test]
     async fn reporter_errors_panics_and_timeouts_do_not_replace_http_result() {
         let mut failing = Application::new();
-        failing.with_error_reporter(|_| async {
-            Err(ErrorReporterError)
-        });
+        failing.with_error_reporter(|_| async { Err(ErrorReporterError) });
         failing
             .get("/failure", |_request| async {
                 Err(HttpError::internal_server_error())
