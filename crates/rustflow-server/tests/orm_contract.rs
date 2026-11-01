@@ -2063,9 +2063,9 @@ async fn assert_pool_exhaustion_is_bounded_and_classified(url: &str) {
         .await
         .expect("acquire the only connection");
     let error = tokio::time::timeout(Duration::from_secs(2), database.query_raw("SELECT 1", []))
-    .await
-    .expect("pool exhaustion must be bounded")
-    .expect_err("a second operation must not exceed the configured pool size");
+        .await
+        .expect("pool exhaustion must be bounded")
+        .expect_err("a second operation must not exceed the configured pool size");
     assert_eq!(
         error.kind(),
         DatabaseErrorKind::Unavailable,
