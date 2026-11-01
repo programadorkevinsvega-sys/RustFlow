@@ -4,6 +4,8 @@ This document describes the repository's application-testing support. RustFlow r
 pre-1.0: the test helpers are opt-in developer tooling, not a stability promise for
 the framework's application APIs.
 
+**Phase 7.3 delivery record (2026-11-01):** this testing support was integrated into `main` through [PR #71](https://github.com/programadorkevinsvega-sys/RustFlow/pull/71), squash merge `ebc671b4c5dc7688813158f663a3dc560c34edb7`. The final PR HEAD `f3c7e5451095759428745f7760f3c531c91c89bc` passed the required Rust stable/1.85, WebAssembly, Browser E2E/bundle, documentation, governance, dependency-review, and Cloudflare Pages checks. The helpers remain opt-in and experimental because RustFlow is pre-1.0.
+
 ## In-process HTTP applications
 
 The rustflow-server crate exposes the `testing` Cargo feature. Enable it only

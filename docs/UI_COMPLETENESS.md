@@ -2,7 +2,9 @@
 
 - Base <code>main</code> commit audited: <code>207c61c6fa2751a4d7bbd4b5c914a2cbb8588401</code>
 - Implementation branch: <code>feat/ui-phase-7-2-completeness</code>
-- Status: Phase 7.2 implementation, regression tests, technical contracts/ADRs, and public website documentation are delivered together in PR #70. The public APIs remain experimental and pre-1.0.
+- Merged into `main`: PR #70 on 2026-11-01, merge commit <code>506dd6f193c13a0bb941b6f75238d751a2934230</code>.
+- Final PR HEAD: <code>798e0239918baf897df4fc003cc43d63081d0a30</code>; all eight checks passed (Rust stable/1.85, WASM, Browser E2E/bundle, documentation, governance, dependency review, Cloudflare Pages).
+- Status: Phase 7.2 is complete and integrated. The public APIs remain experimental and pre-1.0; async resources/loading and component error boundaries remain explicitly deferred.
 
 ## 1. Architectural audit
 

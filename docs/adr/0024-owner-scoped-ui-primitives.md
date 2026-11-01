@@ -1,6 +1,6 @@
 # ADR 0024: Owner-scoped UI derivations, references, and typed contexts
 
-- **Status:** Proposed for review; implementation is present on the Phase 7.2 pull-request branch only.
+- **Status:** Proposed for formal review; Phase 7.2 implementation merged into `main` via PR #70 (2026-11-01; merge commit `506dd6f193c13a0bb941b6f75238d751a2934230`). This status tracks formal architectural approval, not runtime availability.
 - **Date:** 2026-11-01
 - **Phase:** 7.2 — UI completeness
 - **Scope:** memoized derivations, stable non-reactive references, typed owner-tree contexts

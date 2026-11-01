@@ -462,26 +462,27 @@ The 6.7.2 baseline is verified: all four SQL relation kinds have integration cov
 ### 7.2 UI completeness
 
 - [x] Audit and retain the existing component-owner model, keyed-list reconciliation, duplicate-key rejection, fragments, native controls, SSR rendering, and opt-in hydration contracts. Existing unit, integration, and browser tests remain the baseline.
-- [x] Add `use_memo` as an eager owner-scoped derived computation using dynamic signal dependency tracking, `PartialEq` result suppression, documented batch semantics, and owner cleanup. Implementation and its contract are delivered together in PR #70; the final PR revision remains subject to the repository's required merge checks.
-- [x] Add `use_ref` as stable, non-reactive, owner-scoped Rust storage with borrow-safe access and deterministic invalidation on owner disposal. Implementation and its contract are delivered together in PR #70; the final PR revision remains subject to the repository's required merge checks.
-- [x] Add typed `Context<T>` identities, owner-scoped providers, nearest-ancestor lookup, nested shadowing, and explicit missing-provider behavior through `use_context`. Implementation and its contract are delivered together in PR #70; the final PR revision remains subject to the repository's required merge checks.
+- [x] Add `use_memo` as an eager owner-scoped derived computation using dynamic signal dependency tracking, `PartialEq` result suppression, documented batch semantics, and owner cleanup. Implemented and merged via PR #70; the final PR HEAD passed all eight required checks (see the acceptance record below).
+- [x] Add `use_ref` as stable, non-reactive, owner-scoped Rust storage with borrow-safe access and deterministic invalidation on owner disposal. Implemented and merged via PR #70; the final PR HEAD passed all eight required checks (see the acceptance record below).
+- [x] Add typed `Context<T>` identities, owner-scoped providers, nearest-ancestor lookup, nested shadowing, and explicit missing-provider behavior through `use_context`. Implemented and merged via PR #70; the final PR HEAD passed all eight required checks (see the acceptance record below).
 - [x] Keep all new `use_*` APIs owner-scoped and native to the signal/owner model; no positional hook cells or call-order state slots are introduced.
 - [x] Define and document current UI error propagation, cleanup, reactive DOM update recovery, and the absence of component-level fallback boundaries. This is the supported error contract, not an ErrorBoundary implementation.
-- [x] Add safe DOM element references with browser mount, replacement, hydration, and unmount semantics through `rustflow_dom::ElementRef`, `Element::with_node_ref`, and the `ref={...}` view-macro binding. This is separate from `use_ref`, remains empty on SSR/detached mounts, rejects duplicate/conflicting bindings, and clears the exact mounted node on replacement/unmount. Implementation and its lifecycle contract are delivered together in PR #70; the final PR revision remains subject to the repository's required merge checks and review.
+- [x] Add safe DOM element references with browser mount, replacement, hydration, and unmount semantics through `rustflow_dom::ElementRef`, `Element::with_node_ref`, and the `ref={...}` view-macro binding. This is separate from `use_ref`, remains empty on SSR/detached mounts, rejects duplicate/conflicting bindings, and clears the exact mounted node on replacement/unmount. Implemented and merged via PR #70; the final PR HEAD passed all eight required checks (see the acceptance record below).
 - Deferred beyond this UI primitive contract: loading/async rendering requires owner cancellation, stale-result handling, error propagation, SSR, and hydration to share a reliable runtime contract. No placeholder API is exposed.
 - [x] Document CSS/classes and static assets using the existing Vite build pipeline; no CSS-in-Rust or framework asset registry is claimed.
 - [x] Add public accessibility guidance covering semantic HTML, forms, keyboard use, focus, errors, ARIA, images, and dynamic content.
 
-**Phase status:** PR #70 delivers the Phase 7.2 implementation, regression tests, technical contracts/ADRs, and public website documentation together. The required checks and review apply to the final PR revision; the merge and post-merge verification record determine phase closure. Async rendering/loading is explicitly deferred and is not claimed as implemented.
+**Acceptance record (2026-11-01):** PR #70 (`feat(ui): implement Phase 7.2 UI completeness`) was merged into `main` as commit `506dd6f193c13a0bb941b6f75238d751a2934230`. Its final PR HEAD `798e0239918baf897df4fc003cc43d63081d0a30` passed all eight checks: Rust stable, Rust 1.85, WebAssembly, Browser E2E/bundle size, documentation build, governance/whitespace, dependency review, and Cloudflare Pages. Phase 7.2 is complete and integrated. Async rendering/loading, Resources/Suspense, and component error boundaries remain explicitly deferred; the delivered public APIs remain experimental and pre-1.0.
 
 ### 7.3 Testing and docs
 
-**Implementation note (2026-11-01):** this increment adds in-process HTTP helpers; SQL fixtures for isolated SQLite and namespaced external test tables; MongoDB fixtures with unique database names and explicit cleanup; reusable Playwright page/error fixtures; and a runnable authenticated example. The generated CRUD template remains the full SQL CRUD example and is exercised by the CLI integration test. The public API/feature inventory is being synchronized across docs and website. This does not close Phase 7.3 until the final review and CI for the final PR HEAD are complete.
-- [ ] Provide test app builders and request helpers.
-- [ ] Add isolated database and browser test utilities.
-- [ ] Add a full CRUD example and an authenticated example.
-- [ ] Document every stable public API and feature flag.
-- [ ] Verify examples in CI where practical.
+**Acceptance record (2026-11-01):** PR #71 ([Testing and docs](https://github.com/programadorkevinsvega-sys/RustFlow/pull/71)) was squash-merged into `main` as commit `ebc671b4c5dc7688813158f663a3dc560c34edb7`. Its final PR HEAD `f3c7e5451095759428745f7760f3c531c91c89bc` passed the required CI matrix before merge: Rust stable and 1.85 (formatting, Clippy, workspace tests, test helpers, database integration contracts, authenticated example, and Rust documentation), WebAssembly, Browser E2E/bundle size, documentation site, governance/whitespace, dependency review, and Cloudflare Pages. The generated SQL CRUD template is the full CRUD example and is exercised by the CLI integration test; the authenticated server example is independently executable and tested. The technical and public API/feature inventories are synchronized. Phase 7.3 is complete; its test APIs remain opt-in/experimental and do not change the framework's pre-1.0 stability status.
+
+- [x] Provide test app builders and request helpers.
+- [x] Add isolated database and browser test utilities.
+- [x] Add a full CRUD example and an authenticated example.
+- [x] Document every stable public API and feature flag; record the current RustFlow Cargo feature inventory and mark pre-1.0 APIs as experimental in the public API reference.
+- [x] Verify examples in CI where practical.
 
 **Exit gate:** common app tasks need no undocumented workaround; APIs and examples match actual behavior.
 

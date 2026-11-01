@@ -3,6 +3,8 @@ title: Probar y depurar aplicaciones
 description: Ejecuta la verificación de Rust, pruebas HTTP y browser E2E, y localiza fallos sin asumir que CI despliega la app.
 ---
 
+**Estado de Phase 7.3 — completada:** la infraestructura de pruebas se integró en `main` mediante PR #71 el 2026-11-01 (squash merge `ebc671b4c5dc7688813158f663a3dc560c34edb7`). El HEAD final de la PR `f3c7e5451095759428745f7760f3c531c91c89bc` pasó los checks requeridos de Rust stable/1.85, WebAssembly, Browser E2E/bundle, build del sitio, gobernanza, dependency review y Cloudflare Pages. La feature `rustflow-server/testing` continúa opt-in y experimental. El CRUD SQL completo se demuestra con la plantilla `--template crud`; el ejemplo autenticado se ejecuta por separado y no representa una configuración de producción.
+
 La forma más fiable de aprender el contrato actual de RustFlow es ejecutar los ejemplos y las pruebas en la misma revisión del repositorio que piensas utilizar. Las APIs siguen siendo pre-1.0, y pasar las pruebas no significa que una aplicación tenga seguridad, disponibilidad o compatibilidad de producción garantizadas.
 
 ## 1. Verificar el workspace Rust

@@ -144,9 +144,9 @@ El lookup de contexto no es reactivo. Para propagar un valor cambiante, usa <cod
 | <code>use_effect(callback)</code> | Disponible con seguimiento de dependencias y propiedad del scope. |
 | <code>on_cleanup(callback)</code> | Disponible para limpieza del scope propietario. |
 | <code>Runtime::new/signal/effect/batch</code> | API de bajo nivel con ciclo de vida explícito. |
-| <code>use_memo</code> | Implementado en la rama Phase 7.2; pendiente de CI/merge. | Eager, dependencias dinámicas y comparación <code>PartialEq</code>. |
-| <code>use_ref</code> | Implementado en la rama Phase 7.2; pendiente de CI/merge. | Almacenamiento no reactivo owner-scoped; refs DOM aún pendientes. |
-| <code>Context&lt;T&gt;</code>, <code>provide_context</code>, <code>use_context</code> | Implementado en la rama Phase 7.2; pendiente de CI/merge. | Identidad por token, nearest provider y ausencia explícita <code>None</code>. |
+| <code>use_memo</code> | Experimental, integrado en `main` mediante Phase 7.2 / PR #70 (merge `506dd6f`). | Memo eager, dependencias dinámicas y comparación <code>PartialEq</code>. |
+| <code>use_ref</code> | Experimental, integrado en `main` mediante Phase 7.2 / PR #70 (merge `506dd6f`). | Almacenamiento Rust no reactivo owner-scoped; el handle DOM separado <code>rustflow_dom::ElementRef</code> también está implementado para browser/WASM. |
+| <code>Context&lt;T&gt;</code>, <code>provide_context</code>, <code>use_context</code> | Experimental, integrado en `main` mediante Phase 7.2 / PR #70 (merge `506dd6f`). | Identidad por token, provider más cercano y ausencia explícita <code>None</code>. |
 | <code>rustflow_dom::ElementRef</code>, <code>ref={...}</code> | Implementado en PR #70; sujeto al CI/revisión final. | Handle clonado de elemento nativo; lifecycle mount/hydration/replacement/unmount; browser/WASM solamente. |
 | Efectos asíncronos / tracking a través de <code>await</code> | No soportados por el runtime actual. |
 

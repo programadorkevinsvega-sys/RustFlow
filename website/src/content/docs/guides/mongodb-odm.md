@@ -193,6 +193,6 @@ Con `Option<T>` de Serde, por defecto tanto un campo ausente como un BSON `null`
 
 ## Límites actuales
 
-La API es experimental y pre-1.0. El contrato no incluye carga perezosa, relaciones SQL, cascadas automáticas, migraciones SQL/documentales, un identity map global ni un segundo cliente MongoDB. Las operaciones nativas del driver quedan disponibles a través de `MongoDatabase::collection` para los casos que el facade tipado todavía no cubre. La subfase 6.7.3 no cierra la fase 6.7 global.
+La API es experimental y pre-1.0. El contrato no incluye carga perezosa, relaciones SQL, cascadas automáticas, migraciones SQL/documentales, un identity map global ni un segundo cliente MongoDB. Las operaciones nativas del driver quedan disponibles a través de `MongoDatabase::collection` para los casos que el facade tipado todavía no cubre. La subfase 6.7.3 cierra el contrato ODM documental; la fase 6.7 global quedó completada e integrada en `main` mediante PR #66 el 2026-11-01 (merge `6046ae7ca60843d145476177e698162b57939c68`). Las APIs ORM/ODM continúan siendo experimentales y pre-1.0.
 
 Consulta también la [guía general de base de datos](/guides/database/), el [estado de APIs](/reference/api-status/) y el [roadmap técnico en GitHub](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md).
