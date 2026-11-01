@@ -455,6 +455,8 @@ impl DomRenderer {
         target: &DomElement,
         view: &View,
     ) -> Result<MountedDom, DomError> {
+        self.validate_view(view)?;
+        self.validate_node_refs_for_view(view, None)?;
         let parent: Node = target.clone().unchecked_into();
         let siblings = direct_children(&parent);
         if siblings
@@ -1001,6 +1003,138 @@ impl DomRenderer {
         })
     }
 
+    fn activate_node_refs(&self, mounted: &mut MountedDom) -> Result<(), DomError> {
+        let mut identities = HashSet::new();
+        for reference in &mounted.node_refs {
+            if !reference.binding.matches_type::<DomElement>() {
+                return Err(DomError::NodeRefTypeMismatch);
+            }
+            if !identities.insert(reference.binding.id()) {
+                return Err(DomError::DuplicateNodeRef);
+            }
+            if let Some(current) = reference.binding.get::<DomElement>() {
+                if !same_dom_element(&current, &reference.element) {
+                    return Err(DomError::NodeRefAlreadyMounted);
+                }
+            }
+        }
+
+        for reference in &mut mounted.node_refs {
+            if !reference.binding.attach(reference.element.clone()) {
+                return Err(DomError::NodeRefTypeMismatch);
+            }
+            reference.active = true;
+        }
+        Ok(())
+    }
+
+    fn reconcile_node_refs(
+        &self,
+        mounted: &mut MountedDom,
+        mut next: Vec<MountedNodeRef>,
+    ) -> Result<(), DomError> {
+        let mut identities = HashSet::new();
+        for candidate in &next {
+            if !candidate.binding.matches_type::<DomElement>() {
+                return Err(DomError::NodeRefTypeMismatch);
+            }
+            if !identities.insert(candidate.binding.id()) {
+                return Err(DomError::DuplicateNodeRef);
+            }
+            if let Some(current) = candidate.binding.get::<DomElement>() {
+                let same_target = same_dom_element(&current, &candidate.element);
+                let owned_by_this_mount = mounted.node_refs.iter().any(|old| {
+                    old.active
+                        && old.binding.id() == candidate.binding.id()
+                        && same_dom_element(&current, &old.element)
+                });
+                if !same_target && !owned_by_this_mount {
+                    return Err(DomError::NodeRefAlreadyMounted);
+                }
+            }
+        }
+
+        for old in &mut mounted.node_refs {
+            let retained = next.iter().any(|candidate| {
+                candidate.binding.id() == old.binding.id()
+                    && same_dom_element(&candidate.element, &old.element)
+            });
+            if retained {
+                old.active = false;
+            } else if old.active {
+                old.binding
+                    .clear_if::<DomElement>(|current| same_dom_element(current, &old.element));
+                old.active = false;
+            }
+        }
+
+        for candidate in &mut next {
+            if !candidate.binding.attach(candidate.element.clone()) {
+                return Err(DomError::NodeRefTypeMismatch);
+            }
+            candidate.active = true;
+        }
+        mounted.node_refs = next;
+        Ok(())
+    }
+
+    fn validate_node_refs_for_view(
+        &self,
+        view: &View,
+        currently_mounted: Option<&MountedDom>,
+    ) -> Result<(), DomError> {
+        fn visit(
+            view: &View,
+            currently_mounted: Option<&MountedDom>,
+            identities: &mut HashSet<u64>,
+        ) -> Result<(), DomError> {
+            match view {
+                View::Element(element) => {
+                    if let Some(binding) = element.node_ref_binding() {
+                        if !binding.matches_type::<DomElement>() {
+                            return Err(DomError::NodeRefTypeMismatch);
+                        }
+                        if !identities.insert(binding.id()) {
+                            return Err(DomError::DuplicateNodeRef);
+                        }
+                        if let Some(current) = binding.get::<DomElement>() {
+                            let owned_by_current_mount =
+                                currently_mounted.is_some_and(|mounted| {
+                                    mounted.node_refs.iter().any(|old| {
+                                        old.active
+                                            && old.binding.id() == binding.id()
+                                            && same_dom_element(&current, &old.element)
+                                    })
+                                });
+                            if !owned_by_current_mount {
+                                return Err(DomError::NodeRefAlreadyMounted);
+                            }
+                        }
+                    }
+                    for child in element.children() {
+                        visit(child, currently_mounted, identities)?;
+                    }
+                    Ok(())
+                }
+                View::Fragment(fragment) => {
+                    for child in fragment.children() {
+                        visit(child, currently_mounted, identities)?;
+                    }
+                    Ok(())
+                }
+                View::KeyedList(list) => {
+                    for child in list.children() {
+                        visit(child.view(), currently_mounted, identities)?;
+                    }
+                    Ok(())
+                }
+                View::Text(_) | View::Component(_) | View::Dynamic(_) => Ok(()),
+            }
+        }
+
+        visit(view, currently_mounted, &mut HashSet::new())
+    }
+
     fn activate_delegated_listeners(
         &self,
         mounted: &mut MountedDom,
@@ -1426,6 +1560,8 @@ impl DomRenderer {
         Ok(nodes)
     }
     fn replace_range(&mut self, mounted: &mut MountedDom, next: &View) -> Result<(), DomError> {
+        self.validate_view(next)?;
+        self.validate_node_refs_for_view(next, Some(mounted))?;
         let mut resources = RenderedNodes::default();
         let next_roots = match self.build_nodes(next, &self.root_scope, &mut resources) {
             Ok(nodes) => nodes,
@@ -1466,6 +1602,8 @@ impl DomRenderer {
         mounted.roots = next_roots;
         mounted.listeners = resources.listeners;
         mounted.pending_listeners = resources.pending_listeners;
+        mounted.node_refs = resources.node_refs;
+        self.activate_node_refs(mounted)?;
         mounted.components = resources.components;
         mounted.component_regions = resources.component_regions;
         mounted.dynamics = resources.dynamics;
@@ -1525,6 +1663,8 @@ impl DomRenderer {
                 let next_view = region
                     .instance
                     .preview_update(&new.properties().to_vec(), &new.children().to_vec())?;
+                self.validate_view(&next_view)?;
+                self.validate_node_refs_for_view(&next_view, Some(&region.mounted))?;
                 let mut nested_context =
                     DiffContext::new(&region.mounted.component_regions, &region.mounted.dynamics);
                 let child_plan = self.plan_diff_with_context(
@@ -1549,6 +1689,8 @@ impl DomRenderer {
                 let current = state.as_ref().ok_or_else(|| {
                     DomError::JavaScript("dynamic region has already been disposed".into())
                 })?;
+                self.validate_view(&next_view)?;
+                self.validate_node_refs_for_view(&next_view, Some(&current.mounted))?;
                 let mut nested_context = DiffContext::new(
                     &current.mounted.component_regions,
                     &current.mounted.dynamics,
@@ -2112,6 +2254,8 @@ impl DomRenderer {
         let Some(parent) = mounted.start.parent_node() else {
             return self.replace_range(mounted, &plan.next);
         };
+        self.validate_view(&plan.next)?;
+        self.validate_node_refs_for_view(&plan.next, Some(mounted))?;
         let start: Node = mounted.start.clone().unchecked_into();
         let end: Node = mounted.end.clone().unchecked_into();
         let existing_nodes = nodes_between(&start, &end);
@@ -2164,6 +2308,11 @@ impl DomRenderer {
         );
 
         mounted.roots = roots;
+        if let Err(error) = self.reconcile_node_refs(mounted, std::mem::take(&mut resources.node_refs)) {
+            if cleanup_error.is_none() {
+                cleanup_error = Some(error);
+            }
+        }
         mounted.listeners = resources.listeners;
         mounted.pending_listeners = resources.pending_listeners;
         mounted.components = resources.components;
@@ -2603,6 +2752,8 @@ impl Renderer for DomRenderer {
     type Error = DomError;
 
     fn mount(&mut self, view: &View) -> Result<Self::Mounted, Self::Error> {
+        self.validate_view(view)?;
+        self.validate_node_refs_for_view(view, None)?;
         let start = self.document.create_comment("rustflow:start");
         let end = self.document.create_comment("rustflow:end");
         let mut resources = RenderedNodes::default();
@@ -2640,6 +2791,8 @@ impl Renderer for DomRenderer {
         if mounted.start.parent_node().is_none() {
             return self.replace_range(mounted, next);
         }
+        self.validate_view(next)?;
+        self.validate_node_refs_for_view(next, Some(mounted))?;
 
         let plan = self.plan_diff(
             previous,
@@ -2673,6 +2826,24 @@ impl Drop for MountedDom {
     }
 }
 
+fn same_dom_element(left: &DomElement, right: &DomElement) -> bool {
+    let left: Node = left.clone().unchecked_into();
+    let right: Node = right.clone().unchecked_into();
+    left.is_same_node(Some(&right))
+}
+
+fn cleanup_node_refs(references: &mut Vec<MountedNodeRef>) {
+    for reference in references.iter_mut() {
+        if reference.active {
+            reference
+                .binding
+                .clear_if::<DomElement>(|current| same_dom_element(current, &reference.element));
+            reference.active = false;
+        }
+    }
+    references.clear();
+}
+
 fn nodes_between(start: &Node, end: &Node) -> Vec<Node> {
     let mut nodes = Vec::new();
     if !start.parent_node().is_some_and(|parent| {
@@ -2702,6 +2873,7 @@ fn first_error(current: &mut Option<DomError>, next: Result<(), DomError>) {
 
 fn cleanup_rendered_nodes(resources: &mut RenderedNodes) -> Result<(), DomError> {
     let mut error = None;
+    cleanup_node_refs(&mut resources.node_refs);
     first_error(
         &mut error,
         cleanup_resources(&mut resources.listeners, &mut resources.components),
@@ -2732,6 +2904,7 @@ fn cleanup_dynamic_regions(regions: &mut Vec<DynamicRegion>) -> Result<(), DomEr
 
 fn cleanup_mounted_non_component_content(mounted: &mut MountedDom) -> Result<(), DomError> {
     let mut error = None;
+    cleanup_node_refs(&mut mounted.node_refs);
     first_error(
         &mut error,
         cleanup_resources(&mut mounted.listeners, &mut mounted.components),
