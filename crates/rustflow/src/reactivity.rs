@@ -42,9 +42,16 @@ type ContextId = u32;
 static NEXT_CONTEXT_ID: AtomicU32 = AtomicU32::new(1);
 
 fn next_context_id() -> ContextId {
-    NEXT_CONTEXT_ID
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| current.checked_add(1))
-        .expect("RustFlow context identity space exhausted")
+    loop {
+        let current = NEXT_CONTEXT_ID.load(Ordering::Relaxed);
+        let next = current.checked_add(1).expect("RustFlow context identity space exhausted");
+        if NEXT_CONTEXT_ID
+            .compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            return current;
+        }
+    }
 }
 
 /// Deterministic failures from invalid or disposed runtime handles.
@@ -79,7 +86,9 @@ impl fmt::Display for RuntimeError {
                 write!(f, "this operation requires an active component owner scope")
             }
             Self::DuplicateContextProvider => write!(f, "this owner already provides this context"),
-            Self::ContextTypeMismatch => write!(f, "stored context value does not match its typed identity"),
+            Self::ContextTypeMismatch => {
+                write!(f, "stored context value does not match its typed identity")
+            }
             Self::RefDisposed => write!(f, "owner-scoped reference is disposed"),
             Self::RefBorrowConflict => write!(f, "owner-scoped reference is already borrowed"),
             Self::CycleDetected { limit } => write!(
@@ -302,7 +311,9 @@ pub struct Memo<T: Clone + 'static> {
 
 impl<T: Clone + 'static> Clone for Memo<T> {
     fn clone(&self) -> Self {
-        Self { value: self.value.clone() }
+        Self {
+            value: self.value.clone(),
+        }
     }
 }
 
@@ -314,7 +325,9 @@ pub struct ScopedRef<T: 'static> {
 
 impl<T: 'static> Clone for ScopedRef<T> {
     fn clone(&self) -> Self {
-        Self { value: self.value.clone() }
+        Self {
+            value: self.value.clone(),
+        }
     }
 }
 
@@ -327,7 +340,10 @@ pub struct Context<T: 'static> {
 
 impl<T: 'static> Clone for Context<T> {
     fn clone(&self) -> Self {
-        Self { id: self.id, marker: PhantomData }
+        Self {
+            id: self.id,
+            marker: PhantomData,
+        }
     }
 }
 
@@ -340,7 +356,10 @@ impl<T: 'static> fmt::Debug for Context<T> {
 impl<T: 'static> Context<T> {
     /// Create a new context identity.
     pub fn new() -> Self {
-        Self { id: next_context_id(), marker: PhantomData }
+        Self {
+            id: next_context_id(),
+            marker: PhantomData,
+        }
     }
 }
 
@@ -689,7 +708,10 @@ impl<T: 'static> ScopedRef<T> {
     where
         T: Clone,
     {
-        let value = self.value.try_borrow().map_err(|_| RuntimeError::RefBorrowConflict)?;
+        let value = self
+            .value
+            .try_borrow()
+            .map_err(|_| RuntimeError::RefBorrowConflict)?;
         value.as_ref().cloned().ok_or(RuntimeError::RefDisposed)
     }
 
@@ -702,21 +724,30 @@ impl<T: 'static> ScopedRef<T> {
 
     /// Read through a short-lived immutable borrow without exposing a Ref guard.
     pub fn try_with<R>(&self, callback: impl FnOnce(&T) -> R) -> Result<R, RuntimeError> {
-        let value = self.value.try_borrow().map_err(|_| RuntimeError::RefBorrowConflict)?;
+        let value = self
+            .value
+            .try_borrow()
+            .map_err(|_| RuntimeError::RefBorrowConflict)?;
         let current = value.as_ref().ok_or(RuntimeError::RefDisposed)?;
         Ok(callback(current))
     }
 
     /// Mutate through a short-lived borrow. This never notifies reactive effects.
     pub fn try_with_mut<R>(&self, callback: impl FnOnce(&mut T) -> R) -> Result<R, RuntimeError> {
-        let mut value = self.value.try_borrow_mut().map_err(|_| RuntimeError::RefBorrowConflict)?;
+        let mut value = self
+            .value
+            .try_borrow_mut()
+            .map_err(|_| RuntimeError::RefBorrowConflict)?;
         let current = value.as_mut().ok_or(RuntimeError::RefDisposed)?;
         Ok(callback(current))
     }
 
     /// Replace the stored value without notifying reactive subscribers.
     pub fn try_set(&self, next: T) -> Result<(), RuntimeError> {
-        let mut value = self.value.try_borrow_mut().map_err(|_| RuntimeError::RefBorrowConflict)?;
+        let mut value = self
+            .value
+            .try_borrow_mut()
+            .map_err(|_| RuntimeError::RefBorrowConflict)?;
         let current = value.as_mut().ok_or(RuntimeError::RefDisposed)?;
         *current = next;
         Ok(())
@@ -823,14 +854,18 @@ impl Scope {
             if changed {
                 *cached_for_effect.borrow_mut() = Some(next.clone());
                 if let Some(target) = output_for_effect.borrow().clone() {
-                    target.try_set(next).unwrap_or_else(|error| {
-                        panic!("memo cache update failed: {error}")
-                    });
+                    target
+                        .try_set(next)
+                        .unwrap_or_else(|error| panic!("memo cache update failed: {error}"));
                 }
             }
         })?;
 
-        let initial = cached.borrow().as_ref().cloned().ok_or(RuntimeError::InvalidEffect)?;
+        let initial = cached
+            .borrow()
+            .as_ref()
+            .cloned()
+            .ok_or(RuntimeError::InvalidEffect)?;
         let value = self.signal(initial)?;
         *output.borrow_mut() = Some(value.clone());
         Ok(Memo { value })
@@ -854,13 +889,19 @@ impl Scope {
         context: &Context<T>,
         value: T,
     ) -> Result<Rc<T>, RuntimeError> {
-        let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
         check_runtime_context(&runtime)?;
         let mut inner = runtime.borrow_mut();
         if inner.disposed {
             return Err(RuntimeError::RuntimeDisposed);
         }
-        let owner = inner.scopes.get_mut(&self.id).ok_or(RuntimeError::InvalidScope)?;
+        let owner = inner
+            .scopes
+            .get_mut(&self.id)
+            .ok_or(RuntimeError::InvalidScope)?;
         if owner.disposed {
             return Err(RuntimeError::DisposedScope);
         }
@@ -880,7 +921,10 @@ impl Scope {
         &self,
         context: &Context<T>,
     ) -> Result<Option<Rc<T>>, RuntimeError> {
-        let runtime = self.runtime.upgrade().ok_or(RuntimeError::RuntimeDisposed)?;
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
         check_runtime_context(&runtime)?;
         let inner = runtime.borrow();
         if inner.disposed {
@@ -888,7 +932,10 @@ impl Scope {
         }
         let mut current = Some(self.id);
         while let Some(scope_id) = current {
-            let owner = inner.scopes.get(&scope_id).ok_or(RuntimeError::InvalidScope)?;
+            let owner = inner
+                .scopes
+                .get(&scope_id)
+                .ok_or(RuntimeError::InvalidScope)?;
             if owner.disposed {
                 return Err(RuntimeError::DisposedScope);
             }
@@ -1406,7 +1453,8 @@ pub fn try_use_memo<T: Clone + PartialEq + 'static>(
 
 /// Create a memo during component setup; this is not a positional hook cell.
 pub fn use_memo<T: Clone + PartialEq + 'static>(compute: impl Fn() -> T + 'static) -> Memo<T> {
-    try_use_memo(compute).unwrap_or_else(|error| panic!("use_memo requires an active owner: {error}"))
+    try_use_memo(compute)
+        .unwrap_or_else(|error| panic!("use_memo requires an active owner: {error}"))
 }
 
 pub fn try_use_ref<T: 'static>(initial: T) -> Result<ScopedRef<T>, RuntimeError> {
@@ -1418,9 +1466,7 @@ pub fn use_ref<T: 'static>(initial: T) -> ScopedRef<T> {
     try_use_ref(initial).unwrap_or_else(|error| panic!("use_ref requires an active owner: {error}"))
 }
 
-pub fn try_use_context<T: 'static>(
-    context: &Context<T>,
-) -> Result<Option<Rc<T>>, RuntimeError> {
+pub fn try_use_context<T: 'static>(context: &Context<T>) -> Result<Option<Rc<T>>, RuntimeError> {
     active_owner_scope()?.use_context(context)
 }
 
@@ -1461,9 +1507,7 @@ where
 {
     fn into_view(self) -> Result<rustflow_view::View, rustflow_view::ViewError> {
         let memo = self;
-        Ok(rustflow_view::View::dynamic(move || {
-            memo.get().into_view()
-        }))
+        Ok(rustflow_view::View::dynamic(move || memo.get().into_view()))
     }
 }
 
@@ -1988,10 +2032,12 @@ mod tests {
         let left_for_memo = left.clone();
         let right_for_memo = right.clone();
         let runs_for_memo = runs.clone();
-        let memo = owner.memo(move || {
-            runs_for_memo.set(runs_for_memo.get() + 1);
-            left_for_memo.get() + right_for_memo.get()
-        }).unwrap();
+        let memo = owner
+            .memo(move || {
+                runs_for_memo.set(runs_for_memo.get() + 1);
+                left_for_memo.get() + right_for_memo.get()
+            })
+            .unwrap();
 
         assert_eq!(memo.get(), 5);
         assert_eq!(memo.get(), 5);
@@ -2000,9 +2046,11 @@ mod tests {
         let observed = Rc::new(RefCell::new(Vec::new()));
         let observed_for_effect = observed.clone();
         let memo_for_effect = memo.clone();
-        let _effect = owner.effect(move || {
-            observed_for_effect.borrow_mut().push(memo_for_effect.get());
-        }).unwrap();
+        let _effect = owner
+            .effect(move || {
+                observed_for_effect.borrow_mut().push(memo_for_effect.get());
+            })
+            .unwrap();
         left.set(4);
         assert_eq!(memo.get(), 7);
         assert_eq!(runs.get(), 2);
@@ -2013,17 +2061,21 @@ mod tests {
         let parity_runs = Rc::new(Cell::new(0));
         let parity_input = parity_source.clone();
         let parity_count = parity_runs.clone();
-        let parity = owner.memo(move || {
-            parity_count.set(parity_count.get() + 1);
-            parity_input.get() % 2
-        }).unwrap();
+        let parity = owner
+            .memo(move || {
+                parity_count.set(parity_count.get() + 1);
+                parity_input.get() % 2
+            })
+            .unwrap();
         let parity_observed = Rc::new(Cell::new(0));
         let parity_value = parity.clone();
         let parity_calls = parity_observed.clone();
-        let _parity_effect = owner.effect(move || {
-            let _ = parity_value.get();
-            parity_calls.set(parity_calls.get() + 1);
-        }).unwrap();
+        let _parity_effect = owner
+            .effect(move || {
+                let _ = parity_value.get();
+                parity_calls.set(parity_calls.get() + 1);
+            })
+            .unwrap();
         parity_source.set(4);
         assert_eq!(parity_runs.get(), 2);
         assert_eq!(parity_observed.get(), 1);
@@ -2041,10 +2093,16 @@ mod tests {
         let left_value = left.clone();
         let right_value = right.clone();
         let run_count = runs.clone();
-        let memo = owner.memo(move || {
-            run_count.set(run_count.get() + 1);
-            if choose.get() { left_value.get() } else { right_value.get() }
-        }).unwrap();
+        let memo = owner
+            .memo(move || {
+                run_count.set(run_count.get() + 1);
+                if choose.get() {
+                    left_value.get()
+                } else {
+                    right_value.get()
+                }
+            })
+            .unwrap();
 
         assert_eq!(memo.get(), 1);
         choose_left.set(false);
@@ -2064,16 +2122,20 @@ mod tests {
         let runs = Rc::new(Cell::new(0));
         let source = value.clone();
         let count = runs.clone();
-        let memo = owner.memo(move || {
-            count.set(count.get() + 1);
-            source.get() * 2
-        }).unwrap();
-        runtime.batch(|| {
-            value.set(1);
-            value.set(2);
-            value.set(3);
-            assert_eq!(memo.get(), 0);
-        }).unwrap();
+        let memo = owner
+            .memo(move || {
+                count.set(count.get() + 1);
+                source.get() * 2
+            })
+            .unwrap();
+        runtime
+            .batch(|| {
+                value.set(1);
+                value.set(2);
+                value.set(3);
+                assert_eq!(memo.get(), 0);
+            })
+            .unwrap();
         assert_eq!(runs.get(), 2);
         assert_eq!(memo.get(), 6);
         owner.dispose().unwrap();
@@ -2086,10 +2148,12 @@ mod tests {
         let owner = runtime.root_scope().child().unwrap();
         let runs = Rc::new(Cell::new(0));
         let count = runs.clone();
-        let memo = owner.memo(move || {
-            count.set(count.get() + 1);
-            42_i32
-        }).unwrap();
+        let memo = owner
+            .memo(move || {
+                count.set(count.get() + 1);
+                42_i32
+            })
+            .unwrap();
         assert_eq!(memo.get(), 42);
         assert_eq!(memo.get(), 42);
         assert_eq!(runs.get(), 1);
@@ -2104,21 +2168,32 @@ mod tests {
         let runs = Rc::new(Cell::new(0));
         let observed = cloned.clone();
         let count = runs.clone();
-        let _effect = owner.effect(move || {
-            let _ = observed.get();
-            count.set(count.get() + 1);
-        }).unwrap();
+        let _effect = owner
+            .effect(move || {
+                let _ = observed.get();
+                count.set(count.get() + 1);
+            })
+            .unwrap();
 
         assert_eq!(reference.get(), "initial");
         reference.set(String::from("updated"));
         assert_eq!(cloned.get(), "updated");
-        assert_eq!(runs.get(), 1, "ref writes must not notify reactive subscribers");
-        reference.try_with_mut(|value| value.push_str("-again")).unwrap();
+        assert_eq!(
+            runs.get(),
+            1,
+            "ref writes must not notify reactive subscribers"
+        );
+        reference
+            .try_with_mut(|value| value.push_str("-again"))
+            .unwrap();
         assert_eq!(reference.get(), "updated-again");
 
         owner.dispose().unwrap();
         assert_eq!(reference.try_get(), Err(RuntimeError::RefDisposed));
-        assert_eq!(cloned.try_set(String::from("revived")), Err(RuntimeError::RefDisposed));
+        assert_eq!(
+            cloned.try_set(String::from("revived")),
+            Err(RuntimeError::RefDisposed)
+        );
     }
 
     #[test]
@@ -2128,16 +2203,41 @@ mod tests {
         let outer = Context::<String>::new();
         let other = Context::<String>::new();
         root.provide_context(&outer, String::from("outer")).unwrap();
-        root.provide_context(&other, String::from("independent")).unwrap();
+        root.provide_context(&other, String::from("independent"))
+            .unwrap();
 
         let parent = root.child().unwrap();
         let nested = parent.child().unwrap();
-        parent.provide_context(&outer, String::from("nearest")).unwrap();
-        assert_eq!(nested.use_context(&outer).unwrap().as_deref().map(String::as_str), Some("nearest"));
-        assert_eq!(nested.use_context(&other).unwrap().as_deref().map(String::as_str), Some("independent"));
-        assert_eq!(root.use_context(&outer).unwrap().as_deref().map(String::as_str), Some("outer"));
+        parent
+            .provide_context(&outer, String::from("nearest"))
+            .unwrap();
         assert_eq!(
-            nested.provide_context(&outer, String::from("duplicate")).unwrap_err(),
+            nested
+                .use_context(&outer)
+                .unwrap()
+                .as_deref()
+                .map(String::as_str),
+            Some("nearest")
+        );
+        assert_eq!(
+            nested
+                .use_context(&other)
+                .unwrap()
+                .as_deref()
+                .map(String::as_str),
+            Some("independent")
+        );
+        assert_eq!(
+            root.use_context(&outer)
+                .unwrap()
+                .as_deref()
+                .map(String::as_str),
+            Some("outer")
+        );
+        assert_eq!(
+            nested
+                .provide_context(&outer, String::from("duplicate"))
+                .unwrap_err(),
             RuntimeError::DuplicateContextProvider
         );
         assert_eq!(nested.use_context(&Context::<u8>::new()).unwrap(), None);
@@ -2152,23 +2252,34 @@ mod tests {
         let second_owner = second.root_scope().child().unwrap();
         let first_signal = first_owner.signal(1).unwrap();
         let second_signal = second_owner.signal(10).unwrap();
-        first_owner.provide_context(&context, first_signal.clone()).unwrap();
-        second_owner.provide_context(&context, second_signal.clone()).unwrap();
+        first_owner
+            .provide_context(&context, first_signal.clone())
+            .unwrap();
+        second_owner
+            .provide_context(&context, second_signal.clone())
+            .unwrap();
 
         let received = first_owner.use_context(&context).unwrap().unwrap();
         assert_eq!(received.get(), 1);
         let values = Rc::new(RefCell::new(Vec::new()));
         let output = values.clone();
         let tracked = received.clone();
-        let _effect = first_owner.effect(move || {
-            output.borrow_mut().push(tracked.get());
-        }).unwrap();
+        let _effect = first_owner
+            .effect(move || {
+                output.borrow_mut().push(tracked.get());
+            })
+            .unwrap();
         first_signal.set(2);
         assert_eq!(*values.borrow(), vec![1, 2]);
-        assert_eq!(second_owner.use_context(&context).unwrap().unwrap().get(), 10);
         assert_eq!(
-            first_owner.use_context(&Context::<Signal<i32>>::new()).unwrap(),
-            None
+            second_owner.use_context(&context).unwrap().unwrap().get(),
+            10
+        );
+        assert!(
+            first_owner
+                .use_context(&Context::<Signal<i32>>::new())
+                .unwrap()
+                .is_none()
         );
     }
 
@@ -2177,14 +2288,18 @@ mod tests {
         let runtime = Runtime::new();
         let owner = runtime.root_scope().child().unwrap();
         let context = Context::<usize>::new();
-        assert!(matches!(try_use_context(&context), Err(RuntimeError::NoActiveOwner)));
+        assert!(matches!(
+            try_use_context(&context),
+            Err(RuntimeError::NoActiveOwner)
+        ));
         let (memo, reference) = with_owner_scope(&owner, || {
             let memo = use_memo(|| 9_usize);
             let reference = use_ref(3_usize);
             provide_context(&context, 7_usize);
             assert_eq!(use_context(&context).as_deref(), Some(&7));
             (memo, reference)
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(memo.get(), 9);
         assert_eq!(reference.get(), 3);
         owner.dispose().unwrap();
