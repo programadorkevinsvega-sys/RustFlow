@@ -899,8 +899,15 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         &[("cookie", cookies.as_str())],
         "",
     );
-    assert_eq!(generated_response_status(&filtered), 200, "{label}: {filtered}");
-    assert!(generated_response_body(&filtered).contains(&name), "{label}: {filtered}");
+    assert_eq!(
+        generated_response_status(&filtered),
+        200,
+        "{label}: {filtered}"
+    );
+    assert!(
+        generated_response_body(&filtered).contains(&name),
+        "{label}: {filtered}"
+    );
 
     for index in 1..=6 {
         let batch_name = format!("Batch item {index:02}");
@@ -913,13 +920,8 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
             ("price_cents", "50"),
             ("category_id", "1"),
         ]);
-        let response = generated_http_request(
-            port,
-            "POST",
-            "/products",
-            &secured_headers,
-            &batch_body,
-        );
+        let response =
+            generated_http_request(port, "POST", "/products", &secured_headers, &batch_body);
         assert_eq!(
             generated_response_status(&response),
             303,
@@ -934,11 +936,24 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         &[("cookie", cookies.as_str())],
         "",
     );
-    assert_eq!(generated_response_status(&first_page), 200, "{label}: {first_page}");
+    assert_eq!(
+        generated_response_status(&first_page),
+        200,
+        "{label}: {first_page}"
+    );
     let first_page_body = generated_response_body(&first_page);
-    assert!(first_page_body.contains("Batch item 01"), "{label}: {first_page}");
-    assert!(first_page_body.contains("Batch item 05"), "{label}: {first_page}");
-    assert!(!first_page_body.contains("Batch item 06"), "{label}: {first_page}");
+    assert!(
+        first_page_body.contains("Batch item 01"),
+        "{label}: {first_page}"
+    );
+    assert!(
+        first_page_body.contains("Batch item 05"),
+        "{label}: {first_page}"
+    );
+    assert!(
+        !first_page_body.contains("Batch item 06"),
+        "{label}: {first_page}"
+    );
 
     let second_page = generated_http_request(
         port,
@@ -947,14 +962,28 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         &[("cookie", cookies.as_str())],
         "",
     );
-    assert_eq!(generated_response_status(&second_page), 200, "{label}: {second_page}");
+    assert_eq!(
+        generated_response_status(&second_page),
+        200,
+        "{label}: {second_page}"
+    );
     let second_page_body = generated_response_body(&second_page);
-    assert!(second_page_body.contains("Batch item 06"), "{label}: {second_page}");
-    assert!(!second_page_body.contains("Batch item 01"), "{label}: {second_page}");
+    assert!(
+        second_page_body.contains("Batch item 06"),
+        "{label}: {second_page}"
+    );
+    assert!(
+        !second_page_body.contains("Batch item 01"),
+        "{label}: {second_page}"
+    );
 
     for index in 1..=6 {
         let batch_name = format!("Batch item {index:02}");
-        let source = if index <= 5 { first_page_body } else { second_page_body };
+        let source = if index <= 5 {
+            first_page_body
+        } else {
+            second_page_body
+        };
         let batch_id = generated_product_id_from_list(source, &batch_name);
         let delete_body = form_body(&[("_csrf", &csrf_token)]);
         let response = generated_http_request(
@@ -1464,13 +1493,8 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
             ("price_cents", "50"),
             ("category_id", "1"),
         ]);
-        let response = generated_http_request(
-            port,
-            "POST",
-            "/products",
-            &authenticated_headers,
-            &body,
-        );
+        let response =
+            generated_http_request(port, "POST", "/products", &authenticated_headers, &body);
         assert_eq!(
             generated_response_status(&response),
             303,
@@ -1498,7 +1522,11 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         &[("cookie", cookies.as_str())],
         "",
     );
-    assert_eq!(generated_response_status(&second_page), 200, "{second_page}");
+    assert_eq!(
+        generated_response_status(&second_page),
+        200,
+        "{second_page}"
+    );
     let second_page_body = generated_response_body(&second_page);
     assert!(second_page_body.contains("Batch item 06"));
     assert!(!second_page_body.contains("Batch item 01"));
