@@ -671,7 +671,11 @@ fn crud_scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
         ),
         (
             PathBuf::from("src/models/mod.rs"),
-            module_index_with_modules("Entidades SQL del ejemplo CRUD.", &["product"]),
+            module_index_with_modules("Entidades SQL del ejemplo CRUD.", &["category", "product"]),
+        ),
+        (
+            PathBuf::from("src/models/category.rs"),
+            include_str!("../templates/crud/category.rs").to_owned(),
         ),
         (
             PathBuf::from("src/models/product.rs"),
