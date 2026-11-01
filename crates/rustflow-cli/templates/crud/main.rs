@@ -196,12 +196,13 @@ fn category_select(selected_id: i64, categories: &[Category]) -> Result<View, Ht
 }
 
 fn category_filter_select(selected_id: i64, categories: &[Category]) -> Result<View, HttpError> {
+    let mut all_attributes = vec![("value", "0".to_owned())];
+    if selected_id == 0 {
+        all_attributes.push(("selected", "selected".to_owned()));
+    }
     let mut options = vec![view_element(
         "option",
-        &[
-            ("value", "0".to_owned()),
-            ("selected", (selected_id == 0).then(|| "selected".to_owned()).unwrap_or_default()),
-        ],
+        &all_attributes,
         vec![View::text("All categories")],
     )?];
     for category in categories {
@@ -752,6 +753,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         sku: Set(format!("ROLLBACK-PROBE-{}", std::process::id())),
                         description: Set(None),
                         price_cents: Set(0),
+                        category_id: Set(1),
                     }).await
                 };
                 if second.is_err() {
