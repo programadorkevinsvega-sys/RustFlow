@@ -1399,13 +1399,13 @@ fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeE
 }
 
 pub fn try_use_memo<T: Clone + PartialEq + 'static>(
-    compute: impl FnMut() -> T + 'static,
+    compute: impl Fn() -> T + 'static,
 ) -> Result<Memo<T>, RuntimeError> {
     active_owner_scope()?.memo(compute)
 }
 
 /// Create a memo during component setup; this is not a positional hook cell.
-pub fn use_memo<T: Clone + PartialEq + 'static>(compute: impl FnMut() -> T + 'static) -> Memo<T> {
+pub fn use_memo<T: Clone + PartialEq + 'static>(compute: impl Fn() -> T + 'static) -> Memo<T> {
     try_use_memo(compute).unwrap_or_else(|error| panic!("use_memo requires an active owner: {error}"))
 }
 

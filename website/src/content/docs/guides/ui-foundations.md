@@ -1,5 +1,5 @@
 ---
-title: Composición de UI: contexts, listas y formularios
+title: "Composición de UI: contexts, listas y formularios"
 description: Comparte valores con contextos tipados, conserva identidad en listas y conecta controles HTML con señales.
 ---
 
