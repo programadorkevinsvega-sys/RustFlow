@@ -232,7 +232,8 @@ impl TestRequestBuilder<'_> {
         bytes.push(b'=');
         bytes.extend_from_slice(value.as_bytes());
 
-        self.headers.insert(COOKIE, HeaderValue::from_bytes(&bytes)?);
+        self.headers
+            .insert(COOKIE, HeaderValue::from_bytes(&bytes)?);
         Ok(self)
     }
 
@@ -251,7 +252,11 @@ impl TestRequestBuilder<'_> {
         let encoded = serde_urlencoded::to_string(value)?;
         if !encoded.is_empty() {
             let separator = if self.uri.contains('?') {
-                if self.uri.ends_with('?') || self.uri.ends_with('&') { "" } else { "&" }
+                if self.uri.ends_with('?') || self.uri.ends_with('&') {
+                    ""
+                } else {
+                    "&"
+                }
             } else {
                 "?"
             };
@@ -265,7 +270,8 @@ impl TestRequestBuilder<'_> {
     pub fn json<T: Serialize + ?Sized>(mut self, value: &T) -> Result<Self, TestSupportError> {
         self.body = Bytes::from(serde_json::to_vec(value)?);
         if !self.headers.contains_key(CONTENT_TYPE) {
-            self.headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+            self.headers
+                .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         }
         Ok(self)
     }
@@ -389,13 +395,24 @@ pub enum TestSupportError {
 impl fmt::Display for TestSupportError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Server(error) => write!(formatter, "test application configuration failed: {error}"),
-            Self::Request(error) => write!(formatter, "test HTTP request could not be built: {error}"),
-            Self::HeaderName(error) => write!(formatter, "invalid test request header name: {error}"),
-            Self::HeaderValue(error) => write!(formatter, "invalid test request header value: {error}"),
+            Self::Server(error) => {
+                write!(formatter, "test application configuration failed: {error}")
+            }
+            Self::Request(error) => {
+                write!(formatter, "test HTTP request could not be built: {error}")
+            }
+            Self::HeaderName(error) => {
+                write!(formatter, "invalid test request header name: {error}")
+            }
+            Self::HeaderValue(error) => {
+                write!(formatter, "invalid test request header value: {error}")
+            }
             Self::Json(error) => write!(formatter, "test JSON serialization failed: {error}"),
             Self::Form(error) => write!(formatter, "test form serialization failed: {error}"),
-            Self::ResponseBody(error) => write!(formatter, "test response body could not be collected: {error}"),
+            Self::ResponseBody(error) => write!(
+                formatter,
+                "test response body could not be collected: {error}"
+            ),
         }
     }
 }
@@ -415,23 +432,37 @@ impl Error for TestSupportError {
 }
 
 impl From<ServerError> for TestSupportError {
-    fn from(error: ServerError) -> Self { Self::Server(error) }
+    fn from(error: ServerError) -> Self {
+        Self::Server(error)
+    }
 }
 impl From<http::Error> for TestSupportError {
-    fn from(error: http::Error) -> Self { Self::Request(error) }
+    fn from(error: http::Error) -> Self {
+        Self::Request(error)
+    }
 }
 impl From<http::header::InvalidHeaderName> for TestSupportError {
-    fn from(error: http::header::InvalidHeaderName) -> Self { Self::HeaderName(error) }
+    fn from(error: http::header::InvalidHeaderName) -> Self {
+        Self::HeaderName(error)
+    }
 }
 impl From<http::header::InvalidHeaderValue> for TestSupportError {
-    fn from(error: http::header::InvalidHeaderValue) -> Self { Self::HeaderValue(error) }
+    fn from(error: http::header::InvalidHeaderValue) -> Self {
+        Self::HeaderValue(error)
+    }
 }
 impl From<serde_json::Error> for TestSupportError {
-    fn from(error: serde_json::Error) -> Self { Self::Json(error) }
+    fn from(error: serde_json::Error) -> Self {
+        Self::Json(error)
+    }
 }
 impl From<serde_urlencoded::ser::Error> for TestSupportError {
-    fn from(error: serde_urlencoded::ser::Error) -> Self { Self::Form(error) }
+    fn from(error: serde_urlencoded::ser::Error) -> Self {
+        Self::Form(error)
+    }
 }
 impl From<axum::Error> for TestSupportError {
-    fn from(error: axum::Error) -> Self { Self::ResponseBody(error) }
+    fn from(error: axum::Error) -> Self {
+        Self::ResponseBody(error)
+    }
 }
