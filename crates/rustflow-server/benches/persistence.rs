@@ -10,9 +10,7 @@ use rustflow_server::{
     MongoConfig, MongoDatabase,
     mongodb_driver::bson::oid::ObjectId,
     orm::load_many,
-    sea_orm::{
-        ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
-    },
+    sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect},
 };
 use serde::{Deserialize, Serialize};
 
@@ -232,9 +230,7 @@ async fn run_sql_benchmarks(
             let database = &database;
             async move {
                 let rows = (0..batch_size).map(|offset| accounts::ActiveModel {
-                    email: Set(format!(
-                        "bulk-{label}-{iteration}-{offset}@example.test"
-                    )),
+                    email: Set(format!("bulk-{label}-{iteration}-{offset}@example.test")),
                     ..Default::default()
                 });
                 repository
@@ -338,46 +334,50 @@ async fn run_mongodb_benchmarks(
         "target=mongodb server=uri-configured iterations={iteration_count} bulk_size={batch_size}"
     );
 
-    measure("mongodb_odm_crud_round_trip", iteration_count, |iteration| {
-        let repository = &documents;
-        async move {
-            let inserted = repository
-                .insert(BenchDocument {
-                    id: None,
-                    value: iteration as i64,
-                    label: format!("crud-{iteration}"),
-                })
-                .await
-                .expect("benchmark ODM insert");
-            let id = inserted.id.expect("ODM generated ObjectId");
-            let fetched = repository
-                .find_by_id(id)
-                .await
-                .expect("benchmark ODM lookup")
-                .expect("benchmark ODM document exists");
-            repository
-                .update_one(
-                    DocumentFilter::new()
-                        .eq("_id", id)
-                        .expect("benchmark ODM ID filter"),
-                    DocumentUpdate::new()
-                        .set("value", iteration as i64 + 1)
-                        .expect("benchmark ODM update"),
-                    false,
-                )
-                .await
-                .expect("benchmark ODM update execution");
-            repository
-                .delete_one(
-                    DocumentFilter::new()
-                        .eq("_id", id)
-                        .expect("benchmark ODM delete filter"),
-                )
-                .await
-                .expect("benchmark ODM delete");
-            black_box(fetched.value);
-        }
-    })
+    measure(
+        "mongodb_odm_crud_round_trip",
+        iteration_count,
+        |iteration| {
+            let repository = &documents;
+            async move {
+                let inserted = repository
+                    .insert(BenchDocument {
+                        id: None,
+                        value: iteration as i64,
+                        label: format!("crud-{iteration}"),
+                    })
+                    .await
+                    .expect("benchmark ODM insert");
+                let id = inserted.id.expect("ODM generated ObjectId");
+                let fetched = repository
+                    .find_by_id(id)
+                    .await
+                    .expect("benchmark ODM lookup")
+                    .expect("benchmark ODM document exists");
+                repository
+                    .update_one(
+                        DocumentFilter::new()
+                            .eq("_id", id)
+                            .expect("benchmark ODM ID filter"),
+                        DocumentUpdate::new()
+                            .set("value", iteration as i64 + 1)
+                            .expect("benchmark ODM update"),
+                        false,
+                    )
+                    .await
+                    .expect("benchmark ODM update execution");
+                repository
+                    .delete_one(
+                        DocumentFilter::new()
+                            .eq("_id", id)
+                            .expect("benchmark ODM delete filter"),
+                    )
+                    .await
+                    .expect("benchmark ODM delete");
+                black_box(fetched.value);
+            }
+        },
+    )
     .await;
 
     measure(
@@ -406,7 +406,9 @@ async fn run_mongodb_benchmarks(
     )
     .await;
 
-    database.run_with_timeout(database.database().drop()).await?;
+    database
+        .run_with_timeout(database.database().drop())
+        .await?;
     Ok(())
 }
 
@@ -423,11 +425,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "For reproducibility, record rustc --version, Cargo.lock revision, CI service image tags, and runner hardware."
     );
 
-    let mut sql_targets = vec![(
-        "sqlite",
-        "sqlite::memory:".to_owned(),
-        SqlDialect::Sqlite,
-    )];
+    let mut sql_targets = vec![("sqlite", "sqlite::memory:".to_owned(), SqlDialect::Sqlite)];
 
     for (label, variable, dialect) in [
         (
@@ -436,11 +434,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             SqlDialect::Postgres,
         ),
         ("mysql", "RUSTFLOW_TEST_MYSQL_URL", SqlDialect::MySql),
-        (
-            "mariadb",
-            "RUSTFLOW_TEST_MARIADB_URL",
-            SqlDialect::MySql,
-        ),
+        ("mariadb", "RUSTFLOW_TEST_MARIADB_URL", SqlDialect::MySql),
     ] {
         if let Ok(url) = env::var(variable) {
             if !url.trim().is_empty() {
