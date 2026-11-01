@@ -171,6 +171,9 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --all-features
 
+      - name: Verify the authenticated example through in-process requests
+        run: cargo test -p rustflow-server --features testing --example authenticated
+
       - name: Run MySQL and MariaDB integration contracts explicitly
         run: cargo test -p rustflow-server --test database_engines -- --test-threads=1
 

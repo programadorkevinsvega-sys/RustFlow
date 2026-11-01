@@ -7,6 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+# Opt-in in-process application/request helpers for application tests.
+testing = []
+
 [dependencies]
 axum.workspace = true
 bytes.workspace = true
@@ -42,3 +47,13 @@ rustls-pki-types.workspace = true
 
 [lints]
 workspace = true
+
+[[test]]
+name = "testing"
+path = "tests/testing.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "testing_database"
+path = "tests/testing_database.rs"
+required-features = ["testing"]

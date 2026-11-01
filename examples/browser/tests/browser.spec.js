@@ -1,8 +1,9 @@
-import { expect, test } from "@playwright/test";
+import { expect, mountApplication, test } from "./support/fixtures.js";
 
-test.beforeEach(async ({ page }, testInfo) => {
+test.beforeEach(async ({ page, browserErrors }, testInfo) => {
+  expect(browserErrors).toBeDefined();
   if (!testInfo.title.startsWith("SSR hydration")) {
-    await page.goto("/");
+    await mountApplication(page);
   }
 });
 
@@ -506,4 +507,14 @@ test("network failures fall back to a full server navigation", async ({ page }) 
   await expect(page.getByTestId("about-page")).toBeVisible();
   expect(fetchCount).toBe(1);
   expect(navigationRequests).toContain(true);
+});
+
+
+test("browser test fixture captures console errors", async ({ page, browserErrors }) => {
+  await page.evaluate(() => console.error("rustflow-browser-fixture-probe"));
+
+  expect(browserErrors).toContainEqual({
+    source: "console",
+    message: "rustflow-browser-fixture-probe",
+  });
 });

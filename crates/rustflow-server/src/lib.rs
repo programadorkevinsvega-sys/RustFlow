@@ -17,6 +17,9 @@ mod sessions;
 mod tls;
 mod validation;
 
+#[cfg(feature = "testing")]
+pub mod testing;
+
 use std::{
     collections::{HashMap, HashSet},
     error::Error,

@@ -25,6 +25,8 @@ Desde la raíz de la aplicación, puedes generar `component ProductCard`, `page 
 |---|---|---|
 | Servidor HTTP básico | `cargo run -p rustflow-server --example basic` | Página HTML, componente SSR, catálogo compartido, layout, grupos HTTP, middleware y endpoints JSON. |
 | Página de producto SSR | `cargo run -p rustflow-server --example product_page` | Datos en memoria, ruta con ID de producto, 404, props públicas, catálogo compartido y layout. |
+| CRUD SQL completo (plantilla CLI) | `rustflow new products --template crud` | Listar/detallar/crear/editar/eliminar, relación Category/Product, filtros/paginación, ORM SQL, validación, transacciones, guards, CSRF y SSR. La prueba CLI ejecuta el flujo HTTP real. |
+| Aplicación autenticada | `cargo run -p rustflow-server --example authenticated` | Login con hash PBKDF2, sesiones, identidad, rol, guard, autorización por permiso, CSRF y logout. Demo de desarrollo, no producción. |
 | Interfaz browser/WASM | Ver [README del browser](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/examples/browser/README.md) | Counter, señales, callbacks, lista de tareas, claves, montaje/desmontaje, navegación optativa y fixtures E2E de hidratación. |
 
 ## 1. Servidor HTTP básico
@@ -90,6 +92,35 @@ cargo test -p rustflow-cli generated_crud_template_builds_and_runs_the_real_orm_
 ~~~
 
 El ejemplo usa `InMemorySessionStore`, credenciales demo y cookie de desarrollo. Rechaza `RUSTFLOW_ENV=production`; no representa autenticación durable ni una aplicación lista para producción.
+
+
+## 5. Aplicación autenticada
+
+El archivo ejecutable es [authenticated.rs](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow-server/examples/authenticated.rs). Ejecuta el servidor desde la raíz del repositorio:
+
+~~~sh
+export RUSTFLOW_ENV=development
+export RUSTFLOW_DEMO_USER=admin
+export RUSTFLOW_DEMO_PASSWORD='<contraseña local de demostración>'
+export RUSTFLOW_CSRF_KEY="$(openssl rand -hex 32)"
+cargo run -p rustflow-server --example authenticated
+~~~
+
+Escucha en http://127.0.0.1:3001 por defecto (puerto configurable mediante RUSTFLOW_AUTH_PORT). El flujo expone:
+
+- GET /csrf: emite un token CSRF y la cookie HttpOnly correspondiente.
+- POST /login: verifica credenciales JSON con PasswordHash, luego rota la sesión y asigna identidad/rol desde el servidor.
+- GET /me: requiere identidad autenticada.
+- GET /admin: requiere el permiso admin.read, concedido al rol admin por RolePolicy.
+- POST /logout: exige CSRF e invalida la sesión.
+
+La prueba ejecutable del ejemplo verifica credenciales incorrectas/correctas, acceso anónimo, identidad, autorización, CSRF y logout:
+
+~~~sh
+cargo test -p rustflow-server --features testing --example authenticated
+~~~
+
+**Límite deliberado:** usa InMemorySessionStore y SessionCookieConfig::development, no un proveedor de usuarios ni almacenamiento durable. El binario se niega a arrancar con RUSTFLOW_ENV=production; no representa una configuración lista para producción.
 
 ## Verificación compartida
 
