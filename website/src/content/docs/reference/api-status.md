@@ -35,6 +35,10 @@ compilar también el soporte de pruebas.
 La guía Probar y depurar aplicaciones contiene ejemplos de uso y límites de cada
 fixture. La guía técnica equivalente está en docs/TESTING.md.
 
+### Entrega y verificación de Phase 7.3
+
+La infraestructura descrita aquí se integró mediante PR #71 en `main` el 2026-11-01 (squash merge `ebc671b4c5dc7688813158f663a3dc560c34edb7`). El HEAD final de la PR `f3c7e5451095759428745f7760f3c531c91c89bc` pasó los checks requeridos de Rust stable/1.85, WASM, Browser E2E/bundle, documentación, gobernanza, dependency review y Cloudflare Pages. El soporte `rustflow-server/testing` sigue siendo opt-in y experimental. RustFlow es pre-1.0: esta referencia enumera flags y APIs expuestas en esta revisión, pero no declara APIs de framework como estables ni promete compatibilidad semántica.
+
 ## Reactividad y componentes
 
 | Capacidad | Estado | Alcance/notas |

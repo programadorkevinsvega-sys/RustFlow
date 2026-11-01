@@ -13,9 +13,9 @@ La implementación amplía el tracing HTTP con duración por petición y configu
 
 Cache se evaluó y se difiere porque todavía no hay un caso de uso concreto ni contrato de invalidación/consistencia. Queue, email y storage también siguen diferidos hasta definir entrega, durabilidad, permisos y seguridad. No hay traits placeholder ni se anuncian estas integraciones como capacidades disponibles. La finalización de Phase 7.1 no implica estabilidad de API ni preparación para producción del framework pre-1.0.
 
-### Fase 7.2 — UI completeness (PR #70)
+### Fase 7.2 — UI completeness (completada e integrada en main)
 
-La implementación y la actualización documental de esta fase se entregan juntas en la PR #70. Se conservaron y auditaron las capacidades previas de componentes, listas keyed, fragments, formularios nativos, SSR e hidratación, y se completaron los siguientes contratos:
+PR #70 se fusionó en `main` el 1 de noviembre de 2026 como `506dd6f193c13a0bb941b6f75238d751a2934230`. El HEAD final de la PR (`798e0239918baf897df4fc003cc43d63081d0a30`) pasó los ocho checks: Rust stable/1.85, WebAssembly, Browser E2E/bundle, documentación, governance, dependency review y Cloudflare Pages. La implementación y la actualización documental de esta fase se entregan juntas en la PR #70. Se conservaron y auditaron las capacidades previas de componentes, listas keyed, fragments, formularios nativos, SSR e hidratación, y se completaron los siguientes contratos:
 
 - **Memos derivados (`use_memo`):** cómputo eager asociado al owner, dependencias dinámicas y supresión de notificaciones cuando el resultado `PartialEq` no cambia. Dentro de un batch se lee el último valor confirmado hasta el flush exterior.
 - **Refs Rust (`use_ref`):** almacenamiento estable, no reactivo y ligado al owner; acceso con closures sin exponer punteros/guards de préstamo duraderos; el handle se invalida al disponer el owner.
@@ -25,6 +25,14 @@ La implementación y la actualización documental de esta fase se entregan junta
 - **Errores, estilos y accesibilidad:** se documentan la propagación de errores UI y la ausencia de ErrorBoundary; CSS/assets siguen el pipeline Vite de la aplicación, sin CSS-in-Rust ni asset registry del framework; se añade guía de accesibilidad.
 
 Las APIs nuevas siguen siendo experimentales y pre-1.0. No se ofrecen Resources/Suspense/loading boundaries ni ErrorBoundary de componentes; el rendering asíncrono requiere contratos explícitos de cancelación, resultados obsoletos, SSR, hidratación y errores. Las referencias DOM no sustituyen `use_ref` y solo existen en el adaptador browser/WASM. Consulta [Reactividad](/concepts/reactivity/), [Composición de UI](/guides/ui-foundations/), [Errores en UI y SSR](/guides/ui-errors/), [Estilos y assets](/guides/styling-assets/) y la [referencia de disponibilidad de API](/reference/api-status/).
+### Fase 7.3 — Testing y documentación (completada e integrada en main)
+
+La Phase 7.3 se completó mediante la PR #71, fusionada por squash el 1 de noviembre de 2026 como `ebc671b4c5dc7688813158f663a3dc560c34edb7`. El HEAD final de la PR (`f3c7e5451095759428745f7760f3c531c91c89bc`) pasó los checks requeridos de Rust stable/1.85, formato, Clippy, tests del workspace y del ejemplo autenticado, contratos de bases de datos, WebAssembly, Browser E2E/bundle, build del sitio, gobernanza, dependency review y Cloudflare Pages.
+
+La entrega incluye `rustflow-server/testing` opt-in con `TestAppBuilder` y request/response helpers que usan el router real in-process; fixtures SQL SQLite aisladas y namespaces para tablas en bases externas dedicadas; fixtures MongoDB con base de datos única y cleanup explícito; y helpers Playwright para aislamiento de páginas y captura de errores. El ejemplo autenticado demuestra password verification, sesiones server-side, identidad/roles, rutas protegidas, autorización, CSRF y logout. El ejemplo CRUD completo es la plantilla explícita `rustflow new <nombre> --template crud`, ya ejercitada por la prueba de integración del CLI; no es una plantilla de producción.
+
+Las APIs de testing siguen siendo experimentales y opt-in. Las pruebas in-process no cubren TLS, dirección peer, trusted proxies, desconexiones ni graceful shutdown; las fixtures externas requieren bases de test dedicadas y cada fixture solo limpia sus recursos namespaced. Consulta [Probar y depurar aplicaciones](/guides/testing/), [Referencia de API y feature flags](/reference/api-status/), [Catálogo de ejemplos](/reference/examples/) y el [contrato técnico](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/TESTING.md).
+
 ## Estado por fases
 
 ### Fase 0 — Fundación del proyecto: completada

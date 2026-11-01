@@ -472,16 +472,17 @@ The 6.7.2 baseline is verified: all four SQL relation kinds have integration cov
 - [x] Document CSS/classes and static assets using the existing Vite build pipeline; no CSS-in-Rust or framework asset registry is claimed.
 - [x] Add public accessibility guidance covering semantic HTML, forms, keyboard use, focus, errors, ARIA, images, and dynamic content.
 
-**Phase status:** PR #70 delivers the Phase 7.2 implementation, regression tests, technical contracts/ADRs, and public website documentation together. The required checks and review apply to the final PR revision; the merge and post-merge verification record determine phase closure. Async rendering/loading is explicitly deferred and is not claimed as implemented.
+**Acceptance record (2026-11-01):** PR #70 (`feat(ui): implement Phase 7.2 UI completeness`) was merged into `main` as commit `506dd6f193c13a0bb941b6f75238d751a2934230`. Its final PR HEAD `798e0239918baf897df4fc003cc43d63081d0a30` passed all eight checks: Rust stable, Rust 1.85, WebAssembly, Browser E2E/bundle size, documentation build, governance/whitespace, dependency review, and Cloudflare Pages. Phase 7.2 is complete and integrated. Async rendering/loading, Resources/Suspense, and component error boundaries remain explicitly deferred; the delivered public APIs remain experimental and pre-1.0.
 
 ### 7.3 Testing and docs
 
-**Implementation note (2026-11-01):** this increment adds in-process HTTP helpers; SQL fixtures for isolated SQLite and namespaced external test tables; MongoDB fixtures with unique database names and explicit cleanup; reusable Playwright page/error fixtures; and a runnable authenticated example. The generated CRUD template remains the full SQL CRUD example and is exercised by the CLI integration test. The public API/feature inventory is being synchronized across docs and website. This does not close Phase 7.3 until the final review and CI for the final PR HEAD are complete.
-- [ ] Provide test app builders and request helpers.
-- [ ] Add isolated database and browser test utilities.
-- [ ] Add a full CRUD example and an authenticated example.
-- [ ] Document every stable public API and feature flag.
-- [ ] Verify examples in CI where practical.
+**Acceptance record (2026-11-01):** PR #71 ([Testing and docs](https://github.com/programadorkevinsvega-sys/RustFlow/pull/71)) was squash-merged into `main` as commit `ebc671b4c5dc7688813158f663a3dc560c34edb7`. Its final PR HEAD `f3c7e5451095759428745f7760f3c531c91c89bc` passed the required CI matrix before merge: Rust stable and 1.85 (formatting, Clippy, workspace tests, test helpers, database integration contracts, authenticated example, and Rust documentation), WebAssembly, Browser E2E/bundle size, documentation site, governance/whitespace, dependency review, and Cloudflare Pages. The generated SQL CRUD template is the full CRUD example and is exercised by the CLI integration test; the authenticated server example is independently executable and tested. The technical and public API/feature inventories are synchronized. Phase 7.3 is complete; its test APIs remain opt-in/experimental and do not change the framework's pre-1.0 stability status.
+
+- [x] Provide test app builders and request helpers.
+- [x] Add isolated database and browser test utilities.
+- [x] Add a full CRUD example and an authenticated example.
+- [x] Document every stable public API and feature flag; record the current RustFlow Cargo feature inventory and mark pre-1.0 APIs as experimental in the public API reference.
+- [x] Verify examples in CI where practical.
 
 **Exit gate:** common app tasks need no undocumented workaround; APIs and examples match actual behavior.
 

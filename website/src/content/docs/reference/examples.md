@@ -27,7 +27,12 @@ Desde la raíz de la aplicación, puedes generar `component ProductCard`, `page 
 | Página de producto SSR | `cargo run -p rustflow-server --example product_page` | Datos en memoria, ruta con ID de producto, 404, props públicas, catálogo compartido y layout. |
 | CRUD SQL completo (plantilla CLI) | `rustflow new products --template crud` | Listar/detallar/crear/editar/eliminar, relación Category/Product, filtros/paginación, ORM SQL, validación, transacciones, guards, CSRF y SSR. La prueba CLI ejecuta el flujo HTTP real. |
 | Aplicación autenticada | `cargo run -p rustflow-server --example authenticated` | Login con hash PBKDF2, sesiones, identidad, rol, guard, autorización por permiso, CSRF y logout. Demo de desarrollo, no producción. |
+| Soporte HTTP de testing | `cargo test -p rustflow-server --features testing --test testing` | Ejecuta requests contra el router real en-process; comprueba métodos, headers, cookies, formularios, middleware y redirects sin abrir un puerto TCP. Feature opt-in y experimental. |
 | Interfaz browser/WASM | Ver [README del browser](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/examples/browser/README.md) | Counter, señales, callbacks, lista de tareas, claves, montaje/desmontaje, navegación optativa y fixtures E2E de hidratación. |
+
+## Infraestructura de fixtures
+
+La feature optativa `rustflow-server/testing` también expone fixtures para SQLite in-memory, tablas namespaced en bases SQL externas dedicadas y bases MongoDB únicas con limpieza explícita. Los contratos, variables de entorno y límites de aislamiento están en [Probar y depurar aplicaciones](/guides/testing/) y [docs/TESTING.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/TESTING.md). Los helpers Playwright de browser están en `examples/browser/tests/support/fixtures.js` y se usan desde los tests E2E del ejemplo browser.
 
 ## 1. Servidor HTTP básico
 

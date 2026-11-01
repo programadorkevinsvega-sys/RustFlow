@@ -50,3 +50,9 @@ be enabled only for tests through a dev-dependency.
   Those contracts continue to require real transport integration tests.
 - SQL/ODM and browser isolation are separate Phase 7.3 contracts and are not provided
   by this decision.
+
+## Implementation and delivery status (2026-11-01)
+
+The in-process HTTP support defined by this ADR was implemented behind `rustflow-server/testing` and delivered as part of Phase 7.3 in [PR #71](https://github.com/programadorkevinsvega-sys/RustFlow/pull/71). The PR also delivered separate SQL/ODM fixtures and Playwright browser fixtures. Those fixtures are intentionally not implemented by this HTTP adapter; they have independent isolation and cleanup contracts documented in `docs/TESTING.md` and the public [testing guide](../../website/src/content/docs/guides/testing.md).
+
+The final PR HEAD `f3c7e5451095759428745f7760f3c531c91c89bc` passed the required CI matrix and was squash-merged into `main` as `ebc671b4c5dc7688813158f663a3dc560c34edb7`. The helper remains opt-in and experimental while RustFlow is pre-1.0.
