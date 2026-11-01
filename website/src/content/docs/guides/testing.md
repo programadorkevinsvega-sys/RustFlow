@@ -102,6 +102,11 @@ npx playwright install --with-deps chromium
 npm run test:e2e
 ~~~
 
+
+La suite utiliza los fixtures incorporados de Playwright: cada test recibe un BrowserContext y una página nuevos, y Playwright cierra ese contexto al terminar, también cuando un test falla. RustFlow añade `mountApplication(page, path)` para navegar y esperar a que el root `#app` esté visible, y el fixture `browserErrors` recoge errores de consola y excepciones de página. La limpieza de listeners se ejecuta en `finally`; evita compartir `page`, cookies o storage entre tests.
+
+El helper de montaje espera una condición observable del DOM; no utiliza sleeps. Para esperar reactividad o navegación, prefiere las assertions auto-waiting de Playwright (`expect(locator).toHaveText(...)`) sobre pausas temporizadas.
+
 La demo cubre el contador, eventos, lista de tareas, identidad de nodos keyed, montaje/desmontaje y navegación cliente optativa. Las fixtures E2E prueban también hidratación sobre HTML preparado para ese contrato. Esto no convierte la demo completa en una aplicación servida por SSR.
 
 Si falla la compilación de WASM, verifica el target y las herramientas antes de investigar el código:
