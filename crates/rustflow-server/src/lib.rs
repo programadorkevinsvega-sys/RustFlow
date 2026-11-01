@@ -1625,17 +1625,17 @@ impl Application {
             async move {
                 match tokio::time::timeout(
                     config.request_timeout,
-                    dispatch_request(
+                    dispatch_request(DispatchContext {
                         handler,
                         path_params,
                         request,
-                        config.clone(),
-                        middleware_stack,
+                        config: config.clone(),
+                        middleware_registry: middleware_stack,
                         route_middleware,
                         route_template,
-                        configured_error_reporter(&error_reporter),
+                        error_reporter: configured_error_reporter(&error_reporter),
                         error_report_timeout,
-                    ),
+                    }),
                 )
                 .await
                 {
@@ -1895,7 +1895,8 @@ async fn liveness_endpoint() -> AxumResponse {
 
 async fn readiness_endpoint(State(checks): State<Arc<Vec<ReadinessCheck>>>) -> AxumResponse {
     let mut tasks = tokio::task::JoinSet::new();
-    for check in checks.iter().cloned() {
+    for check in checks.iter() {
+        let check = check.clone();
         let timeout = check.timeout();
         tasks.spawn(async move {
             tokio::time::timeout(timeout, check.start())
@@ -1926,7 +1927,7 @@ async fn readiness_endpoint(State(checks): State<Arc<Vec<ReadinessCheck>>>) -> A
     }
 }
 
-async fn dispatch_request(
+struct DispatchContext {
     handler: SharedHandler,
     path_params: HashMap<String, String>,
     request: AxumRequest,
@@ -1936,7 +1937,20 @@ async fn dispatch_request(
     route_template: String,
     error_reporter: Option<Arc<dyn ErrorReporter>>,
     error_report_timeout: Duration,
-) -> AxumResponse {
+}
+
+async fn dispatch_request(context: DispatchContext) -> AxumResponse {
+    let DispatchContext {
+        handler,
+        path_params,
+        request,
+        config,
+        middleware_registry,
+        route_middleware,
+        route_template,
+        error_reporter,
+        error_report_timeout,
+    } = context;
     let peer = request
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
@@ -2064,10 +2078,10 @@ async fn dispatch_request(
         };
         attach_request_id(response, &request_id_for_response).into_axum_response()
     };
-    let response = async move {
+    async move {
         let response = request_response.await;
         let duration_ms = started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-        span_for_record.record("duration_ms", &duration_ms);
+        span_for_record.record("duration_ms", duration_ms);
         tracing::debug!(
             request_id = %request_id_for_log,
             method = %method_for_log,
@@ -2079,8 +2093,7 @@ async fn dispatch_request(
         response
     }
     .instrument(span)
-    .await;
-    response
+    .await
 }
 
 async fn request_metadata_and_error_pages(
