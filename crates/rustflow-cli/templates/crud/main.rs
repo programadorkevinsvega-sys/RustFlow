@@ -195,6 +195,70 @@ fn category_select(selected_id: i64, categories: &[Category]) -> Result<View, Ht
     view_element("label", &[], vec![View::text("Category: "), select])
 }
 
+fn category_filter_select(selected_id: i64, categories: &[Category]) -> Result<View, HttpError> {
+    let mut options = vec![view_element(
+        "option",
+        &[
+            ("value", "0".to_owned()),
+            ("selected", (selected_id == 0).then(|| "selected".to_owned()).unwrap_or_default()),
+        ],
+        vec![View::text("All categories")],
+    )?];
+    for category in categories {
+        let mut attributes = vec![("value", category.id.to_string())];
+        if category.id == selected_id {
+            attributes.push(("selected", "selected".to_owned()));
+        }
+        options.push(view_element(
+            "option",
+            &attributes,
+            vec![View::text(category.name.clone())],
+        )?);
+    }
+    let select = view_element("select", &[("name", "category_id".to_owned())], options)?;
+    view_element("label", &[], vec![View::text("Category filter: "), select])
+}
+
+fn hidden_input(name: &str, value: String) -> Result<View, HttpError> {
+    view_element(
+        "input",
+        &[
+            ("type", "hidden".to_owned()),
+            ("name", name.to_owned()),
+            ("value", value),
+        ],
+        Vec::new(),
+    )
+}
+
+fn pagination_form(
+    search: &str,
+    category_id: i64,
+    page: u64,
+    label: &str,
+) -> Result<View, HttpError> {
+    let mut children = vec![hidden_input("page", page.to_string())?];
+    if !search.is_empty() {
+        children.push(hidden_input("q", search.to_owned())?);
+    }
+    if category_id > 0 {
+        children.push(hidden_input("category_id", category_id.to_string())?);
+    }
+    children.push(view_element(
+        "button",
+        &[("type", "submit".to_owned())],
+        vec![View::text(label)],
+    )?);
+    view_element(
+        "form",
+        &[
+            ("method", "get".to_owned()),
+            ("action", "/products".to_owned()),
+        ],
+        children,
+    )
+}
+
 const PRODUCTS_PAGE_SIZE: u64 = 5;
 
 #[derive(Deserialize, Default)]
@@ -227,6 +291,20 @@ async fn load_categories(database: &DatabasePool) -> Result<Vec<Category>, HttpE
         .all(CategoryEntity::find().order_by_asc(CategoryColumn::Name))
         .await
         .map_err(|error| error.to_http_error())
+}
+
+async fn load_product_category(
+    database: &DatabasePool,
+    product: &Product,
+) -> Result<Category, HttpError> {
+    let products = [product.clone()];
+    load_one(&products, CategoryEntity::find(), database.orm())
+        .await
+        .map_err(|error| error.to_http_error())?
+        .into_iter()
+        .next()
+        .flatten()
+        .ok_or_else(|| HttpError::not_found("Product category not found"))
 }
 
 fn product_form_view(
