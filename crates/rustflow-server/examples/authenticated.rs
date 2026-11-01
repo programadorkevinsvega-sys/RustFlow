@@ -88,10 +88,10 @@ fn build_application(
                 .authenticate(identity)
                 .map_err(|_| HttpError::internal_server_error())?;
 
-            Ok(Response::json(&LoginPayload {
+            Response::json(&LoginPayload {
                 authenticated: true,
                 subject: form.username,
-            })?)
+            })
         }
     })?;
     application.route_middleware(HttpMethod::Post, "/login", csrf.clone().middleware())?;
