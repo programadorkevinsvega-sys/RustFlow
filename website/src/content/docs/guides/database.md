@@ -11,7 +11,7 @@ La subfase 6.7.2 quedó fusionada mediante Squash Merge en `main` el 2026-10-31,
 
 ## Aplicación CRUD generada
 
-La plantilla `rustflow new <nombre> --template crud` conecta la superficie ORM SQL aceptada con el adaptador HTTP. Conserva un único `DatabasePool` y utiliza `database.entity::<ProductEntity>()` para insertar, buscar, listar, actualizar y borrar. La entidad de `src/models/product.rs` combina `ModelDiagnostics` con `DeriveEntityModel` de SeaORM. El trabajo de Phase 6.7.6 amplía el ejemplo en una rama de validación con una entidad `Category`, una relación `Product` belongs-to/`Category` has-many, el loader explícito `load_one` y filtros tipados por nombre/categoría con paginación acotada. Las aserciones HTTP ampliadas contra SQLite, PostgreSQL, MySQL y MariaDB esperan la CI del HEAD final antes de su aceptación.
+La plantilla `rustflow new <nombre> --template crud` conecta la superficie ORM SQL aceptada con el adaptador HTTP. Conserva un único `DatabasePool` y utiliza `database.entity::<ProductEntity>()` para insertar, buscar, listar, actualizar y borrar. La entidad de `src/models/product.rs` combina `ModelDiagnostics` con `DeriveEntityModel` de SeaORM. Phase 6.7.6 aceptó una entidad `Category`, una relación `Product` belongs-to/`Category` has-many, el loader explícito `load_one` y filtros tipados por nombre/categoría con paginación acotada. Las pruebas HTTP de esos recorridos pasaron contra SQLite, PostgreSQL, MySQL y MariaDB en el HEAD final de PR #66 (`b049d96491e2b23bfe794ac3c0ed9abb68f7e493`).
 
 El ejemplo contiene migraciones específicas en `migrations/sqlite`, `migrations/postgres` y `migrations/mysql`; MariaDB comparte el backend y directorio MySQL. No se debe cambiar solo `RUSTFLOW_DATABASE_URL` y asumir que el DDL es portable.
 
