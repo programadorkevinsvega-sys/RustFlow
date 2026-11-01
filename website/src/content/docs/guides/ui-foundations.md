@@ -114,7 +114,8 @@ use rustflow_dom::ElementRef;
 
 #[rustflow::component]
 fn SearchField() -> impl IntoView {
-    let input_ref = ElementRef::new();
+    // Keep the DOM handle stable across repeated renders of this component.
+    let input_ref = use_ref(ElementRef::new()).get();
     let input_for_action = input_ref.clone();
 
     rustflow::view! {
