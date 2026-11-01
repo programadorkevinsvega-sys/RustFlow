@@ -22,8 +22,8 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 - [1. Empezar desde cero](/getting-started/setup/): instalar los requisitos, clonar RustFlow y validar el workspace.
 - [2. Crear tu primera aplicación con el CLI](/tutorials/first-cli-app/): scaffold `server` predeterminado, plantilla CRUD opcional, configuración inicial, ejecución, build y generadores.
 - [3. Configurar entornos](/guides/configuration/): precedencia de .env, perfiles test/producción y manejo seguro de ajustes.
-- [4. Aprender estado y efectos](/concepts/reactivity/): señales, dependencias, batching, scopes y limpieza.
-- [5. Crear componentes](/guides/components/): vistas, props, eventos, estado y listas keyed.
+- [4. Aprender estado y efectos](/concepts/reactivity/): señales, efectos, <code>use_memo</code>, <code>use_ref</code>, contextos tipados, dependencias, batching y limpieza.
+- [5. Crear componentes](/guides/components/): vistas, props, eventos, APIs owner-scoped, formularios controlados y listas keyed.
 - [6. Crear rutas HTTP](/guides/server/): HTML, JSON, parámetros y middleware.
 - [7. Renderizar HTML en servidor](/guides/ssr/): escape, documentos completos, catálogo e hidratación optativa.
 - [8. Compartir estructura con layouts](/guides/layouts/): composición de páginas y datos públicos.
@@ -42,7 +42,8 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 |---|---|
 | Crear un proyecto de servidor/CRUD y generar archivos | [CLI y generadores](/guides/cli/) y [tutorial de primera aplicación](/tutorials/first-cli-app/) |
 | Configurar perfil, host y puerto | [Configuración por entornos](/guides/configuration/) |
-| Un componente o un contador reactivo | [Componentes](/guides/components/) y [reactividad](/concepts/reactivity/) |
+| Un componente, estado derivado o provider tipado | [Componentes](/guides/components/), [reactividad](/concepts/reactivity/) y [Composición de UI](/guides/ui-foundations/) |
+| Referenciar un elemento DOM o mantener un valor Rust no reactivo | [Composición de UI](/guides/ui-foundations/) |
 | Una lista de tareas interactiva en el navegador | [Tutorial browser/WASM](/tutorials/reactive-todo/) |
 | Un endpoint que recibe o devuelve JSON | [Tutorial de API JSON](/tutorials/json-api/) |
 | Una página HTML desde el servidor | [Guía SSR](/guides/ssr/) |
@@ -62,7 +63,7 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 ## Qué puedes construir hoy
 
 - Sitios de contenido y prototipos SSR con vistas estructurales, documentos HTML y páginas de error.
-- Interfaces WASM interactivas con señales, efectos, componentes, eventos, listas keyed y limpieza.
+- Interfaces WASM interactivas con señales, efectos, memos derivados, contextos tipados, refs Rust y DOM, eventos, listas keyed, fragments y formularios controlados.
 - Servicios HTTP con rutas, parámetros, query/JSON, middleware, grupos, respuestas y límites configurables.
 - Endpoints que extraen y validan formularios, JSON y query tipados, devuelven errores 422 estructurados y pueden proteger mutaciones mediante CSRF optativo.
 - Páginas compuestas con un catálogo de componentes compartido, datos de ruta explícitos y layouts anidados.
@@ -74,7 +75,7 @@ El [catálogo de ejemplos](/reference/examples/) conecta cada caso con un archiv
 
 ## Lo que no debes asumir
 
-El CLI experimental genera aplicaciones de servidor nativo y delega compilación a Cargo; `rustflow new --template crud` añade un proyecto didáctico con ORM SQL, validación, transacciones, auth, CSRF y SSR. No incluye hot reload ni un bundler integrado para browser/WASM. El generador `rustflow generate model` sigue produciendo un struct de dominio plano por compatibilidad: no crea automáticamente entidades SeaORM ni implementaciones `DocumentModel`. La configuración de la Fase 6.2 cubre perfil, host y puerto. `use_memo`, `use_ref` y `use_context` siguen pendientes. Las APIs de sesión y guards de la Fase 6.4 son experimentales; `InMemorySessionStore` es volátil y local al proceso, no hay proveedor de usuarios y todavía no existe un `SessionStore` SQL durable.
+El CLI experimental genera aplicaciones de servidor nativo y delega compilación a Cargo; `rustflow new --template crud` añade un proyecto didáctico con ORM SQL, validación, transacciones, auth, CSRF y SSR. No incluye hot reload ni un bundler integrado para browser/WASM. El generador `rustflow generate model` sigue produciendo un struct de dominio plano por compatibilidad: no crea automáticamente entidades SeaORM ni implementaciones `DocumentModel`. La configuración de la Fase 6.2 cubre perfil, host y puerto. `use_memo`, `use_ref` y `use_context` están disponibles de forma experimental en Phase 7.2; las referencias a nodos DOM usan el handle separado `rustflow_dom::ElementRef` y solo están disponibles en browser/WASM. No hay Resources/Suspense ni ErrorBoundary de componentes. Las APIs de sesión y guards de la Fase 6.4 son experimentales; `InMemorySessionStore` es volátil y local al proceso, no hay proveedor de usuarios y todavía no existe un `SessionStore` SQL durable.
 
 La Fase 6.6 está completa, con la matriz verificada publicada: SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS y MongoDB 7.0.45. La Fase 6.7 (ORM SQL y ODM documental) quedó completada en `main` mediante PR #66, squash merge `6046ae7ca60843d145476177e698162b57939c68`. Incluye SeaORM 1.1.20 sobre un único pool SQLx tipado compartido, `EntityRepository` para CRUD/bulk y consultas tipadas, loaders y grafos relacionales explícitos, transacciones, ODM MongoDB separado y una aplicación CRUD educativa con relación Category/Product, filtros y paginación. El gate de calidad/compatibilidad verificó pool exhaustion y recuperación, escrituras concurrentes, seguridad de valores SQL/BSON, migraciones PostgreSQL repetibles/reversibles y benchmark smoke ORM/ODM. El HEAD final `b049d96491e2b23bfe794ac3c0ed9abb68f7e493` pasó los checks requeridos en Rust 1.85/stable, WASM, Browser E2E/bundle, documentación, governance, dependency review y Cloudflare Pages. El ORM y el ODM continúan siendo APIs experimentales/pre-1.0; el CRUD generado no es un starter de producción. Consulta la [matriz de versiones](/guides/database/#matriz-de-versiones-verificadas), la [guía de base de datos](/guides/database/), la [guía ODM](/guides/mongodb-odm/) y [Estado del proyecto](/project-status/).
 
