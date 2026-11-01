@@ -1,17 +1,22 @@
-use std::{net::SocketAddr, time::Duration};
+use std::{
+    net::SocketAddr,
+    sync::{Arc, atomic::{AtomicUsize, Ordering}},
+    time::Duration,
+};
 
 use http::StatusCode;
 use rustflow::view::View;
 use rustflow_server::{
     Application, CsrfProtection, ErrorPages, HttpError, HttpMethod, IpNetwork, Middleware, Request,
-    Response, ServerConfig, ServerError, ValidateInput, ValidationErrors, html_document,
+    ReadinessCheck, ReadinessCheckError, Response, ServerConfig, ServerError, ValidateInput,
+    ValidationErrors, html_document,
     tls_server_config_from_pem,
 };
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::oneshot,
+    sync::{oneshot, Notify},
     task::JoinHandle,
 };
 
@@ -36,6 +41,97 @@ async fn start_server(
 async fn stop_server(shutdown: oneshot::Sender<()>, task: JoinHandle<Result<(), ServerError>>) {
     shutdown.send(()).expect("signal shutdown");
     task.await.expect("server task").expect("graceful shutdown");
+}
+
+#[tokio::test]
+async fn graceful_shutdown_times_out_and_cancels_a_stuck_in_flight_request() {
+    struct DropSignal(Arc<AtomicUsize>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    let entered = Arc::new(Notify::new());
+    let dropped = Arc::new(AtomicUsize::new(0));
+    let config = ServerConfig::new().with_shutdown_timeout(Duration::from_millis(25));
+    let mut app = Application::with_config(config);
+    let entered_handler = Arc::clone(&entered);
+    let dropped_handler = Arc::clone(&dropped);
+    app.get("/hold", move |_request: Request| {
+        let entered = Arc::clone(&entered_handler);
+        let dropped = Arc::clone(&dropped_handler);
+        async move {
+            let _drop_signal = DropSignal(dropped);
+            entered.notify_one();
+            std::future::pending::<Result<Response, HttpError>>().await
+        }
+    })
+    .expect("stuck route");
+
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind ephemeral listener");
+    let address = listener.local_addr().expect("listener address");
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let task = tokio::spawn(app.serve_listener_with_shutdown(listener, async move {
+        let _ = shutdown_rx.await;
+    }));
+
+    let mut stream = TcpStream::connect(address).await.expect("connect");
+    stream
+        .write_all(
+            b"GET /hold HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .expect("send in-flight request");
+    tokio::time::timeout(Duration::from_secs(1), entered.notified())
+        .await
+        .expect("handler entered");
+
+    shutdown_tx.send(()).expect("signal shutdown");
+    let result = tokio::time::timeout(Duration::from_secs(1), task)
+        .await
+        .expect("shutdown must be bounded")
+        .expect("server task must not panic");
+
+    assert!(matches!(
+        result,
+        Err(ServerError::ShutdownTimedOut(timeout)) if timeout == Duration::from_millis(25)
+    ));
+    assert_eq!(dropped.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn framework_health_and_readiness_endpoints_work_over_real_tcp() {
+    let mut app = Application::new();
+    app.enable_health_endpoints().expect("framework health routes");
+    app.readiness_check(
+        ReadinessCheck::new("primary-database", Duration::from_millis(100), || async {
+            Err(ReadinessCheckError::unavailable())
+        })
+        .expect("readiness check"),
+    )
+    .expect("register required dependency");
+
+    let (address, shutdown, task) = start_server(app).await;
+
+    let live = send_http(address, "GET", "/health/live", &[], "").await;
+    assert_eq!(status_code(&live), 200);
+    assert!(response_body(&live).contains(r#"{"status":"alive"}"#));
+    assert!(live.to_ascii_lowercase().contains("cache-control: no-store"));
+    assert!(live.to_ascii_lowercase().contains("x-request-id: rf-"));
+
+    let ready = send_http(address, "GET", "/health/ready", &[], "").await;
+    assert_eq!(status_code(&ready), 503);
+    let body = response_body(&ready);
+    assert_eq!(body.trim(), r#"{"status":"not_ready"}"#);
+    assert!(!body.contains("primary-database"));
+    assert!(!body.contains("unavailable"));
+    assert!(ready.to_ascii_lowercase().contains("cache-control: no-store"));
+
+    stop_server(shutdown, task).await;
 }
 
 async fn send_http(

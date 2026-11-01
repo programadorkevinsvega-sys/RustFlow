@@ -78,7 +78,82 @@ The TLS listener accepts TCP connections independently of their TLS handshakes. 
 
 Every handled request receives a correlation ID exposed as `Request::request_id()` and echoed in the response header `x-request-id`, including body-read errors. A supplied ID is retained only if it is 1–128 ASCII letters, digits, dots, underscores, or hyphens; otherwise the server generates an ID with the `rf-` prefix. It is for log correlation only and must never be used as an authorization credential.
 
-The adapter emits a `tracing` span named `http.request` with the request ID, HTTP method, and registered route template. It records completion/failure status through tracing events. The library does not install a global subscriber: configure `tracing-subscriber` (or an application-selected tracing layer/exporter) in the binary/composition root.
+The adapter emits a `tracing` span named `http.request` with the request ID, HTTP method, registered route template, and measured duration. It records completion/failure status through structured events. Request headers, cookies, authorization values, query values, and body contents are not logged by the adapter. The route field is the registered template rather than a concrete path. The library does not install a global subscriber: the application binary owns exactly one subscriber and any exporter.
+
+Use `TracingConfig` to resolve the supported `RUSTFLOW_LOG_LEVEL` setting through `AppConfig`'s normal precedence (default `info`; accepted values: `error`, `warn`, `info`, `debug`, `trace`). The application may pass `tracing_config.tracing_level()` to its own `tracing-subscriber` formatter/filter. No subscriber or exporter is initialized by a RustFlow library crate.
+
+```rust
+use rustflow_server::{AppConfig, TracingConfig};
+
+let app_config = AppConfig::load()?;
+let tracing_config = TracingConfig::from_app_config(&app_config)?;
+// Configure the application's tracing-subscriber once in the binary:
+// tracing_subscriber::fmt()
+//     .with_max_level(tracing_config.tracing_level().into())
+//     .try_init()?;
+```
+
+## Health, readiness, and error reporting
+
+Framework-owned health endpoints are opt-in so existing applications retain ownership of their routes. The defaults are `/health/live` and `/health/ready`:
+
+```rust
+use std::time::Duration;
+use rustflow_server::{
+    Application, ReadinessCheck, ReadinessCheckError,
+};
+
+let mut app = Application::new();
+app.enable_health_endpoints()?;
+app.readiness_check(ReadinessCheck::new(
+    "primary-database",
+    Duration::from_secs(2),
+    || async {
+        // Replace this with a bounded ping against the dependency required by this instance.
+        Ok::<(), ReadinessCheckError>(())
+    },
+)?)?;
+```
+
+Liveness is a lightweight process/server response and never queries external systems. Readiness runs only explicitly registered checks, concurrently, with a per-check timeout. A failed, panicking, or timed-out check returns HTTP 503 with the generic `{"status":"not_ready"}` body. Check names and diagnostics are not returned to clients. Up to 32 checks may be registered. When no checks are registered, readiness is ready; add only dependencies that must be available before this instance receives traffic. Both endpoints return `Cache-Control: no-store`. Health routes can be customized with `HealthEndpoints::new(liveness_path, readiness_path)`; static route conflicts are rejected.
+
+An application may also install a safe error reporter:
+
+```rust
+use rustflow_server::{Application, ErrorReport, ErrorReporterError};
+
+let mut app = Application::new();
+app.with_error_reporter(|report: ErrorReport| async move {
+    // Export only the allowlisted metadata; do not attach request data.
+    tracing::error!(
+        request_id = %report.request_id(),
+        method = %report.method(),
+        route = %report.route(),
+        status = %report.status(),
+        "application error report"
+    );
+    Ok::<(), ErrorReporterError>(())
+});
+app.with_error_report_timeout(std::time::Duration::from_millis(100));
+```
+
+Reports are emitted for server-error responses (5xx), including handler failures and request timeouts. The event contains only the correlation ID, HTTP method, registered route template, and status. It does not contain the error message, stack trace, request headers, cookies, authorization values, query values, or body. The default wait bound is 250 ms; a failure, panic, or timeout is isolated and cannot replace the original response. The reporter runs in its own Tokio task, and a timed-out task is aborted. Reporter implementations should still avoid blocking executor threads and should not spawn unbounded detached work.
+
+## Graceful shutdown deadline
+
+`serve_with_shutdown`, `serve_listener_with_shutdown`, and `serve_tls_with_shutdown` begin graceful draining when the caller-provided future resolves. `ServerConfig::with_shutdown_timeout` sets the maximum drain period (30 seconds by default). If requests finish within that period, shutdown completes normally. If the deadline expires, the server future is dropped and the method returns `ServerError::ShutdownTimedOut`; any remaining in-flight work is cancelled. The caller still owns signal wiring, such as `tokio::signal::ctrl_c()`.
+
+```rust
+use std::time::Duration;
+use rustflow_server::{Application, ServerConfig};
+
+let config = ServerConfig::new().with_shutdown_timeout(Duration::from_secs(20));
+let app = Application::with_config(config);
+// In the async composition root:
+// app.serve_with_shutdown(address, async { tokio::signal::ctrl_c().await.ok(); }).await?;
+```
+
+This is a bounded cancellation policy, not a guarantee that arbitrary application tasks or external side effects can be safely interrupted. Keep transactional work cancellation-safe and use the existing database transaction contracts.
 
 ## Complete documents and configurable error pages
 
@@ -101,9 +176,9 @@ Only 4xx/5xx statuses can be configured. Unconfigured statuses keep their normal
 
 ## Boundaries and limitations
 
-Routing supports conventional methods and Axum path templates such as `/users/{id}`. Duplicate method/path registration and equivalent parameter-only route shapes are rejected before router construction. Unknown paths return 404, unsupported methods return 405, oversized bodies return 413, handler/body timeouts return 504, and required-HTTPS failures return 400. The adapter provides ordered global, group, and route-scoped async middleware, uniquely named routes, route groups, deterministic metadata from `Application::routes()`, graceful shutdown APIs, local rustls serving, trusted-proxy reconstruction, safe full HTML documents, and configurable escaped 4xx/5xx error pages.
+Routing supports conventional methods and Axum path templates such as `/users/{id}`. Duplicate method/path registration and equivalent parameter-only route shapes are rejected before router construction. Unknown paths return 404, unsupported methods return 405, oversized bodies return 413, handler/body timeouts return 504, required-HTTPS failures return 400, and readiness failures return 503. The adapter provides ordered global, group, and route-scoped async middleware, uniquely named routes, route groups, deterministic metadata from `Application::routes()`, bounded graceful shutdown, opt-in health/readiness endpoints, safe error-reporting hooks, local rustls serving, trusted-proxy reconstruction, safe full HTML documents, and configurable escaped 4xx/5xx error pages.
 
-The typed form/JSON/query validation APIs, structured validation errors, `Request::redirect_back`, opt-in `CsrfProtection`, and Phase 6.4 session/access-control APIs are experimental. CSRF middleware must be explicitly attached to cookie-authenticated mutation routes; it does not itself authenticate or authorize users, and it does not replace rate limiting. `SessionManager`, `SessionContext`, `route_protected` and `route_authorized` provide session and guard primitives, but RustFlow still has no built-in user/credential provider, OAuth/OIDC, MFA, account recovery, rate limiting or durable session store. The adapter now exposes the experimental SQLx database boundary described in [DATABASES.md](DATABASES.md): SQLite/PostgreSQL pools, explicit transaction helpers, versioned migrations and safe HTTP error mapping. It still lacks built-in subscriber/export configuration, automatic OS-signal wiring, an ORM, database-backed sessions and a repository/model layer. See [FORM_VALIDATION.md](FORM_VALIDATION.md) and [ADR 0015](adr/0015-sessions-and-access-control.md). Integration tests cover HTML/JSON routes, groups, route middleware, query/path parameters, custom 404/405 pages, 413/504, request-ID headers, graceful shutdown, trusted and spoofed forwarded headers, local TLS, client aborts, malformed input, and a concurrency cap. They are not a substitute for a reverse-proxy deployment recipe or a Phase 9 threat model.
+The typed form/JSON/query validation APIs, structured validation errors, `Request::redirect_back`, opt-in `CsrfProtection`, and Phase 6.4 session/access-control APIs are experimental. CSRF middleware must be explicitly attached to cookie-authenticated mutation routes; it does not itself authenticate or authorize users, and it does not replace rate limiting. `SessionManager`, `SessionContext`, `route_protected` and `route_authorized` provide session and guard primitives, but RustFlow still has no built-in user/credential provider, OAuth/OIDC, MFA, account recovery, rate limiting or durable session store. The adapter now exposes the experimental SQLx database boundary described in [DATABASES.md](DATABASES.md): SQLite/PostgreSQL pools, explicit transaction helpers, versioned migrations and safe HTTP error mapping. The application still owns subscriber/export setup and OS-signal wiring; RustFlow supplies the tracing-level configuration contract but does not install a global subscriber. Cache, queue, email, and object-storage interfaces are intentionally deferred because their invalidation, delivery, durability, permission, and security contracts are not yet defined. Database-backed sessions remain unimplemented. See [FORM_VALIDATION.md](FORM_VALIDATION.md) and [ADR 0015](adr/0015-sessions-and-access-control.md). Integration tests cover HTML/JSON routes, groups, route middleware, query/path parameters, custom 404/405 pages, 413/504, request-ID headers, graceful shutdown, trusted and spoofed forwarded headers, local TLS, client aborts, malformed input, and a concurrency cap. They are not a substitute for a reverse-proxy deployment recipe or a Phase 9 threat model.
 
 ## Current SSR composition, hydration, and browser navigation
 

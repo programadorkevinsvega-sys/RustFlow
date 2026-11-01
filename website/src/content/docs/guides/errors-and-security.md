@@ -45,9 +45,21 @@ Para páginas 4xx/5xx se puede configurar `ErrorPages`. El título y mensaje vis
 
 Los límites del servidor y de `HydrationData` son controles de recursos distintos. El límite de JSON para hidratación no sustituye el tamaño máximo del cuerpo HTTP, la validación de campos ni el límite de datos de negocio.
 
-El adaptador genera o valida un `x-request-id` y lo expone a los handlers para correlación de logs. **No lo uses como credencial, prueba de identidad ni autorización.** `tracing` emite eventos/spans, pero la aplicación configura el subscriber/exporter que los recoge.
+El adaptador genera o valida un `x-request-id` y lo expone a los handlers para correlación de logs. **No lo uses como credencial, prueba de identidad ni autorización.** `tracing` emite eventos/spans con request ID, método, plantilla de ruta, status y duración. El adapter no registra headers, cookies, autorización, query values ni cuerpos. La aplicación configura su subscriber/exporter y debe mantener su propia política de redacción.
 
-## 4. TLS y proxies confiables
+## 4. Reportes internos sin filtrar secretos
+
+La aplicación puede registrar un <code>ErrorReporter</code> para recibir errores HTTP internos 5xx. El objeto <code>ErrorReport</code> solo ofrece request ID, método, plantilla de ruta, status y una categoría segura (<code>handler</code>, <code>middleware</code> o <code>request_timeout</code>). No incluye el mensaje de error, stack trace, headers, cookies, tokens, query values o body.
+
+El reporter es asíncrono, se ejecuta en una tarea aislada y tiene un límite de espera (250 ms predeterminados). Si falla, entra en panic o supera el límite, RustFlow registra un mensaje genérico y conserva la respuesta HTTP original. No agregues secretos ni texto de diagnóstico a los campos allowlisted ni crees tareas detached ilimitadas dentro del callback.
+
+## 5. Liveness, readiness y drenaje
+
+Los endpoints framework-owned se activan explícitamente para no colisionar con rutas existentes. Liveness no consulta dependencias externas. Readiness ejecuta solo los checks que la aplicación registró, concurrentemente y con timeout por check. Fallos, panics y timeouts retornan 503 con un cuerpo JSON fijo; no enumeran nombres de dependencias, hosts, credenciales ni mensajes del proveedor. No realices migraciones ni mutaciones desde estos probes.
+
+El shutdown graceful también está limitado por un deadline configurable. Cuando vence, el servidor retorna <code>ServerError::ShutdownTimedOut</code> y cancela el trabajo restante. Esta cancelación puede interrumpir código de aplicación: diseña operaciones mutables para usar transacciones y evita depender de side effects externos no idempotentes.
+
+## 6. TLS y proxies confiables
 
 RustFlow ofrece configuración TLS con rustls y una política explícita para reconstruir la IP y el esquema originales cuando hay un reverse proxy. La política de proxies confiables debe enumerar las redes de los proxies que controlas. Las cabeceras reenviadas de una conexión no confiable no se deben tratar como identidad verificada.
 
@@ -55,7 +67,7 @@ Antes de aceptar encabezados `Forwarded` o `X-Forwarded-*`, verifica que el prox
 
 La configuración TLS local ayuda a probar el transporte; no es una receta completa de certificados, renovación, DNS, firewall o reverse proxy. Consulta la API del crate `rustflow-server` y las pruebas de integración antes de adaptar la configuración.
 
-## 5. Checklist antes de exponer un servicio
+## 7. Checklist antes de exponer un servicio
 
 - Valida tipos, rangos, longitudes y reglas de negocio después de decodificar path, query o JSON.
 - Comprueba identidad y autorización en la capa de aplicación que protege cada recurso.

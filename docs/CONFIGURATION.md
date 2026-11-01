@@ -93,3 +93,39 @@ La implementación exige que la aplicación construya `MongoConfig` y `MongoData
 La configuración no es un sistema general de configuración TOML/YAML, no incluye perfiles personalizados ni resuelve nombres DNS. Los ajustes de base de datos de la Fase 6.5 usan `AppConfig::setting`: en desarrollo/test respetan proceso > `.env.<perfil>` > `.env`; en producción solo consultan el entorno del proceso. El framework no incluye un gestor de secretos. Las APIs son pre-1.0 y el contrato público puede cambiar. Validación de formularios, sesiones, autenticación/autorización y CSRF siguen siendo APIs separadas; la persistencia SQLx tiene su propio contrato en [DATABASES.md](DATABASES.md).
 
 Consulta también la guía pública de configuración, docs/CLI.md y ROADMAP.md.
+
+
+## Nivel de tracing de la aplicación (Phase 7.1)
+
+El adaptador HTTP emite eventos y spans estructurados mediante `tracing`, pero no instala un subscriber global. La aplicación es responsable de construir e inicializar un único subscriber, elegir formatter/layers/exporters y aplicar la política de filtrado.
+
+`TracingConfig::from_app_config(&app_config)` lee `RUSTFLOW_LOG_LEVEL` usando la misma precedencia de configuración que `AppConfig`: proceso > `.env.<perfil>` > `.env` en desarrollo/pruebas; solo el entorno del proceso en producción. El valor predeterminado es `info`. Se aceptan `error`, `warn`, `info`, `debug` y `trace`; otros valores producen un error de configuración sin imprimir el valor inválido.
+
+```rust
+use rustflow_server::{AppConfig, TracingConfig};
+
+let app_config = AppConfig::load()?;
+let tracing = TracingConfig::from_app_config(&app_config)?;
+
+// La aplicación instala su subscriber una sola vez en el binario.
+// tracing_subscriber::fmt()
+//     .with_max_level(tracing.tracing_level().into())
+//     .try_init()?;
+```
+
+La configuración no añade un subscriber ni un exporter como dependencia obligatoria del framework. Si la aplicación necesita filtros por módulo, JSON, OpenTelemetry u otro backend, los configura en su binario usando su propia selección de capas.
+
+## Límites operativos de HTTP
+
+`ServerConfig` controla límites del adaptador HTTP y es independiente de `AppConfig`:
+
+| Ajuste | Predeterminado | Configuración |
+|---|---:|---|
+| Tamaño máximo de body | 1 MiB | `with_max_body_bytes` |
+| Timeout de lectura/ejecución de petición | 30 s | `with_request_timeout` |
+| Peticiones concurrentes | 256 | `with_max_concurrent_requests` |
+| Drenaje máximo de graceful shutdown | 30 s | `with_shutdown_timeout` |
+| Espera máxima del error reporter | 250 ms | `Application::with_error_report_timeout` |
+
+Los valores de `ServerConfig` son configurados programáticamente; no se mezclan con los límites de adquisición SQL, conexión/selección/operación MongoDB ni timeout de probes de readiness. Los timeouts de readiness se especifican individualmente al crear cada `ReadinessCheck`.
+
