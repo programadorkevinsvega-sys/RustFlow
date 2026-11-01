@@ -29,7 +29,12 @@ impl TestNamespace {
             .as_nanos();
         let sequence = NEXT_NAMESPACE.fetch_add(1, Ordering::Relaxed);
         Self {
-            prefix: format!("rf_test_{:x}_{:x}_{:x}", std::process::id(), timestamp, sequence),
+            prefix: format!(
+                "rf_test_{:x}_{:x}_{:x}",
+                std::process::id(),
+                timestamp,
+                sequence
+            ),
         }
     }
 
@@ -123,12 +128,17 @@ impl TestSqlDatabase {
 }
 
 fn validate_test_database_url(url: &str) -> Result<(), DatabaseError> {
-    let (_, authority_and_path) = url.split_once("://").ok_or(
-        DatabaseError::InvalidConfiguration("external test database URL must be absolute"),
-    )?;
-    let (_, path_and_query) = authority_and_path.rsplit_once('/').ok_or(
-        DatabaseError::InvalidConfiguration("external test database URL must include a database name"),
-    )?;
+    let (_, authority_and_path) =
+        url.split_once("://")
+            .ok_or(DatabaseError::InvalidConfiguration(
+                "external test database URL must be absolute",
+            ))?;
+    let (_, path_and_query) =
+        authority_and_path
+            .rsplit_once('/')
+            .ok_or(DatabaseError::InvalidConfiguration(
+                "external test database URL must include a database name",
+            ))?;
     let database = path_and_query.split(['?', '#']).next().unwrap_or_default();
 
     if database == "test" || database.starts_with("test_") || database.ends_with("_test") {
