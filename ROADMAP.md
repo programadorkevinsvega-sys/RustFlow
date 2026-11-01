@@ -448,16 +448,16 @@ The 6.7.2 baseline is verified: all four SQL relation kinds have integration cov
 ## Phase 7 — Core framework completeness
 
 ### 7.1 Operational capabilities
-- [ ] Add structured tracing and configurable log levels.
-- [ ] Add safe error-reporting hooks.
-- [ ] Add health/readiness endpoints.
-- [ ] Define cache interfaces if justified.
-- [ ] Define queue, email, and storage integrations only when delivery/security contracts are clear.
-- [ ] Ensure graceful shutdown and timeouts are tested.
+- [x] Add structured tracing and configurable log levels while keeping subscriber/exporter ownership in the application.
+- [x] Add safe error-reporting hooks with allowlisted metadata and bounded, isolated execution.
+- [x] Add opt-in health/readiness endpoints with explicit, bounded checks.
+- [x] Evaluate a cache interface; defer it until a concrete framework use case and invalidation/consistency contract justify it.
+- [x] Defer queue, email, and storage integrations until their delivery, durability, permission, and security contracts are clear.
+- [x] Ensure graceful shutdown and timeouts are tested, including cancellation of stuck in-flight request handlers at the configured deadline.
 
-**Implementation candidate:** branch `feat/core-phase-7-1-operational-capabilities` adds request-duration tracing and `RUSTFLOW_LOG_LEVEL` parsing while keeping subscriber ownership in the application; safe 5xx reporting with allowlisted metadata and bounded, isolated execution; opt-in framework liveness/readiness routes with explicit bounded checks; and a finite graceful-shutdown deadline. ADR 0023 records the contracts. This candidate is not accepted until the final PR SHA passes the complete required CI matrix and the documented integration tests are verified.
+**Acceptance record (PR #68):** the final PR head `491703f2263f20896128673aaaec66b6837711c1` passed the complete required CI matrix: Rust 1.85 and stable (formatting, Clippy, workspace tests and database integration contracts), WebAssembly, Browser E2E/bundle size, documentation build/site, governance, dependency review, and Cloudflare Pages. The stuck in-flight graceful-shutdown regression test passed on both Rust toolchains. PR #68 was squash-merged into `main` on 2026-11-01 as `c6ef2232d99233becb08008dc8b1a4a38b5bbd2f`. The post-merge documentation-site workflow also passed. Phase 7.1 is complete; its completion does not claim that the deferred integrations are implemented or that the pre-1.0 framework is production-ready.
 
-**Explicitly deferred:** cache interface (no concrete framework use case or invalidation/consistency contract); queue (delivery, acknowledgement, retry, durability and idempotency semantics); email (acceptance-versus-delivery, credentials and retry contract); storage (object isolation, permissions, signed URL and deletion contract). No placeholder traits are exposed. These items remain open for a later phase decision and are not counted as implemented by Phase 7.1.
+**Explicitly deferred:** no cache interface is exposed without a concrete framework use case and invalidation/consistency contract; queue remains deferred pending delivery, acknowledgement, retry, durability and idempotency semantics; email remains deferred pending acceptance-versus-delivery, credential and retry contracts; storage remains deferred pending object isolation, permissions, signed-URL and deletion contracts. No placeholder traits are exposed. These items are not counted as implemented by Phase 7.1.
 
 ### 7.2 UI completeness
 - [ ] Improve contexts, dynamic lists, fragments, forms, and controlled inputs.
