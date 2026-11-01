@@ -13,6 +13,18 @@ La implementación amplía el tracing HTTP con duración por petición y configu
 
 Cache se evaluó y se difiere porque todavía no hay un caso de uso concreto ni contrato de invalidación/consistencia. Queue, email y storage también siguen diferidos hasta definir entrega, durabilidad, permisos y seguridad. No hay traits placeholder ni se anuncian estas integraciones como capacidades disponibles. La finalización de Phase 7.1 no implica estabilidad de API ni preparación para producción del framework pre-1.0.
 
+### Fase 7.2 — UI completeness (PR #70)
+
+La implementación y la actualización documental de esta fase se entregan juntas en la PR #70. Se conservaron y auditaron las capacidades previas de componentes, listas keyed, fragments, formularios nativos, SSR e hidratación, y se completaron los siguientes contratos:
+
+- **Memos derivados (`use_memo`):** cómputo eager asociado al owner, dependencias dinámicas y supresión de notificaciones cuando el resultado `PartialEq` no cambia. Dentro de un batch se lee el último valor confirmado hasta el flush exterior.
+- **Refs Rust (`use_ref`):** almacenamiento estable, no reactivo y ligado al owner; acceso con closures sin exponer punteros/guards de préstamo duraderos; el handle se invalida al disponer el owner.
+- **Contextos tipados:** `Context<T>` con identidad propia, providers por owner, búsqueda del ancestro más cercano, shadowing anidado y aislamiento entre runtimes/solicitudes SSR. El lookup no es reactivo por sí solo.
+- **Referencias DOM:** `rustflow_dom::ElementRef` y `ref={...}` para elementos nativos en browser/WASM. El handle se completa tras mount o hidratación validada, sigue los reemplazos y se limpia al desmontar; no crea nodos en SSR y no es reactivo.
+- **Inputs controlados:** una reconciliación evita reescribir una propiedad DOM cuando ya coincide con el valor controlado, preservando mejor la selección/caret durante actualizaciones no relacionadas.
+- **Errores, estilos y accesibilidad:** se documentan la propagación de errores UI y la ausencia de ErrorBoundary; CSS/assets siguen el pipeline Vite de la aplicación, sin CSS-in-Rust ni asset registry del framework; se añade guía de accesibilidad.
+
+Las APIs nuevas siguen siendo experimentales y pre-1.0. No se ofrecen Resources/Suspense/loading boundaries ni ErrorBoundary de componentes; el rendering asíncrono requiere contratos explícitos de cancelación, resultados obsoletos, SSR, hidratación y errores. Las referencias DOM no sustituyen `use_ref` y solo existen en el adaptador browser/WASM. Consulta [Reactividad](/concepts/reactivity/), [Composición de UI](/guides/ui-foundations/), [Errores en UI y SSR](/guides/ui-errors/), [Estilos y assets](/guides/styling-assets/) y la [referencia de disponibilidad de API](/reference/api-status/).
 ## Estado por fases
 
 ### Fase 0 — Fundación del proyecto: completada
@@ -128,6 +140,7 @@ PR #66 cerró el gate global y se fusionó mediante squash el 2026-11-01 como `6
 |---|---|---|
 | Crear estado local en un componente | Sí, con owner activo | [Reactividad](/concepts/reactivity/) |
 | Crear componentes con props y eventos tipados | Sí, dentro del subconjunto descrito | [Componentes](/guides/components/) |
+| Referenciar elementos DOM nativos de forma segura | Sí, experimental y solo browser/WASM; mount, reemplazo, hidratación validada y unmount | [Composición de UI](/guides/ui-foundations/) |
 | Actualizar DOM con señales/listas keyed | Sí, en el runtime WASM | [README del navegador](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/examples/browser/README.md) |
 | Configurar nivel de tracing | Sí, mediante `TracingConfig`; subscriber propiedad de la aplicación | [Servidor HTTP](/guides/server/) · [Configuración](/guides/configuration/) |
 | Reportar errores internos sin datos de petición | Sí, mediante `ErrorReporter` con metadatos allowlisted | [Seguridad HTTP](/guides/errors-and-security/) |
@@ -141,7 +154,7 @@ PR #66 cerró el gate global y se fusionó mediante squash el 2026-11-01 como `6
 | Extracción tipada y errores 422 | Experimental, integrada en main (Fase 6.3) | [Formularios y validación](/guides/forms-validation/) |
 | Forms mejorados | Solo GET elegibles con opt-in | [Navegación](/guides/navigation/) |
 | CLI y scaffolding | Experimental e integrado en `main` (Fase 6.1 y Phase 6.7.5/6.7.6) | `rustflow new` conserva `server` como plantilla predeterminada; `rustflow new --template crud` genera la aplicación ORM educativa con relación Category/Product, carga explícita, filtros y paginación demostrados en los cuatro motores SQL. No es un starter de producción. [CLI y generadores](/guides/cli/) |
-| <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> | No | [Roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) |
+| <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> | Sí, de forma experimental (Phase 7.2) | [Reactividad](/concepts/reactivity/) · [Composición de UI](/guides/ui-foundations/) |
 | Protección CSRF en mutaciones mediante cookies | Experimental, opt-in; requiere conectar middleware y proveer clave | [Formularios y validación](/guides/forms-validation/) |
 | Sesiones server-side y guards de acceso | Experimental, integrado en `main` (Fase 6.4); sin proveedor de usuarios ni persistencia durable | [Guía de sesiones](/guides/sessions-and-access/) |
 | Pools SQLx tipados para SQLite/PostgreSQL/MySQL/MariaDB | Experimental, integrados en main mediante PR #59 | Un pool compartido con SeaORM por backend; CRUD/bulk, queries tipadas y transacciones mixtas. Los 8 checks requeridos pasaron en el HEAD verificado. [Base de datos](/guides/database/) |
