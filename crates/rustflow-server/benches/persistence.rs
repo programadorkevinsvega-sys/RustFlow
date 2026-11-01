@@ -6,7 +6,7 @@ use std::{
 };
 
 use rustflow_server::{
-    DatabaseConfig, DatabasePool, DocumentFilter, DocumentModel, DocumentQuery, DocumentUpdate,
+    DatabaseConfig, DatabasePool, DocumentFilter, DocumentModel, DocumentUpdate,
     MongoConfig, MongoDatabase,
     mongodb_driver::bson::oid::ObjectId,
     orm::load_many,
