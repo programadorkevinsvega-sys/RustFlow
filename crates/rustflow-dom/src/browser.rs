@@ -1478,8 +1478,13 @@ impl DomRenderer {
                 return Err(error.into());
             }
         };
-        self.validate_view(&view)?;
-        self.validate_node_refs_for_view(&view, None)?;
+        if let Err(error) = self
+            .validate_view(&view)
+            .and_then(|_| self.validate_node_refs_for_view(&view, None))
+        {
+            let _ = scope.dispose();
+            return Err(error);
+        }
         let start = self.document.create_comment("rustflow:dynamic:start");
         let end = self.document.create_comment("rustflow:dynamic:end");
         let mut inner = RenderedNodes::default();
@@ -1536,8 +1541,13 @@ impl DomRenderer {
             RenderTarget::Browser,
         )?;
         let view = instance.view().clone();
-        self.validate_view(&view)?;
-        self.validate_node_refs_for_view(&view, None)?;
+        if let Err(error) = self
+            .validate_view(&view)
+            .and_then(|_| self.validate_node_refs_for_view(&view, None))
+        {
+            let _ = instance.unmount();
+            return Err(error);
+        }
         let start = self.document.create_comment("rustflow:component:start");
         let end = self.document.create_comment("rustflow:component:end");
         let mut inner = RenderedNodes::default();
