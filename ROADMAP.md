@@ -455,6 +455,10 @@ The 6.7.2 baseline is verified: all four SQL relation kinds have integration cov
 - [ ] Define queue, email, and storage integrations only when delivery/security contracts are clear.
 - [ ] Ensure graceful shutdown and timeouts are tested.
 
+**Implementation candidate:** branch `feat/core-phase-7-1-operational-capabilities` adds request-duration tracing and `RUSTFLOW_LOG_LEVEL` parsing while keeping subscriber ownership in the application; safe 5xx reporting with allowlisted metadata and bounded, isolated execution; opt-in framework liveness/readiness routes with explicit bounded checks; and a finite graceful-shutdown deadline. ADR 0023 records the contracts. This candidate is not accepted until the final PR SHA passes the complete required CI matrix and the documented integration tests are verified.
+
+**Explicitly deferred:** cache interface (no concrete framework use case or invalidation/consistency contract); queue (delivery, acknowledgement, retry, durability and idempotency semantics); email (acceptance-versus-delivery, credentials and retry contract); storage (object isolation, permissions, signed URL and deletion contract). No placeholder traits are exposed. These items remain open for a later phase decision and are not counted as implemented by Phase 7.1.
+
 ### 7.2 UI completeness
 - [ ] Improve contexts, dynamic lists, fragments, forms, and controlled inputs.
 - [ ] Add `use_memo` for derived computations with documented dependency tracking and caching semantics.
