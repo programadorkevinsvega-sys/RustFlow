@@ -1773,7 +1773,8 @@ impl Application {
                 .tap_io(|_| {}),
             router.into_make_service_with_connect_info::<SocketAddr>(),
         )
-        .with_graceful_shutdown(shutdown_signal);
+        .with_graceful_shutdown(shutdown_signal)
+        .into_future();
         await_graceful_shutdown(server, shutdown_started_rx, shutdown_timeout).await
     }
 
