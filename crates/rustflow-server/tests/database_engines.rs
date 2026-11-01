@@ -335,19 +335,16 @@ async fn postgres_migrations_are_repeatable_and_reversible() {
         .await
         .expect("repeating PostgreSQL migrations must be a no-op");
 
-    rustflow_server::sqlx::query(
-        "INSERT INTO rustflow_phase676_pg_items (value) VALUES ($1)",
-    )
-    .bind("reversible-migration")
-    .execute(pool)
-    .await
-    .expect("insert into migrated PostgreSQL table");
-    let before_rollback: i64 = rustflow_server::sqlx::query_scalar(
-        "SELECT COUNT(*) FROM rustflow_phase676_pg_items",
-    )
-    .fetch_one(pool)
-    .await
-    .expect("count PostgreSQL migration rows");
+    rustflow_server::sqlx::query("INSERT INTO rustflow_phase676_pg_items (value) VALUES ($1)")
+        .bind("reversible-migration")
+        .execute(pool)
+        .await
+        .expect("insert into migrated PostgreSQL table");
+    let before_rollback: i64 =
+        rustflow_server::sqlx::query_scalar("SELECT COUNT(*) FROM rustflow_phase676_pg_items")
+            .fetch_one(pool)
+            .await
+            .expect("count PostgreSQL migration rows");
     assert_eq!(before_rollback, 1);
 
     database
@@ -358,12 +355,11 @@ async fn postgres_migrations_are_repeatable_and_reversible() {
         .run_migrations(&migrations)
         .await
         .expect("reapply PostgreSQL migration after rollback");
-    let after_reapply: i64 = rustflow_server::sqlx::query_scalar(
-        "SELECT COUNT(*) FROM rustflow_phase676_pg_items",
-    )
-    .fetch_one(pool)
-    .await
-    .expect("count rows after PostgreSQL migration reapply");
+    let after_reapply: i64 =
+        rustflow_server::sqlx::query_scalar("SELECT COUNT(*) FROM rustflow_phase676_pg_items")
+            .fetch_one(pool)
+            .await
+            .expect("count rows after PostgreSQL migration reapply");
     assert_eq!(after_reapply, 0);
 
     database.close().await;
