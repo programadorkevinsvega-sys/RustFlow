@@ -799,6 +799,52 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         ("cookie", cookies.as_str()),
     ];
 
+    let invalid_category_body = form_body(&[
+        ("_csrf", &csrf_token),
+        ("name", "Invalid category probe"),
+        ("sku", &format!("invalid-category-{label}")),
+        ("description", ""),
+        ("price_cents", "10"),
+        ("category_id", "9999"),
+    ]);
+    let invalid_category = generated_http_request(
+        port,
+        "POST",
+        "/products",
+        &secured_headers,
+        &invalid_category_body,
+    );
+    assert_eq!(
+        generated_response_status(&invalid_category),
+        409,
+        "{label}: foreign-key constraint should map to conflict: {invalid_category}"
+    );
+
+    let invalid_filter = generated_http_request(
+        port,
+        "GET",
+        "/products?category_id=-1",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&invalid_filter),
+        422,
+        "{label}: invalid category filter should fail validation: {invalid_filter}"
+    );
+    let invalid_page = generated_http_request(
+        port,
+        "GET",
+        "/products?page=0",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&invalid_page),
+        422,
+        "{label}: page zero should fail validation: {invalid_page}"
+    );
+
     let sku = format!("cross-engine-{label}");
     let name = format!("Cross engine {label}");
     let create_body = form_body(&[
@@ -807,6 +853,7 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         ("sku", &sku),
         ("description", "Generated application smoke test"),
         ("price_cents", "2100"),
+        ("category_id", "2"),
     ]);
     let create = generated_http_request(port, "POST", "/products", &secured_headers, &create_body);
     assert_eq!(generated_response_status(&create), 303, "{label}: {create}");
@@ -840,6 +887,118 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         "",
     );
     assert_eq!(generated_response_status(&detail), 200, "{label}: {detail}");
+    assert!(
+        generated_response_body(&detail).contains("Category: Office"),
+        "{label}: relation was not rendered by the product detail route: {detail}"
+    );
+
+    let filtered = generated_http_request(
+        port,
+        "GET",
+        "/products?q=Cross&category_id=2&page=1",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&filtered),
+        200,
+        "{label}: {filtered}"
+    );
+    assert!(
+        generated_response_body(&filtered).contains(&name),
+        "{label}: {filtered}"
+    );
+
+    for index in 1..=6 {
+        let batch_name = format!("Batch item {index:02}");
+        let batch_sku = format!("batch-{label}-{index:02}");
+        let batch_body = form_body(&[
+            ("_csrf", &csrf_token),
+            ("name", &batch_name),
+            ("sku", &batch_sku),
+            ("description", ""),
+            ("price_cents", "50"),
+            ("category_id", "1"),
+        ]);
+        let response =
+            generated_http_request(port, "POST", "/products", &secured_headers, &batch_body);
+        assert_eq!(
+            generated_response_status(&response),
+            303,
+            "{label}: batch item creation failed: {response}"
+        );
+    }
+
+    let first_page = generated_http_request(
+        port,
+        "GET",
+        "/products?q=Batch%20item&category_id=1&page=1",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&first_page),
+        200,
+        "{label}: {first_page}"
+    );
+    let first_page_body = generated_response_body(&first_page);
+    assert!(
+        first_page_body.contains("Batch item 01"),
+        "{label}: {first_page}"
+    );
+    assert!(
+        first_page_body.contains("Batch item 05"),
+        "{label}: {first_page}"
+    );
+    assert!(
+        !first_page_body.contains("Batch item 06"),
+        "{label}: {first_page}"
+    );
+
+    let second_page = generated_http_request(
+        port,
+        "GET",
+        "/products?q=Batch%20item&category_id=1&page=2",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&second_page),
+        200,
+        "{label}: {second_page}"
+    );
+    let second_page_body = generated_response_body(&second_page);
+    assert!(
+        second_page_body.contains("Batch item 06"),
+        "{label}: {second_page}"
+    );
+    assert!(
+        !second_page_body.contains("Batch item 01"),
+        "{label}: {second_page}"
+    );
+
+    for index in 1..=6 {
+        let batch_name = format!("Batch item {index:02}");
+        let source = if index <= 5 {
+            first_page_body
+        } else {
+            second_page_body
+        };
+        let batch_id = generated_product_id_from_list(source, &batch_name);
+        let delete_body = form_body(&[("_csrf", &csrf_token)]);
+        let response = generated_http_request(
+            port,
+            "POST",
+            &format!("/products/{batch_id}/delete"),
+            &secured_headers,
+            &delete_body,
+        );
+        assert_eq!(
+            generated_response_status(&response),
+            303,
+            "{label}: batch item deletion failed: {response}"
+        );
+    }
 
     let updated_name = format!("Updated {name}");
     let update_body = form_body(&[
@@ -848,6 +1007,7 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         ("sku", &sku),
         ("description", "Updated on SQL engine"),
         ("price_cents", "2500"),
+        ("category_id", "2"),
     ]);
     let update = generated_http_request(
         port,
@@ -943,6 +1103,21 @@ fn form_body(fields: &[(&str, &str)]) -> String {
         .join("&")
 }
 
+fn generated_product_id_from_list(html: &str, name: &str) -> String {
+    let position = html
+        .find(name)
+        .unwrap_or_else(|| panic!("product {name} missing from generated listing: {html}"));
+    let link_start = html[..position]
+        .rfind("href=\"/products/")
+        .unwrap_or_else(|| panic!("product detail link missing for {name}: {html}"));
+    let id_start = link_start + "href=\"/products/".len();
+    html[id_start..]
+        .split('"')
+        .next()
+        .expect("product identifier in generated listing")
+        .to_owned()
+}
+
 #[test]
 fn generated_crud_template_builds_and_runs_the_real_orm_application() {
     let temp = TempDir::new("generated-crud");
@@ -965,6 +1140,7 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         "README.md",
         ".env.example",
         "src/main.rs",
+        "src/models/category.rs",
         "src/models/product.rs",
         "migrations/sqlite/20261031010001_create_products.sql",
         "migrations/postgres/20261031010002_create_products.sql",
@@ -979,6 +1155,7 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
 
     for path in [
         "src/main.rs",
+        "src/models/category.rs",
         "src/models/product.rs",
         "src/models/mod.rs",
         "src/bin/migrate.rs",
@@ -1002,11 +1179,17 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
     assert!(generated_main.contains("route_authorized"));
     assert!(generated_main.contains("CsrfProtection"));
     assert!(generated_main.contains("html_document"));
+    assert!(generated_main.contains("validated_query::<ProductListQuery>"));
+    assert!(generated_main.contains("load_one"));
     assert!(!generated_main.contains("sqlx::query("));
 
     let generated_entity = fs::read_to_string(project.join("src/models/product.rs")).unwrap();
     assert!(generated_entity.contains("ModelDiagnostics"));
     assert!(generated_entity.contains("DeriveEntityModel"));
+    assert!(generated_entity.contains("CategoryId"));
+    assert!(generated_entity.contains("belongs_to"));
+    let generated_category = fs::read_to_string(project.join("src/models/category.rs")).unwrap();
+    assert!(generated_category.contains("has_many"));
     let generated_manifest = fs::read_to_string(project.join("Cargo.toml")).unwrap();
     assert!(generated_manifest.contains("serde = { version = \"1\", features = [\"derive\"] }"));
 
@@ -1114,6 +1297,70 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
     assert_eq!(generated_response_status(&products), 200, "{products}");
     assert!(generated_response_body(&products).contains("No products have been created yet."));
 
+    let no_filtered_products = generated_http_request(
+        port,
+        "GET",
+        "/products?q=missing-product",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&no_filtered_products),
+        200,
+        "{no_filtered_products}"
+    );
+    assert!(
+        generated_response_body(&no_filtered_products)
+            .contains("No products match the current filters."),
+        "{no_filtered_products}"
+    );
+
+    let invalid_filter = generated_http_request(
+        port,
+        "GET",
+        "/products?category_id=-1",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&invalid_filter),
+        422,
+        "{invalid_filter}"
+    );
+    let invalid_page = generated_http_request(
+        port,
+        "GET",
+        "/products?page=0",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&invalid_page),
+        422,
+        "{invalid_page}"
+    );
+
+    let invalid_category_body = form_body(&[
+        ("_csrf", &csrf_token),
+        ("name", "Invalid category probe"),
+        ("sku", "invalid-category-sqlite"),
+        ("description", ""),
+        ("price_cents", "10"),
+        ("category_id", "9999"),
+    ]);
+    let invalid_category = generated_http_request(
+        port,
+        "POST",
+        "/products",
+        &authenticated_headers,
+        &invalid_category_body,
+    );
+    assert_eq!(
+        generated_response_status(&invalid_category),
+        409,
+        "{invalid_category}"
+    );
+
     let denied = generated_http_request(
         port,
         "GET",
@@ -1155,6 +1402,7 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         ("sku", ""),
         ("description", ""),
         ("price_cents", "-1"),
+        ("category_id", "1"),
     ]);
     let invalid_form = generated_http_request(
         port,
@@ -1176,6 +1424,7 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         ("sku", "bad-price"),
         ("description", ""),
         ("price_cents", "not-an-integer"),
+        ("category_id", "1"),
     ]);
     let malformed_form = generated_http_request(
         port,
@@ -1196,6 +1445,7 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         ("sku", "desk-001"),
         ("description", "User supplied <script> text"),
         ("price_cents", "1250"),
+        ("category_id", "2"),
     ]);
     let created = generated_http_request(
         port,
@@ -1233,6 +1483,71 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
     );
     assert_eq!(generated_response_status(&detail), 200, "{detail}");
     assert!(generated_response_body(&detail).contains("User supplied &lt;script&gt; text"));
+    assert!(generated_response_body(&detail).contains("Category: Office"));
+
+    let filtered_products = generated_http_request(
+        port,
+        "GET",
+        "/products?q=Desk&category_id=2&page=1",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&filtered_products),
+        200,
+        "{filtered_products}"
+    );
+    assert!(generated_response_body(&filtered_products).contains("Desk"));
+    assert!(!generated_response_body(&filtered_products).contains("Batch item"));
+
+    for index in 1..=6 {
+        let name = format!("Batch item {index:02}");
+        let sku = format!("batch-{index:02}");
+        let body = form_body(&[
+            ("_csrf", &csrf_token),
+            ("name", &name),
+            ("sku", &sku),
+            ("description", ""),
+            ("price_cents", "50"),
+            ("category_id", "1"),
+        ]);
+        let response =
+            generated_http_request(port, "POST", "/products", &authenticated_headers, &body);
+        assert_eq!(
+            generated_response_status(&response),
+            303,
+            "batch product creation failed: {response}"
+        );
+    }
+
+    let first_page = generated_http_request(
+        port,
+        "GET",
+        "/products?q=Batch%20item&category_id=1&page=1",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(generated_response_status(&first_page), 200, "{first_page}");
+    let first_page_body = generated_response_body(&first_page);
+    assert!(first_page_body.contains("Batch item 01"));
+    assert!(first_page_body.contains("Batch item 05"));
+    assert!(!first_page_body.contains("Batch item 06"));
+
+    let second_page = generated_http_request(
+        port,
+        "GET",
+        "/products?q=Batch%20item&category_id=1&page=2",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&second_page),
+        200,
+        "{second_page}"
+    );
+    let second_page_body = generated_response_body(&second_page);
+    assert!(second_page_body.contains("Batch item 06"));
+    assert!(!second_page_body.contains("Batch item 01"));
 
     let invalid_id = generated_http_request(
         port,
@@ -1261,6 +1576,7 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         ("sku", "desk-001"),
         ("description", "Updated product"),
         ("price_cents", "1499"),
+        ("category_id", "2"),
     ]);
     let updated = generated_http_request(
         port,

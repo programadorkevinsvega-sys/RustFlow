@@ -23,6 +23,8 @@ Open `http://127.0.0.1:3000/login`. The local demo credentials come from `.env`.
 
 - `Request::validated_form` and `ValidateInput` return structured 422 validation errors.
 - `DatabasePool::entity` and `EntityRepository` handle entity queries and CRUD using the one shared SQLx/SeaORM pool.
+- Products belong to a `Category` through a declared SeaORM relation and foreign key. The detail route uses the explicit `load_one` helper, and create/edit forms select a category.
+- `GET /products?q=desk&category_id=2&page=1` demonstrates bound text filtering, category filtering, stable ordering and bounded pagination. The listing loads category names in one batch instead of querying once per product.
 - `DatabasePool::begin_transaction` combines multiple ORM writes; `/admin/transaction-rollback-probe` deliberately violates a unique SKU constraint and explicitly rolls back the first write.
 - `SessionManager`, `AuthIdentity`, `route_protected` and `route_authorized` protect routes. A configured permission with no matching rule is denied.
 - `CsrfProtection` is explicitly attached to cookie-authenticated POST routes. The cookie and submitted token must both be valid and requests must carry same-origin context.

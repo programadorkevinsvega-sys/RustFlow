@@ -397,6 +397,41 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
         Some(inserted.clone())
     );
 
+    // Operator-looking text is a BSON scalar value, not a query document or operator.
+    let hostile_title = r#"{"$ne": null}"#;
+    let hostile_document = repository
+        .insert(odm_entry(hostile_title, 99, &[]))
+        .await
+        .expect("store operator-looking input as a string");
+    let exact_hostile_matches = repository
+        .find_many(
+            DocumentQuery::new(
+                DocumentFilter::new()
+                    .eq("title", hostile_title)
+                    .expect("bind operator-looking input as a scalar"),
+            )
+            .limit(10)
+            .expect("bounded hostile-value query"),
+        )
+        .await
+        .expect("query operator-looking input as a scalar");
+    assert_eq!(exact_hostile_matches.len(), 1);
+    assert_eq!(
+        exact_hostile_matches[0].id, hostile_document.id,
+        "a scalar string must not become a MongoDB operator expression"
+    );
+    repository
+        .delete_one(
+            DocumentFilter::new()
+                .eq(
+                    "_id",
+                    hostile_document.id.expect("generated hostile-document ID"),
+                )
+                .expect("hostile-document cleanup filter"),
+        )
+        .await
+        .expect("remove hostile-document fixture");
+
     let named_repository = database.repository::<NamedOdmEntry>();
     let named = named_repository
         .insert(NamedOdmEntry {

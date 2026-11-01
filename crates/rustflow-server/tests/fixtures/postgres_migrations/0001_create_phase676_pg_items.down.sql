@@ -1,0 +1,1 @@
+DROP TABLE rustflow_phase676_pg_items;

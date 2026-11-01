@@ -1,4 +1,4 @@
-use std::{env, str::FromStr};
+use std::{env, str::FromStr, time::Duration};
 
 use rustflow_server::{
     DatabaseBackend, DatabaseConfig, DatabaseErrorKind, DatabasePool,
@@ -19,6 +19,23 @@ struct NotePreview {
     id: i64,
     account_id: i64,
     title: String,
+}
+
+mod concurrent_items {
+    use rustflow_server::sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "rustflow_phase676_concurrent_items")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        pub token: String,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 mod entities {
@@ -1844,6 +1861,139 @@ async fn exercise_orm(database: &DatabasePool) {
         .await
         .expect("cleanup default row");
     assert_eq!(cleanup.rows_affected, 1);
+
+    // Query expressions must bind hostile-looking values as data, never SQL fragments.
+    let hostile_email = "attacker@example.test' OR 1=1; DROP TABLE rustflow_orm_accounts; --";
+    let hostile_account = accounts
+        .insert(entities::account::ActiveModel {
+            email: Set(hostile_email.to_owned()),
+            enabled: Set(true),
+            alias: Set(None),
+            metadata: Set(serde_json::json!({})),
+            checksum: Set(vec![]),
+            ..Default::default()
+        })
+        .await
+        .expect("hostile-looking input is stored as a bound value");
+    let exact_match = accounts
+        .one(
+            accounts
+                .select()
+                .filter(entities::account::Column::Email.eq(hostile_email)),
+        )
+        .await
+        .expect("hostile-looking input is queried as a bound value")
+        .expect("exact hostile-looking value is present");
+    assert_eq!(exact_match.id, hostile_account.id);
+    let surviving_rows = accounts
+        .all(accounts.select())
+        .await
+        .expect("account table remains queryable after hostile-looking input");
+    assert!(
+        surviving_rows
+            .iter()
+            .any(|row| row.id == hostile_account.id)
+    );
+    accounts
+        .delete_by_id(hostile_account.id)
+        .await
+        .expect("remove query-safety fixture");
+}
+
+async fn assert_concurrent_writes_are_isolated_and_complete(url: &str) {
+    let maximum_connections = if url.starts_with("sqlite:") { 1 } else { 4 };
+    let config = DatabaseConfig::new(url)
+        .expect("valid concurrent-write test URL")
+        .with_max_connections(maximum_connections)
+        .expect("valid concurrent-write pool size");
+    let database = DatabasePool::connect(&config)
+        .await
+        .expect("connect concurrent-write test database");
+
+    database
+        .execute_raw(
+            "DROP TABLE IF EXISTS rustflow_phase676_concurrent_items",
+            [],
+        )
+        .await
+        .expect("remove stale concurrent-write fixture");
+    let create_table = if url.starts_with("sqlite:") {
+        "CREATE TABLE rustflow_phase676_concurrent_items (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE)"
+    } else if url.starts_with("postgres://") || url.starts_with("postgresql://") {
+        "CREATE TABLE rustflow_phase676_concurrent_items (id BIGSERIAL PRIMARY KEY, token TEXT NOT NULL UNIQUE)"
+    } else {
+        "CREATE TABLE rustflow_phase676_concurrent_items (id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, token VARCHAR(255) NOT NULL UNIQUE) ENGINE=InnoDB"
+    };
+    database
+        .execute_raw(create_table, [])
+        .await
+        .expect("create concurrent-write fixture");
+
+    let writes = (0..32).map(|index| {
+        let database = database.clone();
+        tokio::spawn(async move {
+            database
+                .entity::<concurrent_items::Entity>()
+                .insert(concurrent_items::ActiveModel {
+                    token: Set(format!("concurrent-{index}@phase676.test")),
+                    ..Default::default()
+                })
+                .await
+        })
+    });
+
+    for write in writes {
+        write
+            .await
+            .expect("concurrent writer task must not panic")
+            .expect("concurrent ORM write must succeed");
+    }
+
+    let repository = database.entity::<concurrent_items::Entity>();
+    let rows = repository
+        .all(repository.select())
+        .await
+        .expect("read concurrent-write results");
+    assert_eq!(
+        rows.len(),
+        32,
+        "all distinct concurrent writes must be visible"
+    );
+
+    database
+        .execute_raw("DROP TABLE rustflow_phase676_concurrent_items", [])
+        .await
+        .expect("drop concurrent-write fixture");
+    database.close().await;
+}
+
+#[tokio::test]
+async fn sqlite_concurrent_writes_complete_without_lost_rows() {
+    assert_concurrent_writes_are_isolated_and_complete("sqlite::memory:").await;
+}
+
+#[tokio::test]
+async fn postgres_concurrent_writes_complete_without_lost_rows() {
+    let Some(url) = integration_url("RUSTFLOW_TEST_DATABASE_URL") else {
+        return;
+    };
+    assert_concurrent_writes_are_isolated_and_complete(&url).await;
+}
+
+#[tokio::test]
+async fn mysql_concurrent_writes_complete_without_lost_rows() {
+    let Some(url) = integration_url("RUSTFLOW_TEST_MYSQL_URL") else {
+        return;
+    };
+    assert_concurrent_writes_are_isolated_and_complete(&url).await;
+}
+
+#[tokio::test]
+async fn mariadb_concurrent_writes_complete_without_lost_rows() {
+    let Some(url) = integration_url("RUSTFLOW_TEST_MARIADB_URL") else {
+        return;
+    };
+    assert_concurrent_writes_are_isolated_and_complete(&url).await;
 }
 
 async fn database_from_url(url: &str) -> DatabasePool {
@@ -1893,6 +2043,73 @@ async fn mariadb_orm_contract() {
     };
     let database = database_from_url(&url).await;
     exercise_orm(&database).await;
+}
+
+async fn assert_pool_exhaustion_is_bounded_and_classified(url: &str) {
+    let config = DatabaseConfig::new(url)
+        .expect("valid pool-exhaustion test URL")
+        .with_max_connections(1)
+        .expect("single-connection pool")
+        .with_acquire_timeout(Duration::from_millis(150))
+        .expect("bounded acquire timeout");
+    let database = DatabasePool::connect(&config)
+        .await
+        .expect("connect pool-exhaustion test database");
+
+    // Holding the only pooled connection makes the following operation exercise the
+    // real acquire-timeout path instead of a synthetic driver error.
+    let transaction = database
+        .begin_transaction()
+        .await
+        .expect("acquire the only connection");
+    let error = tokio::time::timeout(Duration::from_secs(2), database.query_raw("SELECT 1", []))
+        .await
+        .expect("pool exhaustion must be bounded")
+        .expect_err("a second operation must not exceed the configured pool size");
+    assert_eq!(
+        error.kind(),
+        DatabaseErrorKind::Unavailable,
+        "pool-acquire timeout must have the stable unavailable classification: {error:?}"
+    );
+
+    transaction
+        .rollback()
+        .await
+        .expect("release the only pooled connection");
+    database
+        .query_raw("SELECT 1", [])
+        .await
+        .expect("pool remains usable after the connection is released");
+    database.close().await;
+}
+
+#[tokio::test]
+async fn sqlite_pool_exhaustion_is_bounded_and_classified() {
+    assert_pool_exhaustion_is_bounded_and_classified("sqlite::memory:").await;
+}
+
+#[tokio::test]
+async fn postgres_pool_exhaustion_is_bounded_and_classified() {
+    let Some(url) = integration_url("RUSTFLOW_TEST_DATABASE_URL") else {
+        return;
+    };
+    assert_pool_exhaustion_is_bounded_and_classified(&url).await;
+}
+
+#[tokio::test]
+async fn mysql_pool_exhaustion_is_bounded_and_classified() {
+    let Some(url) = integration_url("RUSTFLOW_TEST_MYSQL_URL") else {
+        return;
+    };
+    assert_pool_exhaustion_is_bounded_and_classified(&url).await;
+}
+
+#[tokio::test]
+async fn mariadb_pool_exhaustion_is_bounded_and_classified() {
+    let Some(url) = integration_url("RUSTFLOW_TEST_MARIADB_URL") else {
+        return;
+    };
+    assert_pool_exhaustion_is_bounded_and_classified(&url).await;
 }
 
 #[tokio::test]

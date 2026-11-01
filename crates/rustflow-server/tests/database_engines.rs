@@ -282,6 +282,90 @@ async fn run_contract(url: &str, server: ExpectedServer) {
 }
 
 #[tokio::test]
+#[ignore = "Run serially after the workspace suite to isolate the PostgreSQL migration ledger"]
+async fn postgres_migrations_are_repeatable_and_reversible() {
+    let url = match env::var("RUSTFLOW_TEST_DATABASE_URL") {
+        Ok(url) if !url.trim().is_empty() => url,
+        _ if env::var("CI").is_ok_and(|value| value == "true") => {
+            panic!("RUSTFLOW_TEST_DATABASE_URL must be set for the PostgreSQL migration contract");
+        }
+        _ => return,
+    };
+    let config = DatabaseConfig::new(url)
+        .expect("valid PostgreSQL test URL")
+        .with_max_connections(2)
+        .expect("valid PostgreSQL pool bounds");
+    let database = DatabasePool::connect(&config)
+        .await
+        .expect("connect to PostgreSQL migration service");
+    let version: String = rustflow_server::sqlx::query_scalar("SHOW server_version")
+        .fetch_one(
+            database
+                .sqlx_postgres_pool()
+                .expect("PostgreSQL typed pool"),
+        )
+        .await
+        .expect("read PostgreSQL version");
+    assert!(
+        version.starts_with("16.15"),
+        "Phase 6.6 support contract expects PostgreSQL 16.15, received {version}"
+    );
+
+    let pool = database
+        .sqlx_postgres_pool()
+        .expect("PostgreSQL typed pool");
+    rustflow_server::sqlx::query("DROP TABLE IF EXISTS rustflow_phase676_pg_items")
+        .execute(pool)
+        .await
+        .expect("reset PostgreSQL migration fixture");
+    // This dedicated post-workspace step owns the CI database while testing the
+    // SQLx migration ledger, so remove any ledger written by the generated-app test.
+    rustflow_server::sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations")
+        .execute(pool)
+        .await
+        .expect("reset dedicated PostgreSQL migration ledger");
+
+    let migrations = fixtures("postgres_migrations");
+    database
+        .run_migrations(&migrations)
+        .await
+        .expect("first PostgreSQL migration run");
+    database
+        .run_migrations(&migrations)
+        .await
+        .expect("repeating PostgreSQL migrations must be a no-op");
+
+    rustflow_server::sqlx::query("INSERT INTO rustflow_phase676_pg_items (value) VALUES ($1)")
+        .bind("reversible-migration")
+        .execute(pool)
+        .await
+        .expect("insert into migrated PostgreSQL table");
+    let before_rollback: i64 =
+        rustflow_server::sqlx::query_scalar("SELECT COUNT(*) FROM rustflow_phase676_pg_items")
+            .fetch_one(pool)
+            .await
+            .expect("count PostgreSQL migration rows");
+    assert_eq!(before_rollback, 1);
+
+    database
+        .rollback_migrations_to(&migrations, 0)
+        .await
+        .expect("revert PostgreSQL migration using down SQL");
+    database
+        .run_migrations(&migrations)
+        .await
+        .expect("reapply PostgreSQL migration after rollback");
+    let after_reapply: i64 =
+        rustflow_server::sqlx::query_scalar("SELECT COUNT(*) FROM rustflow_phase676_pg_items")
+            .fetch_one(pool)
+            .await
+            .expect("count rows after PostgreSQL migration reapply");
+    assert_eq!(after_reapply, 0);
+
+    database.close().await;
+}
+
+#[tokio::test]
 async fn mysql_8413_support_contract() {
     let Some(url) = configured_url(ExpectedServer::MySql) else {
         eprintln!("Skipping MySQL integration test outside CI: RUSTFLOW_TEST_MYSQL_URL is unset");

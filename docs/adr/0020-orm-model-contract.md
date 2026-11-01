@@ -1,12 +1,12 @@
 # ADR 0020: SQL ORM architecture, foundation and model contract
 
-- Status: Accepted with Phase 6.7.1 (PR #58, merge commit `36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1`); Phase 6.7.2 accepted and merged in PR #59 (merge commit `8d387943d5f6ccb4d3f33ba3708311442e238c5f`); Phase 6.7.4 accepted and merged in PR #62 (merge commit `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`).
+- Status: Accepted with Phase 6.7.1 (PR #58, merge commit `36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1`); Phase 6.7.2 accepted and merged in PR #59 (merge commit `8d387943d5f6ccb4d3f33ba3708311442e238c5f`); Phase 6.7.4 accepted and merged in PR #62 (merge commit `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`). Phase 6.7.5 generated CRUD application accepted in PR #64 (merge commit `edd665ad452c769c78ba8190c233e349a44b054a`); global Phase 6.7 quality/compatibility gate 6.7.6 remains open.
 - Phase: 6.7.1 — Model contract and architecture.
 - Related: ADR 0016 (SQLx pools and migrations), ADR 0017 (MySQL/MariaDB driver), ADR 0018 (MongoDB document adapter), ADR 0019 (database support matrix), [ORM model contract](../ORM_MODEL_CONTRACT.md).
 
 ## Context
 
-RustFlow's Phase 6.6 support contract is verified for bundled SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS and MongoDB 7.0.45. The workspace MSRV is Rust 1.85; CI verifies that toolchain and stable. The existing SQL adapter is pinned to SQLx 0.8.6 and exposes an AnyPool, explicit transaction wrappers, parameterized SQL and SQLx migrations. MongoDB uses the official MongoDB Rust driver 3.6.0 and a separate BSON/collection/index adapter.
+RustFlow's Phase 6.6 support contract is verified for bundled SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS and MongoDB 7.0.45. The workspace MSRV is Rust 1.85; CI verifies that toolchain and stable. At the Phase 6.7.1 decision point, the existing SQL adapter was pinned to SQLx 0.8.6 and exposed an AnyPool, explicit transaction wrappers, parameterized SQL and SQLx migrations. Phase 6.7.2 subsequently replaced that runtime boundary with one backend-specific typed SQLx pool shared with SeaORM; the current `DatabasePool` owns `SqlitePool`, `PgPool` or `MySqlPool` rather than `AnyPool`. MongoDB uses the official MongoDB Rust driver 3.6.0 and a separate BSON/collection/index adapter.
 
 Before this proposal, RustFlow had no integrated SQL ORM, model-row mapping, query execution API or relation loader. The CLI's generated models were plain structs and did not imply persistence. Phase 6.7 must be a cohesive, mature ORM for SQLite, PostgreSQL, MySQL and MariaDB, plus an independently designed MongoDB ODM. It must not close as a CRUD-only MVP.
 
