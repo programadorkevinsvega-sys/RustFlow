@@ -196,6 +196,7 @@ jobs:
             echo "Benchmark repetition ${run}/3"
             cargo bench -p rustflow --bench reactivity
           done
+          RUSTFLOW_BENCH_ITERATIONS=100 RUSTFLOW_BENCH_BULK_SIZE=50 cargo bench -p rustflow-server --bench persistence
 
       - name: Build documentation
         run: cargo doc --workspace --all-features --no-deps
