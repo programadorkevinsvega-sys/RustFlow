@@ -31,7 +31,7 @@ The runtime did not expose cached derived computations, general owner-scoped mut
 - Writes do not participate in signal dependency tracking and do not schedule effects.
 - On owner disposal, the value is taken and dropped. Cloned handles remain memory-safe but become invalid and return <code>RefDisposed</code>.
 - The API deliberately does not expose raw pointers or long-lived <code>Ref</code>/<code>RefMut</code> guards.
-- This decision does not add DOM element references. A DOM reference requires a distinct mount/hydration/unmount lifecycle and must be designed in the browser adapter without coupling <code>rustflow-view</code> to <code>web_sys</code>. That sub-contract remains deferred.
+- This decision does not implement DOM element references. Their distinct mount/hydration/reconciliation/unmount lifecycle is specified separately by [ADR 0025: Browser DOM element reference lifecycle](0025-browser-dom-element-reference-lifecycle.md), implemented in the browser adapter without coupling <code>rustflow-view</code> to <code>web_sys</code>.
 
 ### Typed contexts
 
@@ -56,7 +56,7 @@ The runtime did not expose cached derived computations, general owner-scoped mut
 2. **Use effects as public memo API:** rejected. It exposes scheduling and side effects instead of a read-only derived value.
 3. **Global context map keyed by type:** rejected. It cannot distinguish two contexts with the same value type and risks cross-request leakage.
 4. **Use <code>TypeId</code> as the sole key:** rejected. Two independent contexts of the same Rust type must remain distinct.
-5. **Expose DOM nodes from <code>rustflow-view</code>:** rejected. It couples a target-independent model to browser APIs and cannot represent SSR's lack of a DOM.
+5. **Expose DOM nodes from <code>rustflow-view</code>:** rejected. It couples a target-independent model to browser APIs and cannot represent SSR's lack of a DOM. The separate browser-only handle and lifecycle are specified by [ADR 0025](0025-browser-dom-element-reference-lifecycle.md).
 6. **Use unsafe pointers for refs:** rejected. Safe scoped storage and a separate future DOM-handle design provide clearer invalidation semantics.
 
 ## Consequences
@@ -67,7 +67,7 @@ The runtime did not expose cached derived computations, general owner-scoped mut
 - Refs are single-threaded, like the runtime. They are not synchronization primitives.
 - Context identity is independent of the value type and provider lookup is deterministic by the owner ancestry.
 - A value cloned out of a context may outlive its provider as a normal <code>Rc</code>; it is no longer discoverable through the disposed owner tree. Applications must not use that clone as proof that the provider remains mounted.
-- DOM element refs, reactive context replacement/notification, error boundaries, and async resources are not introduced by this ADR.
+- DOM element refs are not introduced by this ADR; their separate <code>ElementRef</code> contract is defined in [ADR 0025](0025-browser-dom-element-reference-lifecycle.md). Reactive context replacement/notification, component error boundaries, and async resources remain out of scope.
 
 ## Verification strategy
 
@@ -75,4 +75,4 @@ The runtime did not expose cached derived computations, general owner-scoped mut
 - Unit tests check ref identity, non-reactive writes, borrow-safe access, and invalidation after disposal.
 - Context tests check nearest provider, nested shadowing, duplicate registration, same-type distinct identities, missing values, signal-bearing values, and separate runtimes.
 - The component macro, native workspace, WebAssembly, SSR, and browser checks must pass on the final pull-request commit.
-- Documentation must state explicitly which behavior is absent; the ADR does not approve DOM refs, error boundaries, or async rendering.
+- Documentation must state explicitly which behavior is absent. This ADR covers memo, Rust storage refs, and typed contexts only; browser DOM refs are governed separately by ADR 0025. It does not approve component error boundaries or async rendering.
