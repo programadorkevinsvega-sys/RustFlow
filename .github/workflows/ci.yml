@@ -174,6 +174,9 @@ jobs:
       - name: Run MySQL and MariaDB integration contracts explicitly
         run: cargo test -p rustflow-server --test database_engines -- --test-threads=1
 
+      - name: Run PostgreSQL migrations contract in isolated post-workspace step
+        run: cargo test -p rustflow-server --test database_engines postgres_migrations_are_repeatable_and_reversible -- --ignored --test-threads=1
+
       - name: Run MongoDB integration contract explicitly
         run: cargo test -p rustflow-server --test mongodb_adapter -- --test-threads=1
 
