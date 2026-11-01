@@ -541,6 +541,21 @@ El límite de conexiones se aplica por proceso, no por aplicación completa. Est
 
 Las migraciones de producción deben ejecutarse como un paso coordinado, antes del despliegue de nuevas versiones. No habilites migraciones destructivas automáticas en el arranque de cada réplica.
 
+
+### Verificación de calidad y rendimiento (Phase 6.7.6)
+
+El gate final añade pruebas reproducibles de adquisición agotada del pool y escrituras concurrentes en SQLite, PostgreSQL, MySQL y MariaDB. Las pruebas mantienen ocupada la única conexión disponible, comprueban el timeout y la clasificación `DatabaseErrorKind::Unavailable`, liberan la transacción y verifican que el pool vuelva a funcionar. Otro conjunto de pruebas confirma que cadenas que parecen SQL o expresiones de operador MongoDB siguen tratándose como valores enlazados.
+
+Para obtener una línea base de rendimiento ejecuta:
+
+```sh
+cargo bench -p rustflow-server --bench persistence
+```
+
+El benchmark mide CRUD ORM, inserción masiva, composición/ejecución de consultas, carga por lotes de relaciones y CRUD/bulk ODM. Ejecuta SQLite y también cada servicio SQL/MongoDB configurado mediante las variables de integración usadas por CI. Puedes controlar el volumen con `RUSTFLOW_BENCH_ITERATIONS` y `RUSTFLOW_BENCH_BULK_SIZE`.
+
+Estas mediciones son smoke baselines comparativas, no una promesa de rendimiento ni una prueba estadística de producción. Al comparar ejecuciones registra el commit, `rustc --version`, Cargo.lock, versión/imagen de cada motor, CPU del runner y tamaño del pool.
+
 ## Límites actuales
 
 Phase 6.7.2 integra SeaORM 1.1.20 sobre el mismo pool SQLx tipado. Las pruebas de límites numéricos signed/unsigned por dialecto, conteos de consultas en carga anidada, mutaciones de relaciones y terminación real del backend PostgreSQL mientras `COMMIT` está activo pasaron en el SHA final de PR #59, que fue fusionada en `main` el 2026-10-31.
@@ -559,7 +574,7 @@ Limitaciones que deben respetarse:
 - **Phase 6.7.3:** ODM MongoDB tipado independiente, fusionado en `main` mediante PR #60 (HEAD final `659f1750d611e57315263216167d43375da23574`; merge `7ffb89b5ca36017a428cf3f828b68f590f8d404b`). La implementación y sus límites están en la [guía ODM MongoDB](/guides/mongodb-odm/) y [ADR 0021](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0021-mongodb-odm-architecture.md).
 - **Phase 6.7.4:** aceptada y fusionada mediante PR #62 (HEAD final `28218456db8ac323731054e291023a0765474125`; merge `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`). Añade `RelationLoadOptions` para filtros/orden por relación, `load_many_projected` para DTOs has-many, `RelationGraph` con ramas/niveles explícitos (profundidad predeterminada 8, máxima 16) y helpers `attach_one_to_many`, `detach_one_to_many` y `replace_one_to_one`. Los límites (offset/limit global al batch, proyecciones como hojas, sin lazy loading ni cascadas implícitas) están documentados en [ADR 0022](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0022-advanced-sql-relation-loading.md).
 - **Phase 6.7.5:** aceptada e integrada mediante PR #64 (squash merge `edd665ad452c769c78ba8190c233e349a44b054a`). El proyecto generado compiló y pasó integración HTTP/ORM en SQLite, PostgreSQL, MySQL y MariaDB con Rust 1.85 y stable; consulta la [guía del CLI](/guides/cli/) y los [ejemplos](/reference/examples/).
-- **Phase 6.7.6:** pendiente; gate global de calidad, compatibilidad y madurez ORM/ODM.
+- **Phase 6.7.6:** en desarrollo; añade cobertura de pool exhaustion/escrituras concurrentes por motor, regresiones de query-safety y benchmarks reproducibles de ORM/ODM. La aceptación global sigue pendiente de los checks del SHA final.
 
 La Phase 6.6 ya está completa y su matriz verificada está en `docs/DATABASE_SUPPORT_MATRIX.md`. El adaptador MongoDB de la 6.6.2 y el ODM independiente de Phase 6.7.3 están disponibles en `main`; el último se fusionó mediante PR #60 (`7ffb89b5ca36017a428cf3f828b68f590f8d404b`).
 
