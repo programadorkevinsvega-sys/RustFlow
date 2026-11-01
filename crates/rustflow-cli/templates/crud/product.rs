@@ -10,9 +10,23 @@ pub struct Model {
     pub sku: String,
     pub description: Option<String>,
     pub price_cents: i64,
+    pub category_id: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::category::Entity",
+        from = "Column::CategoryId",
+        to = "super::category::Column::Id"
+    )]
+    Category,
+}
+
+impl Related<super::category::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Category.def()
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}
