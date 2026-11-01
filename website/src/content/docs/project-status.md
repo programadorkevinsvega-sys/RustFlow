@@ -110,9 +110,9 @@ Los loaders siguen siendo explícitos y por lotes, sin carga perezosa. Limit/off
 
 PR #64 se fusionó mediante squash en `main` el 2026-10-31 como `edd665ad452c769c78ba8190c233e349a44b054a` (HEAD verificado del PR: `596366af0eccfb93fbbeaafb6df80a708cce6a1f`). Añade `rustflow new <nombre> --template crud` sin modificar la plantilla `server` predeterminada ni el comportamiento plano de `rustflow generate model`. La plantilla incorpora una entidad SeaORM explícita, migraciones por dialecto, operaciones CRUD con `EntityRepository`, validación, transacciones con rollback, guards de sesión/autorización, CSRF opt-in aplicado a mutaciones y HTML estructural SSR. La integración generada y los contratos de los cuatro motores SQL pasaron CI con Rust 1.85 y stable. La demo utiliza `InMemorySessionStore`, credenciales demo y cookies de desarrollo; rechaza `RUSTFLOW_ENV=production` y no es un ejemplo de operación en producción.
 
-### Fase 6.7.6 — Calidad y compatibilidad (pendiente)
+### Fase 6.7.6 — Calidad y compatibilidad (en desarrollo)
 
-Gate global pendiente de compatibilidad ORM/ODM, MSRV, seguridad, tests de motores, compile-fail, rendimiento y consistencia documental. Phase 6.7.5 no cierra la Fase 6.7 global.
+El gate final incorpora pruebas de pool exhaustion con clasificación estable y escrituras concurrentes en los cuatro motores SQL, regresiones para valores que parecen SQL/operadores en filtros ORM/ODM y benchmarks reproducibles de CRUD, bulk, query builder, carga relacional y MongoDB ODM. La aceptación global sigue pendiente de verificar el SHA final en Rust 1.85/stable, CI, revisión de dependencias y documentación. Phase 6.7.5 no cierra la Fase 6.7 global.
 
 ### Matriz rápida: ¿qué puedes hacer?
 
