@@ -23,6 +23,7 @@ export default defineConfig({
           items: [
             { label: 'Estado y reactividad', slug: 'concepts/reactivity' },
             { label: 'Crear componentes', slug: 'guides/components' },
+            { label: 'Composición de UI', slug: 'guides/ui-foundations' },
           ],
         },
         {
@@ -38,7 +39,10 @@ export default defineConfig({
             { label: 'SSR e hidratación', slug: 'guides/ssr' },
             { label: 'Layouts y páginas', slug: 'guides/layouts' },
             { label: 'Navegación y formularios', slug: 'guides/navigation' },
-            { label: 'Errores, límites y seguridad', slug: 'guides/errors-and-security' },
+            { label: 'Errores, límites y seguridad HTTP', slug: 'guides/errors-and-security' },
+            { label: 'Errores en UI y SSR', slug: 'guides/ui-errors' },
+            { label: 'Estilos y assets', slug: 'guides/styling-assets' },
+            { label: 'Accesibilidad', slug: 'guides/accessibility' },
             { label: 'Probar y depurar', slug: 'guides/testing' },
           ],
         },

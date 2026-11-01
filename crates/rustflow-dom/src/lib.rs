@@ -12,4 +12,6 @@ pub use policy::{DomPolicyError, validate_attribute, validate_element, validate_
 mod browser;
 
 #[cfg(target_arch = "wasm32")]
-pub use browser::{ClientNavigation, DomError, DomRenderer, MountedDom, ReactiveMountedDom};
+pub use browser::{
+    ClientNavigation, DomError, DomRenderer, ElementRef, MountedDom, ReactiveMountedDom,
+};

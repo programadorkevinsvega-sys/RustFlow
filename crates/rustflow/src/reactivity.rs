@@ -21,11 +21,14 @@
 //! ```
 
 use std::{
+    any::Any,
     cell::RefCell,
     collections::{BTreeSet, HashMap, HashSet, VecDeque},
     fmt,
+    marker::PhantomData,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::{Rc, Weak},
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 type RuntimeRef = Rc<RefCell<RuntimeInner>>;
@@ -34,6 +37,24 @@ type EffectId = u64;
 type ScopeId = u64;
 type Cleanup = Box<dyn FnOnce()>;
 type Equality<T> = Rc<dyn Fn(&T, &T) -> bool>;
+type ContextId = u32;
+
+static NEXT_CONTEXT_ID: AtomicU32 = AtomicU32::new(1);
+
+fn next_context_id() -> ContextId {
+    loop {
+        let current = NEXT_CONTEXT_ID.load(Ordering::Relaxed);
+        let next = current
+            .checked_add(1)
+            .expect("RustFlow context identity space exhausted");
+        if NEXT_CONTEXT_ID
+            .compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            return current;
+        }
+    }
+}
 
 /// Deterministic failures from invalid or disposed runtime handles.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +66,10 @@ pub enum RuntimeError {
     InvalidScope,
     DisposedScope,
     NoActiveOwner,
+    DuplicateContextProvider,
+    ContextTypeMismatch,
+    RefDisposed,
+    RefBorrowConflict,
     CycleDetected { limit: usize },
 }
 
@@ -62,6 +87,12 @@ impl fmt::Display for RuntimeError {
             Self::NoActiveOwner => {
                 write!(f, "this operation requires an active component owner scope")
             }
+            Self::DuplicateContextProvider => write!(f, "this owner already provides this context"),
+            Self::ContextTypeMismatch => {
+                write!(f, "stored context value does not match its typed identity")
+            }
+            Self::RefDisposed => write!(f, "owner-scoped reference is disposed"),
+            Self::RefBorrowConflict => write!(f, "owner-scoped reference is already borrowed"),
             Self::CycleDetected { limit } => write!(
                 f,
                 "reactive cycle detected: scheduler exceeded {limit} effect executions in one flush; pending work was cleared"
@@ -147,6 +178,12 @@ fn current_owner_for_runtime(runtime: &RuntimeRef) -> Option<ScopeId> {
             })
         })
     })
+}
+
+fn active_owner_scope() -> Result<Scope, RuntimeError> {
+    ACTIVE_OWNER_SCOPE
+        .with(|active| active.borrow().clone())
+        .ok_or(RuntimeError::NoActiveOwner)
 }
 
 /// Execute a closure with a temporary, explicitly owned component context.
@@ -241,9 +278,11 @@ struct EffectNode {
 }
 
 struct ScopeNode {
+    parent: Option<ScopeId>,
     children: Vec<ScopeId>,
     effects: Vec<EffectId>,
     signals: Vec<SignalId>,
+    contexts: HashMap<ContextId, Rc<dyn Any>>,
     cleanups: Vec<Cleanup>,
     disposed: bool,
 }
@@ -264,6 +303,72 @@ struct RuntimeInner {
     flushing: bool,
     disposed: bool,
     cycle_limit: usize,
+}
+
+/// A read-only cached computation whose dependencies are tracked by the normal
+/// owner-scoped effect scheduler.
+pub struct Memo<T: Clone + 'static> {
+    value: Signal<T>,
+}
+
+impl<T: Clone + 'static> Clone for Memo<T> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+        }
+    }
+}
+
+/// Stable mutable storage owned by a component scope and intentionally
+/// excluded from the reactive dependency graph.
+pub struct ScopedRef<T: 'static> {
+    value: Rc<RefCell<Option<T>>>,
+}
+
+impl<T: 'static> Clone for ScopedRef<T> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+        }
+    }
+}
+
+/// A unique typed context identity. Separate instances remain distinct even
+/// when they contain values of the same Rust type.
+pub struct Context<T: 'static> {
+    id: ContextId,
+    marker: PhantomData<fn() -> T>,
+}
+
+impl<T: 'static> Clone for Context<T> {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<T: 'static> fmt::Debug for Context<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Context").field("id", &self.id).finish()
+    }
+}
+
+impl<T: 'static> Context<T> {
+    /// Create a new context identity.
+    pub fn new() -> Self {
+        Self {
+            id: next_context_id(),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<T: 'static> Default for Context<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// A single-threaded reactive runtime. Clones share the same runtime state.
@@ -321,9 +426,11 @@ impl Runtime {
         scopes.insert(
             root_scope,
             ScopeNode {
+                parent: None,
                 children: Vec::new(),
                 effects: Vec::new(),
                 signals: Vec::new(),
+                contexts: HashMap::new(),
                 cleanups: Vec::new(),
                 disposed: false,
             },
@@ -586,6 +693,73 @@ impl<T: Clone + 'static> Signal<T> {
     }
 }
 
+impl<T: Clone + 'static> Memo<T> {
+    /// Read the cached value and subscribe the current effect to memo updates.
+    pub fn try_get(&self) -> Result<T, RuntimeError> {
+        self.value.try_get()
+    }
+
+    pub fn get(&self) -> T {
+        self.value.get()
+    }
+}
+
+impl<T: 'static> ScopedRef<T> {
+    /// Clone the stored value without tracking a reactive dependency.
+    pub fn try_get(&self) -> Result<T, RuntimeError>
+    where
+        T: Clone,
+    {
+        let value = self
+            .value
+            .try_borrow()
+            .map_err(|_| RuntimeError::RefBorrowConflict)?;
+        value.as_ref().cloned().ok_or(RuntimeError::RefDisposed)
+    }
+
+    pub fn get(&self) -> T
+    where
+        T: Clone,
+    {
+        self.try_get().unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    /// Read through a short-lived immutable borrow without exposing a Ref guard.
+    pub fn try_with<R>(&self, callback: impl FnOnce(&T) -> R) -> Result<R, RuntimeError> {
+        let value = self
+            .value
+            .try_borrow()
+            .map_err(|_| RuntimeError::RefBorrowConflict)?;
+        let current = value.as_ref().ok_or(RuntimeError::RefDisposed)?;
+        Ok(callback(current))
+    }
+
+    /// Mutate through a short-lived borrow. This never notifies reactive effects.
+    pub fn try_with_mut<R>(&self, callback: impl FnOnce(&mut T) -> R) -> Result<R, RuntimeError> {
+        let mut value = self
+            .value
+            .try_borrow_mut()
+            .map_err(|_| RuntimeError::RefBorrowConflict)?;
+        let current = value.as_mut().ok_or(RuntimeError::RefDisposed)?;
+        Ok(callback(current))
+    }
+
+    /// Replace the stored value without notifying reactive subscribers.
+    pub fn try_set(&self, next: T) -> Result<(), RuntimeError> {
+        let mut value = self
+            .value
+            .try_borrow_mut()
+            .map_err(|_| RuntimeError::RefBorrowConflict)?;
+        let current = value.as_mut().ok_or(RuntimeError::RefDisposed)?;
+        *current = next;
+        Ok(())
+    }
+
+    pub fn set(&self, next: T) {
+        self.try_set(next).unwrap_or_else(|error| panic!("{error}"));
+    }
+}
+
 impl Effect {
     /// Dispose this effect and detach all of its subscriptions.
     pub fn dispose(&self) -> Result<(), RuntimeError> {
@@ -654,6 +828,127 @@ impl Scope {
             .ok_or(RuntimeError::RuntimeDisposed)?;
         check_runtime_context(&runtime)?;
         create_signal_for_scope(&runtime, self.id, value, None)
+    }
+
+    /// Create an eager, owner-scoped memo.
+    ///
+    /// The computation runs once immediately, then reruns after scheduler flushes
+    /// that invalidate dependencies read by its latest execution. Dependencies are
+    /// dynamic and stale subscriptions are removed by the normal effect runner.
+    /// Equal outputs by PartialEq do not notify memo consumers. Inside a batch,
+    /// reads see the last committed cached value until the outer batch flushes.
+    pub fn memo<T: Clone + PartialEq + 'static>(
+        &self,
+        compute: impl Fn() -> T + 'static,
+    ) -> Result<Memo<T>, RuntimeError> {
+        let cached = Rc::new(RefCell::new(None::<T>));
+        let output = Rc::new(RefCell::new(None::<Signal<T>>));
+        let cached_for_effect = cached.clone();
+        let output_for_effect = output.clone();
+
+        // Scope::effect performs the initial run synchronously.
+        let _effect = self.effect(move || {
+            let next = compute();
+            let changed = cached_for_effect
+                .borrow()
+                .as_ref()
+                .is_none_or(|previous| previous != &next);
+            if changed {
+                *cached_for_effect.borrow_mut() = Some(next.clone());
+                if let Some(target) = output_for_effect.borrow().clone() {
+                    target
+                        .try_set(next)
+                        .unwrap_or_else(|error| panic!("memo cache update failed: {error}"));
+                }
+            }
+        })?;
+
+        let initial = cached
+            .borrow()
+            .as_ref()
+            .cloned()
+            .ok_or(RuntimeError::InvalidEffect)?;
+        let value = self.signal(initial)?;
+        *output.borrow_mut() = Some(value.clone());
+        Ok(Memo { value })
+    }
+
+    /// Create stable mutable storage owned by this scope. It is dropped on
+    /// owner disposal; cloned handles then return RuntimeError::RefDisposed.
+    pub fn reference<T: 'static>(&self, initial: T) -> Result<ScopedRef<T>, RuntimeError> {
+        let value = Rc::new(RefCell::new(Some(initial)));
+        let cleanup_value = value.clone();
+        self.on_cleanup(move || {
+            cleanup_value.borrow_mut().take();
+        })?;
+        Ok(ScopedRef { value })
+    }
+
+    /// Register a value for this context on this owner. A given owner may
+    /// provide one value per context identity; descendants may shadow it.
+    pub fn provide_context<T: 'static>(
+        &self,
+        context: &Context<T>,
+        value: T,
+    ) -> Result<Rc<T>, RuntimeError> {
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
+        check_runtime_context(&runtime)?;
+        let mut inner = runtime.borrow_mut();
+        if inner.disposed {
+            return Err(RuntimeError::RuntimeDisposed);
+        }
+        let owner = inner
+            .scopes
+            .get_mut(&self.id)
+            .ok_or(RuntimeError::InvalidScope)?;
+        if owner.disposed {
+            return Err(RuntimeError::DisposedScope);
+        }
+        if owner.contexts.contains_key(&context.id) {
+            return Err(RuntimeError::DuplicateContextProvider);
+        }
+        let shared = Rc::new(value);
+        let erased: Rc<dyn Any> = shared.clone();
+        owner.contexts.insert(context.id, erased);
+        Ok(shared)
+    }
+
+    /// Resolve this context starting at this owner and walking toward the root.
+    /// Missing providers return Ok(None). Context lookup itself is not reactive;
+    /// store a `Signal<T>` as the value when consumers need reactive updates.
+    pub fn use_context<T: 'static>(
+        &self,
+        context: &Context<T>,
+    ) -> Result<Option<Rc<T>>, RuntimeError> {
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
+        check_runtime_context(&runtime)?;
+        let inner = runtime.borrow();
+        if inner.disposed {
+            return Err(RuntimeError::RuntimeDisposed);
+        }
+        let mut current = Some(self.id);
+        while let Some(scope_id) = current {
+            let owner = inner
+                .scopes
+                .get(&scope_id)
+                .ok_or(RuntimeError::InvalidScope)?;
+            if owner.disposed {
+                return Err(RuntimeError::DisposedScope);
+            }
+            if let Some(value) = owner.contexts.get(&context.id) {
+                return Rc::downcast::<T>(value.clone())
+                    .map(Some)
+                    .map_err(|_| RuntimeError::ContextTypeMismatch);
+            }
+            current = owner.parent;
+        }
+        Ok(None)
     }
 
     /// Create an eager effect explicitly owned by this scope.
@@ -781,9 +1076,11 @@ fn create_scope(runtime: &RuntimeRef, parent: ScopeId) -> Result<Scope, RuntimeE
         inner.scopes.insert(
             id,
             ScopeNode {
+                parent: Some(parent),
                 children: Vec::new(),
                 effects: Vec::new(),
                 signals: Vec::new(),
+                contexts: HashMap::new(),
                 cleanups: Vec::new(),
                 disposed: false,
             },
@@ -837,7 +1134,13 @@ fn create_effect(
         id
     };
 
-    run_effect(runtime, id);
+    let initial_run = catch_unwind(AssertUnwindSafe(|| run_effect(runtime, id)));
+    if let Err(payload) = initial_run {
+        // A component/effect that panics on first execution must not remain as
+        // an unreachable node in the runtime graph.
+        let _ = catch_unwind(AssertUnwindSafe(|| dispose_effect(runtime, id)));
+        resume_unwind(payload);
+    }
     flush_runtime(runtime)?;
     Ok(Effect {
         id,
@@ -1060,7 +1363,7 @@ fn dispose_effect(runtime: &RuntimeRef, effect_id: EffectId) -> Result<(), Runti
 
 fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeError> {
     check_runtime_context(runtime)?;
-    let (children, effects, signals, cleanups) = {
+    let (children, effects, signals, contexts, cleanups) = {
         let mut inner = runtime.borrow_mut();
         if inner.disposed {
             return Err(RuntimeError::RuntimeDisposed);
@@ -1077,6 +1380,7 @@ fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeE
             std::mem::take(&mut scope.children),
             std::mem::take(&mut scope.effects),
             std::mem::take(&mut scope.signals),
+            std::mem::take(&mut scope.contexts),
             std::mem::take(&mut scope.cleanups),
         )
     };
@@ -1133,10 +1437,58 @@ fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeE
         }
     }
 
+    // Remove provider registrations after child owners and cleanup callbacks
+    // have been disposed. Explicitly cloned Rc values remain normal Rust values.
+    drop(contexts);
+
     if let Some(payload) = first_panic {
         resume_unwind(payload);
     }
     Ok(())
+}
+
+pub fn try_use_memo<T: Clone + PartialEq + 'static>(
+    compute: impl Fn() -> T + 'static,
+) -> Result<Memo<T>, RuntimeError> {
+    active_owner_scope()?.memo(compute)
+}
+
+/// Create a memo during component setup; this is not a positional hook cell.
+pub fn use_memo<T: Clone + PartialEq + 'static>(compute: impl Fn() -> T + 'static) -> Memo<T> {
+    try_use_memo(compute)
+        .unwrap_or_else(|error| panic!("use_memo requires an active owner: {error}"))
+}
+
+pub fn try_use_ref<T: 'static>(initial: T) -> Result<ScopedRef<T>, RuntimeError> {
+    active_owner_scope()?.reference(initial)
+}
+
+/// Create stable non-reactive storage during component setup.
+pub fn use_ref<T: 'static>(initial: T) -> ScopedRef<T> {
+    try_use_ref(initial).unwrap_or_else(|error| panic!("use_ref requires an active owner: {error}"))
+}
+
+pub fn try_use_context<T: 'static>(context: &Context<T>) -> Result<Option<Rc<T>>, RuntimeError> {
+    active_owner_scope()?.use_context(context)
+}
+
+pub fn try_provide_context<T: 'static>(
+    context: &Context<T>,
+    value: T,
+) -> Result<Rc<T>, RuntimeError> {
+    active_owner_scope()?.provide_context(context, value)
+}
+
+/// Register a typed value in the active component owner.
+pub fn provide_context<T: 'static>(context: &Context<T>, value: T) -> Rc<T> {
+    try_provide_context(context, value)
+        .unwrap_or_else(|error| panic!("provide_context requires an active owner: {error}"))
+}
+
+/// Resolve the nearest provider in the active owner tree. None explicitly
+/// represents a missing provider; runtime/owner failures are not defaulted.
+pub fn use_context<T: 'static>(context: &Context<T>) -> Option<Rc<T>> {
+    try_use_context(context).unwrap_or_else(|error| panic!("use_context failed: {error}"))
 }
 
 impl<T> rustflow_view::IntoView for Signal<T>
@@ -1148,6 +1500,16 @@ where
         Ok(rustflow_view::View::dynamic(move || {
             signal.get().into_view()
         }))
+    }
+}
+
+impl<T> rustflow_view::IntoView for Memo<T>
+where
+    T: Clone + PartialEq + rustflow_view::IntoView + 'static,
+{
+    fn into_view(self) -> Result<rustflow_view::View, rustflow_view::ViewError> {
+        let memo = self;
+        Ok(rustflow_view::View::dynamic(move || memo.get().into_view()))
     }
 }
 
@@ -1660,5 +2022,311 @@ mod tests {
         assert_eq!(*cleanup_values.borrow(), vec![0, 1]);
         owner.dispose().unwrap();
         assert_eq!(*cleanup_values.borrow(), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn memo_caches_initial_result_tracks_dependencies_and_suppresses_equal_outputs() {
+        let runtime = Runtime::new();
+        let owner = runtime.root_scope().child().unwrap();
+        let left = owner.signal(2_i32).unwrap();
+        let right = owner.signal(3_i32).unwrap();
+        let runs = Rc::new(Cell::new(0));
+        let left_for_memo = left.clone();
+        let right_for_memo = right.clone();
+        let runs_for_memo = runs.clone();
+        let memo = owner
+            .memo(move || {
+                runs_for_memo.set(runs_for_memo.get() + 1);
+                left_for_memo.get() + right_for_memo.get()
+            })
+            .unwrap();
+
+        assert_eq!(memo.get(), 5);
+        assert_eq!(memo.get(), 5);
+        assert_eq!(runs.get(), 1);
+
+        let observed = Rc::new(RefCell::new(Vec::new()));
+        let observed_for_effect = observed.clone();
+        let memo_for_effect = memo.clone();
+        let _effect = owner
+            .effect(move || {
+                observed_for_effect.borrow_mut().push(memo_for_effect.get());
+            })
+            .unwrap();
+        left.set(4);
+        assert_eq!(memo.get(), 7);
+        assert_eq!(runs.get(), 2);
+        assert_eq!(*observed.borrow(), vec![5, 7]);
+
+        // The computation reruns, but equal derived values do not notify readers.
+        let parity_source = owner.signal(2_i32).unwrap();
+        let parity_runs = Rc::new(Cell::new(0));
+        let parity_input = parity_source.clone();
+        let parity_count = parity_runs.clone();
+        let parity = owner
+            .memo(move || {
+                parity_count.set(parity_count.get() + 1);
+                parity_input.get() % 2
+            })
+            .unwrap();
+        let parity_observed = Rc::new(Cell::new(0));
+        let parity_value = parity.clone();
+        let parity_calls = parity_observed.clone();
+        let _parity_effect = owner
+            .effect(move || {
+                let _ = parity_value.get();
+                parity_calls.set(parity_calls.get() + 1);
+            })
+            .unwrap();
+        parity_source.set(4);
+        assert_eq!(parity_runs.get(), 2);
+        assert_eq!(parity_observed.get(), 1);
+    }
+
+    #[test]
+    fn memo_dependencies_are_dynamic_and_stale_branches_are_detached() {
+        let runtime = Runtime::new();
+        let owner = runtime.root_scope().child().unwrap();
+        let choose_left = owner.signal(true).unwrap();
+        let left = owner.signal(1_i32).unwrap();
+        let right = owner.signal(10_i32).unwrap();
+        let runs = Rc::new(Cell::new(0));
+        let choose = choose_left.clone();
+        let left_value = left.clone();
+        let right_value = right.clone();
+        let run_count = runs.clone();
+        let memo = owner
+            .memo(move || {
+                run_count.set(run_count.get() + 1);
+                if choose.get() {
+                    left_value.get()
+                } else {
+                    right_value.get()
+                }
+            })
+            .unwrap();
+
+        assert_eq!(memo.get(), 1);
+        choose_left.set(false);
+        assert_eq!(memo.get(), 10);
+        left.set(2);
+        assert_eq!(runs.get(), 2);
+        right.set(11);
+        assert_eq!(memo.get(), 11);
+        assert_eq!(runs.get(), 3);
+    }
+
+    #[test]
+    fn memo_coalesces_batched_invalidations_and_is_disposed_with_owner() {
+        let runtime = Runtime::new();
+        let owner = runtime.root_scope().child().unwrap();
+        let value = owner.signal(0_i32).unwrap();
+        let runs = Rc::new(Cell::new(0));
+        let source = value.clone();
+        let count = runs.clone();
+        let memo = owner
+            .memo(move || {
+                count.set(count.get() + 1);
+                source.get() * 2
+            })
+            .unwrap();
+        runtime
+            .batch(|| {
+                value.set(1);
+                value.set(2);
+                value.set(3);
+                assert_eq!(memo.get(), 0);
+            })
+            .unwrap();
+        assert_eq!(runs.get(), 2);
+        assert_eq!(memo.get(), 6);
+        owner.dispose().unwrap();
+        assert_eq!(memo.try_get(), Err(RuntimeError::InvalidSignal));
+    }
+
+    #[test]
+    fn memo_without_reactive_dependencies_runs_only_once() {
+        let runtime = Runtime::new();
+        let owner = runtime.root_scope().child().unwrap();
+        let runs = Rc::new(Cell::new(0));
+        let count = runs.clone();
+        let memo = owner
+            .memo(move || {
+                count.set(count.get() + 1);
+                42_i32
+            })
+            .unwrap();
+        assert_eq!(memo.get(), 42);
+        assert_eq!(memo.get(), 42);
+        assert_eq!(runs.get(), 1);
+    }
+
+    #[test]
+    fn scoped_ref_is_stable_non_reactive_and_invalid_after_owner_disposal() {
+        let runtime = Runtime::new();
+        let owner = runtime.root_scope().child().unwrap();
+        let reference = owner.reference(String::from("initial")).unwrap();
+        let cloned = reference.clone();
+        let runs = Rc::new(Cell::new(0));
+        let observed = cloned.clone();
+        let count = runs.clone();
+        let _effect = owner
+            .effect(move || {
+                let _ = observed.get();
+                count.set(count.get() + 1);
+            })
+            .unwrap();
+
+        assert_eq!(reference.get(), "initial");
+        reference.set(String::from("updated"));
+        assert_eq!(cloned.get(), "updated");
+        assert_eq!(
+            runs.get(),
+            1,
+            "ref writes must not notify reactive subscribers"
+        );
+        reference
+            .try_with_mut(|value| value.push_str("-again"))
+            .unwrap();
+        assert_eq!(reference.get(), "updated-again");
+
+        owner.dispose().unwrap();
+        assert_eq!(reference.try_get(), Err(RuntimeError::RefDisposed));
+        assert_eq!(
+            cloned.try_set(String::from("revived")),
+            Err(RuntimeError::RefDisposed)
+        );
+    }
+
+    #[test]
+    fn typed_contexts_resolve_nearest_provider_and_distinguish_same_value_types() {
+        let runtime = Runtime::new();
+        let root = runtime.root_scope();
+        let outer = Context::<String>::new();
+        let other = Context::<String>::new();
+        root.provide_context(&outer, String::from("outer")).unwrap();
+        root.provide_context(&other, String::from("independent"))
+            .unwrap();
+
+        let parent = root.child().unwrap();
+        let nested = parent.child().unwrap();
+        parent
+            .provide_context(&outer, String::from("nearest"))
+            .unwrap();
+        assert_eq!(
+            nested
+                .use_context(&outer)
+                .unwrap()
+                .as_deref()
+                .map(String::as_str),
+            Some("nearest")
+        );
+        assert_eq!(
+            nested
+                .use_context(&other)
+                .unwrap()
+                .as_deref()
+                .map(String::as_str),
+            Some("independent")
+        );
+        assert_eq!(
+            root.use_context(&outer)
+                .unwrap()
+                .as_deref()
+                .map(String::as_str),
+            Some("outer")
+        );
+        nested
+            .provide_context(&outer, String::from("nested"))
+            .unwrap();
+        assert_eq!(
+            nested
+                .use_context(&outer)
+                .unwrap()
+                .as_deref()
+                .map(String::as_str),
+            Some("nested")
+        );
+        assert_eq!(
+            parent
+                .provide_context(&outer, String::from("duplicate"))
+                .unwrap_err(),
+            RuntimeError::DuplicateContextProvider
+        );
+        assert_eq!(nested.use_context(&Context::<u8>::new()).unwrap(), None);
+    }
+
+    #[test]
+    fn typed_context_values_are_isolated_per_runtime_and_signal_values_remain_reactive() {
+        let context = Context::<Signal<i32>>::new();
+        let first = Runtime::new();
+        let second = Runtime::new();
+        let first_owner = first.root_scope().child().unwrap();
+        let second_owner = second.root_scope().child().unwrap();
+        let first_signal = first_owner.signal(1).unwrap();
+        let second_signal = second_owner.signal(10).unwrap();
+        first_owner
+            .provide_context(&context, first_signal.clone())
+            .unwrap();
+        second_owner
+            .provide_context(&context, second_signal.clone())
+            .unwrap();
+
+        let received = first_owner.use_context(&context).unwrap().unwrap();
+        assert_eq!(received.get(), 1);
+        let values = Rc::new(RefCell::new(Vec::new()));
+        let output = values.clone();
+        let tracked = received.clone();
+        let _effect = first_owner
+            .effect(move || {
+                output.borrow_mut().push(tracked.get());
+            })
+            .unwrap();
+        first_signal.set(2);
+        assert_eq!(*values.borrow(), vec![1, 2]);
+        assert_eq!(
+            second_owner.use_context(&context).unwrap().unwrap().get(),
+            10
+        );
+        assert!(
+            first_owner
+                .use_context(&Context::<Signal<i32>>::new())
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn owner_scoped_helpers_require_an_active_owner_and_context_absence_is_explicit() {
+        let runtime = Runtime::new();
+        let owner = runtime.root_scope().child().unwrap();
+        let context = Context::<usize>::new();
+        assert!(matches!(
+            try_use_context(&context),
+            Err(RuntimeError::NoActiveOwner)
+        ));
+        let (memo, reference) = with_owner_scope(&owner, || {
+            let memo = use_memo(|| 9_usize);
+            let reference = use_ref(3_usize);
+            provide_context(&context, 7_usize);
+            assert_eq!(use_context(&context).as_deref(), Some(&7));
+            (memo, reference)
+        })
+        .unwrap();
+        assert_eq!(memo.get(), 9);
+        assert_eq!(reference.get(), 3);
+        owner.dispose().unwrap();
+    }
+
+    #[test]
+    fn failed_initial_memo_computation_does_not_leave_an_orphan_effect() {
+        let runtime = Runtime::new();
+        let owner = runtime.root_scope().child().unwrap();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = owner.memo(|| -> usize { panic!("intentional memo failure") });
+        }));
+        assert!(result.is_err());
+        assert!(runtime.inner.borrow().effects.is_empty());
+        owner.dispose().unwrap();
     }
 }

@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }, testInfo) => {
 });
 
 async function gotoWithHydrationFixture(page, corrupt = false, interactive = false, repeat = false) {
-  const interactiveFixture = '<div id="hydration-fixture" data-hydration-case="interactive"><!--rustflow:root:start--><main><form data-testid="hydration-form"><label for="hydration-input">Name</label><input id="hydration-input" aria-label="Name" value="Ada"><p data-testid="hydration-input-output"><!--rustflow:dynamic:start:0-->Ada<!--rustflow:dynamic:end:0--></p><button type="button" data-testid="hydration-toggle">Toggle help</button><button type="button" data-testid="hydration-reverse">Reverse list</button></form><ul data-testid="hydration-list"><!--rustflow:dynamic:start:1--><li data-testid="hydration-item-first">First</li><li data-testid="hydration-item-second">Second</li><!--rustflow:dynamic:end:1--></ul><!--rustflow:dynamic:start:2--><p data-testid="hydration-help" role="status">Help</p><!--rustflow:dynamic:end:2--><a href="#hydration-details" data-testid="hydration-link">Go</a><div id="hydration-details">Target</div></main><!--rustflow:root:end--></div>';
+  const interactiveFixture = '<div id="hydration-fixture" data-hydration-case="interactive"><!--rustflow:root:start--><main><form data-testid="hydration-form"><label for="hydration-input">Name</label><input id="hydration-input" aria-label="Name" value="Ada"><p data-testid="hydration-input-output"><!--rustflow:dynamic:start:0-->Ada<!--rustflow:dynamic:end:0--></p><button type="button" data-testid="hydration-ref-probe">Probe hydrated ref</button><button type="button" data-testid="hydration-toggle">Toggle help</button><button type="button" data-testid="hydration-reverse">Reverse list</button></form><ul data-testid="hydration-list"><!--rustflow:dynamic:start:1--><li data-testid="hydration-item-first">First</li><li data-testid="hydration-item-second">Second</li><!--rustflow:dynamic:end:1--></ul><!--rustflow:dynamic:start:2--><p data-testid="hydration-help" role="status">Help</p><!--rustflow:dynamic:end:2--><a href="#hydration-details" data-testid="hydration-link">Go</a><div id="hydration-details">Target</div></main><!--rustflow:root:end--></div>';
   const fixture = interactive
     ? interactiveFixture
     : corrupt
@@ -133,6 +133,29 @@ test("conditional child mounts and unmounts without replacing the application", 
 });
 
 
+test("DOM element refs follow dynamic nodes through mount, replacement, and unmount", async ({ page }) => {
+  const target = page.getByTestId("dom-ref-target");
+  await expect(target).toHaveCount(1);
+  const originalNode = await target.elementHandle();
+
+  await page.getByTestId("dom-ref-probe").click();
+  await expect(target).toHaveAttribute("data-ref-probe", "ready");
+  await expect(page.getByTestId("dom-ref-status")).toHaveText("mounted");
+
+  await page.getByTestId("dom-ref-toggle").click();
+  await expect(target).toHaveCount(0);
+  await page.getByTestId("dom-ref-probe").click();
+  await expect(page.getByTestId("dom-ref-status")).toHaveText("unmounted");
+  expect(await originalNode.evaluate((node) => node.isConnected)).toBe(false);
+
+  await page.getByTestId("dom-ref-toggle").click();
+  await expect(target).toHaveCount(1);
+  expect(await target.getAttribute("data-ref-probe")).toBeNull();
+  await page.getByTestId("dom-ref-probe").click();
+  await expect(target).toHaveAttribute("data-ref-probe", "ready");
+  await expect(page.getByTestId("dom-ref-status")).toHaveText("mounted");
+});
+
 test("SSR hydration reuses server DOM and attaches one interactive handler", async ({ page }) => {
   await gotoWithHydrationFixture(page);
   const button = page.getByTestId("hydration-action");
@@ -168,13 +191,21 @@ test("SSR hydration supports forms, conditional regions, keyed lists, and ordina
   await expect(input).toHaveValue("Ada");
   await expect(output).toHaveText("Ada");
 
+  await page.getByTestId("hydration-ref-probe").click();
+  await expect(input).toHaveAttribute("data-ref-probe", "ready");
+
   await input.fill("Grace");
   await expect(output).toHaveText("Grace");
 
+  // An unrelated reactive update must not rewrite an equal input.value and
+  // disturb the user's current caret/selection.
+  await input.evaluate((element) => element.setSelectionRange(2, 2));
   const help = page.getByTestId("hydration-help");
   await expect(help).toHaveText("Help");
   await page.getByTestId("hydration-toggle").click();
   await expect(help).toHaveCount(0);
+  await expect(input).toHaveValue("Grace");
+  expect(await input.evaluate((element) => element.selectionStart)).toBe(2);
   await page.getByTestId("hydration-toggle").click();
   await expect(help).toHaveText("Help");
 

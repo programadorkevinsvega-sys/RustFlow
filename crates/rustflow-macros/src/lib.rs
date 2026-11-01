@@ -101,7 +101,7 @@ pub fn component(_attributes: TokenStream, item: TokenStream) -> TokenStream {
     let (setup_statements, render_body) = split_component_body(body.stream());
     if let Some(span) = find_stateful_call(&render_body) {
         return compile_error(ParseError {
-            message: "state APIs signal/use_state/use_effect/on_cleanup must be direct top-level setup statements in #[component]; use let name = signal(...) or let name = use_state(...) so state survives prop updates".into(),
+            message: "owner-scoped APIs signal/use_state/use_effect/use_memo/use_ref/use_context/provide_context/on_cleanup must be direct top-level setup statements in #[component]; keep stateful setup out of the repeatable render body".into(),
             span,
         });
     }
@@ -232,7 +232,18 @@ fn is_setup_statement(statement: &TokenStream) -> bool {
         };
         if !matches!(
             ident.to_string().as_str(),
-            "signal" | "use_state" | "use_effect" | "on_cleanup"
+            "signal"
+                | "use_state"
+                | "use_effect"
+                | "use_memo"
+                | "use_ref"
+                | "use_context"
+                | "provide_context"
+                | "try_use_memo"
+                | "try_use_ref"
+                | "try_use_context"
+                | "try_provide_context"
+                | "on_cleanup"
         ) {
             return false;
         }
@@ -246,7 +257,18 @@ fn find_stateful_call(stream: &TokenStream) -> Option<Span> {
         if let TokenTree::Ident(ident) = token {
             if matches!(
                 ident.to_string().as_str(),
-                "signal" | "use_state" | "use_effect" | "on_cleanup"
+                "signal"
+                    | "use_state"
+                    | "use_effect"
+                    | "use_memo"
+                    | "use_ref"
+                    | "use_context"
+                    | "provide_context"
+                    | "try_use_memo"
+                    | "try_use_ref"
+                    | "try_use_context"
+                    | "try_provide_context"
+                    | "on_cleanup"
             ) && matches!(tokens.get(index + 1), Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis)
             {
                 return Some(ident.span());
@@ -352,6 +374,7 @@ enum AttributeKind {
     Property,
     Event,
     Key,
+    NodeRef,
 }
 
 struct Attribute {
@@ -423,6 +446,9 @@ impl ElementNode {
                     key = format!("Some(::rustflow::view::Key::from(({value})))");
                     continue;
                 }
+                if attribute.kind == AttributeKind::NodeRef {
+                    unreachable!("DOM node refs are not valid component properties");
+                }
                 if attribute.kind == AttributeKind::Event {
                     properties.push(format!(
                         "::rustflow::view::Property::new({:?}, ::rustflow::view::PropertyValue::Callback(::rustflow::view::EventHandler::new(({value}))))?",
@@ -463,6 +489,16 @@ impl ElementNode {
                     AttributeKind::Key => setup.push_str(&format!(
                         "__rustflow_element = __rustflow_element.with_key(::rustflow::view::Key::from(({value})));"
                     )),
+                    AttributeKind::NodeRef => {
+                        let reference = if is_simple_identifier(value) {
+                            format!("({value}).clone()")
+                        } else {
+                            value.to_owned()
+                        };
+                        setup.push_str(&format!(
+                            "__rustflow_element = __rustflow_element.with_node_ref(({reference}));"
+                        ));
+                    },
                 }
             }
             format!(
@@ -572,6 +608,17 @@ impl Parser {
             attributes.push(self.parse_attribute()?);
         }
 
+        if component
+            && attributes
+                .iter()
+                .any(|attribute| attribute.kind == AttributeKind::NodeRef)
+        {
+            return Err(self.error(
+                "DOM node refs can only be attached to native elements, not component descriptors",
+                open.span(),
+            ));
+        }
+
         let mut children = Vec::new();
         if !self_closing {
             loop {
@@ -632,6 +679,8 @@ impl Parser {
         }
         if name == "key" && kind == AttributeKind::Html {
             kind = AttributeKind::Key;
+        } else if name == "ref" && kind == AttributeKind::Html {
+            kind = AttributeKind::NodeRef;
         }
 
         let value = if self.peek_punct(0, '=') {
@@ -640,7 +689,11 @@ impl Parser {
         } else {
             None
         };
-        if matches!(kind, AttributeKind::Event | AttributeKind::Key) && value.is_none() {
+        if matches!(
+            kind,
+            AttributeKind::Event | AttributeKind::Key | AttributeKind::NodeRef
+        ) && value.is_none()
+        {
             return Err(self.error("this attribute requires a value expression in braces", span));
         }
         Ok(Attribute { name, kind, value })

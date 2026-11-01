@@ -89,8 +89,10 @@ Los nombres de tags/atributos se validan sintácticamente y el renderer DOM vali
 | Señales, <code>use_state</code>, <code>use_effect</code>, <code>on_cleanup</code> owner-scoped | Disponible dentro del setup de un componente |
 | Eventos y actualizaciones DOM reactivas | Disponible en el runtime WASM |
 | Reconciliación de listas keyed y limpieza de instancias | Disponible |
-| <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> | Pendiente |
-| Context/provider público, async effects y state tracking a través de <code>await</code> | Pendiente/no soportado |
+| <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> | Disponible de forma experimental, owner-scoped (Phase 7.2) |
+| <code>Context&lt;T&gt;</code> y providers tipados | Disponible de forma experimental; lookup por owner ancestry, nearest provider y shadowing anidado. No reactivo por sí solo. |
+| <code>NodeRef&lt;T&gt;</code>, <code>Element::with_node_ref</code> y <code>rustflow_dom::ElementRef</code> | Disponible en browser/WASM; mount, reemplazo, hidratación validada y limpieza en unmount. No crea nodos ni es reactivo. |
+| Recursos asíncronos, Suspense/loading boundaries y tracking a través de <code>await</code> | No soportado; requiere un contrato futuro de cancelación, SSR, hidratación y errores. |
 | API estable 1.0 o compatibilidad con React | No ofrecida |
 
 Guías de uso: [Crear componentes](../website/src/content/docs/guides/components.md), [Reactividad](../website/src/content/docs/concepts/reactivity.md), [SSR](../website/src/content/docs/guides/ssr.md) y el [ejemplo de navegador](../examples/browser/).

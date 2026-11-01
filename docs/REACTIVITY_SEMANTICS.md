@@ -102,6 +102,40 @@ The maintainer has accepted the following recommendations for the prototype:
 
 These decisions define the Phase 1.1 contract. Implementation details may evolve only if they preserve these observable guarantees or a documented contract revision is reviewed before relying on changed behavior.
 
+## 10. Phase 7.2 addendum: memo, refs, and contexts
+
+This addendum describes the owner-scoped primitives introduced after the original Phase 1.1 contract. It does not change the signal/effect scheduling rules above.
+
+### 10.1 Memo
+
+1. A memo is eager and executes once synchronously during construction.
+2. The computation reads signals through the existing active effect collector. Its dependency set is the set of signals read by the latest successful execution; conditional branches therefore replace stale dependencies.
+3. A memo is recalculated when its dependencies invalidate the owning effect and the scheduler reaches a flush. Multiple writes to a dependency during one batch coalesce into one memo execution at the outer boundary.
+4. A read during an open batch observes the last committed value. Memos are not lazy; invalidation schedules work even if no consumer reads the memo afterward.
+5. The result type is cloned and compared with <code>PartialEq</code>. If the result compares equal, the output signal is not written and memo consumers are not notified. This comparison does not alter the source signals' equality policy.
+6. A memo without reactive dependencies executes once. The computation is expected to be pure; the Rust signature is <code>Fn</code>, but interior mutability can still produce side effects and remains the caller's responsibility.
+7. A panic on the initial computation disposes the newly created effect before resuming the panic. A panic on a later recomputation follows the runtime's effect panic contract: the failed run's dependencies are detached and the panic propagates. A typed <code>Result</code> should be used when failure is an expected value.
+8. The memo effect and output signal are owned by the creating scope and become invalid when that scope is disposed.
+
+### 10.2 Non-reactive references
+
+1. A scoped ref has stable handle identity for the lifetime of its owner and stores a typed value outside the signal graph.
+2. Reads and writes do not track or notify reactive dependencies.
+3. Access is limited to short-lived closure borrows or cloned reads when <code>T: Clone</code>; borrow conflicts are returned as <code>RefBorrowConflict</code> by fallible methods.
+4. Owner disposal takes and drops the stored value. A cloned handle remains memory-safe but returns <code>RefDisposed</code> afterward.
+5. This API does not model browser elements. The browser adapter exposes a separate <code>ElementRef</code> contract for mounted native elements; it is not implied by <code>use_ref</code>. The handle is empty during SSR/view construction, attaches after mount or successful hydration, follows compatible reconciliation/replacement, and clears on unmount. It is non-reactive and single-element-per-handle.
+
+### 10.3 Typed contexts
+
+1. A <code>Context&lt;T&gt;</code> token has a unique identity allocated independently of <code>T</code>. Cloning a token preserves identity; constructing another token for the same type creates a different identity.
+2. Each owner may provide a token once. Descendants may shadow an ancestor value for the same token.
+3. Lookup checks the current owner and walks ancestors; the closest provider wins. Missing values return <code>None</code>; duplicate registrations and invalid owners return explicit runtime errors.
+4. Context values are stored inside the runtime's owner tree. Independent runtimes do not share provider values, which is required for SSR request isolation.
+5. Lookup is not reactive by itself. A context containing a signal can expose normal reactive updates through the signal's own reads.
+6. Values are type-erased only behind safe <code>Rc&lt;dyn Any&gt;</code> storage and recovered with checked <code>Rc::downcast</code>; <code>TypeId</code> is not the sole context identity.
+
+These primitives remain pre-1.0. The implementation branch must pass the complete required CI matrix before this addendum is treated as accepted in <code>main</code>.
+
 ## Acceptance gate
 
 Phase 1.1 semantics are accepted. The five Phase 1.1 roadmap items may be marked complete because the contract is now explicit and accepted. This does not complete Phase 1.2 implementation or later correctness/performance gates. The implementation must not be marked complete by this document alone.

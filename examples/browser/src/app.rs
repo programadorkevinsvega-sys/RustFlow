@@ -3,7 +3,7 @@ use std::{cell::RefCell, string::ToString};
 use rustflow::components::ComponentRegistry;
 use rustflow::prelude::*;
 use rustflow::view::Element as ViewElement;
-use rustflow_dom::{ClientNavigation, DomError, DomRenderer, ReactiveMountedDom};
+use rustflow_dom::{ClientNavigation, DomError, DomRenderer, ElementRef, ReactiveMountedDom};
 use wasm_bindgen::{JsCast, prelude::*};
 use web_sys::HtmlInputElement;
 
@@ -152,6 +152,26 @@ pub fn start() -> Result<(), JsValue> {
         .map_err(display_error)?;
     let cleanup_count = runtime.signal(0_i32).map_err(display_error)?;
     let todo_identity = runtime.signal(0_i64).map_err(display_error)?;
+    let show_dom_ref = runtime.signal(true).map_err(display_error)?;
+    let dom_ref_status = runtime
+        .signal(String::from("not checked"))
+        .map_err(display_error)?;
+    let dom_ref_handle = ElementRef::new();
+    let dom_ref_for_region = dom_ref_handle.clone();
+    let show_dom_ref_for_region = show_dom_ref.clone();
+    let dom_ref_region = View::dynamic(move || {
+        if show_dom_ref_for_region.get() {
+            Ok(ViewElement::new("input")?
+                .with_attribute("data-testid", "dom-ref-target")?
+                .with_attribute("aria-label", "DOM ref target")?
+                .with_node_ref(dom_ref_for_region.clone())
+                .build())
+        } else {
+            Ok(View::fragment([]))
+        }
+    });
+
+    let todo_input_ref = ElementRef::new();
 
     let mut registry = ComponentRegistry::new();
     register_counter(&mut registry).map_err(display_error)?;
@@ -171,6 +191,10 @@ pub fn start() -> Result<(), JsValue> {
             let input_value = runtime.signal(String::from("Ada")).map_err(display_error)?;
             let input_for_event = input_value.clone();
             let value_for_output = input_value.clone();
+            let value_for_input = input_value.clone();
+            let hydration_input_ref = ElementRef::new();
+            let hydration_input_ref_for_render = hydration_input_ref.clone();
+            let hydration_input_ref_for_probe = hydration_input_ref.clone();
             let reverse_order = runtime.signal(false).map_err(display_error)?;
             let reverse_for_list = reverse_order.clone();
             let reverse_for_button = reverse_order.clone();
@@ -214,6 +238,9 @@ pub fn start() -> Result<(), JsValue> {
                 move || {
                     let input_for_event = input_for_event.clone();
                     let value_for_output = value_for_output.clone();
+                    let value_for_input = value_for_input.clone();
+                    let hydration_input_ref_for_render = hydration_input_ref_for_render.clone();
+                    let hydration_input_ref_for_probe = hydration_input_ref_for_probe.clone();
                     let reverse_for_button = reverse_for_button.clone();
                     let show_for_button = show_for_button.clone();
                     rustflow::view! {
@@ -223,12 +250,20 @@ pub fn start() -> Result<(), JsValue> {
                                 <input
                                     id="hydration-input"
                                     aria-label="Name"
-                                    prop:value="Ada"
+                                    ref={hydration_input_ref_for_render}
+                                    prop:value={value_for_input.get()}
                                     on:input={move |payload: EventPayload| {
                                         input_for_event.set(payload.value.unwrap_or_default());
                                     }}
                                 />
                                 <p data-testid="hydration-input-output">{value_for_output}</p>
+                                <button type="button" data-testid="hydration-ref-probe" on:click={move |_payload| {
+                                    if let Some(element) = hydration_input_ref_for_probe.get() {
+                                        let _ = element.set_attribute("data-ref-probe", "ready");
+                                    }
+                                }}>
+                                    "Probe hydrated ref"
+                                </button>
                                 <button type="button" data-testid="hydration-toggle" on:click={move |_payload| {
                                     show_for_button.update(|visible| *visible = !*visible);
                                 }}>
@@ -353,7 +388,6 @@ pub fn start() -> Result<(), JsValue> {
             let next_id_for_add = next_id.clone();
             let show_for_region = show_help.clone();
             let show_for_button = show_help.clone();
-            let document_for_add = document.clone();
             let counter_label_for_component = counter_label.clone();
             let counter_label_for_button = counter_label.clone();
             let cleanup_count_for_rows = cleanup_count.clone();
@@ -385,6 +419,11 @@ pub fn start() -> Result<(), JsValue> {
             });
 
             let show_for_region = show_for_region.clone();
+            let todo_input_ref_for_add = todo_input_ref.clone();
+            let dom_ref_for_probe = dom_ref_handle.clone();
+            let dom_ref_status_for_probe = dom_ref_status.clone();
+            let dom_ref_status_for_display = dom_ref_status.clone();
+            let show_dom_ref_for_button = show_dom_ref.clone();
             let help_region = View::dynamic(move || {
                 if show_for_region.get() {
                     Ok(ViewElement::new("p")?
@@ -422,6 +461,7 @@ pub fn start() -> Result<(), JsValue> {
                         <input
                             id="todo-input"
                             aria-label="New todo"
+                            ref={todo_input_ref}
                             prop:value={""}
                             on:input={move |payload: EventPayload| {
                                 draft_for_input.set(payload.value.unwrap_or_default());
@@ -440,8 +480,8 @@ pub fn start() -> Result<(), JsValue> {
                                 done: false,
                             }));
                             draft_for_add.set(String::new());
-                            if let Some(input) = document_for_add
-                                .get_element_by_id("todo-input")
+                            if let Some(input) = todo_input_ref_for_add
+                                .get()
                                 .and_then(|element| element.dyn_into::<HtmlInputElement>().ok())
                             {
                                 input.set_value("");
@@ -452,6 +492,25 @@ pub fn start() -> Result<(), JsValue> {
                     </section>
                     <ul data-testid="todo-list">{todo_region}</ul>
                     <p data-testid="todo-unmount-count">"Unmounted rows: " {cleanup_count_for_display}</p>
+                    <section aria-label="DOM element reference demo">
+                        {dom_ref_region}
+                        <p data-testid="dom-ref-status">{dom_ref_status_for_display}</p>
+                        <button type="button" data-testid="dom-ref-probe" on:click={move |_payload| {
+                            if let Some(element) = dom_ref_for_probe.get() {
+                                let _ = element.set_attribute("data-ref-probe", "ready");
+                                dom_ref_status_for_probe.set(String::from("mounted"));
+                            } else {
+                                dom_ref_status_for_probe.set(String::from("unmounted"));
+                            }
+                        }}>
+                            "Probe DOM ref"
+                        </button>
+                        <button type="button" data-testid="dom-ref-toggle" on:click={move |_payload| {
+                            show_dom_ref_for_button.update(|visible| *visible = !*visible);
+                        }}>
+                            "Toggle DOM ref"
+                        </button>
+                    </section>
                     <button on:click={move |_payload| {
                         todos_for_reverse.update(|items| items.reverse());
                     }}>

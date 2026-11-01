@@ -3,7 +3,7 @@ title: Formularios y validación
 description: Extrae entradas tipadas, devuelve errores de campo, protege mutaciones con cookies mediante CSRF y vuelve a una ruta local segura.
 ---
 
-Esta guía cubre las APIs experimentales de la Fase 6.3 del servidor RustFlow. Un dato recibido es siempre no confiable: primero decodifícalo a un tipo, después valida las reglas de aplicación y realiza la comprobación de permisos por separado. La Fase 6.4 de sesiones y guards ya está integrada en `main`, también como API experimental. La validación y el middleware CSRF deben integrarse deliberadamente en las rutas con cookies. La Fase 6.3 no añade persistencia ni un proveedor de usuarios; RustFlow ofrece por separado un ORM SQL experimental y un ODM documental para MongoDB, que no se conectan automáticamente a los formularios de esta guía.
+Esta guía cubre las APIs experimentales de la Fase 6.3 del servidor RustFlow para decodificación y validación de datos HTTP. No describe por sí misma el estado local de inputs en el navegador: para valores controlados, eventos input/change, listas dinámicas y contextos tipados, consulta [Composición de UI](/guides/ui-foundations/). Un dato recibido es siempre no confiable: primero decodifícalo a un tipo, después valida las reglas de aplicación y realiza la comprobación de permisos por separado. La Fase 6.4 de sesiones y guards ya está integrada en `main`, también como API experimental. La validación y el middleware CSRF deben integrarse deliberadamente en las rutas con cookies. La Fase 6.3 no añade persistencia ni un proveedor de usuarios; RustFlow ofrece por separado un ORM SQL experimental y un ODM documental para MongoDB, que no se conectan automáticamente a los formularios de esta guía.
 
 ## 1. Extrae un formulario tipado
 

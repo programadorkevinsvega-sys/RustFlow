@@ -135,7 +135,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Definir e implementar la API signal(value) con get, set y update, ligada a un scope de propietario activo; comprobar el uso fuera de scope y la disposición.
 - [x] Exponer use_state(initial) como comodidad sobre señales ligadas al propietario; devuelve Signal<T> y no almacena estado en celdas indexadas por el orden de hooks.
 - [x] Exponer use_effect(...) como efecto ligado al scope; comprobar cleanup antes de cada rerun y al disponer el componente.
-- [x] Documentar qué nombres RustFlow existen hoy y cuáles siguen planeados: use_state y use_effect están disponibles; use_memo, use_ref y use_context siguen pendientes.
+- [x] Registrar el alcance de la API de helpers en la etapa inicial: entonces estaban disponibles use_state y use_effect; use_memo, use_ref y use_context quedaron planificados para fases posteriores.
 - [x] Añadir #[component] con adaptador/registro generado, props tipados, rechazo de props faltantes/desconocidos/tipos incompatibles y callbacks de componente tipados. El subconjunto actual requiere parámetros con nombres simples y tipos explícitos; los tipos admitidos se documentan en la guía.
 - [x] Admitir callback props a través de EventHandler, sin convertir callbacks en atributos HTML.
 - [x] Hacer que interpolar un identificador de señal como {count} produzca un hijo dinámico reactivo sin requerir @dynamic; expresiones arbitrarias que lean señales todavía requieren una región dinámica explícita.
@@ -167,7 +167,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Medir WASM raw y gzip y aplicar un presupuesto raw de 1.5 MiB.
 - [x] Documentar configuración local, compilación release/debug, source maps de los assets JS y troubleshooting básico.
 
-**Cierre verificado:** la Fase 3 está cerrada en `main` desde el 2026-10-26. La PR #26 (`feat/phase-3: preserve component identity`) se fusionó en la rama `feat/phase-3-browser-runtime`, y luego la PR #25 se fusionó en `main`. Los siete checks post-merge pasaron en `43f5fb9c12996ea600b47930553a9f91dc6055e9`. La cobertura incluye actualización de props sin reiniciar el estado local, preservación de identidad DOM, listas keyed, sustitución y limpieza de instancias, cambios estructurales, Counter/todo, E2E Chromium y presupuesto WASM. `use_memo`, `use_ref` y `use_context` siguen pendientes; SSR/hidratación y otros requisitos de fases posteriores permanecen fuera del alcance de este cierre.
+**Cierre verificado:** la Fase 3 está cerrada en `main` desde el 2026-10-26. La PR #26 (`feat/phase-3: preserve component identity`) se fusionó en la rama `feat/phase-3-browser-runtime`, y luego la PR #25 se fusionó en `main`. Los siete checks post-merge pasaron en `43f5fb9c12996ea600b47930553a9f91dc6055e9`. La cobertura incluye actualización de props sin reiniciar el estado local, preservación de identidad DOM, listas keyed, sustitución y limpieza de instancias, cambios estructurales, Counter/todo, E2E Chromium y presupuesto WASM. En la fecha de este cierre de Fase 3 (2026-10-26), `use_memo`, `use_ref` y `use_context` aún no estaban implementados; SSR/hidratación y otros requisitos de fases posteriores permanecían fuera del alcance de este cierre.
 
 ## Phase 4 — HTTP server and routing
 
@@ -460,15 +460,19 @@ The 6.7.2 baseline is verified: all four SQL relation kinds have integration cov
 **Explicitly deferred:** no cache interface is exposed without a concrete framework use case and invalidation/consistency contract; queue remains deferred pending delivery, acknowledgement, retry, durability and idempotency semantics; email remains deferred pending acceptance-versus-delivery, credential and retry contracts; storage remains deferred pending object isolation, permissions, signed-URL and deletion contracts. No placeholder traits are exposed. These items are not counted as implemented by Phase 7.1.
 
 ### 7.2 UI completeness
-- [ ] Improve contexts, dynamic lists, fragments, forms, and controlled inputs.
-- [ ] Add `use_memo` for derived computations with documented dependency tracking and caching semantics.
-- [ ] Add `use_ref` for stable non-reactive component-scoped storage and DOM handles.
-- [ ] Add typed provider/context support and `use_context`, including nearest-provider lookup and missing-context behavior.
-- [ ] Keep all `use_*` APIs owner-scoped and signal-model-native; do not introduce positional hook cells unless a separate ADR explicitly changes the architecture.
-- [ ] Define error isolation behavior.
-- [ ] Add loading/async rendering semantics only when runtime design supports them.
-- [ ] Document styling and asset integration.
-- [ ] Include accessibility guidance and examples.
+
+- [x] Audit and retain the existing component-owner model, keyed-list reconciliation, duplicate-key rejection, fragments, native controls, SSR rendering, and opt-in hydration contracts. Existing unit, integration, and browser tests remain the baseline.
+- [x] Add `use_memo` as an eager owner-scoped derived computation using dynamic signal dependency tracking, `PartialEq` result suppression, documented batch semantics, and owner cleanup. Implementation and its contract are delivered together in PR #70; the final PR revision remains subject to the repository's required merge checks.
+- [x] Add `use_ref` as stable, non-reactive, owner-scoped Rust storage with borrow-safe access and deterministic invalidation on owner disposal. Implementation and its contract are delivered together in PR #70; the final PR revision remains subject to the repository's required merge checks.
+- [x] Add typed `Context<T>` identities, owner-scoped providers, nearest-ancestor lookup, nested shadowing, and explicit missing-provider behavior through `use_context`. Implementation and its contract are delivered together in PR #70; the final PR revision remains subject to the repository's required merge checks.
+- [x] Keep all new `use_*` APIs owner-scoped and native to the signal/owner model; no positional hook cells or call-order state slots are introduced.
+- [x] Define and document current UI error propagation, cleanup, reactive DOM update recovery, and the absence of component-level fallback boundaries. This is the supported error contract, not an ErrorBoundary implementation.
+- [x] Add safe DOM element references with browser mount, replacement, hydration, and unmount semantics through `rustflow_dom::ElementRef`, `Element::with_node_ref`, and the `ref={...}` view-macro binding. This is separate from `use_ref`, remains empty on SSR/detached mounts, rejects duplicate/conflicting bindings, and clears the exact mounted node on replacement/unmount. Implementation and its lifecycle contract are delivered together in PR #70; the final PR revision remains subject to the repository's required merge checks and review.
+- Deferred beyond this UI primitive contract: loading/async rendering requires owner cancellation, stale-result handling, error propagation, SSR, and hydration to share a reliable runtime contract. No placeholder API is exposed.
+- [x] Document CSS/classes and static assets using the existing Vite build pipeline; no CSS-in-Rust or framework asset registry is claimed.
+- [x] Add public accessibility guidance covering semantic HTML, forms, keyboard use, focus, errors, ARIA, images, and dynamic content.
+
+**Phase status:** PR #70 delivers the Phase 7.2 implementation, regression tests, technical contracts/ADRs, and public website documentation together. The required checks and review apply to the final PR revision; the merge and post-merge verification record determine phase closure. Async rendering/loading is explicitly deferred and is not claimed as implemented.
 
 ### 7.3 Testing and docs
 - [ ] Provide test app builders and request helpers.
