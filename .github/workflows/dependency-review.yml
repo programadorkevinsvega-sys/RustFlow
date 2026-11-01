@@ -7,8 +7,31 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect dependency changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      dependencies: ${{ steps.filter.outputs.dependencies }}
+    steps:
+      - name: Check out repository history for push diff detection
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Classify dependency changes
+        uses: dorny/paths-filter@v4.0.3
+        id: filter
+        with:
+          filters: .github/filters.yml
+          predicate-quantifier: some-with-excludes
+
   dependency-review:
     name: Review dependency changes
+    needs: changes
+    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.dependencies == 'true') }}
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
@@ -21,4 +44,4 @@ jobs:
           # GitHub's dependency API reports these Actions with license=null.
           # Their upstream LICENSE files were manually verified as MIT; keep
           # these exact-version exclusions in sync with action upgrades.
-          allow-dependencies-licenses: "pkg:githubactions/actions/checkout@7.0.1, pkg:githubactions/actions/dependency-review-action@5.0.0"
+          allow-dependencies-licenses: "pkg:githubactions/actions/checkout@7.0.1, pkg:githubactions/actions/dependency-review-action@5.0.0, pkg:githubactions/dorny/paths-filter@4.0.3"

@@ -1,0 +1,51 @@
+# Shared path filters for the RustFlow monorepo.
+# Keep these scopes aligned with the jobs documented in docs/CI_CD.md.
+
+rust:
+  - 'Cargo.toml'
+  - 'Cargo.lock'
+  - 'rust-toolchain.toml'
+  - '.cargo/**'
+  - 'rustfmt.toml'
+  - '.rustfmt.toml'
+  - 'clippy.toml'
+  - '.clippy.toml'
+  - 'crates/**'
+  - 'examples/**/*.rs'
+  - 'examples/**/Cargo.toml'
+  - 'examples/**/build.rs'
+  - 'build.rs'
+
+browser:
+  - 'Cargo.toml'
+  - 'Cargo.lock'
+  - 'rust-toolchain.toml'
+  - '.cargo/**'
+  - 'crates/rustflow/**'
+  - 'crates/rustflow-view/**'
+  - 'crates/rustflow-macros/**'
+  - 'crates/rustflow-dom/**'
+  - 'examples/browser/**'
+  - '!examples/browser/**/*.md'
+
+website:
+  - 'website/**'
+  - '.github/workflows/docs.yml'
+
+dependencies:
+  - 'Cargo.toml'
+  - 'Cargo.lock'
+  - '**/Cargo.toml'
+  - '**/Cargo.lock'
+  - '**/package.json'
+  - '**/package-lock.json'
+  - '**/npm-shrinkwrap.json'
+  - '**/pnpm-lock.yaml'
+  - '**/yarn.lock'
+  - '.github/workflows/**'
+  - '.github/actions/**'
+
+full_ci:
+  - '.github/workflows/**'
+  - '.github/actions/**'
+  - '.github/filters.yml'
