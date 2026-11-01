@@ -5,6 +5,36 @@ description: Tabla de capacidades RustFlow disponibles, limitadas o todavía pla
 
 Esta página es un índice de disponibilidad, no una promesa de compatibilidad estable. RustFlow es pre-1.0: valida siempre los ejemplos y la firma exacta contra la revisión del repositorio que utilices.
 
+## Testing y flags de Cargo
+
+RustFlow es pre-1.0: la palabra “disponible” indica que la API existe en esta revisión,
+no una garantía de compatibilidad semántica entre versiones.
+
+| Paquete | Feature Cargo | Estado | Alcance |
+|---|---|---|---|
+| rustflow-server | testing | Experimental, opt-in y desactivada por defecto | Expone rustflow_server::testing: TestApp, TestAppBuilder, request/response helpers, TestSqlDatabase, TestNamespace y TestMongoDatabase. No se compila ni exporta cuando la feature está desactivada. |
+
+~~~toml
+[dev-dependencies]
+rustflow-server = { version = "0.1", features = ["testing"] }
+~~~
+
+rustflow-server es el único crate del workspace que declara una feature de paquete
+RustFlow en esta revisión. Los demás crates no declaran features propias. Los features
+enumerados dentro de dependencias como web-sys son features de esas dependencias,
+no flags públicos de Cargo de RustFlow. En CI se utiliza --all-features para
+compilar también el soporte de pruebas.
+
+| API de pruebas | Estado | Contrato |
+|---|---|---|
+| TestAppBuilder, TestApp, TestRequestBuilder, TestResponse | Experimental, feature testing | Construye el router privado real de Application y ejecuta solicitudes mediante Tower in-process. No abre TCP; no sustituye pruebas de TLS, peer address, trusted proxies, desconexión ni shutdown. |
+| TestSqlDatabase, TestNamespace | Experimental, feature testing | SQLite in-memory de una conexión o namespace de tablas único en una DB externa expresamente marcada como test. No crea/borra bases ni esquemas. |
+| TestMongoDatabase | Experimental, feature testing | Asigna una base MongoDB única por fixture; la limpieza de esa base es explícita mediante cleanup().await. |
+| mountApplication, browserErrors | Helper JavaScript del ejemplo browser | Fixture Playwright con contexto/página nuevos, espera observable del root y captura de errores de consola/página. No es una API Rust ni reemplaza E2E. |
+
+La guía Probar y depurar aplicaciones contiene ejemplos de uso y límites de cada
+fixture. La guía técnica equivalente está en docs/TESTING.md.
+
 ## Reactividad y componentes
 
 | Capacidad | Estado | Alcance/notas |

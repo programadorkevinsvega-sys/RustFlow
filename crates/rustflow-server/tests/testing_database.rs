@@ -1,6 +1,6 @@
 use rustflow_server::{
-    testing::{TestMongoDatabase, TestSqlDatabase},
     DatabaseBackend, sqlx,
+    testing::{TestMongoDatabase, TestSqlDatabase},
 };
 use std::env;
 
@@ -112,7 +112,12 @@ async fn sqlite_fixtures_are_independent_and_close_cleanly() {
     let second_table_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'records'",
     )
-    .fetch_one(second.pool().sqlx_sqlite_pool().expect("second SQLite pool"))
+    .fetch_one(
+        second
+            .pool()
+            .sqlx_sqlite_pool()
+            .expect("second SQLite pool"),
+    )
     .await
     .expect("inspect second in-memory database");
     assert_eq!(second_table_count, 0);
@@ -153,7 +158,11 @@ async fn mongodb_fixture_uses_and_drops_a_unique_database() {
         .expect("connect isolated MongoDB fixture");
     let database_name = fixture.namespace().database_name().to_owned();
     assert!(database_name.starts_with("rf_test_"));
-    fixture.database().ping().await.expect("ping fixture database");
+    fixture
+        .database()
+        .ping()
+        .await
+        .expect("ping fixture database");
 
     fixture
         .database()
@@ -166,5 +175,8 @@ async fn mongodb_fixture_uses_and_drops_a_unique_database() {
         .await
         .expect("create a collection in the isolated database");
 
-    fixture.cleanup().await.expect("drop isolated test database");
+    fixture
+        .cleanup()
+        .await
+        .expect("drop isolated test database");
 }

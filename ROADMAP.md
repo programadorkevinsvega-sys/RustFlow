@@ -476,7 +476,7 @@ The 6.7.2 baseline is verified: all four SQL relation kinds have integration cov
 
 ### 7.3 Testing and docs
 
-**Implementation note (2026-11-01):** the in-process HTTP test application builder and request/response helpers are being introduced behind the opt-in rustflow-server/testing feature. Their scope and limitations are recorded in docs/TESTING.md and ADR 0026. This does not close Phase 7.3: isolated SQL/MongoDB fixtures, browser utilities, standalone CRUD/auth examples, the public API/feature inventory and CI evidence remain required.
+**Implementation note (2026-11-01):** this increment adds in-process HTTP helpers; SQL fixtures for isolated SQLite and namespaced external test tables; MongoDB fixtures with unique database names and explicit cleanup; reusable Playwright page/error fixtures; and a runnable authenticated example. The generated CRUD template remains the full SQL CRUD example and is exercised by the CLI integration test. The public API/feature inventory is being synchronized across docs and website. This does not close Phase 7.3 until the final review and CI for the final PR HEAD are complete.
 - [ ] Provide test app builders and request helpers.
 - [ ] Add isolated database and browser test utilities.
 - [ ] Add a full CRUD example and an authenticated example.

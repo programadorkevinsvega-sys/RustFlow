@@ -10,7 +10,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::{DatabaseBackend, DatabaseConfig, DatabaseError, DatabasePool, MongoConfig, MongoDatabase, MongoError};
+use crate::{DatabaseConfig, DatabaseError, DatabasePool, MongoConfig, MongoDatabase, MongoError};
 
 static NEXT_NAMESPACE: AtomicU64 = AtomicU64::new(1);
 

@@ -83,7 +83,62 @@ cargo test -p rustflow-server --features testing --test testing
 
 La suite HTTP/TCP prueba rutas, datos malformados, grupos, middleware, request IDs, páginas de error, límites, timeouts, TLS local, proxies confiables, abortos de cliente y concurrencia acotada. Los casos de la Fase 6.3 incluyen formularios tipados, validación JSON/query, errores estructurados 422, content-types no admitidos, campos inesperados, CSRF ausente/inválido/válido y redirecciones seguras. Para persistencia, hay contratos de integración separados para el ORM SQL de cuatro motores, el soporte MySQL/MariaDB y el ODM MongoDB (incluidos replica set y servidor standalone); sus variables de servicio y comandos específicos se documentan en [Base de datos](/guides/database/). Consulta también la [guía de formularios y validación](/guides/forms-validation/).
 
-## 3. Compilar y probar el navegador WebAssembly
+
+
+## 4. Fixtures aisladas para bases de datos
+
+La feature optativa **rustflow-server/testing** expone utilidades de persistencia:
+
+- **TestSqlDatabase::sqlite_in_memory()** crea una SQLite en memoria nueva por test y limita el pool a una conexión para conservar el mismo esquema en todos los accesos SQLx/SeaORM.
+- **TestSqlDatabase::connect_test_url(url)** exige que el nombre final de la base sea **test**, empiece por **test_** o termine en **_test**. Cada fixture genera su propio **TestNamespace** para construir nombres de tabla únicos.
+- **TestMongoDatabase::connect(uri)** asigna una base MongoDB única. Llama **cleanup().await** para borrar únicamente esa base.
+- Las utilidades SQL externas no crean ni eliminan bases/esquemas y nunca borran tablas ajenas. Usa URLs dedicadas de test; no apuntes a datos de desarrollo o producción.
+
+Ejemplo SQLite:
+
+~~~rust
+use rustflow_server::testing::TestSqlDatabase;
+
+#[tokio::test]
+async fn isolated_sql_test() -> Result<(), Box<dyn std::error::Error>> {
+    let database = TestSqlDatabase::sqlite_in_memory().await?;
+    let table = database.namespace().table_name("items")?;
+    database.pool().execute_raw(
+        &format!("CREATE TABLE {table} (value TEXT NOT NULL)"),
+        std::iter::empty(),
+    ).await?;
+    database.close().await;
+    Ok(())
+}
+~~~
+
+Ejemplo MongoDB:
+
+~~~rust
+use rustflow_server::testing::TestMongoDatabase;
+
+#[tokio::test]
+async fn isolated_document_test() -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = TestMongoDatabase::connect(
+        std::env::var("RUSTFLOW_TEST_MONGODB_URI")?
+    ).await?;
+    fixture.database().ping().await?;
+    fixture.cleanup().await?;
+    Ok(())
+}
+~~~
+
+Para motores SQL externos configura **RUSTFLOW_TEST_DATABASE_URL** (PostgreSQL), **RUSTFLOW_TEST_MYSQL_URL** y **RUSTFLOW_TEST_MARIADB_URL**, siempre con una base dedicada de test. Para MongoDB utiliza **RUSTFLOW_TEST_MONGODB_URI**; el contrato transaccional requiere replica set. Los tests aislados y sus límites están descritos en la guía técnica de testing del repositorio.
+
+## 5. Ejemplo autenticado completo
+
+El ejemplo ejecutable **cargo run -p rustflow-server --example authenticated** muestra sesiones server-side, verificación de contraseña con **PasswordHash**, identidad y roles de origen servidor, rutas protegidas, política deny-by-default y CSRF para login/logout. Requiere **RUSTFLOW_DEMO_USER**, **RUSTFLOW_DEMO_PASSWORD** y **RUSTFLOW_CSRF_KEY** (mínimo 32 bytes); escucha en **127.0.0.1:3001** por defecto.
+
+Rutas: **GET /csrf** emite token y cookie CSRF; **POST /login** valida credenciales JSON y rota la sesión; **GET /me** exige identidad; **GET /admin** requiere el permiso **admin.read**; **POST /logout** valida CSRF e invalida la sesión. El ejemplo se niega a arrancar con **RUSTFLOW_ENV=production**.
+
+Este es un ejemplo educativo: usa **InMemorySessionStore** y una cookie de desarrollo, así que no es una implementación de autenticación lista para producción ni una receta de despliegue.
+
+## 6. Compilar y probar el navegador WebAssembly
 
 Desde la raíz:
 
@@ -116,7 +171,7 @@ rustup target add wasm32-unknown-unknown
 cargo check -p rustflow-dom --target wasm32-unknown-unknown
 ~~~
 
-## 4. Diagnóstico rápido
+## 7. Diagnóstico rápido
 
 | Síntoma | Comprobación inicial |
 |---|---|
