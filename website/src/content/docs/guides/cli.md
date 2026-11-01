@@ -60,14 +60,16 @@ cp .env.example .env
 rustflow dev
 ~~~
 
-Abre `http://127.0.0.1:3000/login`. La cuenta de demostración se toma de `RUSTFLOW_DEMO_USER`/`RUSTFLOW_DEMO_PASSWORD`; tras iniciar sesión puedes listar, crear, abrir, editar y borrar productos.
+Abre `http://127.0.0.1:3000/login`. La cuenta de demostración se toma de `RUSTFLOW_DEMO_USER`/`RUSTFLOW_DEMO_PASSWORD`; tras iniciar sesión puedes listar, crear, abrir, editar y borrar productos, asignarles una categoría y filtrar la lista por nombre/categoría con páginas acotadas.
 
-La estructura añade `src/models/product.rs` (SeaORM `DeriveEntityModel` + RustFlow `ModelDiagnostics`), `src/bin/migrate.rs` y migraciones separadas para SQLite, PostgreSQL y MySQL/MariaDB. La aplicación elige el directorio según `DatabaseBackend`; la URL de conexión por sí sola no traduce SQL ni DDL.
+La estructura añade `src/models/category.rs` y `src/models/product.rs` (SeaORM `DeriveEntityModel` + RustFlow `ModelDiagnostics`), `src/bin/migrate.rs` y migraciones separadas para SQLite, PostgreSQL y MySQL/MariaDB. `Product` declara una relación `belongs_to Category`, y `Category` declara `has_many Product`. La aplicación elige el directorio según `DatabaseBackend`; la URL de conexión por sí sola no traduce SQL ni DDL.
 
 ### Qué demuestra
 
 - `Request::validated_form` y `ValidateInput` para formularios y errores estructurados 422.
 - `DatabasePool::entity`/`EntityRepository` para listar, insertar, buscar, actualizar y borrar registros con el ORM respaldado por el pool compartido.
+- Relación `Product`–`Category` con migraciones específicas por dialecto. El detalle carga su categoría mediante el helper explícito `load_one`; la lista carga las categorías de la página en un lote, no con una consulta por producto.
+- `Request::validated_query::<ProductListQuery>` aplica validación al filtro de texto, categoría y número de página. El query builder usa valores enlazados, orden determinista por ID y `limit/offset` con tamaño de página máximo fijo.
 - `DatabasePool::begin_transaction` y rollback explícito cuando una segunda escritura viola el índice único SKU.
 - `SessionManager`, `AuthIdentity`, `route_protected`, `route_authorized` y una `RolePolicy` deny-by-default.
 - `CsrfProtection` conectado explícitamente a rutas POST; los formularios incluyen `_csrf` oculto.
@@ -78,6 +80,8 @@ La estructura añade `src/models/product.rs` (SeaORM `DeriveEntityModel` + RustF
 Es una demostración educativa, no un starter de producción. Usa `InMemorySessionStore` (volátil y de un solo proceso), `SessionCookieConfig::development()` y una sola cuenta demo configurada por entorno. Rechaza `RUSTFLOW_ENV=production`. No aporta proveedor de usuarios, sesión durable, OAuth/OIDC, MFA, rate limiting ni gestión de credenciales. Sustituye explícitamente esas piezas y configura cookies/CSRF/secretos apropiados para HTTPS antes de cualquier despliegue.
 
 El generador `rustflow generate model <Name>` sigue produciendo un struct de dominio plano por compatibilidad. El nombre no permite inferir tabla, tipos, claves o relaciones; consulta `src/models/product.rs` para la declaración explícita de una entidad SeaORM.
+
+La relación, el filtro y la paginación del ejemplo están incluidos en la rama de validación Phase 6.7.6; sus pruebas HTTP para los cuatro motores SQL quedan sujetas a que CI pase sobre el HEAD final de PR #66. No confundas esta aplicación educativa con un starter de producción.
 
 ## Desarrollo: `rustflow dev`
 
