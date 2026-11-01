@@ -918,7 +918,7 @@ impl Scope {
 
     /// Resolve this context starting at this owner and walking toward the root.
     /// Missing providers return Ok(None). Context lookup itself is not reactive;
-    /// store a Signal<T> as the value when consumers need reactive updates.
+    /// store a `Signal<T>` as the value when consumers need reactive updates.
     pub fn use_context<T: 'static>(
         &self,
         context: &Context<T>,
