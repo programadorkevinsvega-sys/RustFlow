@@ -460,15 +460,19 @@ The 6.7.2 baseline is verified: all four SQL relation kinds have integration cov
 **Explicitly deferred:** no cache interface is exposed without a concrete framework use case and invalidation/consistency contract; queue remains deferred pending delivery, acknowledgement, retry, durability and idempotency semantics; email remains deferred pending acceptance-versus-delivery, credential and retry contracts; storage remains deferred pending object isolation, permissions, signed-URL and deletion contracts. No placeholder traits are exposed. These items are not counted as implemented by Phase 7.1.
 
 ### 7.2 UI completeness
-- [ ] Improve contexts, dynamic lists, fragments, forms, and controlled inputs.
-- [ ] Add `use_memo` for derived computations with documented dependency tracking and caching semantics.
-- [ ] Add `use_ref` for stable non-reactive component-scoped storage and DOM handles.
-- [ ] Add typed provider/context support and `use_context`, including nearest-provider lookup and missing-context behavior.
-- [ ] Keep all `use_*` APIs owner-scoped and signal-model-native; do not introduce positional hook cells unless a separate ADR explicitly changes the architecture.
-- [ ] Define error isolation behavior.
-- [ ] Add loading/async rendering semantics only when runtime design supports them.
-- [ ] Document styling and asset integration.
-- [ ] Include accessibility guidance and examples.
+
+- [x] Audit and retain the existing component-owner model, keyed-list reconciliation, duplicate-key rejection, fragments, native controls, SSR rendering, and opt-in hydration contracts. Existing unit, integration, and browser tests remain the baseline.
+- [x] Add `use_memo` as an eager owner-scoped derived computation using dynamic signal dependency tracking, `PartialEq` result suppression, documented batch semantics, and owner cleanup. Implementation is present in PR #70; final acceptance remains gated on required CI.
+- [x] Add `use_ref` as stable, non-reactive, owner-scoped Rust storage with borrow-safe access and deterministic invalidation on owner disposal. Implementation is present in PR #70; final acceptance remains gated on required CI.
+- [x] Add typed `Context<T>` identities, owner-scoped providers, nearest-ancestor lookup, nested shadowing, and explicit missing-provider behavior through `use_context`. Implementation is present in PR #70; final acceptance remains gated on required CI.
+- [x] Keep all new `use_*` APIs owner-scoped and native to the signal/owner model; no positional hook cells or call-order state slots are introduced.
+- [x] Define and document current UI error propagation, cleanup, reactive DOM update recovery, and the absence of component-level fallback boundaries. This is the supported error contract, not an ErrorBoundary implementation.
+- [ ] Add safe DOM element references with browser mount, replacement, hydration, and unmount semantics. The current `use_ref` stores Rust values only and is not a DOM handle.
+- [ ] Add loading/async rendering only after owner cancellation, stale-result handling, error propagation, SSR, and hydration share a reliable runtime contract.
+- [x] Document CSS/classes and static assets using the existing Vite build pipeline; no CSS-in-Rust or framework asset registry is claimed.
+- [x] Add public accessibility guidance covering semantic HTML, forms, keyboard use, focus, errors, ARIA, images, and dynamic content.
+
+**Phase status:** partially implemented in PR #70. Do not mark Phase 7.2 accepted until the required CI checks pass and the DOM-reference requirement is either implemented under a reviewed contract or explicitly split into an accepted follow-up phase.
 
 ### 7.3 Testing and docs
 - [ ] Provide test app builders and request helpers.
