@@ -81,7 +81,7 @@ cargo test --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 ~~~
 
-Las pruebas de integración usan directorios temporales. Además de los cinco generadores existentes, la prueba CRUD crea el proyecto con `--template crud` sin reemplazar su `src/main.rs`, compila el binario generado y lo prueba mediante peticiones HTTP contra SQLite, ORM, validación, autorización, CSRF, rollback y SSR. CI también instala el CLI y prueba `--help` y versión.
+Las pruebas de integración usan directorios temporales. Además de los cinco generadores existentes, la prueba CRUD crea el proyecto con `--template crud` sin reemplazar su `src/main.rs`, compila el binario generado y lo prueba mediante peticiones HTTP contra SQLite, ORM, validación, autorización, CSRF, rollback y SSR. El gate Phase 6.7.6 amplió la prueba funcional a la relación Category/Product, carga explícita, filtros y paginación contra SQLite, PostgreSQL, MySQL y MariaDB; este contrato pasó en el HEAD final de PR #66. CI también instala el CLI y prueba `--help` y versión.
 
 ## Límites explícitos
 
