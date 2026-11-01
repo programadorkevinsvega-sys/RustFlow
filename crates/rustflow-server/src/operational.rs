@@ -15,13 +15,14 @@ pub(crate) type ReadinessFuture =
 type ReadinessCallback = dyn Fn() -> ReadinessFuture + Send + Sync + 'static;
 
 /// The supported application log verbosity levels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LogLevel {
     /// Only errors.
     Error,
     /// Warnings and errors.
     Warn,
     /// Informational messages, warnings, and errors.
+    #[default]
     Info,
     /// Debug messages and more severe messages.
     Debug,
@@ -50,12 +51,6 @@ impl LogLevel {
             Self::Debug => "debug",
             Self::Trace => "trace",
         }
-    }
-}
-
-impl Default for LogLevel {
-    fn default() -> Self {
-        Self::Info
     }
 }
 
