@@ -7,6 +7,8 @@ INSERT INTO categories (id, name) VALUES
     (1, 'General'),
     (2, 'Office');
 
+SELECT setval(pg_get_serial_sequence('categories', 'id'), (SELECT MAX(id) FROM categories));
+
 CREATE TABLE IF NOT EXISTS products (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(120) NOT NULL,
