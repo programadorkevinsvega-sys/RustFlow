@@ -81,11 +81,11 @@ A timeout does not prove that the server did not execute a write. The driver doc
 
 ### 8. Out of scope
 
-This ADR does not add SQL-style joins or relationships, implicit lazy loading, SQL migrations, a second Mongo client/pool, mongodb+srv://, schema migrations, automatic cross-document cascades, an identity map, a global repository singleton, or global Phase 6.7 completion. Advanced generated CRUD applications and the remaining global quality gate stay in later subphases.
+This ADR does not add SQL-style joins or relationships, implicit lazy loading, SQL migrations, a second Mongo client/pool, mongodb+srv://, schema migrations, automatic cross-document cascades, an identity map, or a global repository singleton. Advanced generated CRUD applications are outside this ODM architecture decision and were handled separately in Phase 6.7.5/6.7.6. The global Phase 6.7 quality/compatibility gate was subsequently completed through PR #66 (merge commit `6046ae7ca60843d145476177e698162b57939c68`); that later closure does not expand the ODM scope defined here.
 
 ## Implementation and acceptance record (2026-10-31)
 
-The trait-based ODM described in this ADR is implemented in `crates/rustflow-server/src/document_odm.rs` and verified by the integration suite in `crates/rustflow-server/tests/mongodb_adapter.rs`. The exact final PR #60 head `659f1750d611e57315263216167d43375da23574` passed Rust 1.85 and stable, formatting, Clippy, workspace tests, four-engine SQL regressions, MongoDB CRUD/bulk/query/index/ID/nested-document tests, replica-set commit/abort, standalone transaction rejection, Rustdoc, CLI and benchmark smoke, WebAssembly, Browser E2E/bundle, Documentation site, Governance and Dependency review. PR #60 merged into `main` on 2026-10-31 as `7ffb89b5ca36017a428cf3f828b68f590f8d404b`; this merge does not imply global Phase 6.7 completion.
+The trait-based ODM described in this ADR is implemented in `crates/rustflow-server/src/document_odm.rs` and verified by the integration suite in `crates/rustflow-server/tests/mongodb_adapter.rs`. The exact final PR #60 head `659f1750d611e57315263216167d43375da23574` passed Rust 1.85 and stable, formatting, Clippy, workspace tests, four-engine SQL regressions, MongoDB CRUD/bulk/query/index/ID/nested-document tests, replica-set commit/abort, standalone transaction rejection, Rustdoc, CLI and benchmark smoke, WebAssembly, Browser E2E/bundle, Documentation site, Governance and Dependency review. PR #60 merged into `main` on 2026-10-31 as `7ffb89b5ca36017a428cf3f828b68f590f8d404b`; this accepted the ODM subphase. The overall Phase 6.7 quality/compatibility gate was later closed through PR #66 on 2026-11-01.
 
 ## Consequences
 

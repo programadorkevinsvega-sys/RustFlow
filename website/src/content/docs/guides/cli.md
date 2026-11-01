@@ -81,7 +81,7 @@ Es una demostración educativa, no un starter de producción. Usa `InMemorySessi
 
 El generador `rustflow generate model <Name>` sigue produciendo un struct de dominio plano por compatibilidad. El nombre no permite inferir tabla, tipos, claves o relaciones; consulta `src/models/product.rs` para la declaración explícita de una entidad SeaORM.
 
-La relación, el filtro y la paginación del ejemplo están incluidos en la rama de validación Phase 6.7.6; sus pruebas HTTP para los cuatro motores SQL quedan sujetas a que CI pase sobre el HEAD final de PR #66. No confundas esta aplicación educativa con un starter de producción.
+La relación, el filtro y la paginación forman parte de la aplicación CRUD aceptada en Phase 6.7.6. Las pruebas HTTP de esos recorridos pasaron contra SQLite, PostgreSQL, MySQL y MariaDB en el HEAD final `b049d96491e2b23bfe794ac3c0ed9abb68f7e493`, fusionado mediante PR #66 como `6046ae7ca60843d145476177e698162b57939c68`. La aceptación de CI no cambia el propósito educativo de la plantilla: no es un starter de producción.
 
 ## Desarrollo: `rustflow dev`
 
