@@ -106,9 +106,8 @@ fn build_application(
         })
     })?;
 
-    let policy: Arc<dyn AccessPolicy> = Arc::new(
-        RolePolicy::new().allow_role("admin.read", "admin")?,
-    );
+    let policy: Arc<dyn AccessPolicy> =
+        Arc::new(RolePolicy::new().allow_role("admin.read", "admin")?);
     application.route_authorized(
         HttpMethod::Get,
         "/admin",
@@ -127,7 +126,9 @@ fn build_application(
     })?;
     application.route_middleware(HttpMethod::Post, "/logout", csrf.middleware())?;
 
-    application.get("/health", |_request: Request| async { Ok(Response::text("ok")) })?;
+    application.get("/health", |_request: Request| async {
+        Ok(Response::text("ok"))
+    })?;
 
     Ok(application)
 }
@@ -197,11 +198,7 @@ mod tests {
     }
 
     async fn csrf_pair(app: &TestApp) -> (String, String) {
-        let response = app
-            .get("/csrf")
-            .send()
-            .await
-            .expect("request a CSRF token");
+        let response = app.get("/csrf").send().await.expect("request a CSRF token");
         assert_eq!(response.status(), StatusCode::OK);
         let payload: CsrfPayload = response.json().expect("decode CSRF payload");
         let cookie = extract_cookie(&response, "rustflow_csrf");

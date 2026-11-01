@@ -9,8 +9,6 @@
 //! trusted-proxy behavior, network transport, graceful shutdown or cancellation.
 //! Keep TCP integration tests for those contracts.
 
-mod database;
-pub use database::{TestMongoDatabase, TestNamespace, TestSqlDatabase};
 //!
 //! # Example
 //!
@@ -34,6 +32,9 @@ pub use database::{TestMongoDatabase, TestNamespace, TestSqlDatabase};
 //! # Ok(())
 //! # }
 //! ~~~
+
+mod database;
+pub use database::{TestMongoDatabase, TestNamespace, TestSqlDatabase};
 
 use std::{error::Error, fmt};
 
