@@ -1297,6 +1297,24 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
     assert_eq!(generated_response_status(&products), 200, "{products}");
     assert!(generated_response_body(&products).contains("No products have been created yet."));
 
+    let no_filtered_products = generated_http_request(
+        port,
+        "GET",
+        "/products?q=missing-product",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&no_filtered_products),
+        200,
+        "{no_filtered_products}"
+    );
+    assert!(
+        generated_response_body(&no_filtered_products)
+            .contains("No products match the current filters."),
+        "{no_filtered_products}"
+    );
+
     let invalid_filter = generated_http_request(
         port,
         "GET",
