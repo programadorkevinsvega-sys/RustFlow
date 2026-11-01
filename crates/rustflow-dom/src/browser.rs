@@ -710,6 +710,13 @@ impl DomRenderer {
                         return Err(error.into());
                     }
                 };
+                if let Err(error) = self
+                    .validate_view(&child)
+                    .and_then(|_| self.validate_node_refs_for_view(&child, None))
+                {
+                    let _ = scope.dispose();
+                    return Err(error);
+                }
                 let child_nodes = &siblings[start_index + 1..end_index];
                 let mut inner = RenderedNodes::default();
                 let mut child_index = 0;
@@ -803,6 +810,13 @@ impl DomRenderer {
                     RenderTarget::Browser,
                 )?;
                 let child_view = instance.view().clone();
+                if let Err(error) = self
+                    .validate_view(&child_view)
+                    .and_then(|_| self.validate_node_refs_for_view(&child_view, None))
+                {
+                    let _ = instance.unmount();
+                    return Err(error);
+                }
                 let child_nodes = &siblings[start_index + 1..end_index];
                 let mut inner = RenderedNodes::default();
                 let mut child_index = 0;
@@ -1004,6 +1018,11 @@ impl DomRenderer {
     }
 
     fn activate_node_refs(&self, mounted: &mut MountedDom) -> Result<(), DomError> {
+        // A detached MountedDom is a prepared view, not a mounted browser region.
+        // Defer exposing element handles until its comment-anchored range is attached.
+        if !mounted.is_attached() {
+            return Ok(());
+        }
         let mut identities = HashSet::new();
         for reference in &mounted.node_refs {
             if !reference.binding.matches_type::<DomElement>() {
@@ -1478,7 +1497,7 @@ impl DomRenderer {
             roots: roots.clone(),
             listeners: inner.listeners,
             pending_listeners: inner.pending_listeners,
-                    node_refs: inner.node_refs,
+            node_refs: inner.node_refs,
             delegated_listeners: Vec::new(),
             delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
             components: inner.components,
@@ -1536,7 +1555,7 @@ impl DomRenderer {
             roots: roots.clone(),
             listeners: inner.listeners,
             pending_listeners: inner.pending_listeners,
-                    node_refs: inner.node_refs,
+            node_refs: inner.node_refs,
             delegated_listeners: Vec::new(),
             delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
             components: inner.components,
