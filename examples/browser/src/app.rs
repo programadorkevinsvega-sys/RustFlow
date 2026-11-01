@@ -192,6 +192,9 @@ pub fn start() -> Result<(), JsValue> {
             let input_for_event = input_value.clone();
             let value_for_output = input_value.clone();
             let value_for_input = input_value.clone();
+            let hydration_input_ref = ElementRef::new();
+            let hydration_input_ref_for_render = hydration_input_ref.clone();
+            let hydration_input_ref_for_probe = hydration_input_ref.clone();
             let reverse_order = runtime.signal(false).map_err(display_error)?;
             let reverse_for_list = reverse_order.clone();
             let reverse_for_button = reverse_order.clone();
@@ -236,6 +239,8 @@ pub fn start() -> Result<(), JsValue> {
                     let input_for_event = input_for_event.clone();
                     let value_for_output = value_for_output.clone();
                     let value_for_input = value_for_input.clone();
+                    let hydration_input_ref_for_render = hydration_input_ref_for_render.clone();
+                    let hydration_input_ref_for_probe = hydration_input_ref_for_probe.clone();
                     let reverse_for_button = reverse_for_button.clone();
                     let show_for_button = show_for_button.clone();
                     rustflow::view! {
@@ -245,12 +250,20 @@ pub fn start() -> Result<(), JsValue> {
                                 <input
                                     id="hydration-input"
                                     aria-label="Name"
+                                    ref={hydration_input_ref_for_render}
                                     prop:value={value_for_input.get()}
                                     on:input={move |payload: EventPayload| {
                                         input_for_event.set(payload.value.unwrap_or_default());
                                     }}
                                 />
                                 <p data-testid="hydration-input-output">{value_for_output}</p>
+                                <button type="button" data-testid="hydration-ref-probe" on:click={move |_payload| {
+                                    if let Some(element) = hydration_input_ref_for_probe.get() {
+                                        let _ = element.set_attribute("data-ref-probe", "ready");
+                                    }
+                                }}>
+                                    "Probe hydrated ref"
+                                </button>
                                 <button type="button" data-testid="hydration-toggle" on:click={move |_payload| {
                                     show_for_button.update(|visible| *visible = !*visible);
                                 }}>
