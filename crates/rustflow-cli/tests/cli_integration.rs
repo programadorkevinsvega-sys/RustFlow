@@ -807,6 +807,7 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         ("sku", &sku),
         ("description", "Generated application smoke test"),
         ("price_cents", "2100"),
+        ("category_id", "2"),
     ]);
     let create = generated_http_request(port, "POST", "/products", &secured_headers, &create_body);
     assert_eq!(generated_response_status(&create), 303, "{label}: {create}");
@@ -848,6 +849,7 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         ("sku", &sku),
         ("description", "Updated on SQL engine"),
         ("price_cents", "2500"),
+        ("category_id", "2"),
     ]);
     let update = generated_http_request(
         port,
@@ -1163,6 +1165,7 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         ("sku", ""),
         ("description", ""),
         ("price_cents", "-1"),
+        ("category_id", "1"),
     ]);
     let invalid_form = generated_http_request(
         port,
@@ -1184,6 +1187,7 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         ("sku", "bad-price"),
         ("description", ""),
         ("price_cents", "not-an-integer"),
+        ("category_id", "1"),
     ]);
     let malformed_form = generated_http_request(
         port,
@@ -1204,6 +1208,7 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         ("sku", "desk-001"),
         ("description", "User supplied <script> text"),
         ("price_cents", "1250"),
+        ("category_id", "2"),
     ]);
     let created = generated_http_request(
         port,
@@ -1269,6 +1274,7 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         ("sku", "desk-001"),
         ("description", "Updated product"),
         ("price_cents", "1499"),
+        ("category_id", "2"),
     ]);
     let updated = generated_http_request(
         port,
