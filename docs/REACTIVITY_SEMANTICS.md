@@ -123,7 +123,7 @@ This addendum describes the owner-scoped primitives introduced after the origina
 2. Reads and writes do not track or notify reactive dependencies.
 3. Access is limited to short-lived closure borrows or cloned reads when <code>T: Clone</code>; borrow conflicts are returned as <code>RefBorrowConflict</code> by fallible methods.
 4. Owner disposal takes and drops the stored value. A cloned handle remains memory-safe but returns <code>RefDisposed</code> afterward.
-5. This API does not model browser elements. DOM references need a separate adapter-level lifecycle contract and are not implied by <code>use_ref</code>.
+5. This API does not model browser elements. The browser adapter exposes a separate <code>ElementRef</code> contract for mounted native elements; it is not implied by <code>use_ref</code>. The handle is empty during SSR/view construction, attaches after mount or successful hydration, follows compatible reconciliation/replacement, and clears on unmount. It is non-reactive and single-element-per-handle.
 
 ### 10.3 Typed contexts
 

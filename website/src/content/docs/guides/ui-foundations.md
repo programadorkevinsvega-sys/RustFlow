@@ -103,9 +103,41 @@ fn SearchBox() -> impl IntoView {
 
 Las escrituras del ref no son señales y no notifican efectos. El acceso mutable puede hacerse con <code>try_with_mut</code>; la lectura con clon requiere <code>T: Clone</code>. Los conflictos de borrow y el acceso después del owner se informan explícitamente.
 
-<code>use_ref</code> aún no proporciona una referencia a un elemento DOM. No supongas que guarda un <code>web_sys::Element</code> ni que existe un nodo durante SSR. Las refs DOM requieren una API separada que cubra montaje, hidratación, reemplazo y desmontaje.
+<code>use_ref</code> sigue siendo almacenamiento Rust y no proporciona una referencia DOM. Para elementos del navegador usa <code>rustflow_dom::ElementRef</code>, que se enlaza a un elemento nativo con <code>ref={element_ref}</code> (o <code>with_node_ref</code> en el builder).
 
-## 4. Listas dinámicas: usa claves estables
+## 4. Referencias DOM seguras con ElementRef
+
+Usa una referencia DOM cuando un handler necesite interactuar con un elemento ya montado, por ejemplo para enfocar un control o leer/ajustar una propiedad del navegador. La API pertenece al adaptador browser/WASM y es distinta de <code>use_ref</code>.
+
+~~~rust
+use rustflow_dom::ElementRef;
+
+#[rustflow::component]
+fn SearchField() -> impl IntoView {
+    let input_ref = ElementRef::new();
+    let input_for_action = input_ref.clone();
+
+    rustflow::view! {
+        <section>
+            <label for="search-field">"Buscar"</label>
+            <input id="search-field" ref={input_ref} />
+            <button type="button" on:click={move |_event| {
+                if let Some(element) = input_for_action.get() {
+                    let _ = element.set_attribute("data-probed", "true");
+                }
+            }}>
+                "Comprobar elemento"
+            </button>
+        </section>
+    }
+}
+~~~
+
+El handle comienza vacío. El renderer lo completa después de insertar el rango DOM, o después de validar y aceptar la hidratación SSR. <code>get()</code> devuelve un <code>web_sys::Element</code> clonado o <code>None</code> cuando todavía no hay nodo o ya se desmontó. Un reemplazo actualiza el destino; una eliminación/cleanup borra la referencia solo si todavía apunta al elemento que ese montaje poseía. Esto también se aplica a regiones dinámicas y componentes anidados.
+
+Cada handle solo puede apuntar a un elemento nativo a la vez. No reutilices el mismo handle en dos elementos ni en dos montajes; el renderer rechaza duplicados/conflictos. La sintaxis <code>ref</code> no se admite en tags de componentes, porque el componente no garantiza una única raíz DOM. SSR no crea elementos ni llena el handle, y leerlo/escribir atributos por él no es una operación reactiva.
+
+## 5. Listas dinámicas: usa claves estables
 
 Representa cada elemento con una clave que identifique la entidad, no su posición visual. Las claves deben ser únicas dentro de la lista.
 
@@ -120,13 +152,13 @@ Cuando la lista cambia de orden, la reconciliación por clave puede conservar el
 
 No uses el índice como clave cuando los elementos puedan reordenarse, insertarse o eliminarse. Un índice representa una posición, no la identidad de la entidad.
 
-## 5. Fragments
+## 6. Fragments
 
 <code>View::fragment</code> agrupa varios nodos hermanos en el modelo de vista sin crear un elemento HTML envolvente. En el navegador, el renderer mantiene los rangos con comentarios internos para actualizar o desmontar la región; esos comentarios no son wrappers visibles ni cambian la semántica de los elementos.
 
 Los fragments conservan el orden de hijos, pueden anidarse y admiten cero, uno o varios nodos. SSR serializa los hijos en orden. La hidratación solo funciona cuando el HTML y las fronteras coinciden con el protocolo soportado.
 
-## 6. Formularios y controlled inputs
+## 7. Formularios y controlled inputs
 
 RustFlow utiliza controles HTML nativos. Para un control controlado, el estado de la aplicación es la fuente de verdad: enlaza la propiedad viva <code>value</code> o <code>checked</code> a la señal y actualiza esa señal con el evento de entrada/cambio.
 
@@ -169,8 +201,8 @@ Durante una reconciliación, RustFlow evita volver a escribir una propiedad si e
 
 Los formularios estándar continúan funcionando con envío HTML normal. Las APIs de validación, CSRF y extracción tipada de peticiones del servidor se describen por separado en [Formularios y validación](/guides/forms-validation/); no convierten automáticamente un input del navegador en un input controlado.
 
-## 7. SSR y ciclo de vida
+## 8. SSR y ciclo de vida
 
-Los memos, refs y providers se asocian al owner del render. El render SSR debe crear runtimes/scopes separados por solicitud. El valor de un provider no debe colocarse en estado global compartido, y el ref no representa un nodo DOM en el servidor. Tras el desmontaje, los recursos de owner se limpian y las señales/memos quedan inválidos.
+Los memos, refs Rust y providers se asocian al owner del render. El render SSR debe crear runtimes/scopes separados por solicitud. El valor de un provider no debe colocarse en estado global compartido. <code>ElementRef</code> no crea ni serializa un nodo DOM en el servidor y permanece vacío hasta una hidratación browser válida. Tras el desmontaje, los recursos de owner y las refs DOM se limpian.
 
 Consulta [SSR e hidratación](/guides/ssr/) para conocer el alcance de hidratación y sus límites.

@@ -467,12 +467,12 @@ The 6.7.2 baseline is verified: all four SQL relation kinds have integration cov
 - [x] Add typed `Context<T>` identities, owner-scoped providers, nearest-ancestor lookup, nested shadowing, and explicit missing-provider behavior through `use_context`. Implementation is present in PR #70; final acceptance remains gated on required CI.
 - [x] Keep all new `use_*` APIs owner-scoped and native to the signal/owner model; no positional hook cells or call-order state slots are introduced.
 - [x] Define and document current UI error propagation, cleanup, reactive DOM update recovery, and the absence of component-level fallback boundaries. This is the supported error contract, not an ErrorBoundary implementation.
-- [ ] Add safe DOM element references with browser mount, replacement, hydration, and unmount semantics. The current `use_ref` stores Rust values only and is not a DOM handle.
-- [ ] Add loading/async rendering only after owner cancellation, stale-result handling, error propagation, SSR, and hydration share a reliable runtime contract.
+- [x] Add safe DOM element references with browser mount, replacement, hydration, and unmount semantics through `rustflow_dom::ElementRef`, `Element::with_node_ref`, and the `ref={...}` view-macro binding. This is separate from `use_ref`, remains empty on SSR/detached mounts, rejects duplicate/conflicting bindings, and clears the exact mounted node on replacement/unmount. Implementation is present in PR #70; final acceptance remains gated on required CI/review.
+- Deferred beyond this UI primitive contract: loading/async rendering requires owner cancellation, stale-result handling, error propagation, SSR, and hydration to share a reliable runtime contract. No placeholder API is exposed.
 - [x] Document CSS/classes and static assets using the existing Vite build pipeline; no CSS-in-Rust or framework asset registry is claimed.
 - [x] Add public accessibility guidance covering semantic HTML, forms, keyboard use, focus, errors, ARIA, images, and dynamic content.
 
-**Phase status:** partially implemented in PR #70. Do not mark Phase 7.2 accepted until the required CI checks pass and the DOM-reference requirement is either implemented under a reviewed contract or explicitly split into an accepted follow-up phase.
+**Phase status:** implementation is present on the PR #70 branch, including the DOM-reference lifecycle. Phase acceptance still requires the required CI checks and maintainer review. Async rendering/loading is explicitly deferred and is not claimed as implemented.
 
 ### 7.3 Testing and docs
 - [ ] Provide test app builders and request helpers.

@@ -82,7 +82,7 @@ Qué sucede:
 - <code>Context&lt;T&gt;</code> es un token de identidad propio, independiente de <code>T</code>. <code>provide_context</code> registra el valor en el owner; <code>use_context</code> busca el provider más cercano caminando por los ancestros. Un provider duplicado en el mismo owner produce error y la ausencia se representa por <code>None</code>.
 - El lookup de contextos no es reactivo por sí mismo. Si el valor es una señal, las lecturas de esa señal sí se rastrean normalmente.
 - <code>try_use_memo</code>, <code>try_use_ref</code>, <code>try_use_context</code> y <code>try_provide_context</code> permiten gestionar errores de owner explícitamente. Los helpers ergonómicos hacen panic con diagnóstico ante un owner/runtime inválido.
-- <code>use_ref</code> es almacenamiento Rust, no una referencia a un nodo DOM. No existe aún un contrato de refs DOM.
+- <code>use_ref</code> sigue siendo almacenamiento Rust no reactivo y no es un DOM handle. Para nodos del navegador, <code>rustflow_dom::ElementRef</code> es un contrato separado: <code>ref={...}</code> enlaza un elemento nativo y <code>get()</code> devuelve un handle clonado. La referencia permanece vacía durante la construcción de la vista y SSR, se adjunta después de montar o validar la hidratación, sigue las actualizaciones/reemplazos y se limpia al desmontar. No es reactiva y no se admite en descriptores de componentes.
 
 ## 7. Límites y reglas de uso
 

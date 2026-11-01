@@ -16,10 +16,10 @@ Esta página es un índice de disponibilidad, no una promesa de compatibilidad e
 | Macro <code>#[rustflow::component]</code> | Disponible | Subconjunto de tipos de props y callbacks tipados. |
 | Eventos DOM, reconciliación y listas keyed | Disponible en browser/WASM | Las pruebas E2E validan los casos implementados. |
 | <code>use_memo</code> | Implementado en la rama Phase 7.2; pendiente de CI/merge | Memo eager, dependencias dinámicas y comparación de salida <code>PartialEq</code>. |
-| <code>use_ref</code> | Implementado en la rama Phase 7.2; pendiente de CI/merge | Storage no reactivo ligado al owner; DOM refs pendientes. |
+| <code>use_ref</code> | Implementado en PR #70; sujeto al CI/revisión final | Almacenamiento Rust no reactivo ligado al owner; no es un DOM handle. |
 | <code>Context&lt;T&gt;</code>, <code>provide_context</code>, <code>use_context</code> | Implementado en la rama Phase 7.2; pendiente de CI/merge | Token con identidad propia y resolución del provider más cercano. |
 | Tracking reactivo a través de <code>await</code> | No soportado | Los efectos actuales son síncronos; no hay Resource/Suspense/loading boundary. |
-| Referencias seguras a nodos DOM | Pendiente | <code>use_ref</code> almacena valores Rust; no expone elementos del renderer. |
+| Referencias seguras a nodos DOM | Implementado en PR #70; sujeto al CI/revisión final | <code>rustflow_dom::ElementRef</code> + <code>ref={...}</code>; mount, reemplazo, hidratación y unmount seguros; solo browser/WASM. |
 | Error boundaries de componentes | No soportado | Los errores iniciales/SSR se propagan; el DOM reactivo expone <code>take_error</code> al mantener el último rango bueno. |
 
 ## HTTP y servidor

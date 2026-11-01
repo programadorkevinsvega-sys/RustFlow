@@ -127,7 +127,7 @@ El memo es eager, no lazy. Dentro de un batch lee el último resultado confirmad
 
 ### use_ref
 
-<code>use_ref</code> guarda un valor estable ligado al owner sin notificar el scheduler al cambiarlo. Usa <code>try_with</code>/<code>try_with_mut</code> para acceder con un borrow corto, o <code>get</code> cuando el valor implementa <code>Clone</code>. El valor se destruye al disponer el owner y los handles clonados quedan inválidos. Esto todavía no es una referencia a un elemento DOM.
+<code>use_ref</code> guarda un valor estable de Rust ligado al owner sin notificar el scheduler al cambiarlo. Usa <code>try_with</code>/<code>try_with_mut</code> para acceder con un borrow corto, o <code>get</code> cuando el valor implementa <code>Clone</code>. El valor se destruye al disponer el owner y los handles clonados quedan inválidos. No es una referencia DOM: en el navegador usa el tipo separado <code>rustflow_dom::ElementRef</code>.
 
 ### Context y providers
 
@@ -147,6 +147,7 @@ El lookup de contexto no es reactivo. Para propagar un valor cambiante, usa <cod
 | <code>use_memo</code> | Implementado en la rama Phase 7.2; pendiente de CI/merge. | Eager, dependencias dinámicas y comparación <code>PartialEq</code>. |
 | <code>use_ref</code> | Implementado en la rama Phase 7.2; pendiente de CI/merge. | Almacenamiento no reactivo owner-scoped; refs DOM aún pendientes. |
 | <code>Context&lt;T&gt;</code>, <code>provide_context</code>, <code>use_context</code> | Implementado en la rama Phase 7.2; pendiente de CI/merge. | Identidad por token, nearest provider y ausencia explícita <code>None</code>. |
+| <code>rustflow_dom::ElementRef</code>, <code>ref={...}</code> | Implementado en PR #70; sujeto al CI/revisión final. | Handle clonado de elemento nativo; lifecycle mount/hydration/replacement/unmount; browser/WASM solamente. |
 | Efectos asíncronos / tracking a través de <code>await</code> | No soportados por el runtime actual. |
 
 ## Casos de uso y cuándo no usarlo

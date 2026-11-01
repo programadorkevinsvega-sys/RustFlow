@@ -122,7 +122,7 @@ Consulta [Navegación cliente y formularios](/guides/navigation/) para los crite
 
 Los memos y providers se guardan en el scope/Runtime que participa en el render. Para SSR concurrente, crea estado owner/runtime por solicitud; no compartas señales ni valores contextuales de una petición en el catálogo compartido. El token <code>Context&lt;T&gt;</code> puede ser compartido porque solo identifica el tipo lógico de contexto, pero los valores se almacenan dentro del árbol de owners.
 
-<code>use_ref</code> representa almacenamiento Rust no reactivo. No crea un DOM handle durante SSR y no debe usarse para fabricar referencias de browser en el servidor. Las referencias DOM requieren un ciclo de vida separado de montaje/hidratación y permanecen pendientes.
+<code>use_ref</code> representa almacenamiento Rust no reactivo. Para DOM existe el handle separado <code>rustflow_dom::ElementRef</code>. SSR no crea ni serializa el nodo y el handle permanece vacío; durante la hidratación solo se completa después de validar el rango DOM. Los reemplazos y desmontajes limpian el handle de forma explícita.
 
 La hidratación sigue siendo opt-in y exige que el árbol cliente coincida con los marcadores y nodos SSR admitidos. Los cambios de Phase 7.2 no hacen que un contexto o memo global se serialice automáticamente ni añaden recursos asíncronos.
 

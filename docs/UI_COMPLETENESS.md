@@ -2,7 +2,7 @@
 
 - Base <code>main</code> commit audited: <code>207c61c6fa2751a4d7bbd4b5c914a2cbb8588401</code>
 - Implementation branch: <code>feat/ui-phase-7-2-completeness</code>
-- Status: implementation in progress; pull-request checks and maintainer review are required before acceptance.
+- Status: implementation on the PR branch; required pull-request checks and maintainer review are required before acceptance.
 
 ## 1. Architectural audit
 
@@ -41,7 +41,15 @@ The final status of these changes depends on compilation and CI for the final PR
 
 ### Ref
 
-<code>use_ref</code> owns non-reactive storage. It does not notify effects. Access uses closures or cloned reads where <code>T: Clone</code>; it does not expose raw pointers or borrow guards. A cloned handle becomes invalid when the owner disposes. DOM element references are not included yet; do not claim that a <code>use_ref</code> contains a mounted browser element.
+<code>use_ref</code> owns non-reactive Rust storage. It does not notify effects. Access uses closures or cloned reads where <code>T: Clone</code>; it does not expose raw pointers or borrow guards. A cloned handle becomes invalid when the owner disposes. It is intentionally distinct from browser element references.
+
+### DOM element references
+
+The target-independent view crate provides <code>NodeRef&lt;T&gt;</code> and <code>Element::with_node_ref</code>. The browser adapter exports <code>ElementRef</code> as a handle to <code>web_sys::Element</code>. Native elements can use the declarative <code>ref={element_ref}</code> attribute in <code>view!</code> or the builder method. Component descriptors cannot accept refs because a component may render zero, one, or multiple DOM elements.
+
+A new handle is empty during view construction and on the server. The browser renderer attaches it only after a successful mount or after the existing SSR range has passed hydration validation. Reconciliation keeps the reference on a compatible element, changes it to a replacement element, and clears it when its node is removed or the owning mounted range is unmounted. Detached prepared mounts do not expose nodes. Cleanup compares DOM node identity before clearing so an old mount cannot erase a newer assignment. One handle may identify only one native element at a time; duplicate use or conflicting mounts are rejected with a DOM error.
+
+<code>ElementRef::get()</code> returns a cloned browser element handle or <code>None</code> before mount/after unmount. Reading or changing a node through this handle is not reactive and does not schedule effects. It does not create a DOM node, force a render, or make browser globals available during SSR.
 
 ### Context
 
@@ -74,7 +82,7 @@ Use semantic HTML controls and relationships such as <code>label</code>/<code>fo
 ## 5. Verification inventory
 
 - Reactivity unit tests in <code>crates/rustflow/src/reactivity.rs</code> exercise memo execution counts, cache equality, dynamic dependencies, batching, disposal, refs, contexts, and panic cleanup.
-- View-model unit tests already cover fragment structure, empty fragments, keyed ordering, and duplicate keys.
-- Browser E2E already covers keyed list reorder/state/cleanup and hydration; this branch adds a controlled-textbox caret regression.
+- View-model unit tests cover fragment structure, empty fragments, keyed ordering, duplicate keys, typed node-reference identity, and conditional clearing.
+- Browser E2E covers keyed list reorder/state/cleanup, controlled-textbox caret preservation, DOM reference mount/replacement/unmount, and reference attachment during successful SSR hydration.
 - SSR isolation, fragments, inputs, and hydration compatibility must continue to pass the existing server-side tests.
 - Required GitHub checks must be read from the current ruleset and reported individually against the final PR SHA. No result is inferred from a started workflow.
