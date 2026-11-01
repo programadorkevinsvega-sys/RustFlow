@@ -18,7 +18,7 @@ use crate::AppConfig;
 /// Maximum number of explicitly registered readiness checks.
 pub const MAX_READINESS_CHECKS: usize = 32;
 
-type ReadinessFuture =
+pub(crate) type ReadinessFuture =
     Pin<Box<dyn Future<Output = Result<(), ReadinessCheckError>> + Send + 'static>>;
 type ReadinessCallback = dyn Fn() -> ReadinessFuture + Send + Sync + 'static;
 
