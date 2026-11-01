@@ -311,7 +311,7 @@ impl TestRequestBuilder<'_> {
             .clone()
             .oneshot(request)
             .await
-            .map_err(|never| match never {})?;
+            .unwrap_or_else(|never| match never {});
         let (parts, body) = response.into_parts();
         let body = to_bytes(body, self.app.max_response_bytes).await?;
 
