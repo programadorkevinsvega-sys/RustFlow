@@ -522,8 +522,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 search_form,
             ];
             if rows.is_empty() {
-                children.push(View::element("p", [View::text("No products match the current filters.")])
-                    .map_err(|_| HttpError::internal_server_error())?);
+                let empty_message = if search.trim().is_empty()
+                    && query.category_id == 0
+                    && current_page == 1
+                {
+                    "No products have been created yet."
+                } else {
+                    "No products match the current filters."
+                };
+                children.push(
+                    View::element("p", [View::text(empty_message)])
+                        .map_err(|_| HttpError::internal_server_error())?,
+                );
             } else {
                 let mut items = Vec::with_capacity(rows.len());
                 for (product, category) in rows.into_iter().zip(related_categories) {
