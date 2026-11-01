@@ -8,9 +8,11 @@ The workflow excludes only the exact action versions below from automated licens
 | --- | --- | --- |
 | actions/checkout | 7.0.1 | MIT |
 | actions/dependency-review-action | 5.0.0 | MIT |
+| dorny/paths-filter | 4.0.3 | MIT |
 
 Sources:
 - https://github.com/actions/checkout/blob/v7.0.1/LICENSE
 - https://github.com/actions/dependency-review-action/blob/v5.0.0/LICENSE
+- https://github.com/dorny/paths-filter/blob/v4.0.3/LICENSE
 
-When upgrading either action, review the new version's LICENSE file and update both this inventory and the exact-version allow-dependencies-licenses entries in .github/workflows/dependency-review.yml in the same change. Do not add broad, unversioned exclusions. License checks remain enabled for other dependencies, and vulnerability checks remain enabled for all dependencies.
+When upgrading any listed action, review the new version's LICENSE file and update both this inventory and the exact-version allow-dependencies-licenses entries in .github/workflows/dependency-review.yml in the same change. Do not add broad, unversioned exclusions. License checks remain enabled for other dependencies, and vulnerability checks remain enabled for all dependencies.
