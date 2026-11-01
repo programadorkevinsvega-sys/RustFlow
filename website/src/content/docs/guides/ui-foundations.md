@@ -110,6 +110,7 @@ Las escrituras del ref no son señales y no notifican efectos. El acceso mutable
 Usa una referencia DOM cuando un handler necesite interactuar con un elemento ya montado, por ejemplo para enfocar un control o leer/ajustar una propiedad del navegador. La API pertenece al adaptador browser/WASM y es distinta de <code>use_ref</code>.
 
 ~~~rust
+use rustflow::prelude::*;
 use rustflow_dom::ElementRef;
 
 #[rustflow::component]
