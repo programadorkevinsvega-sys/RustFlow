@@ -3,7 +3,7 @@ pub use navigation::ClientNavigation;
 
 use std::{
     cell::{Cell, RefCell},
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     error::Error,
     fmt,
     rc::Rc,
@@ -16,7 +16,7 @@ use rustflow::{
 };
 use rustflow_view::{
     AttributeValue, ComponentNode, DynamicChild, Element, EventBinding, EventHandler, EventPayload,
-    Key, KeyedList, PropertyValue, Renderer, View, ViewError,
+    Key, KeyedList, NodeRef, NodeRefBinding, PropertyValue, Renderer, View, ViewError,
 };
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use web_sys::{
@@ -25,6 +25,11 @@ use web_sys::{
 };
 
 use crate::policy::{DomPolicyError, validate_attribute, validate_element, validate_property};
+
+/// A typed reference to a mounted browser element. It is empty during SSR and
+/// view construction, becomes available after mount/hydration, and is cleared
+/// when the bound element is replaced or unmounted.
+pub type ElementRef = NodeRef<DomElement>;
 
 /// Errors returned by the WebAssembly DOM adapter.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,6 +45,9 @@ pub enum DomError {
     HydrationMismatch { expected: String, found: String },
     AlreadyHydrated,
     InvalidHydrationData,
+    NodeRefTypeMismatch,
+    DuplicateNodeRef,
+    NodeRefAlreadyMounted,
 }
 
 impl fmt::Display for DomError {
@@ -60,6 +68,9 @@ impl fmt::Display for DomError {
             }
             Self::AlreadyHydrated => write!(f, "this SSR boundary has already been hydrated"),
             Self::InvalidHydrationData => write!(f, "invalid JSON in #rustflow-hydration-data"),
+            Self::NodeRefTypeMismatch => write!(f, "DOM element reference has an incompatible target type"),
+            Self::DuplicateNodeRef => write!(f, "one DOM element reference is bound to multiple elements in the same view"),
+            Self::NodeRefAlreadyMounted => write!(f, "DOM element reference is already attached to another mounted element"),
         }
     }
 }
@@ -106,6 +117,12 @@ struct PendingEventListener {
     handler: EventHandler,
 }
 
+struct MountedNodeRef {
+    binding: NodeRefBinding,
+    element: DomElement,
+    active: bool,
+}
+
 #[derive(Default)]
 struct HydrationCursor {
     next_boundary: usize,
@@ -122,6 +139,7 @@ struct DelegatedBinding {
 struct RenderedNodes {
     listeners: Vec<EventListener>,
     pending_listeners: Vec<PendingEventListener>,
+    node_refs: Vec<MountedNodeRef>,
     delegated: Vec<DelegatedBinding>,
     components: Vec<ComponentInstance>,
     component_regions: Vec<ComponentRegion>,
@@ -133,6 +151,7 @@ fn append_rendered_nodes(target: &mut RenderedNodes, mut source: RenderedNodes) 
     target
         .pending_listeners
         .append(&mut source.pending_listeners);
+    target.node_refs.append(&mut source.node_refs);
     target.delegated.append(&mut source.delegated);
     target.components.append(&mut source.components);
     target
@@ -276,6 +295,7 @@ pub struct MountedDom {
     roots: Vec<Node>,
     listeners: Vec<EventListener>,
     pending_listeners: Vec<PendingEventListener>,
+    node_refs: Vec<MountedNodeRef>,
     delegated_listeners: Vec<EventListener>,
     delegated_bindings: Rc<RefCell<Vec<DelegatedBinding>>>,
     components: Vec<ComponentInstance>,
@@ -403,6 +423,11 @@ impl DomRenderer {
             let _ = cleanup_mounted_resources(&mut mounted);
             return Err(error);
         }
+        if let Err(error) = self.activate_node_refs(&mut mounted) {
+            let _ = detach_range(&mut mounted);
+            let _ = cleanup_mounted_resources(&mut mounted);
+            return Err(error);
+        }
         if let Err(error) = self.activate_delegated_listeners(&mut mounted, &parent) {
             let _ = detach_range(&mut mounted);
             let _ = cleanup_mounted_resources(&mut mounted);
@@ -487,6 +512,7 @@ impl DomRenderer {
             roots: root_children,
             listeners: resources.listeners,
             pending_listeners: resources.pending_listeners,
+            node_refs: resources.node_refs,
             delegated_listeners: Vec::new(),
             delegated_bindings: Rc::new(RefCell::new(resources.delegated)),
             components: resources.components,
@@ -496,6 +522,7 @@ impl DomRenderer {
         };
 
         // If activation fails, Drop cleans up temporary resources but preserves the SSR DOM.
+        self.activate_node_refs(&mut mounted)?;
         self.activate_pending_listeners(&mut mounted)?;
         self.activate_delegated_listeners(&mut mounted, &parent)?;
         self.activate_component_regions(&mut mounted.component_regions)?;
@@ -563,6 +590,13 @@ impl DomRenderer {
                     return Err(hydration_mismatch(&format!("<{tag}> element"), Some(node)));
                 }
                 validate_hydrated_element(expected, &element)?;
+                if let Some(binding) = expected.node_ref_binding() {
+                    resources.node_refs.push(MountedNodeRef {
+                        binding: binding.clone(),
+                        element: element.clone(),
+                        active: false,
+                    });
+                }
 
                 let child_nodes = direct_children(node);
                 let mut child_index = 0;
@@ -704,6 +738,7 @@ impl DomRenderer {
                     roots: child_nodes.to_vec(),
                     listeners: inner.listeners,
                     pending_listeners: inner.pending_listeners,
+                    node_refs: inner.node_refs,
                     delegated_listeners: Vec::new(),
                     delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
                     components: inner.components,
@@ -796,6 +831,7 @@ impl DomRenderer {
                     roots: child_nodes.to_vec(),
                     listeners: inner.listeners,
                     pending_listeners: inner.pending_listeners,
+                    node_refs: inner.node_refs,
                     delegated_listeners: Vec::new(),
                     delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
                     components: inner.components,
@@ -1051,6 +1087,7 @@ impl DomRenderer {
 
     fn activate_component_regions(&self, regions: &mut [ComponentRegion]) -> Result<(), DomError> {
         for region in regions {
+            self.activate_node_refs(&mut region.mounted)?;
             if let Some(parent) = region.mounted.start.parent_node() {
                 self.activate_delegated_listeners(&mut region.mounted, &parent)?;
             }
@@ -1075,6 +1112,7 @@ impl DomRenderer {
         {
             let mut state = region.state.borrow_mut();
             if let Some(state) = state.as_mut() {
+                self.activate_node_refs(&mut state.mounted)?;
                 if let Some(parent) = state.mounted.start.parent_node() {
                     self.activate_delegated_listeners(&mut state.mounted, &parent)?;
                 }
@@ -1239,6 +1277,14 @@ impl DomRenderer {
             }
         }
 
+        if let Some(binding) = view.node_ref_binding() {
+            resources.node_refs.push(MountedNodeRef {
+                binding: binding.clone(),
+                element: element.clone(),
+                active: false,
+            });
+        }
+
         for child in view.children() {
             let child_nodes = self.build_nodes(child, parent_scope, resources)?;
             for child_node in child_nodes {
@@ -1279,6 +1325,8 @@ impl DomRenderer {
                 return Err(error.into());
             }
         };
+        self.validate_view(&view)?;
+        self.validate_node_refs_for_view(&view, None)?;
         let start = self.document.create_comment("rustflow:dynamic:start");
         let end = self.document.create_comment("rustflow:dynamic:end");
         let mut inner = RenderedNodes::default();
@@ -1296,6 +1344,7 @@ impl DomRenderer {
             roots: roots.clone(),
             listeners: inner.listeners,
             pending_listeners: inner.pending_listeners,
+                    node_refs: inner.node_refs,
             delegated_listeners: Vec::new(),
             delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
             components: inner.components,
@@ -1334,6 +1383,8 @@ impl DomRenderer {
             RenderTarget::Browser,
         )?;
         let view = instance.view().clone();
+        self.validate_view(&view)?;
+        self.validate_node_refs_for_view(&view, None)?;
         let start = self.document.create_comment("rustflow:component:start");
         let end = self.document.create_comment("rustflow:component:end");
         let mut inner = RenderedNodes::default();
@@ -1351,6 +1402,7 @@ impl DomRenderer {
             roots: roots.clone(),
             listeners: inner.listeners,
             pending_listeners: inner.pending_listeners,
+                    node_refs: inner.node_refs,
             delegated_listeners: Vec::new(),
             delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
             components: inner.components,
@@ -1765,6 +1817,14 @@ impl DomRenderer {
                     return Err(DomError::PropertyRejected(property.name().to_owned()));
                 }
             }
+        }
+
+        if let Some(binding) = next.node_ref_binding() {
+            resources.node_refs.push(MountedNodeRef {
+                binding: binding.clone(),
+                element: element.clone(),
+                active: false,
+            });
         }
 
         let target: EventTarget = element.clone().unchecked_into();
@@ -2559,6 +2619,7 @@ impl Renderer for DomRenderer {
             roots,
             listeners: resources.listeners,
             pending_listeners: resources.pending_listeners,
+            node_refs: resources.node_refs,
             delegated_listeners: Vec::new(),
             delegated_bindings: Rc::new(RefCell::new(resources.delegated)),
             components: resources.components,
