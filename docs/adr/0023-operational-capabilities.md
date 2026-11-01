@@ -44,7 +44,7 @@ The framework needs operator-facing readiness semantics and internal error notif
 - Preserve the caller-provided shutdown future and existing HTTP/TLS listener APIs.
 - Add a configurable shutdown drain deadline (30 seconds by default).
 - Once the future resolves, stop accepting new connections and allow in-flight work to drain until the deadline.
-- On deadline expiry, drop the server future, cancel remaining connection work and return `ServerError::ShutdownTimedOut`.
+- On deadline expiry, signal request-level cancellation, drop active handler futures (including requests waiting for a concurrency permit), wait for tracked request guards to drain, then drop the server future and return `ServerError::ShutdownTimedOut`.
 - The application owns signal wiring. The framework does not install process-global signal handlers.
 - This deadline is a cancellation boundary, not a guarantee that arbitrary external side effects are reversible. Applications remain responsible for transaction-safe cancellation and resource cleanup.
 
