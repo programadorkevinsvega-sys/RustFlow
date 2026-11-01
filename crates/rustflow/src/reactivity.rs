@@ -2236,8 +2236,19 @@ mod tests {
                 .map(String::as_str),
             Some("outer")
         );
+        nested
+            .provide_context(&outer, String::from("nested"))
+            .unwrap();
         assert_eq!(
             nested
+                .use_context(&outer)
+                .unwrap()
+                .as_deref()
+                .map(String::as_str),
+            Some("nested")
+        );
+        assert_eq!(
+            parent
                 .provide_context(&outer, String::from("duplicate"))
                 .unwrap_err(),
             RuntimeError::DuplicateContextProvider
