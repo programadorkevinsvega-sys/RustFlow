@@ -27,7 +27,6 @@ jobs:
         uses: dorny/paths-filter@v4.0.3
         id: filter
         with:
-          base: ${{ github.ref }}
           filters: .github/filters.yml
           predicate-quantifier: some-with-excludes
 
