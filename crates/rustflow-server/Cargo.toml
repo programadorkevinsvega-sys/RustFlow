@@ -29,6 +29,10 @@ rustflow = { path = "../rustflow" }
 rustflow-view = { path = "../rustflow-view" }
 rustflow-ssr = { path = "../rustflow-ssr" }
 
+[[bench]]
+name = "persistence"
+harness = false
+
 [dev-dependencies]
 sea-orm = { workspace = true, features = ["mock"] }
 rcgen = "0.14"
