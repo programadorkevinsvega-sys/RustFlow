@@ -394,23 +394,67 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let database = Arc::clone(&list_database);
         let csrf = list_csrf.clone();
         async move {
-            let rows = database
-                .entity::<ProductEntity>()
-                .all(ProductEntity::find().order_by_asc(ProductColumn::Id))
+            let query = request.validated_query::<ProductListQuery>()?;
+            let search = query.q.unwrap_or_default();
+            let current_page = query.page.unwrap_or(1);
+            let offset = (current_page - 1) * PRODUCTS_PAGE_SIZE;
+            let mut statement = ProductEntity::find();
+            if !search.trim().is_empty() {
+                statement = statement.filter(ProductColumn::Name.contains(search.trim().to_owned()));
+            }
+            if query.category_id > 0 {
+                statement = statement.filter(ProductColumn::CategoryId.eq(query.category_id));
+            }
+            let repository = database.entity::<ProductEntity>();
+            let mut rows = repository
+                .all(
+                    statement
+                        .order_by_asc(ProductColumn::Id)
+                        .limit(PRODUCTS_PAGE_SIZE + 1)
+                        .offset(offset),
+                )
                 .await
                 .map_err(|error| error.to_http_error())?;
+            let has_next = rows.len() > PRODUCTS_PAGE_SIZE as usize;
+            rows.truncate(PRODUCTS_PAGE_SIZE as usize);
+            let related_categories = load_one(
+                &rows,
+                CategoryEntity::find(),
+                database.orm(),
+            )
+            .await
+            .map_err(|error| error.to_http_error())?;
+            let categories = load_categories(&database).await?;
+
+            let search_form = view_element(
+                "form",
+                &[("method", "get".to_owned()), ("action", "/products".to_owned())],
+                vec![
+                    text_input("Search name: ", "q", &search, "search")?,
+                    category_filter_select(query.category_id, &categories)?,
+                    view_element("button", &[("type", "submit".to_owned())], vec![View::text("Search")])?,
+                ],
+            )?;
             let mut children = vec![
                 View::element("h1", [View::text("Products")])
                     .map_err(|_| HttpError::internal_server_error())?,
                 view_element("a", &[("href", "/products/new".to_owned())], vec![View::text("Create product")])?,
+                search_form,
             ];
             if rows.is_empty() {
-                children.push(View::element("p", [View::text("No products have been created yet.")])
+                children.push(View::element("p", [View::text("No products match the current filters.")])
                     .map_err(|_| HttpError::internal_server_error())?);
             } else {
                 let mut items = Vec::with_capacity(rows.len());
-                for product in rows {
-                    let label = format!("{} ({}) — {} cents", product.name, product.sku, product.price_cents);
+                for (product, category) in rows.into_iter().zip(related_categories) {
+                    let category_name = category.map_or_else(
+                        || "Unknown category".to_owned(),
+                        |row| row.name,
+                    );
+                    let label = format!(
+                        "{} ({}) — {} cents — {}",
+                        product.name, product.sku, product.price_cents, category_name
+                    );
                     items.push(view_element(
                         "li",
                         &[],
@@ -423,6 +467,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
                 children.push(View::element("ul", items)
                     .map_err(|_| HttpError::internal_server_error())?);
+            }
+            children.push(View::element(
+                "p",
+                [View::text(format!("Page {current_page}"))],
+            ).map_err(|_| HttpError::internal_server_error())?);
+            if current_page > 1 {
+                children.push(pagination_form(
+                    &search,
+                    query.category_id,
+                    current_page - 1,
+                    "Previous",
+                )?);
+            }
+            if has_next {
+                children.push(pagination_form(
+                    &search,
+                    query.category_id,
+                    current_page + 1,
+                    "Next",
+                )?);
             }
             let response = page("Products", children)?;
             csrf_response_cookie(response, &csrf, &request)
