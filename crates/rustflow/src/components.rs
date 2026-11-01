@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, error::Error, fmt, rc::Rc, sync::Arc};
 
-use crate::reactivity::{Runtime, RuntimeError, Scope};
+use crate::reactivity::{Context, Runtime, RuntimeError, Scope};
 use rustflow_view::{ComponentName, ComponentNode, Property, View, ViewError};
 
 /// Declares which rendering environments may execute a component's setup/render callbacks.
@@ -120,6 +120,23 @@ impl ComponentContext {
     pub fn on_cleanup(&self, callback: impl FnOnce() + 'static) -> Result<(), ComponentError> {
         self.scope.on_cleanup(callback)?;
         Ok(())
+    }
+
+    /// Provide a typed value to this component's descendants.
+    pub fn provide_context<T: 'static>(
+        &self,
+        context: &Context<T>,
+        value: T,
+    ) -> Result<Rc<T>, ComponentError> {
+        Ok(self.scope.provide_context(context, value)?)
+    }
+
+    /// Resolve the nearest provider in this component's owner ancestry.
+    pub fn use_context<T: 'static>(
+        &self,
+        context: &Context<T>,
+    ) -> Result<Option<Rc<T>>, ComponentError> {
+        Ok(self.scope.use_context(context)?)
     }
 }
 

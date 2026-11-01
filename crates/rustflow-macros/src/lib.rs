@@ -232,7 +232,18 @@ fn is_setup_statement(statement: &TokenStream) -> bool {
         };
         if !matches!(
             ident.to_string().as_str(),
-            "signal" | "use_state" | "use_effect" | "on_cleanup"
+            "signal"
+                | "use_state"
+                | "use_effect"
+                | "use_memo"
+                | "use_ref"
+                | "use_context"
+                | "provide_context"
+                | "try_use_memo"
+                | "try_use_ref"
+                | "try_use_context"
+                | "try_provide_context"
+                | "on_cleanup"
         ) {
             return false;
         }
@@ -246,7 +257,18 @@ fn find_stateful_call(stream: &TokenStream) -> Option<Span> {
         if let TokenTree::Ident(ident) = token {
             if matches!(
                 ident.to_string().as_str(),
-                "signal" | "use_state" | "use_effect" | "on_cleanup"
+                "signal"
+                    | "use_state"
+                    | "use_effect"
+                    | "use_memo"
+                    | "use_ref"
+                    | "use_context"
+                    | "provide_context"
+                    | "try_use_memo"
+                    | "try_use_ref"
+                    | "try_use_context"
+                    | "try_provide_context"
+                    | "on_cleanup"
             ) && matches!(tokens.get(index + 1), Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis)
             {
                 return Some(ident.span());
