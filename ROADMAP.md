@@ -135,7 +135,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Definir e implementar la API signal(value) con get, set y update, ligada a un scope de propietario activo; comprobar el uso fuera de scope y la disposición.
 - [x] Exponer use_state(initial) como comodidad sobre señales ligadas al propietario; devuelve Signal<T> y no almacena estado en celdas indexadas por el orden de hooks.
 - [x] Exponer use_effect(...) como efecto ligado al scope; comprobar cleanup antes de cada rerun y al disponer el componente.
-- [x] Documentar qué nombres RustFlow existen hoy y cuáles siguen planeados: use_state y use_effect están disponibles; use_memo, use_ref y use_context siguen pendientes.
+- [x] Registrar el alcance de la API de helpers en la etapa inicial: entonces estaban disponibles use_state y use_effect; use_memo, use_ref y use_context quedaron planificados para fases posteriores.
 - [x] Añadir #[component] con adaptador/registro generado, props tipados, rechazo de props faltantes/desconocidos/tipos incompatibles y callbacks de componente tipados. El subconjunto actual requiere parámetros con nombres simples y tipos explícitos; los tipos admitidos se documentan en la guía.
 - [x] Admitir callback props a través de EventHandler, sin convertir callbacks en atributos HTML.
 - [x] Hacer que interpolar un identificador de señal como {count} produzca un hijo dinámico reactivo sin requerir @dynamic; expresiones arbitrarias que lean señales todavía requieren una región dinámica explícita.
@@ -167,7 +167,7 @@ All tasks begin unchecked. Discussion, scaffolding, or an unverified implementat
 - [x] Medir WASM raw y gzip y aplicar un presupuesto raw de 1.5 MiB.
 - [x] Documentar configuración local, compilación release/debug, source maps de los assets JS y troubleshooting básico.
 
-**Cierre verificado:** la Fase 3 está cerrada en `main` desde el 2026-10-26. La PR #26 (`feat/phase-3: preserve component identity`) se fusionó en la rama `feat/phase-3-browser-runtime`, y luego la PR #25 se fusionó en `main`. Los siete checks post-merge pasaron en `43f5fb9c12996ea600b47930553a9f91dc6055e9`. La cobertura incluye actualización de props sin reiniciar el estado local, preservación de identidad DOM, listas keyed, sustitución y limpieza de instancias, cambios estructurales, Counter/todo, E2E Chromium y presupuesto WASM. `use_memo`, `use_ref` y `use_context` siguen pendientes; SSR/hidratación y otros requisitos de fases posteriores permanecen fuera del alcance de este cierre.
+**Cierre verificado:** la Fase 3 está cerrada en `main` desde el 2026-10-26. La PR #26 (`feat/phase-3: preserve component identity`) se fusionó en la rama `feat/phase-3-browser-runtime`, y luego la PR #25 se fusionó en `main`. Los siete checks post-merge pasaron en `43f5fb9c12996ea600b47930553a9f91dc6055e9`. La cobertura incluye actualización de props sin reiniciar el estado local, preservación de identidad DOM, listas keyed, sustitución y limpieza de instancias, cambios estructurales, Counter/todo, E2E Chromium y presupuesto WASM. En la fecha de este cierre de Fase 3 (2026-10-26), `use_memo`, `use_ref` y `use_context` aún no estaban implementados; SSR/hidratación y otros requisitos de fases posteriores permanecían fuera del alcance de este cierre.
 
 ## Phase 4 — HTTP server and routing
 
