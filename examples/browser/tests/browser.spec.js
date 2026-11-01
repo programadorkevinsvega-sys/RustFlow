@@ -171,10 +171,15 @@ test("SSR hydration supports forms, conditional regions, keyed lists, and ordina
   await input.fill("Grace");
   await expect(output).toHaveText("Grace");
 
+  // An unrelated reactive update must not rewrite an equal input.value and
+  // disturb the user's current caret/selection.
+  await input.evaluate((element) => element.setSelectionRange(2, 2));
   const help = page.getByTestId("hydration-help");
   await expect(help).toHaveText("Help");
   await page.getByTestId("hydration-toggle").click();
   await expect(help).toHaveCount(0);
+  await expect(input).toHaveValue("Grace");
+  expect(await input.evaluate((element) => element.selectionStart)).toBe(2);
   await page.getByTestId("hydration-toggle").click();
   await expect(help).toHaveText("Help");
 

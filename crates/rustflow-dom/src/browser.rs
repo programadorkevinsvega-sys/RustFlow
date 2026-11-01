@@ -1748,10 +1748,22 @@ impl DomRenderer {
                 }
             };
             let target: &JsValue = element.as_ref();
-            let accepted = Reflect::set(target, &JsValue::from_str(property.name()), &value)
-                .map_err(js_error)?;
-            if !accepted {
-                return Err(DomError::PropertyRejected(property.name().to_owned()));
+            let property_name = JsValue::from_str(property.name());
+            let current = Reflect::get(target, &property_name).map_err(js_error)?;
+            let unchanged = match property.value() {
+                PropertyValue::Text(expected) => current.as_string().as_deref() == Some(expected),
+                PropertyValue::Boolean(expected) => current.as_bool() == Some(*expected),
+                PropertyValue::Integer(expected) => current.as_f64() == Some(*expected as f64),
+                PropertyValue::Float(expected) => current.as_f64() == Some(*expected),
+                PropertyValue::Callback(_) => false,
+            };
+            // Avoid writing an equal live DOM property. For controlled inputs this
+            // prevents unrelated rerenders from resetting selection/caret state.
+            if !unchanged {
+                let accepted = Reflect::set(target, &property_name, &value).map_err(js_error)?;
+                if !accepted {
+                    return Err(DomError::PropertyRejected(property.name().to_owned()));
+                }
             }
         }
 

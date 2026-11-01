@@ -28,7 +28,7 @@ use std::{
     marker::PhantomData,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::{Rc, Weak},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 type RuntimeRef = Rc<RefCell<RuntimeInner>>;
@@ -37,9 +37,9 @@ type EffectId = u64;
 type ScopeId = u64;
 type Cleanup = Box<dyn FnOnce()>;
 type Equality<T> = Rc<dyn Fn(&T, &T) -> bool>;
-type ContextId = u64;
+type ContextId = u32;
 
-static NEXT_CONTEXT_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_CONTEXT_ID: AtomicU32 = AtomicU32::new(1);
 
 fn next_context_id() -> ContextId {
     NEXT_CONTEXT_ID
@@ -1085,7 +1085,13 @@ fn create_effect(
         id
     };
 
-    run_effect(runtime, id);
+    let initial_run = catch_unwind(AssertUnwindSafe(|| run_effect(runtime, id)));
+    if let Err(payload) = initial_run {
+        // A component/effect that panics on first execution must not remain as
+        // an unreachable node in the runtime graph.
+        let _ = catch_unwind(AssertUnwindSafe(|| dispose_effect(runtime, id)));
+        resume_unwind(payload);
+    }
     flush_runtime(runtime)?;
     Ok(Effect {
         id,
@@ -2169,6 +2175,19 @@ mod tests {
         }).unwrap();
         assert_eq!(memo.get(), 9);
         assert_eq!(reference.get(), 3);
+        owner.dispose().unwrap();
+    }
+
+
+    #[test]
+    fn failed_initial_memo_computation_does_not_leave_an_orphan_effect() {
+        let runtime = Runtime::new();
+        let owner = runtime.root_scope().child().unwrap();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = owner.memo(|| -> usize { panic!("intentional memo failure") });
+        }));
+        assert!(result.is_err());
+        assert!(runtime.inner.borrow().effects.is_empty());
         owner.dispose().unwrap();
     }
 
