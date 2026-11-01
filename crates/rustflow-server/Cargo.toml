@@ -52,3 +52,8 @@ workspace = true
 name = "testing"
 path = "tests/testing.rs"
 required-features = ["testing"]
+
+[[test]]
+name = "testing_database"
+path = "tests/testing_database.rs"
+required-features = ["testing"]
