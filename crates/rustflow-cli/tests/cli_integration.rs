@@ -1246,6 +1246,72 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
     );
     assert_eq!(generated_response_status(&detail), 200, "{detail}");
     assert!(generated_response_body(&detail).contains("User supplied &lt;script&gt; text"));
+    assert!(generated_response_body(&detail).contains("Category: Office"));
+
+    let filtered_products = generated_http_request(
+        port,
+        "GET",
+        "/products?q=Desk&category_id=2&page=1",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&filtered_products),
+        200,
+        "{filtered_products}"
+    );
+    assert!(generated_response_body(&filtered_products).contains("Desk"));
+    assert!(!generated_response_body(&filtered_products).contains("Batch item"));
+
+    for index in 1..=6 {
+        let name = format!("Batch item {index:02}");
+        let sku = format!("batch-{index:02}");
+        let body = form_body(&[
+            ("_csrf", &csrf_token),
+            ("name", &name),
+            ("sku", &sku),
+            ("description", ""),
+            ("price_cents", "50"),
+            ("category_id", "1"),
+        ]);
+        let response = generated_http_request(
+            port,
+            "POST",
+            "/products",
+            &authenticated_headers,
+            &body,
+        );
+        assert_eq!(
+            generated_response_status(&response),
+            303,
+            "batch product creation failed: {response}"
+        );
+    }
+
+    let first_page = generated_http_request(
+        port,
+        "GET",
+        "/products?q=Batch%20item&category_id=1&page=1",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(generated_response_status(&first_page), 200, "{first_page}");
+    let first_page_body = generated_response_body(&first_page);
+    assert!(first_page_body.contains("Batch item 01"));
+    assert!(first_page_body.contains("Batch item 05"));
+    assert!(!first_page_body.contains("Batch item 06"));
+
+    let second_page = generated_http_request(
+        port,
+        "GET",
+        "/products?q=Batch%20item&category_id=1&page=2",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(generated_response_status(&second_page), 200, "{second_page}");
+    let second_page_body = generated_response_body(&second_page);
+    assert!(second_page_body.contains("Batch item 06"));
+    assert!(!second_page_body.contains("Batch item 01"));
 
     let invalid_id = generated_http_request(
         port,
