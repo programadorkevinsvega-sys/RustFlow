@@ -2,7 +2,7 @@
 
 - Base <code>main</code> commit audited: <code>207c61c6fa2751a4d7bbd4b5c914a2cbb8588401</code>
 - Implementation branch: <code>feat/ui-phase-7-2-completeness</code>
-- Status: implementation on the PR branch; required pull-request checks and maintainer review are required before acceptance.
+- Status: Phase 7.2 implementation, regression tests, technical contracts/ADRs, and public website documentation are delivered together in PR #70. The public APIs remain experimental and pre-1.0.
 
 ## 1. Architectural audit
 
@@ -31,7 +31,7 @@ These existing capabilities were audited rather than reimplemented.
 - Avoids rewriting an equal DOM property during reconciliation, which prevents unrelated updates from resetting a controlled input's live value/caret unnecessarily.
 - Adds unit and browser regression scenarios for the new runtime contracts and controlled-input selection preservation.
 
-The final status of these changes depends on compilation and CI for the final PR SHA; source additions are not represented as passing tests until those checks complete.
+The regression tests listed in Section 5 are included in this change. Verification results belong to the exact final PR SHA and must be read from GitHub checks; source additions alone are not evidence that tests passed.
 
 ## 4. Public contracts and limitations
 
