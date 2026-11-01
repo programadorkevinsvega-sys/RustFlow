@@ -141,7 +141,7 @@ Reports are emitted for server-error responses (5xx), including handler failures
 
 ## Graceful shutdown deadline
 
-`serve_with_shutdown`, `serve_listener_with_shutdown`, and `serve_tls_with_shutdown` begin graceful draining when the caller-provided future resolves. `ServerConfig::with_shutdown_timeout` sets the maximum drain period (30 seconds by default). If requests finish within that period, shutdown completes normally. If the deadline expires, the server future is dropped and the method returns `ServerError::ShutdownTimedOut`; any remaining in-flight work is cancelled. The caller still owns signal wiring, such as `tokio::signal::ctrl_c()`.
+`serve_with_shutdown`, `serve_listener_with_shutdown`, and `serve_tls_with_shutdown` begin graceful draining when the caller-provided future resolves. `ServerConfig::with_shutdown_timeout` sets the maximum drain period (30 seconds by default). If requests finish within that period, shutdown completes normally. If the deadline expires, RustFlow signals cancellation to active request pipelines (including requests waiting for a concurrency permit), drops their handler futures, and waits for their in-flight guards to drain before dropping the server future and returning `ServerError::ShutdownTimedOut`. The caller still owns signal wiring, such as `tokio::signal::ctrl_c()`.
 
 ```rust
 use std::time::Duration;
