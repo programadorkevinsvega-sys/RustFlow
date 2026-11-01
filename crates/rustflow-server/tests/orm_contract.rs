@@ -1889,7 +1889,11 @@ async fn exercise_orm(database: &DatabasePool) {
         .all(accounts.select())
         .await
         .expect("account table remains queryable after hostile-looking input");
-    assert!(surviving_rows.iter().any(|row| row.id == hostile_account.id));
+    assert!(
+        surviving_rows
+            .iter()
+            .any(|row| row.id == hostile_account.id)
+    );
     accounts
         .delete_by_id(hostile_account.id)
         .await
@@ -1907,7 +1911,10 @@ async fn assert_concurrent_writes_are_isolated_and_complete(url: &str) {
         .expect("connect concurrent-write test database");
 
     database
-        .execute_raw("DROP TABLE IF EXISTS rustflow_phase676_concurrent_items", [])
+        .execute_raw(
+            "DROP TABLE IF EXISTS rustflow_phase676_concurrent_items",
+            [],
+        )
         .await
         .expect("remove stale concurrent-write fixture");
     let create_table = if url.starts_with("sqlite:") {
@@ -2055,10 +2062,7 @@ async fn assert_pool_exhaustion_is_bounded_and_classified(url: &str) {
         .begin_transaction()
         .await
         .expect("acquire the only connection");
-    let error = tokio::time::timeout(
-        Duration::from_secs(2),
-        database.query_raw("SELECT 1", []),
-    )
+    let error = tokio::time::timeout(Duration::from_secs(2), database.query_raw("SELECT 1", []))
     .await
     .expect("pool exhaustion must be bounded")
     .expect_err("a second operation must not exceed the configured pool size");
