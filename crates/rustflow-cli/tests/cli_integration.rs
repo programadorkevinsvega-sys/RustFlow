@@ -799,6 +799,52 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         ("cookie", cookies.as_str()),
     ];
 
+    let invalid_category_body = form_body(&[
+        ("_csrf", &csrf_token),
+        ("name", "Invalid category probe"),
+        ("sku", &format!("invalid-category-{label}")),
+        ("description", ""),
+        ("price_cents", "10"),
+        ("category_id", "9999"),
+    ]);
+    let invalid_category = generated_http_request(
+        port,
+        "POST",
+        "/products",
+        &secured_headers,
+        &invalid_category_body,
+    );
+    assert_eq!(
+        generated_response_status(&invalid_category),
+        409,
+        "{label}: foreign-key constraint should map to conflict: {invalid_category}"
+    );
+
+    let invalid_filter = generated_http_request(
+        port,
+        "GET",
+        "/products?category_id=-1",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&invalid_filter),
+        422,
+        "{label}: invalid category filter should fail validation: {invalid_filter}"
+    );
+    let invalid_page = generated_http_request(
+        port,
+        "GET",
+        "/products?page=0",
+        &[("cookie", cookies.as_str())],
+        "",
+    );
+    assert_eq!(
+        generated_response_status(&invalid_page),
+        422,
+        "{label}: page zero should fail validation: {invalid_page}"
+    );
+
     let sku = format!("cross-engine-{label}");
     let name = format!("Cross engine {label}");
     let create_body = form_body(&[
