@@ -3,6 +3,7 @@ use std::{error::Error, sync::Arc, time::Duration};
 use http::{header::SET_COOKIE, StatusCode};
 use rustflow::view::{Element, View};
 use rustflow_server::{
+    orm::load_one,
     AccessPolicy, AppConfig, AppEnvironment, Application, AuthIdentity, CsrfProtection,
     DatabaseBackend, DatabaseConfig, DatabasePool, HttpError, HttpMethod, PasswordHash,
     Request, Response, RolePolicy, SessionCookieConfig, SessionManager, ValidateInput,
@@ -10,10 +11,11 @@ use rustflow_server::{
 };
 use rustflow_server::sea_orm::{
     ActiveValue::{NotSet, Set},
-    EntityTrait, QueryOrder,
+    ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
 };
 use serde::Deserialize;
 
+use crate::models::category::{Column as CategoryColumn, Entity as CategoryEntity, Model as Category};
 use crate::models::product::{
     ActiveModel as ProductActiveModel, Column as ProductColumn, Entity as ProductEntity,
     Model as Product,
@@ -53,6 +55,7 @@ struct ProductForm {
     sku: String,
     description: Option<String>,
     price_cents: i64,
+    category_id: i64,
 }
 
 impl ValidateInput for ProductForm {
@@ -73,6 +76,9 @@ impl ValidateInput for ProductForm {
         }
         if self.price_cents < 0 {
             errors.add_field_error("price_cents", "Price cannot be negative.");
+        }
+        if self.category_id <= 0 {
+            errors.add_field_error("category_id", "Choose a valid category.");
         }
         if self.description.as_ref().is_some_and(|value| value.len() > 2_000) {
             errors.add_field_error("description", "Description must be at most 2000 bytes.");
@@ -168,13 +174,66 @@ fn product_active_model(form: ProductForm) -> ProductActiveModel {
         sku: Set(form.sku.trim().to_owned()),
         description: Set(form.description.filter(|value| !value.trim().is_empty())),
         price_cents: Set(form.price_cents),
+        category_id: Set(form.category_id),
     }
+}
+
+fn category_select(selected_id: i64, categories: &[Category]) -> Result<View, HttpError> {
+    let mut options = Vec::with_capacity(categories.len());
+    for category in categories {
+        let mut attributes = vec![("value", category.id.to_string())];
+        if category.id == selected_id {
+            attributes.push(("selected", "selected".to_owned()));
+        }
+        options.push(view_element(
+            "option",
+            &attributes,
+            vec![View::text(category.name.clone())],
+        )?);
+    }
+    let select = view_element("select", &[("name", "category_id".to_owned())], options)?;
+    view_element("label", &[], vec![View::text("Category: "), select])
+}
+
+const PRODUCTS_PAGE_SIZE: u64 = 5;
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct ProductListQuery {
+    q: Option<String>,
+    category_id: Option<i64>,
+    page: Option<u64>,
+}
+
+impl ValidateInput for ProductListQuery {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let mut errors = ValidationErrors::new();
+        if self.q.as_ref().is_some_and(|value| value.len() > 120) {
+            errors.add_field_error("q", "Search text must be at most 120 bytes.");
+        }
+        if self.category_id.is_some_and(|id| id <= 0) {
+            errors.add_field_error("category_id", "Category id must be positive.");
+        }
+        if self.page.is_some_and(|page| page == 0 || page > 10_000) {
+            errors.add_field_error("page", "Page must be between 1 and 10000.");
+        }
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
+    }
+}
+
+async fn load_categories(database: &DatabasePool) -> Result<Vec<Category>, HttpError> {
+    database
+        .entity::<CategoryEntity>()
+        .all(CategoryEntity::find().order_by_asc(CategoryColumn::Name))
+        .await
+        .map_err(|error| error.to_http_error())
 }
 
 fn product_form_view(
     action: &str,
     token: &str,
     product: Option<&Product>,
+    categories: &[Category],
 ) -> Result<View, HttpError> {
     let name = product.map_or("", |row| row.name.as_str());
     let sku = product.map_or("", |row| row.sku.as_str());
@@ -182,6 +241,7 @@ fn product_form_view(
         .and_then(|row| row.description.as_deref())
         .unwrap_or("");
     let price_cents = product.map_or_else(|| "0".to_owned(), |row| row.price_cents.to_string());
+    let category_id = product.map_or(1, |row| row.category_id);
 
     let description_input = view_element(
         "textarea",
@@ -193,6 +253,7 @@ fn product_form_view(
         text_input("Name: ", "name", name, "text")?,
         text_input("SKU: ", "sku", sku, "text")?,
         text_input("Price (cents): ", "price_cents", &price_cents, "number")?,
+        category_select(category_id, categories)?,
         view_element("label", &[], vec![View::text("Description: "), description_input])?,
         view_element("button", &[("type", "submit".to_owned())], vec![View::text("Save product")])?,
     ];
