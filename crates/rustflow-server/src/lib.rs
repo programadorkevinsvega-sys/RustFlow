@@ -1896,10 +1896,10 @@ async fn liveness_endpoint() -> AxumResponse {
 async fn readiness_endpoint(State(checks): State<Arc<Vec<ReadinessCheck>>>) -> AxumResponse {
     let mut tasks = tokio::task::JoinSet::new();
     for check in checks.iter() {
-        let check = check.clone();
         let timeout = check.timeout();
+        let check_future = check.start();
         tasks.spawn(async move {
-            tokio::time::timeout(timeout, check.start())
+            tokio::time::timeout(timeout, check_future)
                 .await
                 .is_ok_and(|result| result.is_ok())
         });
