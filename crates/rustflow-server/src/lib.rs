@@ -21,7 +21,7 @@ use std::{
     collections::{HashMap, HashSet},
     error::Error,
     fmt,
-    future::Future,
+    future::{Future, IntoFuture},
     net::{IpAddr, SocketAddr},
     pin::Pin,
     sync::{
@@ -1734,7 +1734,8 @@ impl Application {
             listener,
             router.into_make_service_with_connect_info::<SocketAddr>(),
         )
-        .with_graceful_shutdown(shutdown_signal);
+        .with_graceful_shutdown(shutdown_signal)
+        .into_future();
         await_graceful_shutdown(server, shutdown_started_rx, shutdown_timeout).await
     }
 
@@ -2276,7 +2277,7 @@ fn is_safe_redirect_location(location: &str) -> bool {
 mod tests {
     use super::{
         Application, BindKind, ClientAddressPolicy, DeploymentProfile, ErrorPageConfigError,
-        ErrorPages, ErrorReport, ErrorReportKind, ErrorReporterError, HealthEndpoints, HtmlPage,
+        ErrorPages, ErrorReport, ErrorReportKind, ErrorReporterError, HtmlPage,
         HttpError, HttpMethod, IpNetwork, Middleware, ReadinessCheck, ReadinessCheckError,
         Response, RouteInfo, ServerConfig, ServerError, View, html_document, html_view,
     };
