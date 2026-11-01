@@ -118,7 +118,7 @@ cargo test -p rustflow-server --test mongodb_adapter -- --test-threads=1
 
 La suite requiere un replica set mediante `RUSTFLOW_TEST_MONGODB_URI` y un servidor standalone mediante `RUSTFLOW_TEST_MONGODB_STANDALONE_URI` para probar contratos distintos, incluidas las transacciones en replica set y el rechazo de transacciones multi-documento en standalone. Consulta [Base de datos](/guides/database/) y [ODM MongoDB](/guides/mongodb-odm/) para configuración y límites.
 
-Estos comandos ejercitan los contratos del ORM y ODM de forma aislada; el ejemplo CRUD anterior conecta la superficie ORM con HTTP. Phase 6.7.5 está aceptada e integrada mediante PR #64 (`edd665ad452c769c78ba8190c233e349a44b054a`); la aplicación generada y las pruebas de SQLite, PostgreSQL, MySQL y MariaDB pasaron los checks requeridos en Rust 1.85 y stable.
+Estos comandos ejercitan los contratos del ORM y ODM de forma aislada; el ejemplo CRUD anterior conecta la superficie ORM con HTTP. Phase 6.7.5 quedó aceptada mediante PR #64 (`edd665ad452c769c78ba8190c233e349a44b054a`); Phase 6.7.6 completó el gate global mediante PR #66 (HEAD `b049d96491e2b23bfe794ac3c0ed9abb68f7e493`, merge `6046ae7ca60843d145476177e698162b57939c68`). El scaffold prueba Category/Product, carga explícita, filtros tipados y paginación con los cuatro motores SQL; todos los checks requeridos pasaron en Rust 1.85/stable, WASM, Browser E2E/bundle, website, governance y dependency review. Las APIs ORM/ODM siguen siendo experimentales y pre-1.0.
 
 ## Lo que los ejemplos no proporcionan
 
