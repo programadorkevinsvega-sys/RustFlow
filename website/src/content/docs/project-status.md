@@ -5,11 +5,13 @@ description: Capacidades implementadas, límites conocidos y estado verificable 
 
 RustFlow sigue siendo un prototipo pre-1.0. El roadmap es la fuente de verdad de los criterios y estados de fase; una funcionalidad implementada no implica estabilidad de API ni preparación para producción. Este resumen es para que un usuario pueda decidir qué probar hoy sin confundir el objetivo futuro con el código disponible.
 
-### Fase 7.1 — Capacidades operativas (en revisión)
+### Fase 7.1 — Capacidades operativas (completada e integrada)
 
-La implementación de Phase 7.1 está desarrollándose en una rama dedicada y aún no se considera integrada ni aceptada. El cambio amplía el tracing HTTP existente con duración por petición y configuración de nivel mediante `RUSTFLOW_LOG_LEVEL`; incorpora reporters internos que reciben solo metadatos allowlisted; añade health/readiness optativos con checks explícitos y timeouts; y establece un deadline de graceful shutdown. La documentación y ADR 0023 describen los límites de estos contratos.
+Phase 7.1 se implementó y fusionó mediante el PR #68 el 1 de noviembre de 2026. El commit de integración en `main` es `c6ef2232d99233becb08008dc8b1a4a38b5bbd2f`. El SHA final de la PR (`491703f2263f20896128673aaaec66b6837711c1`) pasó los checks requeridos de Rust 1.85 y stable, formato, Clippy, pruebas de workspace y contratos de integración de bases de datos, WebAssembly, Browser E2E/bundle, build de documentación, gobernanza, revisión de dependencias y Cloudflare Pages. La prueba de apagado graceful con un handler atascado pasó en ambos toolchains.
 
-La interfaz de cache se difiere porque todavía no hay una necesidad concreta de framework ni contrato de invalidación/consistencia. Queue, email y storage también se difieren hasta definir entrega, durabilidad, permisos y seguridad. No hay traits placeholder ni estas capacidades se anuncian como disponibles. Phase 7.1 solo podrá cerrarse después de pruebas reproducibles y todos los checks requeridos verdes en el SHA final de la PR.
+La implementación amplía el tracing HTTP con duración por petición y configuración de nivel mediante `RUSTFLOW_LOG_LEVEL`, sin inicializar un subscriber global; incorpora `ErrorReporter` con metadatos allowlisted y ejecución aislada/bounded; añade endpoints optativos de liveness/readiness con checks explícitos y timeouts; y define un deadline para graceful shutdown que cancela los futures de handlers activos cuando vence.
+
+Cache se evaluó y se difiere porque todavía no hay un caso de uso concreto ni contrato de invalidación/consistencia. Queue, email y storage también siguen diferidos hasta definir entrega, durabilidad, permisos y seguridad. No hay traits placeholder ni se anuncian estas integraciones como capacidades disponibles. La finalización de Phase 7.1 no implica estabilidad de API ni preparación para producción del framework pre-1.0.
 
 ## Estado por fases
 
@@ -127,10 +129,10 @@ PR #66 cerró el gate global y se fusionó mediante squash el 2026-11-01 como `6
 | Crear estado local en un componente | Sí, con owner activo | [Reactividad](/concepts/reactivity/) |
 | Crear componentes con props y eventos tipados | Sí, dentro del subconjunto descrito | [Componentes](/guides/components/) |
 | Actualizar DOM con señales/listas keyed | Sí, en el runtime WASM | [README del navegador](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/examples/browser/README.md) |
-| Configurar nivel de tracing | En revisión en Phase 7.1; no integrado todavía | [Servidor HTTP](/guides/server/) · [Configuración](/guides/configuration/) |
-| Reportar errores internos sin datos de petición | En revisión en Phase 7.1; no integrado todavía | [Seguridad HTTP](/guides/errors-and-security/) |
-| Health/readiness del framework | En revisión en Phase 7.1; opt-in, no integrado todavía | [Servidor HTTP](/guides/server/) |
-| Graceful shutdown con deadline | En revisión en Phase 7.1; no integrado todavía | [Servidor HTTP](/guides/server/) |
+| Configurar nivel de tracing | Sí, mediante `TracingConfig`; subscriber propiedad de la aplicación | [Servidor HTTP](/guides/server/) · [Configuración](/guides/configuration/) |
+| Reportar errores internos sin datos de petición | Sí, mediante `ErrorReporter` con metadatos allowlisted | [Seguridad HTTP](/guides/errors-and-security/) |
+| Health/readiness del framework | Sí, opt-in y con checks explícitos bounded | [Servidor HTTP](/guides/server/) |
+| Graceful shutdown con deadline | Sí, con cancelación de handlers activos al vencer el deadline | [Servidor HTTP](/guides/server/) |
 | Registrar rutas HTTP y handlers async | Sí | [Servidor HTTP](/guides/server/) |
 | Renderizar documentos HTML seguros desde vistas | Sí, APIs experimentales | [SSR](/guides/ssr/) |
 | Componer páginas con layouts y props de ruta | Sí, con componentes registrados/catálogo | [Layouts](/guides/layouts/) |

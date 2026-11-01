@@ -57,7 +57,7 @@ El reporter es asíncrono, se ejecuta en una tarea aislada y tiene un límite de
 
 Los endpoints framework-owned se activan explícitamente para no colisionar con rutas existentes. Liveness no consulta dependencias externas. Readiness ejecuta solo los checks que la aplicación registró, concurrentemente y con timeout por check. Fallos, panics y timeouts retornan 503 con un cuerpo JSON fijo; no enumeran nombres de dependencias, hosts, credenciales ni mensajes del proveedor. No realices migraciones ni mutaciones desde estos probes.
 
-El shutdown graceful también está limitado por un deadline configurable. Cuando vence, el servidor retorna <code>ServerError::ShutdownTimedOut</code> y cancela el trabajo restante. Esta cancelación puede interrumpir código de aplicación: diseña operaciones mutables para usar transacciones y evita depender de side effects externos no idempotentes.
+El shutdown graceful también está limitado por un deadline configurable (30 segundos por defecto). Cuando vence, RustFlow señala la cancelación de las peticiones activas, incluidas las que esperan un cupo de concurrencia; esto destruye los futures de los handlers y espera a que se liberen sus guardas de solicitud antes de retornar <code>ServerError::ShutdownTimedOut</code>. Esta cancelación puede interrumpir código de aplicación: diseña operaciones mutables para usar transacciones y evita depender de side effects externos no idempotentes.
 
 ## 6. TLS y proxies confiables
 

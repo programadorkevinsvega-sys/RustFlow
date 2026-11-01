@@ -1,6 +1,6 @@
 # ADR 0023: Operational capabilities and lifecycle contracts
 
-- Status: Proposed for review with Phase 7.1 implementation
+- Status: Accepted — implemented and merged in PR #68 (2026-11-01; merge commit `c6ef2232d99233becb08008dc8b1a4a38b5bbd2f`)
 - Date: 2026-10-31
 - Scope: tracing configuration, safe error reporting, health/readiness, graceful shutdown deadlines
 
