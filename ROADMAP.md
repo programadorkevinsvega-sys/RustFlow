@@ -475,6 +475,8 @@ The 6.7.2 baseline is verified: all four SQL relation kinds have integration cov
 **Phase status:** PR #70 delivers the Phase 7.2 implementation, regression tests, technical contracts/ADRs, and public website documentation together. The required checks and review apply to the final PR revision; the merge and post-merge verification record determine phase closure. Async rendering/loading is explicitly deferred and is not claimed as implemented.
 
 ### 7.3 Testing and docs
+
+**Implementation note (2026-11-01):** the in-process HTTP test application builder and request/response helpers are being introduced behind the opt-in rustflow-server/testing feature. Their scope and limitations are recorded in docs/TESTING.md and ADR 0026. This does not close Phase 7.3: isolated SQL/MongoDB fixtures, browser utilities, standalone CRUD/auth examples, the public API/feature inventory and CI evidence remain required.
 - [ ] Provide test app builders and request helpers.
 - [ ] Add isolated database and browser test utilities.
 - [ ] Add a full CRUD example and an authenticated example.

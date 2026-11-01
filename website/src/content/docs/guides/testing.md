@@ -44,6 +44,43 @@ El ejemplo demuestra documento HTML, componente SSR, catálogo y layout comparti
 cargo test -p rustflow-server --test http_integration
 ~~~
 
+
+### Test app builder y request helpers
+
+Para probar handlers y middleware sin abrir un puerto TCP, habilita la feature optativa `testing` en `rustflow-server` como dependencia de desarrollo, usando la misma versión o ruta que la dependencia normal. La utilidad ejecuta la solicitud a través del router real de RustFlow; no llama directamente al handler ni reemplaza el pipeline HTTP.
+
+~~~rust
+use http::StatusCode;
+use rustflow_server::{Request, Response, testing::TestApp};
+
+#[tokio::test]
+async fn health_route() -> Result<(), Box<dyn std::error::Error>> {
+    let app = TestApp::builder()
+        .configure(|application| {
+            application.get("/health", |_request: Request| async {
+                Ok(Response::text("ok"))
+            })?;
+            Ok(())
+        })
+        .build()?;
+
+    let response = app.get("/health").send().await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.text()?, "ok");
+    Ok(())
+}
+~~~
+
+`TestApp` ofrece GET, POST, PUT, PATCH, DELETE y métodos arbitrarios. El builder de solicitud puede establecer headers, cookies, bearer authorization, `X-CSRF-Token`, query parameters, JSON, formularios URL-encoded y cuerpos raw. `TestResponse` permite inspeccionar status, headers, cada valor `Set-Cookie`, redirects, body como bytes/texto y JSON tipado.
+
+El helper es optativo (`rustflow-server` feature `testing`) y no inicia TCP. Las pruebas de TLS, `ConnectInfo`, IP de peer, proxies confiables, desconexión del cliente y graceful shutdown deben conservar el transporte real.
+
+Comando de la suite del helper:
+
+~~~sh
+cargo test -p rustflow-server --features testing --test testing
+~~~
+
 La suite HTTP/TCP prueba rutas, datos malformados, grupos, middleware, request IDs, páginas de error, límites, timeouts, TLS local, proxies confiables, abortos de cliente y concurrencia acotada. Los casos de la Fase 6.3 incluyen formularios tipados, validación JSON/query, errores estructurados 422, content-types no admitidos, campos inesperados, CSRF ausente/inválido/válido y redirecciones seguras. Para persistencia, hay contratos de integración separados para el ORM SQL de cuatro motores, el soporte MySQL/MariaDB y el ODM MongoDB (incluidos replica set y servidor standalone); sus variables de servicio y comandos específicos se documentan en [Base de datos](/guides/database/). Consulta también la [guía de formularios y validación](/guides/forms-validation/).
 
 ## 3. Compilar y probar el navegador WebAssembly
