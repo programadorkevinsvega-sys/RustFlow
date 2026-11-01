@@ -7,16 +7,15 @@ use std::{
 use http::StatusCode;
 use rustflow::view::View;
 use rustflow_server::{
-    Application, CsrfProtection, ErrorPages, HttpError, HttpMethod, IpNetwork, Middleware, Request,
-    ReadinessCheck, ReadinessCheckError, Response, ServerConfig, ServerError, ValidateInput,
-    ValidationErrors, html_document,
-    tls_server_config_from_pem,
+    Application, CsrfProtection, ErrorPages, HttpError, HttpMethod, IpNetwork, Middleware,
+    ReadinessCheck, ReadinessCheckError, Request, Response, ServerConfig, ServerError,
+    ValidateInput, ValidationErrors, html_document, tls_server_config_from_pem,
 };
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::{oneshot, Notify},
+    sync::{Notify, oneshot},
     task::JoinHandle,
 };
 
@@ -81,9 +80,7 @@ async fn graceful_shutdown_times_out_and_cancels_a_stuck_in_flight_request() {
 
     let mut stream = TcpStream::connect(address).await.expect("connect");
     stream
-        .write_all(
-            b"GET /hold HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-        )
+        .write_all(b"GET /hold HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
         .await
         .expect("send in-flight request");
     tokio::time::timeout(Duration::from_secs(1), entered.notified())
@@ -106,7 +103,8 @@ async fn graceful_shutdown_times_out_and_cancels_a_stuck_in_flight_request() {
 #[tokio::test]
 async fn framework_health_and_readiness_endpoints_work_over_real_tcp() {
     let mut app = Application::new();
-    app.enable_health_endpoints().expect("framework health routes");
+    app.enable_health_endpoints()
+        .expect("framework health routes");
     app.readiness_check(
         ReadinessCheck::new("primary-database", Duration::from_millis(100), || async {
             Err(ReadinessCheckError::unavailable())
@@ -120,7 +118,10 @@ async fn framework_health_and_readiness_endpoints_work_over_real_tcp() {
     let live = send_http(address, "GET", "/health/live", &[], "").await;
     assert_eq!(status_code(&live), 200);
     assert!(response_body(&live).contains(r#"{"status":"alive"}"#));
-    assert!(live.to_ascii_lowercase().contains("cache-control: no-store"));
+    assert!(
+        live.to_ascii_lowercase()
+            .contains("cache-control: no-store")
+    );
     assert!(live.to_ascii_lowercase().contains("x-request-id: rf-"));
 
     let ready = send_http(address, "GET", "/health/ready", &[], "").await;
@@ -129,7 +130,11 @@ async fn framework_health_and_readiness_endpoints_work_over_real_tcp() {
     assert_eq!(body.trim(), r#"{"status":"not_ready"}"#);
     assert!(!body.contains("primary-database"));
     assert!(!body.contains("unavailable"));
-    assert!(ready.to_ascii_lowercase().contains("cache-control: no-store"));
+    assert!(
+        ready
+            .to_ascii_lowercase()
+            .contains("cache-control: no-store")
+    );
 
     stop_server(shutdown, task).await;
 }
