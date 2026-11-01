@@ -571,13 +571,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     })?;
 
+    let new_page_database = Arc::clone(&database);
     let new_page_csrf = csrf.clone();
     app.route_protected(HttpMethod::Get, "/products/new", move |request: Request| {
+        let database = Arc::clone(&new_page_database);
         let csrf = new_page_csrf.clone();
         async move {
+            let categories = load_categories(&database).await?;
             let token = csrf.token_for(&request).map_err(|_| HttpError::internal_server_error())?;
             let cookie = csrf.cookie_header(&token, request.is_https()).map_err(|_| HttpError::internal_server_error())?;
-            let form = product_form_view("/products", token.as_str(), None)?;
+            let form = product_form_view("/products", token.as_str(), None, &categories)?;
             Ok(page("Create product", vec![
                 View::element("h1", [View::text("Create product")]).map_err(|_| HttpError::internal_server_error())?,
                 form,
@@ -615,6 +618,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         async move {
             let id = parse_product_id(&request)?;
             let product = load_product(&database, id).await?;
+            let category = load_product_category(&database, &product).await?;
             let token = csrf.token_for(&request).map_err(|_| HttpError::internal_server_error())?;
             let cookie = csrf.cookie_header(&token, request.is_https()).map_err(|_| HttpError::internal_server_error())?;
             let delete_form = view_element(
@@ -629,6 +633,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 View::element("h1", [View::text(product.name.clone())]).map_err(|_| HttpError::internal_server_error())?,
                 View::element("p", [View::text(format!("SKU: {}", product.sku))]).map_err(|_| HttpError::internal_server_error())?,
                 View::element("p", [View::text(format!("Price: {} cents", product.price_cents))]).map_err(|_| HttpError::internal_server_error())?,
+                View::element("p", [View::text(format!("Category: {}", category.name))]).map_err(|_| HttpError::internal_server_error())?,
                 View::element("p", [View::text(product.description.clone().unwrap_or_default())]).map_err(|_| HttpError::internal_server_error())?,
                 view_element("a", &[("href", format!("/products/{id}/edit"))], vec![View::text("Edit")])?,
                 delete_form,
@@ -645,9 +650,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         async move {
             let id = parse_product_id(&request)?;
             let product = load_product(&database, id).await?;
+            let categories = load_categories(&database).await?;
             let token = csrf.token_for(&request).map_err(|_| HttpError::internal_server_error())?;
             let cookie = csrf.cookie_header(&token, request.is_https()).map_err(|_| HttpError::internal_server_error())?;
-            let form = product_form_view(&format!("/products/{id}"), token.as_str(), Some(&product))?;
+            let form = product_form_view(&format!("/products/{id}"), token.as_str(), Some(&product), &categories)?;
             Ok(page("Edit product", vec![
                 View::element("h1", [View::text("Edit product")]).map_err(|_| HttpError::internal_server_error())?,
                 form,
@@ -673,6 +679,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     sku: Set(input.sku.trim().to_owned()),
                     description: Set(input.description.filter(|value| !value.trim().is_empty())),
                     price_cents: Set(input.price_cents),
+                    category_id: Set(input.category_id),
                 };
                 database
                     .entity::<ProductEntity>()
@@ -730,6 +737,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         sku: Set(format!("ROLLBACK-PROBE-{}", std::process::id())),
                         description: Set(None),
                         price_cents: Set(0),
+                        category_id: Set(1),
                     }).await
                 };
                 if first.is_err() {
