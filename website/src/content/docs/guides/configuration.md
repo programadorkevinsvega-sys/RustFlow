@@ -65,6 +65,50 @@ El .gitignore del scaffold excluye .env y .env.*, con una excepción explícita 
 
 Usa variables inyectadas por el entorno de ejecución o el almacén de secretos administrado de la plataforma, con acceso y rotación restringidos. RustFlow no incluye todavía un gestor de secretos ni necesita secretos para la configuración de host/puerto implementada en esta fase. Evita agregar variables para capacidades que aún no existen.
 
+## 6. Nivel de logs y observabilidad
+
+La aplicación puede resolver el nivel máximo de eventos mediante <code>TracingConfig</code> y la variable <code>RUSTFLOW_LOG_LEVEL</code>:
+
+| Valor | Eventos permitidos |
+|---|---|
+| <code>error</code> | Solo errores |
+| <code>warn</code> | Warnings y errores |
+| <code>info</code> | Información, warnings y errores (predeterminado) |
+| <code>debug</code> | Debug y niveles más severos |
+| <code>trace</code> | Todos los niveles |
+
+En desarrollo y pruebas, <code>RUSTFLOW_LOG_LEVEL</code> respeta la precedencia de <code>AppConfig</code>: variable del proceso, archivo <code>.env.&lt;perfil&gt;</code>, archivo <code>.env</code>, y valor por defecto. En producción solo se consulta el entorno del proceso. Los valores no soportados generan un error de configuración.
+
+~~~rust
+use rustflow_server::{AppConfig, TracingConfig};
+
+let app_config = AppConfig::load()?;
+let tracing_config = TracingConfig::from_app_config(&app_config)?;
+
+// El binario de la aplicación configura su subscriber una sola vez.
+// tracing_subscriber::fmt()
+//     .with_max_level(tracing_config.tracing_level().into())
+//     .try_init()?;
+~~~
+
+RustFlow ya emite spans/events estructurados para peticiones HTTP, incluidos request ID, método, plantilla de ruta y duración. El framework no instala un subscriber ni un exporter global. La aplicación elige su formatter, filtros por módulo y backend de exportación. No registres tokens, cookies, autorización, parámetros sensibles ni cuerpos de formularios.
+
+## 7. Timeouts y endpoints operativos
+
+<code>ServerConfig</code> permite cambiar límites del HTTP adapter sin confundirlos con los timeouts propios de pools SQL, cliente MongoDB o probes de readiness:
+
+| Ajuste | Valor inicial |
+|---|---:|
+| Body HTTP máximo | 1 MiB |
+| Timeout de lectura/handler | 30 s |
+| Concurrencia HTTP | 256 |
+| Drenaje máximo de graceful shutdown | 30 s |
+| Espera máxima del reporter | 250 ms |
+
+El timeout de shutdown se modifica con <code>ServerConfig::with_shutdown_timeout</code>. Al vencer, RustFlow cancela los futures de los handlers activos (también los que esperan un cupo de concurrencia), espera a que se liberen sus guardas de petición y devuelve <code>ServerError::ShutdownTimedOut</code>.
+
+Los endpoints <code>/health/live</code> y <code>/health/ready</code> se registran explícitamente mediante <code>Application::enable_health_endpoints()</code> o <code>with_health_endpoints</code>. Readiness solo consulta los checks obligatorios que la aplicación registre mediante <code>readiness_check</code>; cada check tiene su propio timeout y los fallos se muestran como una respuesta genérica 503.
+
 ## 5. API disponible y límites
 
 El scaffold usa este extracto desde su función main asíncrona, después de crear y configurar la aplicación:

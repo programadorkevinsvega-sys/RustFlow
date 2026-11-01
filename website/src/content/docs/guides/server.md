@@ -77,13 +77,72 @@ El adapter permite middleware global, por grupo y por ruta. El orden documentado
 
 ## 6. Límites y manejo de recursos
 
-La configuración del servidor establece límites de body, timeouts para lectura/handler y un máximo de peticiones concurrentes. El servidor genera o valida un ID de petición, lo expone al handler y lo devuelve en <code>x-request-id</code>. Los eventos/spans de <code>tracing</code> se emiten desde el adapter, pero el binario de la aplicación configura su propio subscriber/exporter.
+La configuración del servidor establece límites de body (1 MiB por defecto), timeout de lectura/handler (30 segundos), concurrencia máxima (256) y drenaje máximo de graceful shutdown (30 segundos). Los valores de timeout de HTTP no reemplazan los límites independientes de SQLx, MongoDB o las comprobaciones de readiness. El servidor genera o valida un ID de petición, lo expone al handler y lo devuelve en <code>x-request-id</code>.
 
-El API de apagado graceful recibe una future desde el punto de composición de la aplicación; la integración con señales del sistema operativo corresponde al caller. TLS local está implementado con rustls. La política de proxies de confianza requiere que el proxy sanee las cabeceras reenviadas y que el enlace hacia el origen esté protegido.
+El adapter emite spans/events de <code>tracing</code> con request ID, método, plantilla de ruta, status y duración medida. No registra headers, cookies, autorización, query values ni cuerpos de petición. El binario configura exactamente un subscriber/exporter propio usando <code>TracingConfig</code> y <code>RUSTFLOW_LOG_LEVEL</code>; el framework no inicializa un subscriber global.
+
+El API de apagado graceful recibe una future desde el punto de composición de la aplicación; la integración con señales del sistema operativo corresponde al caller. Cuando el future termina, el servidor deja de aceptar trabajo nuevo y drena conexiones activas hasta el límite configurable. Si vence, RustFlow señala la cancelación de las peticiones activas (incluidas las que esperan un cupo de concurrencia), destruye los futures de sus handlers y espera a que se liberen sus guardas de solicitudes antes de devolver <code>ServerError::ShutdownTimedOut</code>. TLS local está implementado con rustls. La política de proxies de confianza requiere que el proxy sanee las cabeceras reenviadas y que el enlace hacia el origen esté protegido.
 
 Estos controles son una base de ingeniería, no reemplazan rate limiting, revisión de amenazas, autenticación, autorización, hardening del reverse proxy ni una receta de producción. En mutaciones autenticadas mediante cookies, conecta además el middleware CSRF optativo a las rutas correspondientes; no sustituye autenticación o autorización.
 
-## 7. SSR, páginas y layouts
+## 7. Health, readiness y error reporting
+
+Las rutas operativas del framework son opt-in para no apropiarse de URLs que la aplicación ya pueda utilizar:
+
+~~~rust
+use std::{sync::{Arc, atomic::{AtomicBool, Ordering}}, time::Duration};
+use rustflow_server::{
+    Application, ReadinessCheck, ReadinessCheckError,
+};
+
+let database_available = Arc::new(AtomicBool::new(true));
+let probe_state = Arc::clone(&database_available);
+let mut app = Application::new();
+
+app.enable_health_endpoints()?;
+app.readiness_check(ReadinessCheck::new(
+    "database",
+    Duration::from_secs(2),
+    move || {
+        let probe_state = Arc::clone(&probe_state);
+        async move {
+            if probe_state.load(Ordering::Relaxed) {
+                Ok(())
+            } else {
+                Err(ReadinessCheckError::unavailable())
+            }
+        }
+    },
+)?)?;
+~~~
+
+<code>/health/live</code> comprueba que el servidor HTTP responde y no consulta servicios externos. <code>/health/ready</code> ejecuta únicamente las comprobaciones registradas explícitamente. Las comprobaciones corren concurrentemente y cada una tiene un timeout; se permiten hasta 32. Un fallo, panic o timeout produce <code>503 Service Unavailable</code> con <code>{"status":"not_ready"}</code>. La respuesta no incluye nombres de checks ni errores de proveedores y lleva <code>Cache-Control: no-store</code>. Sin checks registrados, readiness se considera disponible.
+
+Los callbacks deben ser de solo lectura, idempotentes y comprobar únicamente dependencias necesarias para atender tráfico en esa instancia. No ejecutes migraciones ni modifiques datos desde liveness/readiness. Los ejemplos anteriores usan un estado atómico solo para mostrar la firma del callback; en una aplicación real, sustituye el bloque por una comprobación bounded de la conexión/servicio obligatorio.
+
+Para reportar errores internos sin exponerlos al cliente, registra un reporter de aplicación:
+
+~~~rust
+use rustflow_server::{Application, ErrorReport, ErrorReporterError};
+
+app.with_error_reporter(|report: ErrorReport| async move {
+    tracing::error!(
+        request_id = %report.request_id(),
+        method = %report.method(),
+        route = %report.route(),
+        status = %report.status(),
+        "internal application failure"
+    );
+    Ok::<(), ErrorReporterError>(())
+});
+app.with_error_report_timeout(Duration::from_millis(100));
+~~~
+
+El reporter recibe solo request ID, método, plantilla de ruta, status y una categoría segura (`handler`, `middleware` o `request_timeout`). No recibe mensajes, stack traces, headers, cookies, tokens, query values ni cuerpos. Se llama para respuestas 5xx, no para fallos de entrada 4xx. El límite predeterminado es 250 ms; fallos, panics o timeouts del reporter no cambian la respuesta original. El reporter se ejecuta en una tarea aislada y debe evitar bloquear hilos del runtime o crear trabajo detached ilimitado.
+
+Las integraciones de caché, queue, email y storage siguen diferidas: no hay contratos suficientes de invalidación/consistencia, entrega/durabilidad, aceptación frente a entrega, permisos, aislamiento y eliminación. No se exponen traits vacíos.
+
+## 8. SSR, páginas y layouts
 
 El servidor también integra:
 
@@ -96,13 +155,13 @@ El servidor también integra:
 
 La hidratación y la navegación existen como capacidades explícitas y optativas; no se activan automáticamente en cada handler. Consulta [SSR y documentos HTML](/guides/ssr/) y [Composición de layouts](/guides/layouts/) para ver ejemplos de uso y los límites de cada mecanismo.
 
-## 8. Verificar los endpoints
+## 9. Verificar los endpoints
 
 ~~~sh
 cargo test -p rustflow-server --test http_integration
 ~~~
 
-La suite cubre rutas por TCP local, query/path/JSON/formularios tipados, errores de validación 422, campos inesperados, CSRF, redirección de retorno, grupos, middleware, IDs de petición, error pages, límites, timeouts, apagado graceful, TLS local, proxies de confianza, abortos de cliente, entradas malformadas y concurrencia acotada. Ejecuta también la suite completa del workspace antes de depender de un cambio.
+La suite cubre rutas por TCP local, query/path/JSON/formularios tipados, errores de validación 422, campos inesperados, CSRF, redirección de retorno, grupos, middleware, IDs de petición, error pages, liveness/readiness, error reporting, límites, timeouts, shutdown con deadline, TLS local, proxies de confianza, abortos de cliente, entradas malformadas y concurrencia acotada. Ejecuta también la suite completa del workspace antes de depender de un cambio.
 
 Para practicar peticiones reales, ejecuta el [tutorial de API JSON](/tutorials/json-api/). Antes de exponer un servicio, revisa [errores, límites de recursos y seguridad HTTP](/guides/errors-and-security/) y [cómo probar los endpoints](/guides/testing/).
 

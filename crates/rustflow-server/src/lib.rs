@@ -9,6 +9,7 @@ mod database;
 mod document_database;
 mod document_odm;
 mod group;
+mod operational;
 pub mod orm;
 mod page;
 mod proxy;
@@ -20,14 +21,14 @@ use std::{
     collections::{HashMap, HashSet},
     error::Error,
     fmt,
-    future::Future,
+    future::{Future, IntoFuture},
     net::{IpAddr, SocketAddr},
     pin::Pin,
     sync::{
         Arc, RwLock,
         atomic::{AtomicU64, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use axum::extract::ConnectInfo;
@@ -38,7 +39,7 @@ use axum::{
     body::{Body, to_bytes},
     extract::{Path, Request as AxumRequest, State},
     response::Response as AxumResponse,
-    routing::{MethodFilter, MethodRouter},
+    routing::{MethodFilter, MethodRouter, get},
 };
 
 use bytes::Bytes;
@@ -60,6 +61,11 @@ pub use group::RouteGroup;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
 pub use mongodb as mongodb_driver;
+pub use operational::{
+    ErrorReport, ErrorReportKind, ErrorReporter, ErrorReporterError, ErrorReporterFuture,
+    HealthEndpoints, LogLevel, MAX_READINESS_CHECKS, OperationalConfigError, ReadinessCheck,
+    ReadinessCheckError, TracingConfig,
+};
 pub use orm::{
     EntityRepository, MAX_RELATION_GRAPH_DEPTH, RelationGraph, RelationGraphResults,
     RelationLoadOptions, attach_one_to_many, detach_one_to_many, load_many_projected,
@@ -941,6 +947,7 @@ pub struct ServerConfig {
     deployment: DeploymentProfile,
     client_address: ClientAddressPolicy,
     require_https: bool,
+    shutdown_timeout: Duration,
 }
 
 impl ServerConfig {
@@ -960,6 +967,18 @@ impl ServerConfig {
     pub fn with_request_timeout(mut self, timeout: Duration) -> Self {
         self.request_timeout = timeout.max(Duration::from_millis(1));
         self
+    }
+
+    /// Set the maximum graceful-shutdown drain period. Zero is clamped to one millisecond.
+    /// Once this period expires, the server future is dropped and remaining work is cancelled.
+    pub fn with_shutdown_timeout(mut self, timeout: Duration) -> Self {
+        self.shutdown_timeout = timeout.max(Duration::from_millis(1));
+        self
+    }
+
+    /// Return the maximum graceful-shutdown drain period.
+    pub fn shutdown_timeout(&self) -> Duration {
+        self.shutdown_timeout
     }
 
     /// Set the maximum number of concurrently processed requests; zero is clamped.
@@ -1090,6 +1109,7 @@ impl Default for ServerConfig {
             deployment: DeploymentProfile::Development,
             client_address: ClientAddressPolicy::Direct,
             require_https: false,
+            shutdown_timeout: Duration::from_secs(30),
         }
     }
 }
@@ -1108,6 +1128,11 @@ pub enum ServerError {
     ProductionHttpsRequiresTlsOrTrustedProxy,
     InvalidTlsMaterial(String),
     MiddlewareRegistryPoisoned,
+    HealthEndpointRouteConflict(String),
+    HealthEndpointsNotConfigured,
+    DuplicateReadinessCheck(String),
+    TooManyReadinessChecks,
+    ShutdownTimedOut(Duration),
     Io(std::io::Error),
 }
 
@@ -1140,6 +1165,33 @@ impl fmt::Display for ServerError {
             ),
             Self::InvalidTlsMaterial(message) => write!(f, "invalid TLS material: {message}"),
             Self::MiddlewareRegistryPoisoned => write!(f, "middleware registry is unavailable"),
+            Self::HealthEndpointRouteConflict(path) => {
+                write!(
+                    f,
+                    "health endpoint path conflicts with an application route: {path}"
+                )
+            }
+            Self::HealthEndpointsNotConfigured => {
+                write!(
+                    f,
+                    "configure health endpoints before registering readiness checks"
+                )
+            }
+            Self::DuplicateReadinessCheck(name) => {
+                write!(f, "readiness check is already registered: {name}")
+            }
+            Self::TooManyReadinessChecks => {
+                write!(
+                    f,
+                    "at most {MAX_READINESS_CHECKS} readiness checks may be registered"
+                )
+            }
+            Self::ShutdownTimedOut(timeout) => {
+                write!(
+                    f,
+                    "graceful shutdown exceeded the configured limit of {timeout:?}"
+                )
+            }
             Self::Io(error) => write!(f, "server I/O failed: {error}"),
         }
     }
@@ -1166,6 +1218,10 @@ pub struct Application {
     middleware: Arc<RwLock<Vec<Middleware>>>,
     route_middleware: HashMap<(String, HttpMethod), Arc<RwLock<Vec<Middleware>>>>,
     config: ServerConfig,
+    error_reporter: Arc<RwLock<Option<Arc<dyn ErrorReporter>>>>,
+    error_report_timeout: Duration,
+    health_endpoints: Option<HealthEndpoints>,
+    readiness_checks: Vec<ReadinessCheck>,
 }
 
 impl Application {
@@ -1185,7 +1241,78 @@ impl Application {
             middleware: Arc::new(RwLock::new(Vec::new())),
             route_middleware: HashMap::new(),
             config,
+            error_reporter: Arc::new(RwLock::new(None)),
+            error_report_timeout: Duration::from_millis(250),
+            health_endpoints: None,
+            readiness_checks: Vec::new(),
         }
+    }
+
+    /// Register an application-owned asynchronous sink for sanitized internal 5xx reports.
+    ///
+    /// Reporter failures, panics, and timeouts are isolated from the HTTP response. The
+    /// reporter receives only request ID, method, route template, and status metadata.
+    pub fn with_error_reporter<R>(&mut self, reporter: R) -> &mut Self
+    where
+        R: ErrorReporter,
+    {
+        *self
+            .error_reporter
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Arc::new(reporter));
+        self
+    }
+
+    /// Bound how long a request waits for its error reporter. Zero is clamped to one millisecond.
+    pub fn with_error_report_timeout(&mut self, timeout: Duration) -> &mut Self {
+        self.error_report_timeout = timeout.max(Duration::from_millis(1));
+        self
+    }
+
+    /// Enable framework-owned liveness and readiness endpoints.
+    ///
+    /// The default paths are /health/live and /health/ready. Endpoint registration is opt-in
+    /// to preserve applications that already own those paths.
+    pub fn enable_health_endpoints(&mut self) -> Result<&mut Self, ServerError> {
+        self.with_health_endpoints(HealthEndpoints::default())
+    }
+
+    /// Enable framework-owned liveness and readiness endpoints at custom static paths.
+    pub fn with_health_endpoints(
+        &mut self,
+        endpoints: HealthEndpoints,
+    ) -> Result<&mut Self, ServerError> {
+        for path in [endpoints.liveness_path(), endpoints.readiness_path()] {
+            if self.routes.contains_key(path) {
+                return Err(ServerError::HealthEndpointRouteConflict(path.to_owned()));
+            }
+        }
+        self.health_endpoints = Some(endpoints);
+        Ok(self)
+    }
+
+    /// Register a required dependency check for the readiness endpoint.
+    ///
+    /// Checks run concurrently and each is bounded by its own timeout. Failed checks return
+    /// only a generic 503 payload; dependency names and diagnostic details remain private.
+    pub fn readiness_check(&mut self, check: ReadinessCheck) -> Result<&mut Self, ServerError> {
+        if self.health_endpoints.is_none() {
+            return Err(ServerError::HealthEndpointsNotConfigured);
+        }
+        if self.readiness_checks.len() >= MAX_READINESS_CHECKS {
+            return Err(ServerError::TooManyReadinessChecks);
+        }
+        if self
+            .readiness_checks
+            .iter()
+            .any(|existing| existing.name() == check.name())
+        {
+            return Err(ServerError::DuplicateReadinessCheck(
+                check.name().to_owned(),
+            ));
+        }
+        self.readiness_checks.push(check);
+        Ok(self)
     }
 
     /// Return the server configuration.
@@ -1442,6 +1569,11 @@ impl Application {
         Fut: Future<Output = Result<Response, HttpError>> + Send + 'static,
     {
         validate_route_path(&path)?;
+        if let Some(endpoints) = &self.health_endpoints {
+            if path == endpoints.liveness_path() || path == endpoints.readiness_path() {
+                return Err(ServerError::HealthEndpointRouteConflict(path));
+            }
+        }
         let shape = route_shape(&path);
         if let Some(existing) = self.route_shapes.get(&shape) {
             if existing != &path {
@@ -1465,6 +1597,8 @@ impl Application {
 
         let handler: SharedHandler = Arc::new(move |request| Box::pin(handler(request)));
         let config = self.config.clone();
+        let error_reporter = Arc::clone(&self.error_reporter);
+        let error_report_timeout = self.error_report_timeout;
         let middleware_stack = self.middleware.clone();
         let route_middleware = Arc::new(RwLock::new(extra_middleware));
         self.route_middleware
@@ -1474,10 +1608,15 @@ impl Application {
                             mut request: AxumRequest| {
             let handler = handler.clone();
             let config = config.clone();
+            let error_reporter = Arc::clone(&error_reporter);
+            let error_report_timeout = error_report_timeout;
             let middleware_stack = middleware_stack.clone();
             let route_middleware = route_middleware.clone();
             let route_template = route_template.clone();
             let request_id = request_id_from_headers(request.headers());
+            let request_method = request.method().clone();
+            let request_started = Instant::now();
+            let route_for_report = route_template.clone();
             if let Ok(value) = HeaderValue::from_str(&request_id) {
                 request
                     .headers_mut()
@@ -1486,20 +1625,43 @@ impl Application {
             async move {
                 match tokio::time::timeout(
                     config.request_timeout,
-                    dispatch_request(
+                    dispatch_request(DispatchContext {
                         handler,
                         path_params,
                         request,
-                        config.clone(),
-                        middleware_stack,
+                        config: config.clone(),
+                        middleware_registry: middleware_stack,
                         route_middleware,
                         route_template,
-                    ),
+                        error_reporter: configured_error_reporter(&error_reporter),
+                        error_report_timeout,
+                    }),
                 )
                 .await
                 {
                     Ok(response) => response,
                     Err(_) => {
+                        let status = StatusCode::GATEWAY_TIMEOUT;
+                        tracing::warn!(
+                            request_id = %request_id,
+                            method = %request_method,
+                            route = %route_for_report,
+                            status = %status,
+                            duration_ms = request_started.elapsed().as_millis() as u64,
+                            "HTTP request timed out"
+                        );
+                        report_server_error(
+                            configured_error_reporter(&error_reporter),
+                            error_report_timeout,
+                            ErrorReport::new(
+                                request_id.clone(),
+                                request_method,
+                                route_for_report,
+                                status,
+                                ErrorReportKind::RequestTimeout,
+                            ),
+                        )
+                        .await;
                         attach_request_id(HttpError::gateway_timeout().into_response(), &request_id)
                             .into_axum_response()
                     }
@@ -1561,14 +1723,35 @@ impl Application {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        let router = self.into_router(BindKind::Plain)?;
-        axum::serve(
+        let shutdown_timeout = self.config.shutdown_timeout;
+        let (request_shutdown_tx, request_shutdown_rx) = tokio::sync::watch::channel(false);
+        let in_flight_requests = Arc::new(InFlightRequests::new());
+        let router = self.into_router_with_cancellation(
+            BindKind::Plain,
+            Some(RequestCancellation {
+                shutdown: request_shutdown_rx,
+                in_flight: Arc::clone(&in_flight_requests),
+            }),
+        )?;
+        let (shutdown_started_tx, shutdown_started_rx) = tokio::sync::oneshot::channel();
+        let shutdown_signal = async move {
+            shutdown.await;
+            let _ = shutdown_started_tx.send(());
+        };
+        let server = axum::serve(
             listener,
             router.into_make_service_with_connect_info::<SocketAddr>(),
         )
-        .with_graceful_shutdown(shutdown)
+        .with_graceful_shutdown(shutdown_signal)
+        .into_future();
+        await_graceful_shutdown(
+            server,
+            shutdown_started_rx,
+            shutdown_timeout,
+            request_shutdown_tx,
+            in_flight_requests,
+        )
         .await
-        .map_err(ServerError::Io)
     }
 
     /// Serve HTTPS on a caller-created listener using rustls.
@@ -1591,35 +1774,91 @@ impl Application {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        let router = self.into_router(BindKind::Tls)?;
+        let shutdown_timeout = self.config.shutdown_timeout;
+        let (request_shutdown_tx, request_shutdown_rx) = tokio::sync::watch::channel(false);
+        let in_flight_requests = Arc::new(InFlightRequests::new());
+        let router = self.into_router_with_cancellation(
+            BindKind::Tls,
+            Some(RequestCancellation {
+                shutdown: request_shutdown_rx,
+                in_flight: Arc::clone(&in_flight_requests),
+            }),
+        )?;
+        let (shutdown_started_tx, shutdown_started_rx) = tokio::sync::oneshot::channel();
+        let shutdown_signal = async move {
+            shutdown.await;
+            let _ = shutdown_started_tx.send(());
+        };
         // `tap_io` is required so ConnectInfo<SocketAddr> is implemented for custom listeners.
-        axum::serve(
+        let server = axum::serve(
             tls::TlsListener::new(listener, tls)
                 .map_err(ServerError::Io)?
                 .tap_io(|_| {}),
             router.into_make_service_with_connect_info::<SocketAddr>(),
         )
-        .with_graceful_shutdown(shutdown)
+        .with_graceful_shutdown(shutdown_signal)
+        .into_future();
+        await_graceful_shutdown(
+            server,
+            shutdown_started_rx,
+            shutdown_timeout,
+            request_shutdown_tx,
+            in_flight_requests,
+        )
         .await
-        .map_err(ServerError::Io)
     }
 
     fn into_router(self, bind: BindKind) -> Result<Router, ServerError> {
+        self.into_router_with_cancellation(bind, None)
+    }
+
+    fn into_router_with_cancellation(
+        self,
+        bind: BindKind,
+        request_cancellation: Option<RequestCancellation>,
+    ) -> Result<Router, ServerError> {
         self.config.validate_for_bind(bind)?;
-        let Self { routes, config, .. } = self;
+        let Self {
+            routes,
+            config,
+            health_endpoints,
+            readiness_checks,
+            ..
+        } = self;
         let mut router = Router::new();
         for (path, methods) in routes {
             router = router.route(&path, methods);
         }
-        Ok(router
+        if let Some(endpoints) = health_endpoints {
+            let readiness_checks = Arc::new(readiness_checks);
+            router = router
+                .route(endpoints.liveness_path(), get(liveness_endpoint))
+                .route(
+                    endpoints.readiness_path(),
+                    get(readiness_endpoint).with_state(readiness_checks),
+                );
+        }
+
+        let router = router
             .layer(Extension(ConnectionSecure(matches!(bind, BindKind::Tls))))
             .layer(GlobalConcurrencyLimitLayer::new(
                 config.max_concurrent_requests,
+            ));
+        let router = if let Some(request_cancellation) = request_cancellation {
+            router.layer(middleware::from_fn_with_state(
+                request_cancellation,
+                cancel_in_flight_requests,
             ))
-            .layer(middleware::from_fn_with_state(
-                config.error_pages,
-                request_metadata_and_error_pages,
-            )))
+        } else {
+            router
+        };
+
+        // Keep request metadata outside cancellation so shutdown responses retain
+        // normal request correlation headers and configured error-page behavior.
+        Ok(router.layer(middleware::from_fn_with_state(
+            config.error_pages,
+            request_metadata_and_error_pages,
+        )))
     }
 }
 
@@ -1629,7 +1868,197 @@ impl Default for Application {
     }
 }
 
-async fn dispatch_request(
+#[derive(Clone)]
+struct RequestCancellation {
+    shutdown: tokio::sync::watch::Receiver<bool>,
+    in_flight: Arc<InFlightRequests>,
+}
+
+struct InFlightRequests {
+    count: tokio::sync::watch::Sender<usize>,
+}
+
+impl InFlightRequests {
+    fn new() -> Self {
+        let (count, receiver) = tokio::sync::watch::channel(0usize);
+        drop(receiver);
+        Self { count }
+    }
+
+    fn enter(self: &Arc<Self>) -> InFlightRequestGuard {
+        self.count.send_modify(|active| *active += 1);
+        InFlightRequestGuard(Arc::clone(self))
+    }
+
+    async fn wait_until_empty(&self) {
+        let mut count = self.count.subscribe();
+        loop {
+            if *count.borrow_and_update() == 0 {
+                return;
+            }
+            if count.changed().await.is_err() {
+                return;
+            }
+        }
+    }
+
+    fn leave(&self) {
+        self.count.send_modify(|active| {
+            debug_assert!(*active > 0);
+            *active = active.saturating_sub(1);
+        });
+    }
+}
+
+struct InFlightRequestGuard(Arc<InFlightRequests>);
+
+impl Drop for InFlightRequestGuard {
+    fn drop(&mut self) {
+        self.0.leave();
+    }
+}
+
+async fn cancel_in_flight_requests(
+    State(state): State<RequestCancellation>,
+    request: AxumRequest,
+    next: AxumNext,
+) -> AxumResponse {
+    let _guard = state.in_flight.enter();
+    let mut shutdown = state.shutdown.clone();
+
+    if *shutdown.borrow() {
+        return operational_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            r#"{"status":"shutting_down"}"#,
+        );
+    }
+
+    tokio::select! {
+        biased;
+        _ = shutdown.changed() => operational_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            r#"{"status":"shutting_down"}"#,
+        ),
+        response = next.run(request) => response,
+    }
+}
+
+async fn await_graceful_shutdown<Fut>(
+    server: Fut,
+    mut shutdown_started: tokio::sync::oneshot::Receiver<()>,
+    shutdown_timeout: Duration,
+    request_shutdown: tokio::sync::watch::Sender<bool>,
+    in_flight_requests: Arc<InFlightRequests>,
+) -> Result<(), ServerError>
+where
+    Fut: Future<Output = std::io::Result<()>>,
+{
+    tokio::pin!(server);
+    tokio::select! {
+        result = &mut server => result.map_err(ServerError::Io),
+        _ = &mut shutdown_started => {
+            match tokio::time::timeout(shutdown_timeout, &mut server).await {
+                Ok(result) => result.map_err(ServerError::Io),
+                Err(_) => {
+                    request_shutdown.send_replace(true);
+                    in_flight_requests.wait_until_empty().await;
+                    Err(ServerError::ShutdownTimedOut(shutdown_timeout))
+                }
+            }
+        }
+    }
+}
+
+struct AbortTaskOnDrop<T>(tokio::task::JoinHandle<T>);
+
+impl<T> Drop for AbortTaskOnDrop<T> {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+fn configured_error_reporter(
+    registry: &Arc<RwLock<Option<Arc<dyn ErrorReporter>>>>,
+) -> Option<Arc<dyn ErrorReporter>> {
+    registry
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+}
+
+async fn report_server_error(
+    reporter: Option<Arc<dyn ErrorReporter>>,
+    report_timeout: Duration,
+    report: ErrorReport,
+) {
+    let Some(reporter) = reporter else {
+        return;
+    };
+
+    // A separate task isolates reporter panics. The join handle is timed out and
+    // aborted so a slow, stuck, or caller-cancelled integration cannot linger.
+    let mut task = AbortTaskOnDrop(tokio::spawn(async move { reporter.report(report).await }));
+    match tokio::time::timeout(report_timeout, &mut task.0).await {
+        Ok(Ok(Ok(()))) => {}
+        Ok(Ok(Err(_))) => tracing::warn!("application error reporter returned an error"),
+        Ok(Err(_)) => tracing::warn!("application error reporter task failed"),
+        Err(_) => tracing::warn!("application error reporter timed out"),
+    }
+}
+
+fn operational_response(status: StatusCode, body: &'static str) -> AxumResponse {
+    let mut response = AxumResponse::new(Body::from(body));
+    *response.status_mut() = status;
+    response.headers_mut().insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    response.headers_mut().insert(
+        http::header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store"),
+    );
+    response
+}
+
+async fn liveness_endpoint() -> AxumResponse {
+    operational_response(StatusCode::OK, r#"{"status":"alive"}"#)
+}
+
+async fn readiness_endpoint(State(checks): State<Arc<Vec<ReadinessCheck>>>) -> AxumResponse {
+    let mut tasks = tokio::task::JoinSet::new();
+    for check in checks.iter() {
+        let timeout = check.timeout();
+        let check_future = check.start();
+        tasks.spawn(async move {
+            tokio::time::timeout(timeout, check_future)
+                .await
+                .is_ok_and(|result| result.is_ok())
+        });
+    }
+
+    let mut ready = true;
+    while let Some(result) = tasks.join_next().await {
+        match result {
+            Ok(true) => {}
+            Ok(false) => {
+                tracing::warn!("readiness check failed or timed out");
+                ready = false;
+            }
+            Err(_) => {
+                tracing::error!("readiness check task panicked");
+                ready = false;
+            }
+        }
+    }
+
+    if ready {
+        operational_response(StatusCode::OK, r#"{"status":"ready"}"#)
+    } else {
+        operational_response(StatusCode::SERVICE_UNAVAILABLE, r#"{"status":"not_ready"}"#)
+    }
+}
+
+struct DispatchContext {
     handler: SharedHandler,
     path_params: HashMap<String, String>,
     request: AxumRequest,
@@ -1637,7 +2066,22 @@ async fn dispatch_request(
     middleware_registry: Arc<RwLock<Vec<Middleware>>>,
     route_middleware: Arc<RwLock<Vec<Middleware>>>,
     route_template: String,
-) -> AxumResponse {
+    error_reporter: Option<Arc<dyn ErrorReporter>>,
+    error_report_timeout: Duration,
+}
+
+async fn dispatch_request(context: DispatchContext) -> AxumResponse {
+    let DispatchContext {
+        handler,
+        path_params,
+        request,
+        config,
+        middleware_registry,
+        route_middleware,
+        route_template,
+        error_reporter,
+        error_report_timeout,
+    } = context;
     let peer = request
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
@@ -1657,14 +2101,20 @@ async fn dispatch_request(
         &config.client_address,
         connection_secure,
     );
+    let started_at = Instant::now();
     let span = tracing::info_span!(
         "http.request",
         request_id = %request_id,
         method = %method,
         route = %route_template,
+        duration_ms = tracing::field::Empty,
     );
+    let span_for_record = span.clone();
+    let request_id_for_log = request_id.clone();
+    let method_for_log = method.clone();
+    let route_for_log = route_template.clone();
 
-    async move {
+    let request_response = async move {
         if config.require_https && !identity.https {
             tracing::warn!(status = %StatusCode::BAD_REQUEST, "HTTPS is required");
             let response = HttpError::https_required().into_response();
@@ -1696,14 +2146,34 @@ async fn dispatch_request(
             identity,
             peer_addr: peer,
         });
-        let middleware = match (middleware_registry.read(), route_middleware.read()) {
-            (Ok(global), Ok(scoped)) => {
-                let mut stack = global.clone();
-                stack.extend(scoped.iter().cloned());
-                Arc::new(stack)
+        // Snapshot the middleware stack in a synchronous scope so no
+        // std::sync::RwLockReadGuard can be held across the reporter await below.
+        let middleware_snapshot = {
+            match (middleware_registry.read(), route_middleware.read()) {
+                (Ok(global), Ok(scoped)) => {
+                    let mut stack = global.clone();
+                    stack.extend(scoped.iter().cloned());
+                    Ok(Arc::new(stack))
+                }
+                _ => Err(()),
             }
-            _ => {
+        };
+        let middleware = match middleware_snapshot {
+            Ok(middleware) => middleware,
+            Err(()) => {
                 tracing::error!("middleware registry is unavailable");
+                report_server_error(
+                    error_reporter.clone(),
+                    error_report_timeout,
+                    ErrorReport::new(
+                        request_id_for_response.clone(),
+                        method.clone(),
+                        route_template.clone(),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        ErrorReportKind::Middleware,
+                    ),
+                )
+                .await;
                 let response = HttpError::internal_server_error().into_response();
                 return attach_request_id(response, &request_id_for_response).into_axum_response();
             }
@@ -1719,11 +2189,39 @@ async fn dispatch_request(
                 response
             }
             Err(error) => {
+                if error.status.is_server_error() {
+                    report_server_error(
+                        error_reporter.clone(),
+                        error_report_timeout,
+                        ErrorReport::new(
+                            request_id_for_response.clone(),
+                            method.clone(),
+                            route_template.clone(),
+                            error.status,
+                            ErrorReportKind::Handler,
+                        ),
+                    )
+                    .await;
+                }
                 tracing::warn!(status = %error.status, "request failed");
                 error.into_response()
             }
         };
         attach_request_id(response, &request_id_for_response).into_axum_response()
+    };
+    async move {
+        let response = request_response.await;
+        let duration_ms = started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+        span_for_record.record("duration_ms", duration_ms);
+        tracing::debug!(
+            request_id = %request_id_for_log,
+            method = %method_for_log,
+            route = %route_for_log,
+            duration_ms,
+            status = %response.status(),
+            "HTTP request completed"
+        );
+        response
     }
     .instrument(span)
     .await
@@ -1932,8 +2430,9 @@ fn is_safe_redirect_location(location: &str) -> bool {
 mod tests {
     use super::{
         Application, BindKind, ClientAddressPolicy, DeploymentProfile, ErrorPageConfigError,
-        ErrorPages, HtmlPage, HttpError, HttpMethod, IpNetwork, Middleware, Response, RouteInfo,
-        ServerConfig, ServerError, View, html_document, html_view,
+        ErrorPages, ErrorReport, ErrorReportKind, ErrorReporterError, HtmlPage, HttpError,
+        HttpMethod, IpNetwork, Middleware, ReadinessCheck, ReadinessCheckError, Response,
+        RouteInfo, ServerConfig, ServerError, View, html_document, html_view,
     };
     use axum::{
         body::{Body, to_bytes},
@@ -1949,7 +2448,7 @@ mod tests {
     use std::{
         rc::Rc,
         sync::{
-            Arc,
+            Arc, Mutex,
             atomic::{AtomicUsize, Ordering},
         },
         time::Duration,
@@ -2653,6 +3152,280 @@ mod tests {
         assert_eq!(response.headers()["x-global"], "yes");
         assert_eq!(response.headers()["x-route"], "yes");
         assert_eq!(body_text(response).await, "ok");
+    }
+
+    #[test]
+    fn error_report_categories_are_stable_and_non_sensitive() {
+        assert_eq!(ErrorReportKind::Handler.as_str(), "handler");
+        assert_eq!(ErrorReportKind::Middleware.as_str(), "middleware");
+        assert_eq!(ErrorReportKind::RequestTimeout.as_str(), "request_timeout");
+    }
+
+    #[tokio::test]
+    async fn framework_health_endpoints_run_bounded_checks_and_hide_diagnostics() {
+        let mut app = Application::new();
+        app.enable_health_endpoints().expect("health routes");
+        app.readiness_check(
+            ReadinessCheck::new("primary-database", Duration::from_millis(20), || async {
+                Err(ReadinessCheckError::unavailable())
+            })
+            .expect("check definition"),
+        )
+        .expect("register readiness check");
+
+        let router = app
+            .into_router(BindKind::Plain)
+            .expect("development config is valid");
+        let live = router
+            .clone()
+            .oneshot(
+                AxumHttpRequest::builder()
+                    .uri("/health/live")
+                    .body(Body::empty())
+                    .expect("liveness request"),
+            )
+            .await
+            .expect("liveness response");
+        assert_eq!(live.status(), StatusCode::OK);
+        assert_eq!(live.headers()[http::header::CACHE_CONTROL], "no-store");
+        assert_eq!(body_text(live).await, r#"{"status":"alive"}"#);
+
+        let ready = router
+            .oneshot(
+                AxumHttpRequest::builder()
+                    .uri("/health/ready")
+                    .body(Body::empty())
+                    .expect("readiness request"),
+            )
+            .await
+            .expect("readiness response");
+        assert_eq!(ready.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body = body_text(ready).await;
+        assert_eq!(body, r#"{"status":"not_ready"}"#);
+        assert!(!body.contains("primary-database"));
+        assert!(!body.contains("unavailable"));
+        assert!(!body.contains("database"));
+    }
+
+    #[tokio::test]
+    async fn readiness_endpoint_returns_ready_when_required_checks_succeed() {
+        let mut app = Application::new();
+        app.enable_health_endpoints().expect("health routes");
+        app.readiness_check(
+            ReadinessCheck::new("primary-database", Duration::from_secs(1), || async {
+                Ok(())
+            })
+            .expect("check definition"),
+        )
+        .expect("register readiness check");
+
+        let response = send(
+            app,
+            AxumHttpRequest::builder()
+                .uri("/health/ready")
+                .body(Body::empty())
+                .expect("readiness request"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body_text(response).await, r#"{"status":"ready"}"#);
+    }
+
+    #[tokio::test]
+    async fn slow_readiness_checks_time_out_without_leaking_the_check_name() {
+        let mut app = Application::new();
+        app.enable_health_endpoints().expect("health routes");
+        app.readiness_check(
+            ReadinessCheck::new("billing-provider", Duration::from_millis(5), || async {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                Ok(())
+            })
+            .expect("check definition"),
+        )
+        .expect("register readiness check");
+
+        let response = send(
+            app,
+            AxumHttpRequest::builder()
+                .uri("/health/ready")
+                .body(Body::empty())
+                .expect("readiness request"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body_text(response).await, r#"{"status":"not_ready"}"#);
+    }
+
+    #[test]
+    fn health_routes_cannot_shadow_application_routes() {
+        let mut app = Application::new();
+        app.get("/health/live", |_request| async {
+            Ok(Response::text("application route"))
+        })
+        .expect("route");
+        assert!(matches!(
+            app.enable_health_endpoints(),
+            Err(ServerError::HealthEndpointRouteConflict(path)) if path == "/health/live"
+        ));
+
+        let mut app = Application::new();
+        assert!(matches!(
+            app.readiness_check(
+                ReadinessCheck::new("database", Duration::from_secs(1), || async { Ok(()) })
+                    .expect("check")
+            ),
+            Err(ServerError::HealthEndpointsNotConfigured)
+        ));
+    }
+
+    #[tokio::test]
+    async fn error_reporter_receives_only_safe_metadata_and_preserves_public_response() {
+        let reports = Arc::new(Mutex::new(Vec::<ErrorReport>::new()));
+        let captured = Arc::clone(&reports);
+        let mut app = Application::new();
+        app.post("/accounts/{id}", |_request| async {
+            Err(HttpError::internal_server_error())
+        })
+        .expect("private route");
+        // Reporter registration remains effective after route registration.
+        app.with_error_reporter(move |report: ErrorReport| {
+            let captured = Arc::clone(&captured);
+            async move {
+                captured.lock().expect("report mutex").push(report);
+                Ok(())
+            }
+        });
+
+        let response = send(
+            app,
+            AxumHttpRequest::builder()
+                .method("POST")
+                .uri("/accounts/42")
+                .header("authorization", "Bearer private-token")
+                .header("cookie", "session=private-session")
+                .header("content-type", "application/x-www-form-urlencoded")
+                .body(Body::from("password=private-password"))
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = body_text(response).await;
+        assert_eq!(body, "Internal server error");
+        assert!(!body.contains("private-token"));
+        assert!(!body.contains("private-session"));
+        assert!(!body.contains("private-password"));
+
+        let reports = reports.lock().expect("report mutex");
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].method(), &http::Method::POST);
+        assert_eq!(reports[0].route(), "/accounts/{id}");
+        assert_eq!(reports[0].status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(reports[0].kind(), ErrorReportKind::Handler);
+        assert!(!reports[0].request_id().is_empty());
+        let debug = format!("{:?}", reports[0]);
+        assert!(!debug.contains("private-token"));
+        assert!(!debug.contains("private-session"));
+        assert!(!debug.contains("private-password"));
+    }
+
+    #[tokio::test]
+    async fn reporter_errors_panics_and_timeouts_do_not_replace_http_result() {
+        let mut failing = Application::new();
+        failing.with_error_reporter(|_| async { Err(ErrorReporterError) });
+        failing
+            .get("/failure", |_request| async {
+                Err(HttpError::internal_server_error())
+            })
+            .expect("route");
+        let response = send(
+            failing,
+            AxumHttpRequest::builder()
+                .uri("/failure")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let mut panicking = Application::new();
+        panicking.with_error_reporter(|_| async {
+            std::panic::panic_any("reporter panic must stay isolated");
+            #[allow(unreachable_code)]
+            Ok(())
+        });
+        panicking
+            .get("/failure", |_request| async {
+                Err(HttpError::internal_server_error())
+            })
+            .expect("route");
+        let response = send(
+            panicking,
+            AxumHttpRequest::builder()
+                .uri("/failure")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let mut slow = Application::new();
+        slow.with_error_report_timeout(Duration::from_millis(5));
+        slow.with_error_reporter(|_| async {
+            std::future::pending::<Result<(), ErrorReporterError>>().await
+        });
+        slow.get("/failure", |_request| async {
+            Err(HttpError::internal_server_error())
+        })
+        .expect("route");
+        let response = send(
+            slow,
+            AxumHttpRequest::builder()
+                .uri("/failure")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn readiness_check_panics_are_reported_as_not_ready() {
+        let mut app = Application::new();
+        app.enable_health_endpoints().expect("health routes");
+        app.readiness_check(
+            ReadinessCheck::new("unstable-check", Duration::from_secs(1), || async {
+                std::panic::panic_any("private readiness diagnostic");
+                #[allow(unreachable_code)]
+                Ok(())
+            })
+            .expect("check"),
+        )
+        .expect("register check");
+
+        let response = send(
+            app,
+            AxumHttpRequest::builder()
+                .uri("/health/ready")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body_text(response).await, r#"{"status":"not_ready"}"#);
+    }
+
+    #[test]
+    fn shutdown_timeout_has_a_finite_default_and_clamps_zero() {
+        assert_eq!(
+            ServerConfig::new().shutdown_timeout(),
+            Duration::from_secs(30)
+        );
+        assert_eq!(
+            ServerConfig::new()
+                .with_shutdown_timeout(Duration::ZERO)
+                .shutdown_timeout(),
+            Duration::from_millis(1)
+        );
     }
 
     #[test]
