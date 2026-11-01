@@ -266,7 +266,8 @@ const PRODUCTS_PAGE_SIZE: u64 = 5;
 #[serde(deny_unknown_fields)]
 struct ProductListQuery {
     q: Option<String>,
-    category_id: Option<i64>,
+    #[serde(default)]
+    category_id: i64,
     page: Option<u64>,
 }
 
@@ -276,8 +277,8 @@ impl ValidateInput for ProductListQuery {
         if self.q.as_ref().is_some_and(|value| value.len() > 120) {
             errors.add_field_error("q", "Search text must be at most 120 bytes.");
         }
-        if self.category_id.is_some_and(|id| id <= 0) {
-            errors.add_field_error("category_id", "Category id must be positive.");
+        if self.category_id < 0 {
+            errors.add_field_error("category_id", "Category id cannot be negative.");
         }
         if self.page.is_some_and(|page| page == 0 || page > 10_000) {
             errors.add_field_error("page", "Page must be between 1 and 10000.");
