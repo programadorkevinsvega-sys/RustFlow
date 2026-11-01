@@ -2278,9 +2278,9 @@ fn is_safe_redirect_location(location: &str) -> bool {
 mod tests {
     use super::{
         Application, BindKind, ClientAddressPolicy, DeploymentProfile, ErrorPageConfigError,
-        ErrorPages, ErrorReport, ErrorReportKind, ErrorReporterError, HtmlPage,
-        HttpError, HttpMethod, IpNetwork, Middleware, ReadinessCheck, ReadinessCheckError,
-        Response, RouteInfo, ServerConfig, ServerError, View, html_document, html_view,
+        ErrorPages, ErrorReport, ErrorReportKind, ErrorReporterError, HtmlPage, HttpError,
+        HttpMethod, IpNetwork, Middleware, ReadinessCheck, ReadinessCheckError, Response,
+        RouteInfo, ServerConfig, ServerError, View, html_document, html_view,
     };
     use axum::{
         body::{Body, to_bytes},
