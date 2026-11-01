@@ -32,9 +32,9 @@ fn main() -> Result<(), RuntimeError> {
 
 En esta API, <code>Runtime::signal</code> crea una señal tipada, <code>Runtime::effect</code> ejecuta el efecto inicialmente y registra las señales que lee, y <code>Runtime::batch</code> agrupa las invalidaciones hasta el límite exterior del batch. El ejemplo imprime el valor inicial y reacciona a los cambios; los dos writes dentro del batch se publican juntos al terminar el batch.
 
-## API de componentes: signal, use_state y use_effect
+## API de componentes y owners
 
-Los componentes usan una API propietaria de un scope activo. La macro <code>#[rustflow::component]</code> configura ese entorno para el setup; las llamadas a <code>signal</code>, <code>use_state</code> y <code>use_effect</code> deben ocurrir dentro de ese scope. No son utilidades globales que se puedan llamar sin contexto desde cualquier <code>main</code>.
+Los componentes usan una API propietaria de un scope activo. La macro <code>#[rustflow::component]</code> configura ese entorno para el setup; las llamadas a <code>signal</code>, <code>use_state</code>, <code>use_effect</code>, <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> y <code>provide_context</code> deben ocurrir como declaraciones de setup, no dentro del cuerpo de render repetible. No son utilidades globales que se puedan llamar sin owner desde cualquier <code>main</code>.
 
 ~~~rust
 use rustflow::prelude::*;
@@ -74,12 +74,22 @@ Qué sucede:
 - Los scopes poseen efectos, scopes descendientes y callbacks de limpieza. Al disponer un scope se desconectan las dependencias, se cancela trabajo pendiente y se ejecutan los callbacks de limpieza en orden LIFO.
 - Los handles usados después de disponer su runtime/scope producen diagnósticos; los accesos ergonómicos pueden entrar en panic con un mensaje de diagnóstico. Prefiere las variantes <code>try_*</code> cuando debas gestionar el error explícitamente.
 
-## Límites y reglas de uso
+## 6. Memo, refs y contextos tipados
+
+- <code>Scope::memo</code> y <code>use_memo</code> crean un memo eager. Ejecuta el cálculo una vez al crearlo y vuelve a ejecutarlo al vaciarse el scheduler cuando cambian sus dependencias activas. Las dependencias se detectan por lecturas de señales y cambian dinámicamente entre ejecuciones.
+- El memo exige <code>Clone + PartialEq</code>. Compara el resultado nuevo con el último valor confirmado; si son iguales, no notifica a lectores. Dentro de un batch, la lectura devuelve el valor anterior hasta el flush exterior. No es lazy y el cálculo debe ser puro.
+- <code>use_ref</code> crea almacenamiento estable y no reactivo ligado al owner. <code>try_with</code> y <code>try_with_mut</code> permiten acceso mediante un borrow corto; <code>get</code> requiere que <code>T: Clone</code>. Escribir el ref no notifica efectos. Tras disponer el owner, los handles clonados devuelven <code>RuntimeError::RefDisposed</code>.
+- <code>Context&lt;T&gt;</code> es un token de identidad propio, independiente de <code>T</code>. <code>provide_context</code> registra el valor en el owner; <code>use_context</code> busca el provider más cercano caminando por los ancestros. Un provider duplicado en el mismo owner produce error y la ausencia se representa por <code>None</code>.
+- El lookup de contextos no es reactivo por sí mismo. Si el valor es una señal, las lecturas de esa señal sí se rastrean normalmente.
+- <code>try_use_memo</code>, <code>try_use_ref</code>, <code>try_use_context</code> y <code>try_provide_context</code> permiten gestionar errores de owner explícitamente. Los helpers ergonómicos hacen panic con diagnóstico ante un owner/runtime inválido.
+- <code>use_ref</code> es almacenamiento Rust, no una referencia a un nodo DOM. No existe aún un contrato de refs DOM.
+
+## 7. Límites y reglas de uso
 
 - El runtime reactivo utiliza <code>Rc</code> y <code>RefCell</code>: no es <code>Send</code> ni <code>Sync</code>. No compartas las señales locales de un runtime entre threads.
-- Crea un runtime y scopes locales por render de servidor; no guardes estado reactivo de una petición en un catálogo compartido.
-- Los efectos y la limpieza son síncronos. No se garantiza el seguimiento de dependencias a través de <code>await</code>.
-- Las APIs <code>use_memo</code>, <code>use_ref</code> y <code>use_context</code> siguen pendientes. No inventes equivalentes ni asumas compatibilidad semántica con React.
+- Crea un runtime y scopes locales por render de servidor; no guardes estado reactivo ni valores de provider de una petición en un catálogo compartido.
+- Los efectos y la limpieza son síncronos. No se garantiza el seguimiento de dependencias a través de <code>await</code>; no existe API de recursos async ni loading boundary.
+- No hay ErrorBoundary de componentes. Los errores iniciales y SSR se propagan; el renderer reactivo del navegador conserva el último rango bueno y expone el último error mediante <code>take_error</code>. Un panic de handler no tiene aislamiento UI garantizado.
 - La interpolación automática se aplica al identificador de señal reconocido; expresiones arbitrarias que lean señales requieren una región dinámica explícita con <code>@dynamic</code>.
 - La actualización de la UI está cubierta por el runtime de navegador del proyecto. El runtime de bajo nivel, por sí solo, no muta el DOM.
 

@@ -149,14 +149,15 @@ La limpieza es síncrona y ocurre al volver a evaluar/limpiar efectos según su 
 
 ## Límites actuales
 
-- <code>use_memo</code>, <code>use_ref</code> y <code>use_context</code> todavía no existen.
-- No se usan reglas de hooks por orden de llamada y no se promete compatibilidad con React.
+- <code>use_memo</code>, <code>use_ref</code> y los contextos tipados están incorporados en la rama Phase 7.2, pendientes de validación CI y merge.
+- Los nuevos helpers se ejecutan en el setup owner-scoped; no son hooks posicionales ni ofrecen compatibilidad semántica con React.
+- <code>use_ref</code> solo es almacenamiento Rust no reactivo; las referencias a elementos DOM siguen pendientes.
 - La macro acepta un subconjunto intencional de tipos de props y de expresiones de vista.
 - Expresiones arbitrarias que lean señales necesitan una región dinámica explícita.
 - El render SSR no conecta automáticamente listeners de navegador. La hidratación es optativa y debe configurarse explícitamente.
 - El runtime es pre-1.0 y no debe considerarse API estable.
 
-Para recorrer el caso de uso de UI completo desde el navegador, sigue el [tutorial de interfaz reactiva de tareas](/tutorials/reactive-todo/). El [catálogo de ejemplos](/reference/examples/) relaciona cada guía con el ejecutable correspondiente.
+Para profundizar en [contextos, listas keyed, fragments, refs y formularios controlados](/guides/ui-foundations/), sigue esa guía; para recorrer una UI ejecutable, consulta el [tutorial de interfaz reactiva de tareas](/tutorials/reactive-todo/). El [catálogo de ejemplos](/reference/examples/) relaciona cada guía con el ejecutable correspondiente.
 
 ## Ejemplo y pruebas de referencia
 

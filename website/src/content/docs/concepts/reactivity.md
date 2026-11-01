@@ -103,6 +103,38 @@ La limpieza es síncrona. No asumas que el runtime cancela automáticamente tare
 
 En cada ejecución correcta de un efecto, las lecturas de señales determinan las dependencias activas. Si una rama deja de leer una señal, esa dependencia anterior se elimina. Las actualizaciones se programan en orden FIFO y los efectos pendientes se deduplican durante el vaciado. Un límite de ejecuciones ayuda a detectar ciclos que no convergen.
 
+
+## 6. Memo, refs y contexts tipados
+
+### use_memo
+
+<code>use_memo</code> calcula un valor derivado de señales y reutiliza la última salida. Se ejecuta inmediatamente durante el setup, registra las señales leídas y vuelve a calcularse cuando el scheduler procesa una invalidación. La dependencia es dinámica: una señal que deje de leerse en la última ejecución deja de invalidar el memo. El resultado requiere <code>Clone + PartialEq</code>; si dos salidas son iguales, los consumidores no reciben una notificación.
+
+~~~rust
+#[rustflow::component]
+fn CartLine(price: i32, quantity: i32) -> impl IntoView {
+    let price = signal(price);
+    let quantity = signal(quantity);
+    let total = use_memo(move || price.get() * quantity.get());
+
+    rustflow::view! {
+        <output>"Total: " {total}</output>
+    }
+}
+~~~
+
+El memo es eager, no lazy. Dentro de un batch lee el último resultado confirmado hasta el flush exterior. No uses el cálculo para efectos secundarios. El cálculo inicial que hace panic limpia el efecto recién creado y propaga el panic; un panic de recomputación se propaga bajo la política normal del runtime.
+
+### use_ref
+
+<code>use_ref</code> guarda un valor estable ligado al owner sin notificar el scheduler al cambiarlo. Usa <code>try_with</code>/<code>try_with_mut</code> para acceder con un borrow corto, o <code>get</code> cuando el valor implementa <code>Clone</code>. El valor se destruye al disponer el owner y los handles clonados quedan inválidos. Esto todavía no es una referencia a un elemento DOM.
+
+### Context y providers
+
+Crea un token <code>Context&lt;T&gt;</code> compartido por el módulo que define provider y consumer. La identidad del token es única y no se deriva solo del tipo almacenado. <code>provide_context</code> registra el valor en el owner activo; <code>use_context</code> busca primero en el owner consumidor y luego en los ancestros. Si no existe provider, devuelve <code>None</code>; si necesitas diferenciar fallos de owner, usa <code>try_use_context</code>.
+
+El lookup de contexto no es reactivo. Para propagar un valor cambiante, usa <code>Context&lt;Signal&lt;T&gt;&gt;</code> y lee la señal en el consumidor. Los valores se guardan en el árbol de owners, no en estado global.
+
 ## APIs disponibles y pendientes
 
 | API | Estado y alcance |
@@ -112,7 +144,9 @@ En cada ejecución correcta de un efecto, las lecturas de señales determinan la
 | <code>use_effect(callback)</code> | Disponible con seguimiento de dependencias y propiedad del scope. |
 | <code>on_cleanup(callback)</code> | Disponible para limpieza del scope propietario. |
 | <code>Runtime::new/signal/effect/batch</code> | API de bajo nivel con ciclo de vida explícito. |
-| <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> | Todavía no implementados. |
+| <code>use_memo</code> | Implementado en la rama Phase 7.2; pendiente de CI/merge. | Eager, dependencias dinámicas y comparación <code>PartialEq</code>. |
+| <code>use_ref</code> | Implementado en la rama Phase 7.2; pendiente de CI/merge. | Almacenamiento no reactivo owner-scoped; refs DOM aún pendientes. |
+| <code>Context&lt;T&gt;</code>, <code>provide_context</code>, <code>use_context</code> | Implementado en la rama Phase 7.2; pendiente de CI/merge. | Identidad por token, nearest provider y ausencia explícita <code>None</code>. |
 | Efectos asíncronos / tracking a través de <code>await</code> | No soportados por el runtime actual. |
 
 ## Casos de uso y cuándo no usarlo

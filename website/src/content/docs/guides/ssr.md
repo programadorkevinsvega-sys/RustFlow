@@ -118,6 +118,14 @@ La navegación cliente debe instalarse solo después de que el montaje/hidrataci
 
 Consulta [Navegación cliente y formularios](/guides/navigation/) para los criterios de interceptación, History API, formularios GET opt-in y casos que mantienen el envío HTML nativo.
 
+## Compatibilidad de memo, refs y contexts
+
+Los memos y providers se guardan en el scope/Runtime que participa en el render. Para SSR concurrente, crea estado owner/runtime por solicitud; no compartas señales ni valores contextuales de una petición en el catálogo compartido. El token <code>Context&lt;T&gt;</code> puede ser compartido porque solo identifica el tipo lógico de contexto, pero los valores se almacenan dentro del árbol de owners.
+
+<code>use_ref</code> representa almacenamiento Rust no reactivo. No crea un DOM handle durante SSR y no debe usarse para fabricar referencias de browser en el servidor. Las referencias DOM requieren un ciclo de vida separado de montaje/hidratación y permanecen pendientes.
+
+La hidratación sigue siendo opt-in y exige que el árbol cliente coincida con los marcadores y nodos SSR admitidos. Los cambios de Phase 7.2 no hacen que un contexto o memo global se serialice automáticamente ni añaden recursos asíncronos.
+
 ## Errores frecuentes
 
 - **Usar un fragmento como si fuera un documento:** utiliza <code>render_to_string</code> para fragmentos y <code>html_document</code>/<code>HtmlPage</code> para una respuesta completa.

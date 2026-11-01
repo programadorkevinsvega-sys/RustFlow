@@ -171,6 +171,7 @@ pub fn start() -> Result<(), JsValue> {
             let input_value = runtime.signal(String::from("Ada")).map_err(display_error)?;
             let input_for_event = input_value.clone();
             let value_for_output = input_value.clone();
+            let value_for_input = input_value.clone();
             let reverse_order = runtime.signal(false).map_err(display_error)?;
             let reverse_for_list = reverse_order.clone();
             let reverse_for_button = reverse_order.clone();
@@ -214,6 +215,7 @@ pub fn start() -> Result<(), JsValue> {
                 move || {
                     let input_for_event = input_for_event.clone();
                     let value_for_output = value_for_output.clone();
+                    let value_for_input = value_for_input.clone();
                     let reverse_for_button = reverse_for_button.clone();
                     let show_for_button = show_for_button.clone();
                     rustflow::view! {
@@ -223,7 +225,7 @@ pub fn start() -> Result<(), JsValue> {
                                 <input
                                     id="hydration-input"
                                     aria-label="Name"
-                                    prop:value="Ada"
+                                    prop:value={value_for_input.get()}
                                     on:input={move |payload: EventPayload| {
                                         input_for_event.set(payload.value.unwrap_or_default());
                                     }}

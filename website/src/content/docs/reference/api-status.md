@@ -15,8 +15,12 @@ Esta página es un índice de disponibilidad, no una promesa de compatibilidad e
 | Macro <code>view!</code> | Disponible | Gramática deliberadamente restringida y errores tipados. |
 | Macro <code>#[rustflow::component]</code> | Disponible | Subconjunto de tipos de props y callbacks tipados. |
 | Eventos DOM, reconciliación y listas keyed | Disponible en browser/WASM | Las pruebas E2E validan los casos implementados. |
-| <code>use_memo</code>, <code>use_ref</code>, <code>use_context</code> | Pendiente | No inventes APIs equivalentes en ejemplos. |
-| Tracking reactivo a través de <code>await</code> | No soportado | Los efectos actuales son síncronos. |
+| <code>use_memo</code> | Implementado en la rama Phase 7.2; pendiente de CI/merge | Memo eager, dependencias dinámicas y comparación de salida <code>PartialEq</code>. |
+| <code>use_ref</code> | Implementado en la rama Phase 7.2; pendiente de CI/merge | Storage no reactivo ligado al owner; DOM refs pendientes. |
+| <code>Context&lt;T&gt;</code>, <code>provide_context</code>, <code>use_context</code> | Implementado en la rama Phase 7.2; pendiente de CI/merge | Token con identidad propia y resolución del provider más cercano. |
+| Tracking reactivo a través de <code>await</code> | No soportado | Los efectos actuales son síncronos; no hay Resource/Suspense/loading boundary. |
+| Referencias seguras a nodos DOM | Pendiente | <code>use_ref</code> almacena valores Rust; no expone elementos del renderer. |
+| Error boundaries de componentes | No soportado | Los errores iniciales/SSR se propagan; el DOM reactivo expone <code>take_error</code> al mantener el último rango bueno. |
 
 ## HTTP y servidor
 

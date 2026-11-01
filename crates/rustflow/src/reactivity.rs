@@ -1455,6 +1455,18 @@ where
     }
 }
 
+impl<T> rustflow_view::IntoView for Memo<T>
+where
+    T: Clone + PartialEq + rustflow_view::IntoView + 'static,
+{
+    fn into_view(self) -> Result<rustflow_view::View, rustflow_view::ViewError> {
+        let memo = self;
+        Ok(rustflow_view::View::dynamic(move || {
+            memo.get().into_view()
+        }))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
