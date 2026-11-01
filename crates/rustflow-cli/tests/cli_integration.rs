@@ -965,6 +965,7 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
         "README.md",
         ".env.example",
         "src/main.rs",
+        "src/models/category.rs",
         "src/models/product.rs",
         "migrations/sqlite/20261031010001_create_products.sql",
         "migrations/postgres/20261031010002_create_products.sql",
@@ -979,6 +980,7 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
 
     for path in [
         "src/main.rs",
+        "src/models/category.rs",
         "src/models/product.rs",
         "src/models/mod.rs",
         "src/bin/migrate.rs",
@@ -1002,11 +1004,17 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
     assert!(generated_main.contains("route_authorized"));
     assert!(generated_main.contains("CsrfProtection"));
     assert!(generated_main.contains("html_document"));
+    assert!(generated_main.contains("validated_query::<ProductListQuery>"));
+    assert!(generated_main.contains("load_one"));
     assert!(!generated_main.contains("sqlx::query("));
 
     let generated_entity = fs::read_to_string(project.join("src/models/product.rs")).unwrap();
     assert!(generated_entity.contains("ModelDiagnostics"));
     assert!(generated_entity.contains("DeriveEntityModel"));
+    assert!(generated_entity.contains("CategoryId"));
+    assert!(generated_entity.contains("belongs_to"));
+    let generated_category = fs::read_to_string(project.join("src/models/category.rs")).unwrap();
+    assert!(generated_category.contains("has_many"));
     let generated_manifest = fs::read_to_string(project.join("Cargo.toml")).unwrap();
     assert!(generated_manifest.contains("serde = { version = \"1\", features = [\"derive\"] }"));
 
