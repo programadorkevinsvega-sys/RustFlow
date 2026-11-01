@@ -57,7 +57,7 @@ The runtime did not expose cached derived computations, general owner-scoped mut
 3. **Global context map keyed by type:** rejected. It cannot distinguish two contexts with the same value type and risks cross-request leakage.
 4. **Use <code>TypeId</code> as the sole key:** rejected. Two independent contexts of the same Rust type must remain distinct.
 5. **Expose DOM nodes from <code>rustflow-view</code>:** rejected. It couples a target-independent model to browser APIs and cannot represent SSR's lack of a DOM. The separate browser-only handle and lifecycle are specified by [ADR 0025](0025-browser-dom-element-reference-lifecycle.md).
-6. **Use unsafe pointers for refs:** rejected. Safe scoped storage and a separate future DOM-handle design provide clearer invalidation semantics.
+6. **Use unsafe pointers for refs:** rejected. Safe scoped storage is used for Rust values; browser nodes use the separately specified mount lifecycle in [ADR 0025](0025-browser-dom-element-reference-lifecycle.md).
 
 ## Consequences
 
