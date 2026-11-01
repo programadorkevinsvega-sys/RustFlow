@@ -1,6 +1,6 @@
 # ADR 0020: SQL ORM architecture, foundation and model contract
 
-- Status: Accepted with Phase 6.7.1 (PR #58, merge commit `36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1`); Phase 6.7.2 accepted and merged in PR #59 (merge commit `8d387943d5f6ccb4d3f33ba3708311442e238c5f`); Phase 6.7.4 accepted and merged in PR #62 (merge commit `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`). Phase 6.7.5 generated CRUD application accepted in PR #64 (merge commit `edd665ad452c769c78ba8190c233e349a44b054a`); global Phase 6.7 quality/compatibility gate 6.7.6 remains open.
+- Status: Accepted with Phase 6.7.1 (PR #58, merge commit `36c7d43652d41b3bf92e60cc3ad02405bbfdb1a1`); Phase 6.7.2 accepted and merged in PR #59 (merge commit `8d387943d5f6ccb4d3f33ba3708311442e238c5f`); Phase 6.7.4 accepted and merged in PR #62 (merge commit `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`). Phase 6.7.5 generated CRUD application accepted in PR #64 (merge commit `edd665ad452c769c78ba8190c233e349a44b054a`); Phase 6.7.6 quality/compatibility gate accepted in PR #66 (merge commit `6046ae7ca60843d145476177e698162b57939c68`), closing Phase 6.7 on 2026-11-01. The ORM/ODM APIs remain experimental and pre-1.0.
 - Phase: 6.7.1 — Model contract and architecture.
 - Related: ADR 0016 (SQLx pools and migrations), ADR 0017 (MySQL/MariaDB driver), ADR 0018 (MongoDB document adapter), ADR 0019 (database support matrix), [ORM model contract](../ORM_MODEL_CONTRACT.md).
 
