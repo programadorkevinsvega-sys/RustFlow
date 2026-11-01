@@ -44,7 +44,9 @@ static NEXT_CONTEXT_ID: AtomicU32 = AtomicU32::new(1);
 fn next_context_id() -> ContextId {
     loop {
         let current = NEXT_CONTEXT_ID.load(Ordering::Relaxed);
-        let next = current.checked_add(1).expect("RustFlow context identity space exhausted");
+        let next = current
+            .checked_add(1)
+            .expect("RustFlow context identity space exhausted");
         if NEXT_CONTEXT_ID
             .compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed)
             .is_ok()
@@ -2305,7 +2307,6 @@ mod tests {
         owner.dispose().unwrap();
     }
 
-
     #[test]
     fn failed_initial_memo_computation_does_not_leave_an_orphan_effect() {
         let runtime = Runtime::new();
@@ -2317,5 +2318,4 @@ mod tests {
         assert!(runtime.inner.borrow().effects.is_empty());
         owner.dispose().unwrap();
     }
-
 }
