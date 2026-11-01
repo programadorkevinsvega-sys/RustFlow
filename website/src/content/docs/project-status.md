@@ -112,7 +112,7 @@ PR #64 se fusionó mediante squash en `main` el 2026-10-31 como `edd665ad452c769
 
 ### Fase 6.7.6 — Calidad y compatibilidad (en desarrollo)
 
-El gate final incorpora pruebas de pool exhaustion con clasificación estable y escrituras concurrentes en los cuatro motores SQL, regresiones para valores que parecen SQL/operadores en filtros ORM/ODM y benchmarks reproducibles de CRUD, bulk, query builder, carga relacional y MongoDB ODM. La rama de validación también amplía la aplicación generada con una relación Category/Product, carga explícita, filtrado tipado y paginación acotada, con pruebas HTTP dirigidas a los cuatro motores SQL. Todo ese trabajo sigue sin aceptación hasta verificar el SHA final en Rust 1.85/stable, CI, revisión de dependencias y documentación. Phase 6.7.5 no cierra la Fase 6.7 global.
+El gate final incorpora pruebas de pool exhaustion con clasificación estable y escrituras concurrentes en los cuatro motores SQL, un contrato aislado de migraciones PostgreSQL up/reapply/down, regresiones para valores que parecen SQL/operadores en filtros ORM/ODM y benchmarks reproducibles de CRUD, bulk, query builder, carga relacional y MongoDB ODM. La rama de validación también amplía la aplicación generada con una relación Category/Product, carga explícita, filtrado tipado y paginación acotada, con pruebas HTTP dirigidas a los cuatro motores SQL. Todo ese trabajo sigue sin aceptación hasta verificar el SHA final en Rust 1.85/stable, CI, revisión de dependencias y documentación. Phase 6.7.5 no cierra la Fase 6.7 global.
 
 ### Matriz rápida: ¿qué puedes hacer?
 
