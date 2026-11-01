@@ -1268,5 +1268,49 @@ mod tests {
             View::component("bad name", [], [], None),
             Err(ViewError::InvalidComponentName(_))
         ));
+
+    #[test]
+    fn node_ref_clones_share_a_typed_target_and_clear_only_matching_nodes() {
+        let node_ref = super::NodeRef::<String>::new();
+        let cloned = node_ref.clone();
+        let binding = node_ref.binding();
+
+        assert_eq!(node_ref.id(), cloned.id());
+        assert!(!node_ref.is_mounted());
+        assert!(binding.attach(String::from("mounted")));
+        assert_eq!(node_ref.get().as_deref(), Some("mounted"));
+        assert_eq!(cloned.get().as_deref(), Some("mounted"));
+
+        assert!(!binding.attach::<u32>(7));
+        assert_eq!(node_ref.get().as_deref(), Some("mounted"));
+        assert!(!binding.clear_if::<String>(|value| value == "different"));
+        assert_eq!(node_ref.get().as_deref(), Some("mounted"));
+        assert!(binding.clear_if::<String>(|value| value == "mounted"));
+        assert!(node_ref.get().is_none());
+        assert!(!node_ref.is_mounted());
+    }
+
+    #[test]
+    fn element_node_ref_binding_is_part_of_view_identity() {
+        let node_ref = super::NodeRef::<String>::new();
+        let cloned = node_ref.clone();
+        let first = super::Element::new("input")
+            .unwrap()
+            .with_node_ref(node_ref)
+            .build();
+        let second = super::Element::new("input")
+            .unwrap()
+            .with_node_ref(cloned)
+            .build();
+        assert_eq!(first, second);
+
+        let different_ref = super::NodeRef::<String>::new();
+        let third = super::Element::new("input")
+            .unwrap()
+            .with_node_ref(different_ref)
+            .build();
+        assert_ne!(first, third);
+    }
+
     }
 }
