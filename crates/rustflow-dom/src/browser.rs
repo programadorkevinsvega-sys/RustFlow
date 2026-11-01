@@ -68,9 +68,17 @@ impl fmt::Display for DomError {
             }
             Self::AlreadyHydrated => write!(f, "this SSR boundary has already been hydrated"),
             Self::InvalidHydrationData => write!(f, "invalid JSON in #rustflow-hydration-data"),
-            Self::NodeRefTypeMismatch => write!(f, "DOM element reference has an incompatible target type"),
-            Self::DuplicateNodeRef => write!(f, "one DOM element reference is bound to multiple elements in the same view"),
-            Self::NodeRefAlreadyMounted => write!(f, "DOM element reference is already attached to another mounted element"),
+            Self::NodeRefTypeMismatch => {
+                write!(f, "DOM element reference has an incompatible target type")
+            }
+            Self::DuplicateNodeRef => write!(
+                f,
+                "one DOM element reference is bound to multiple elements in the same view"
+            ),
+            Self::NodeRefAlreadyMounted => write!(
+                f,
+                "DOM element reference is already attached to another mounted element"
+            ),
         }
     }
 }
@@ -1117,14 +1125,13 @@ impl DomRenderer {
                             return Err(DomError::DuplicateNodeRef);
                         }
                         if let Some(current) = binding.get::<DomElement>() {
-                            let owned_by_current_mount =
-                                currently_mounted.is_some_and(|mounted| {
-                                    mounted.node_refs.iter().any(|old| {
-                                        old.active
-                                            && old.binding.id() == binding.id()
-                                            && same_dom_element(&current, &old.element)
-                                    })
-                                });
+                            let owned_by_current_mount = currently_mounted.is_some_and(|mounted| {
+                                mounted.node_refs.iter().any(|old| {
+                                    old.active
+                                        && old.binding.id() == binding.id()
+                                        && same_dom_element(&current, &old.element)
+                                })
+                            });
                             if !owned_by_current_mount {
                                 return Err(DomError::NodeRefAlreadyMounted);
                             }
@@ -2337,7 +2344,9 @@ impl DomRenderer {
         );
 
         mounted.roots = roots;
-        if let Err(error) = self.reconcile_node_refs(mounted, std::mem::take(&mut resources.node_refs)) {
+        if let Err(error) =
+            self.reconcile_node_refs(mounted, std::mem::take(&mut resources.node_refs))
+        {
             if cleanup_error.is_none() {
                 cleanup_error = Some(error);
             }

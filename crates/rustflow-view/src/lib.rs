@@ -507,7 +507,7 @@ impl<T: 'static> Default for NodeRef<T> {
 /// This is public only so platform adapters in separate crates can manage the
 /// binding without introducing a dependency from the view model to a renderer.
 #[doc(hidden)]
- #[derive(Clone)]
+#[derive(Clone)]
 pub struct NodeRefBinding {
     state: Rc<NodeRefState>,
 }
@@ -583,7 +583,6 @@ impl NodeRefBinding {
         matches
     }
 }
-
 
 /// An event name and its callback.
 #[derive(Debug, Clone, PartialEq)]
@@ -1268,6 +1267,7 @@ mod tests {
             View::component("bad name", [], [], None),
             Err(ViewError::InvalidComponentName(_))
         ));
+    }
 
     #[test]
     fn node_ref_clones_share_a_typed_target_and_clear_only_matching_nodes() {
@@ -1310,7 +1310,5 @@ mod tests {
             .with_node_ref(different_ref)
             .build();
         assert_ne!(first, third);
-    }
-
     }
 }

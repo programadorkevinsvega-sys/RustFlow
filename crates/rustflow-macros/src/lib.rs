@@ -608,7 +608,11 @@ impl Parser {
             attributes.push(self.parse_attribute()?);
         }
 
-        if component && attributes.iter().any(|attribute| attribute.kind == AttributeKind::NodeRef) {
+        if component
+            && attributes
+                .iter()
+                .any(|attribute| attribute.kind == AttributeKind::NodeRef)
+        {
             return Err(self.error(
                 "DOM node refs can only be attached to native elements, not component descriptors",
                 open.span(),
@@ -685,8 +689,10 @@ impl Parser {
         } else {
             None
         };
-        if matches!(kind, AttributeKind::Event | AttributeKind::Key | AttributeKind::NodeRef)
-            && value.is_none()
+        if matches!(
+            kind,
+            AttributeKind::Event | AttributeKind::Key | AttributeKind::NodeRef
+        ) && value.is_none()
         {
             return Err(self.error("this attribute requires a value expression in braces", span));
         }
