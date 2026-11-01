@@ -1,6 +1,9 @@
 use std::{
     net::SocketAddr,
-    sync::{Arc, atomic::{AtomicUsize, Ordering}},
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
