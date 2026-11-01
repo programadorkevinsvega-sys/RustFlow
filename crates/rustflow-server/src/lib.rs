@@ -1724,7 +1724,15 @@ impl Application {
         F: Future<Output = ()> + Send + 'static,
     {
         let shutdown_timeout = self.config.shutdown_timeout;
-        let router = self.into_router(BindKind::Plain)?;
+        let (request_shutdown_tx, request_shutdown_rx) = tokio::sync::watch::channel(false);
+        let in_flight_requests = Arc::new(InFlightRequests::new());
+        let router = self.into_router_with_cancellation(
+            BindKind::Plain,
+            Some(RequestCancellation {
+                shutdown: request_shutdown_rx,
+                in_flight: Arc::clone(&in_flight_requests),
+            }),
+        )?;
         let (shutdown_started_tx, shutdown_started_rx) = tokio::sync::oneshot::channel();
         let shutdown_signal = async move {
             shutdown.await;
@@ -1736,7 +1744,14 @@ impl Application {
         )
         .with_graceful_shutdown(shutdown_signal)
         .into_future();
-        await_graceful_shutdown(server, shutdown_started_rx, shutdown_timeout).await
+        await_graceful_shutdown(
+            server,
+            shutdown_started_rx,
+            shutdown_timeout,
+            request_shutdown_tx,
+            in_flight_requests,
+        )
+        .await
     }
 
     /// Serve HTTPS on a caller-created listener using rustls.
@@ -1760,7 +1775,15 @@ impl Application {
         F: Future<Output = ()> + Send + 'static,
     {
         let shutdown_timeout = self.config.shutdown_timeout;
-        let router = self.into_router(BindKind::Tls)?;
+        let (request_shutdown_tx, request_shutdown_rx) = tokio::sync::watch::channel(false);
+        let in_flight_requests = Arc::new(InFlightRequests::new());
+        let router = self.into_router_with_cancellation(
+            BindKind::Tls,
+            Some(RequestCancellation {
+                shutdown: request_shutdown_rx,
+                in_flight: Arc::clone(&in_flight_requests),
+            }),
+        )?;
         let (shutdown_started_tx, shutdown_started_rx) = tokio::sync::oneshot::channel();
         let shutdown_signal = async move {
             shutdown.await;
@@ -1775,10 +1798,25 @@ impl Application {
         )
         .with_graceful_shutdown(shutdown_signal)
         .into_future();
-        await_graceful_shutdown(server, shutdown_started_rx, shutdown_timeout).await
+        await_graceful_shutdown(
+            server,
+            shutdown_started_rx,
+            shutdown_timeout,
+            request_shutdown_tx,
+            in_flight_requests,
+        )
+        .await
     }
 
     fn into_router(self, bind: BindKind) -> Result<Router, ServerError> {
+        self.into_router_with_cancellation(bind, None)
+    }
+
+    fn into_router_with_cancellation(
+        self,
+        bind: BindKind,
+        request_cancellation: Option<RequestCancellation>,
+    ) -> Result<Router, ServerError> {
         self.config.validate_for_bind(bind)?;
         let Self {
             routes,
@@ -1800,15 +1838,27 @@ impl Application {
                     get(readiness_endpoint).with_state(readiness_checks),
                 );
         }
-        Ok(router
+
+        let router = router
             .layer(Extension(ConnectionSecure(matches!(bind, BindKind::Tls))))
             .layer(GlobalConcurrencyLimitLayer::new(
                 config.max_concurrent_requests,
+            ));
+        let router = if let Some(request_cancellation) = request_cancellation {
+            router.layer(middleware::from_fn_with_state(
+                request_cancellation,
+                cancel_in_flight_requests,
             ))
-            .layer(middleware::from_fn_with_state(
-                config.error_pages,
-                request_metadata_and_error_pages,
-            )))
+        } else {
+            router
+        };
+
+        // Keep request metadata outside cancellation so shutdown responses retain
+        // normal request correlation headers and configured error-page behavior.
+        Ok(router.layer(middleware::from_fn_with_state(
+            config.error_pages,
+            request_metadata_and_error_pages,
+        )))
     }
 }
 
@@ -1818,10 +1868,87 @@ impl Default for Application {
     }
 }
 
+#[derive(Clone)]
+struct RequestCancellation {
+    shutdown: tokio::sync::watch::Receiver<bool>,
+    in_flight: Arc<InFlightRequests>,
+}
+
+struct InFlightRequests {
+    count: tokio::sync::watch::Sender<usize>,
+}
+
+impl InFlightRequests {
+    fn new() -> Self {
+        let (count, receiver) = tokio::sync::watch::channel(0usize);
+        drop(receiver);
+        Self { count }
+    }
+
+    fn enter(self: &Arc<Self>) -> InFlightRequestGuard {
+        self.count.send_modify(|active| *active += 1);
+        InFlightRequestGuard(Arc::clone(self))
+    }
+
+    async fn wait_until_empty(&self) {
+        let mut count = self.count.subscribe();
+        loop {
+            if *count.borrow_and_update() == 0 {
+                return;
+            }
+            if count.changed().await.is_err() {
+                return;
+            }
+        }
+    }
+
+    fn leave(&self) {
+        self.count.send_modify(|active| {
+            debug_assert!(*active > 0);
+            *active = active.saturating_sub(1);
+        });
+    }
+}
+
+struct InFlightRequestGuard(Arc<InFlightRequests>);
+
+impl Drop for InFlightRequestGuard {
+    fn drop(&mut self) {
+        self.0.leave();
+    }
+}
+
+async fn cancel_in_flight_requests(
+    State(state): State<RequestCancellation>,
+    request: AxumRequest,
+    next: AxumNext,
+) -> AxumResponse {
+    let _guard = state.in_flight.enter();
+    let mut shutdown = state.shutdown.clone();
+
+    if *shutdown.borrow() {
+        return operational_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            r#"{"status":"shutting_down"}"#,
+        );
+    }
+
+    tokio::select! {
+        biased;
+        _ = shutdown.changed() => operational_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            r#"{"status":"shutting_down"}"#,
+        ),
+        response = next.run(request) => response,
+    }
+}
+
 async fn await_graceful_shutdown<Fut>(
     server: Fut,
     mut shutdown_started: tokio::sync::oneshot::Receiver<()>,
     shutdown_timeout: Duration,
+    request_shutdown: tokio::sync::watch::Sender<bool>,
+    in_flight_requests: Arc<InFlightRequests>,
 ) -> Result<(), ServerError>
 where
     Fut: Future<Output = std::io::Result<()>>,
@@ -1832,7 +1959,11 @@ where
         _ = &mut shutdown_started => {
             match tokio::time::timeout(shutdown_timeout, &mut server).await {
                 Ok(result) => result.map_err(ServerError::Io),
-                Err(_) => Err(ServerError::ShutdownTimedOut(shutdown_timeout)),
+                Err(_) => {
+                    request_shutdown.send_replace(true);
+                    in_flight_requests.wait_until_empty().await;
+                    Err(ServerError::ShutdownTimedOut(shutdown_timeout))
+                }
             }
         }
     }
