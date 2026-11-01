@@ -417,8 +417,7 @@ async fn mongodb_typed_odm_crud_bulk_filters_updates_projection_and_aggregation(
         .expect("query operator-looking input as a scalar");
     assert_eq!(exact_hostile_matches.len(), 1);
     assert_eq!(
-        exact_hostile_matches[0].id,
-        hostile_document.id,
+        exact_hostile_matches[0].id, hostile_document.id,
         "a scalar string must not become a MongoDB operator expression"
     );
     repository
