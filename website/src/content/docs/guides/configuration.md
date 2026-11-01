@@ -105,7 +105,7 @@ RustFlow ya emite spans/events estructurados para peticiones HTTP, incluidos req
 | Drenaje máximo de graceful shutdown | 30 s |
 | Espera máxima del reporter | 250 ms |
 
-El timeout de shutdown se modifica con <code>ServerConfig::with_shutdown_timeout</code>. Al vencer, el servidor devuelve <code>ServerError::ShutdownTimedOut</code> y cancela el trabajo restante después de intentar drenar las peticiones activas.
+El timeout de shutdown se modifica con <code>ServerConfig::with_shutdown_timeout</code>. Al vencer, RustFlow cancela los futures de los handlers activos (también los que esperan un cupo de concurrencia), espera a que se liberen sus guardas de petición y devuelve <code>ServerError::ShutdownTimedOut</code>.
 
 Los endpoints <code>/health/live</code> y <code>/health/ready</code> se registran explícitamente mediante <code>Application::enable_health_endpoints()</code> o <code>with_health_endpoints</code>. Readiness solo consulta los checks obligatorios que la aplicación registre mediante <code>readiness_check</code>; cada check tiene su propio timeout y los fallos se muestran como una respuesta genérica 503.
 
