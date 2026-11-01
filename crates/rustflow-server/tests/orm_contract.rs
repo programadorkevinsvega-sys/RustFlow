@@ -21,6 +21,23 @@ struct NotePreview {
     title: String,
 }
 
+mod concurrent_items {
+    use rustflow_server::sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "rustflow_phase676_concurrent_items")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        pub token: String,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 mod entities {
     pub mod account {
         use rustflow_server::sea_orm::entity::prelude::*;
@@ -1877,6 +1894,99 @@ async fn exercise_orm(database: &DatabasePool) {
         .delete_by_id(hostile_account.id)
         .await
         .expect("remove query-safety fixture");
+}
+
+async fn assert_concurrent_writes_are_isolated_and_complete(url: &str) {
+    let maximum_connections = if url.starts_with("sqlite:") { 1 } else { 4 };
+    let config = DatabaseConfig::new(url)
+        .expect("valid concurrent-write test URL")
+        .with_max_connections(maximum_connections)
+        .expect("valid concurrent-write pool size");
+    let database = DatabasePool::connect(&config)
+        .await
+        .expect("connect concurrent-write test database");
+
+    database
+        .execute_raw("DROP TABLE IF EXISTS rustflow_phase676_concurrent_items", [])
+        .await
+        .expect("remove stale concurrent-write fixture");
+    let create_table = if url.starts_with("sqlite:") {
+        "CREATE TABLE rustflow_phase676_concurrent_items (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE)"
+    } else if url.starts_with("postgres://") || url.starts_with("postgresql://") {
+        "CREATE TABLE rustflow_phase676_concurrent_items (id BIGSERIAL PRIMARY KEY, token TEXT NOT NULL UNIQUE)"
+    } else {
+        "CREATE TABLE rustflow_phase676_concurrent_items (id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, token VARCHAR(255) NOT NULL UNIQUE) ENGINE=InnoDB"
+    };
+    database
+        .execute_raw(create_table, [])
+        .await
+        .expect("create concurrent-write fixture");
+
+    let writes = (0..32).map(|index| {
+        let database = database.clone();
+        tokio::spawn(async move {
+            database
+                .entity::<concurrent_items::Entity>()
+                .insert(concurrent_items::ActiveModel {
+                    token: Set(format!("concurrent-{index}@phase676.test")),
+                    ..Default::default()
+                })
+                .await
+        })
+    });
+
+    for write in writes {
+        write
+            .await
+            .expect("concurrent writer task must not panic")
+            .expect("concurrent ORM write must succeed");
+    }
+
+    let repository = database.entity::<concurrent_items::Entity>();
+    let rows = repository
+        .all(repository.select())
+        .await
+        .expect("read concurrent-write results");
+    assert_eq!(
+        rows.len(),
+        32,
+        "all distinct concurrent writes must be visible"
+    );
+
+    database
+        .execute_raw("DROP TABLE rustflow_phase676_concurrent_items", [])
+        .await
+        .expect("drop concurrent-write fixture");
+    database.close().await;
+}
+
+#[tokio::test]
+async fn sqlite_concurrent_writes_complete_without_lost_rows() {
+    assert_concurrent_writes_are_isolated_and_complete("sqlite::memory:").await;
+}
+
+#[tokio::test]
+async fn postgres_concurrent_writes_complete_without_lost_rows() {
+    let Some(url) = integration_url("RUSTFLOW_TEST_DATABASE_URL") else {
+        return;
+    };
+    assert_concurrent_writes_are_isolated_and_complete(&url).await;
+}
+
+#[tokio::test]
+async fn mysql_concurrent_writes_complete_without_lost_rows() {
+    let Some(url) = integration_url("RUSTFLOW_TEST_MYSQL_URL") else {
+        return;
+    };
+    assert_concurrent_writes_are_isolated_and_complete(&url).await;
+}
+
+#[tokio::test]
+async fn mariadb_concurrent_writes_complete_without_lost_rows() {
+    let Some(url) = integration_url("RUSTFLOW_TEST_MARIADB_URL") else {
+        return;
+    };
+    assert_concurrent_writes_are_isolated_and_complete(&url).await;
 }
 
 async fn database_from_url(url: &str) -> DatabasePool {
