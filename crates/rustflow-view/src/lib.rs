@@ -5,8 +5,11 @@
 //! lifecycle contract before emitting markup or mutating a DOM.
 
 use std::{
+    any::{Any, TypeId},
+    cell::RefCell,
     collections::HashSet,
     fmt,
+    marker::PhantomData,
     rc::Rc,
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -410,6 +413,178 @@ impl PartialEq for EventHandler {
     }
 }
 
+/// A typed handle to a mounted target-specific node.
+///
+/// The view model does not know the concrete node type. A platform adapter
+/// attaches its node after a successful mount/hydration and clears it when the
+/// corresponding element is replaced or unmounted. Reads are cloned handles,
+/// never borrowed DOM references.
+pub struct NodeRef<T: 'static> {
+    state: Rc<NodeRefState>,
+    marker: PhantomData<fn() -> T>,
+}
+
+struct NodeRefState {
+    id: u64,
+    value_type: TypeId,
+    value: RefCell<Option<Rc<dyn Any>>>,
+}
+
+impl<T: 'static> Clone for NodeRef<T> {
+    fn clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<T: 'static> fmt::Debug for NodeRef<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NodeRef")
+            .field("id", &self.state.id)
+            .field("mounted", &self.is_mounted())
+            .finish()
+    }
+}
+
+impl<T: 'static> PartialEq for NodeRef<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.state.id == other.state.id
+    }
+}
+
+impl<T: 'static> NodeRef<T> {
+    /// Create an initially empty node reference.
+    pub fn new() -> Self {
+        Self {
+            state: Rc::new(NodeRefState {
+                id: next_id(),
+                value_type: TypeId::of::<T>(),
+                value: RefCell::new(None),
+            }),
+            marker: PhantomData,
+        }
+    }
+
+    /// Return a cloned handle to the mounted node, or `None` before mount/after cleanup.
+    ///
+    /// The node type must implement `Clone`; browser DOM handles do.
+    pub fn get(&self) -> Option<T>
+    where
+        T: Clone,
+    {
+        self.binding().get::<T>()
+    }
+
+    /// Whether a renderer currently has an element attached to this reference.
+    pub fn is_mounted(&self) -> bool {
+        self.state.value.borrow().is_some()
+    }
+
+    /// Return the stable identity used by view reconciliation.
+    pub fn id(&self) -> u64 {
+        self.state.id
+    }
+
+    /// Erase the platform node type for storage in the target-independent view tree.
+    #[doc(hidden)]
+    pub fn binding(&self) -> NodeRefBinding {
+        NodeRefBinding {
+            state: self.state.clone(),
+        }
+    }
+}
+
+impl<T: 'static> Default for NodeRef<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Type-erased node-reference binding stored on an element in the view model.
+///
+/// This is public only so platform adapters in separate crates can manage the
+/// binding without introducing a dependency from the view model to a renderer.
+#[doc(hidden)]
+ #[derive(Clone)]
+pub struct NodeRefBinding {
+    state: Rc<NodeRefState>,
+}
+
+impl fmt::Debug for NodeRefBinding {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NodeRefBinding")
+            .field("id", &self.state.id)
+            .finish()
+    }
+}
+
+impl PartialEq for NodeRefBinding {
+    fn eq(&self, other: &Self) -> bool {
+        self.state.id == other.state.id
+    }
+}
+
+impl NodeRefBinding {
+    /// Stable identity shared by clones of one typed node reference.
+    pub fn id(&self) -> u64 {
+        self.state.id
+    }
+
+    /// Whether this binding was created for the requested target type.
+    pub fn matches_type<T: 'static>(&self) -> bool {
+        self.state.value_type == TypeId::of::<T>()
+    }
+
+    /// Whether an adapter currently has a node attached.
+    pub fn is_attached(&self) -> bool {
+        self.state.value.borrow().is_some()
+    }
+
+    /// Read the currently attached node as a cloneable target handle.
+    pub fn get<T: Clone + 'static>(&self) -> Option<T> {
+        if !self.matches_type::<T>() {
+            return None;
+        }
+        self.state
+            .value
+            .borrow()
+            .as_ref()
+            .and_then(|value| value.clone().downcast::<T>().ok())
+            .map(|value| (*value).clone())
+    }
+
+    /// Attach a platform node if its concrete type matches this typed reference.
+    pub fn attach<T: 'static>(&self, value: T) -> bool {
+        if !self.matches_type::<T>() {
+            return false;
+        }
+        *self.state.value.borrow_mut() = Some(Rc::new(value));
+        true
+    }
+
+    /// Clear the node only when it is still the exact target owned by a mount.
+    ///
+    /// The predicate runs while the current value is borrowed and must not
+    /// attempt to read or mutate this same node reference.
+    pub fn clear_if<T: 'static>(&self, predicate: impl FnOnce(&T) -> bool) -> bool {
+        if !self.matches_type::<T>() {
+            return false;
+        }
+        let mut value = self.state.value.borrow_mut();
+        let matches = value
+            .as_ref()
+            .and_then(|current| current.downcast_ref::<T>())
+            .is_some_and(predicate);
+        if matches {
+            value.take();
+        }
+        matches
+    }
+}
+
+
 /// An event name and its callback.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EventBinding {
@@ -541,6 +716,7 @@ pub struct Element {
     events: Vec<EventBinding>,
     children: Vec<View>,
     key: Option<Key>,
+    node_ref: Option<NodeRefBinding>,
 }
 impl Element {
     /// Create an element after validating its name.
@@ -552,6 +728,7 @@ impl Element {
             events: Vec::new(),
             children: Vec::new(),
             key: None,
+            node_ref: None,
         })
     }
     /// Set ordered children for this element.
@@ -640,6 +817,22 @@ impl Element {
             handler,
         });
         Ok(self)
+    }
+    /// Bind a typed platform node reference to this element.
+    ///
+    /// The reference is empty during view construction and SSR. The browser
+    /// renderer populates it only after a successful mount or hydration, keeps
+    /// it pointed at a compatible live element during updates, and clears it
+    /// when that element is replaced or unmounted. One reference may identify
+    /// only one mounted element at a time.
+    pub fn with_node_ref<T: 'static>(mut self, node_ref: NodeRef<T>) -> Self {
+        self.node_ref = Some(node_ref.binding());
+        self
+    }
+    /// Return this element's optional platform node-reference binding.
+    #[doc(hidden)]
+    pub fn node_ref_binding(&self) -> Option<&NodeRefBinding> {
+        self.node_ref.as_ref()
     }
     /// Attach a stable identity to this element.
     pub fn with_key(mut self, key: impl Into<Key>) -> Self {
