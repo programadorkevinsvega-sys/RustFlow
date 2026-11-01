@@ -544,7 +544,7 @@ Las migraciones de producción deben ejecutarse como un paso coordinado, antes d
 
 ### Verificación de calidad y rendimiento (Phase 6.7.6)
 
-El gate final añade pruebas reproducibles de adquisición agotada del pool y escrituras concurrentes en SQLite, PostgreSQL, MySQL y MariaDB. Las pruebas mantienen ocupada la única conexión disponible, comprueban el timeout y la clasificación `DatabaseErrorKind::Unavailable`, liberan la transacción y verifican que el pool vuelva a funcionar. Otro conjunto de pruebas confirma que cadenas que parecen SQL o expresiones de operador MongoDB siguen tratándose como valores enlazados.
+El gate final añade pruebas reproducibles de adquisición agotada del pool y escrituras concurrentes en SQLite, PostgreSQL, MySQL y MariaDB. Las pruebas mantienen ocupada la única conexión disponible, comprueban el timeout y la clasificación `DatabaseErrorKind::Unavailable`, liberan la transacción y verifican que el pool vuelva a funcionar. Otro conjunto de pruebas confirma que cadenas que parecen SQL o expresiones de operador MongoDB siguen tratándose como valores enlazados. También se ejecuta un contrato PostgreSQL aislado y serial para verificar migraciones forward repetibles, rollback con `.down.sql` y re-aplicación; corre después de la suite general para no interferir con el ledger que usa la app generada.
 
 Para obtener una línea base de rendimiento ejecuta:
 
