@@ -2001,13 +2001,21 @@ async fn dispatch_request(
             identity,
             peer_addr: peer,
         });
-        let middleware = match (middleware_registry.read(), route_middleware.read()) {
-            (Ok(global), Ok(scoped)) => {
-                let mut stack = global.clone();
-                stack.extend(scoped.iter().cloned());
-                Arc::new(stack)
+        // Snapshot the middleware stack in a synchronous scope so no
+        // std::sync::RwLockReadGuard can be held across the reporter await below.
+        let middleware_snapshot = {
+            match (middleware_registry.read(), route_middleware.read()) {
+                (Ok(global), Ok(scoped)) => {
+                    let mut stack = global.clone();
+                    stack.extend(scoped.iter().cloned());
+                    Ok(Arc::new(stack))
+                }
+                _ => Err(()),
             }
-            _ => {
+        };
+        let middleware = match middleware_snapshot {
+            Ok(middleware) => middleware,
+            Err(()) => {
                 tracing::error!("middleware registry is unavailable");
                 report_server_error(
                     error_reporter.clone(),
