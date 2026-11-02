@@ -240,12 +240,12 @@ jobs:
             echo "Reactivity repetition ${run}/3"
             /usr/bin/time -v -o "performance-results/native/reactivity-memory-${run}.txt" \
               cargo bench -p rustflow --bench reactivity \
-              > "performance-results/native/reactivity-${run}.jsonl" 2>&1
+              > "performance-results/native/reactivity-${run}.jsonl"
 
             echo "SSR repetition ${run}/3"
             /usr/bin/time -v -o "performance-results/native/ssr-memory-${run}.txt" \
               cargo bench -p rustflow-ssr --bench rendering \
-              > "performance-results/native/ssr-${run}.jsonl" 2>&1
+              > "performance-results/native/ssr-${run}.jsonl"
           done
 
           RUSTFLOW_BENCH_ITERATIONS=100 RUSTFLOW_BENCH_BULK_SIZE=50 \

@@ -10,7 +10,7 @@ RustFlow incluye benchmarks para observar el coste de su runtime reactivo, el re
 | Suite | Qué ejecuta | Qué no representa |
 |---|---|---|
 | Reactividad | Señales, efectos, dependencias dinámicas, memos, batching, fan-out y limpieza de owners | Actualizaciones del DOM o tiempos del navegador |
-| SSR | Árboles simples, dinámicos, amplios, profundos y listas | Una solicitud HTTP completa o concurrencia |
+| SSR | Árboles simples, dinámicos, amplios, profundos y listas, mediante la API pública render_to_string | Una solicitud HTTP completa o concurrencia; el tiempo incluye la creación y eliminación del Runtime por render |
 | Browser / DOM | WASM real en Chromium, actualizaciones del contador, listas keyed, reordenamiento y eliminación | Una garantía para todos los navegadores |
 | Bundle | WASM y assets de producción emitidos por Vite | Tamaño estimado a partir del código fuente |
 | Inicialización | Desde el inicio de init() WASM hasta que termina el montaje inicial | Tiempo hasta que una aplicación real obtiene datos de red |
@@ -51,6 +51,8 @@ El informe de bundle separa JavaScript, CSS, WASM y otros assets de dist/assets,
 Compara el mismo escenario con igual número de operaciones, muestras, toolchain, sistema operativo, runner y build de producción. Revisa la mediana junto con p90/p95 y la variabilidad: una diferencia pequeña puede ser ruido de planificación, temperatura, carga del runner o compilación.
 
 La inserción de listas del navegador es incremental y mide también la reconciliación que ocurre después de cada alta. No la interpretes como el coste de construir toda la lista en una única operación.
+
+El benchmark SSR invoca render_to_string en cada iteración. Esa API crea y elimina el Runtime en cada llamada, de modo que la medición incluye el ciclo de vida del runtime y la generación del HTML; no es el coste aislado del serializador.
 
 CI conserva los informes como artefactos de cada ejecución. Descarga los artefactos de dos commits para comparar sus archivos JSON/JSONL. Los resultados de runners distintos no constituyen una comparación controlada.
 

@@ -7,13 +7,13 @@ Estado: infraestructura de medición inicial de Phase 8.1. Los números producid
 | Área | Escenarios | Naturaleza |
 |---|---|---|
 | Reactividad | Runtime, creación/lectura/escritura/actualización de señales, efectos, dependencias dinámicas, memos, batching, fan-out de 1 a 1.024 suscriptores, 1.000 señales y limpieza de owners | Microbenchmarks Rust |
-| SSR | Árbol simple, contenido dinámico, árboles anidados, árboles amplios y listas de 100, 1.000 y 10.000 elementos | Renderizado aislado de rustflow-ssr |
+| SSR | Árbol simple, contenido dinámico, árboles anidados, árboles amplios y listas de 100, 1.000 y 10.000 elementos | API pública render_to_string; incluye Runtime::new, scope raíz, render y dispose por llamada |
 | DOM | Actualizaciones del contador, inserciones incrementales en listas keyed de 100 y 1.000 filas, reordenamiento y eliminación | RustFlow WASM ejecutado en Chromium mediante Playwright |
 | Bundle | WASM de entrada y assets de producción emitidos por Vite; JS, CSS, WASM y otros assets | Artefactos reales de vite build |
 | Inicialización | Marca desde el inicio de init() WASM hasta que termina la inicialización y el montaje inicial | Navegador Chromium |
 | Memoria | RSS máximo del proceso de benchmark en Linux, mediante /usr/bin/time -v; observación JS heap opcional de Chromium | Proceso completo / API específica del navegador |
 
-Los benchmarks de reactividad y SSR son mediciones nativas del runtime/modelo de vistas; no representan tiempos del navegador. El benchmark DOM usa el WASM real y elementos DOM reales. El benchmark SSR no es una prueba HTTP completa ni una medición de concurrencia.
+Los benchmarks de reactividad y SSR son mediciones nativas del runtime/modelo de vistas; no representan tiempos del navegador. El benchmark DOM usa el WASM real y elementos DOM reales. Cada render SSR usa la API pública render_to_string, que crea y elimina un Runtime por llamada: por tanto, el tiempo incluye el ciclo de vida del runtime y la generación HTML, no es una medición pura del serializador. El benchmark SSR no es una prueba HTTP completa ni una medición de concurrencia.
 
 ## Ejecutar
 
@@ -94,5 +94,7 @@ Las mediciones de rendimiento no sustituyen pruebas funcionales. Los benchmarks 
 4. Memoria asignada/retendida por operación no está disponible con una herramienta instrumentada bajo la política actual de unsafe_code = forbid; no se sustituye con estimaciones.
 5. Los artefactos CI requieren descarga para comparación; no se mantiene todavía una serie histórica comprometida en Git.
 6. No se ejecutan optimizaciones en esta infraestructura. Solo se justifican después de perfilar un cuello de botella y comparar el mismo caso antes/después.
+
+El tiempo de Runtime::new también se mide como microoperación en la suite de reactividad, pero no se resta del tiempo SSR: no se hace una descomposición artificial del coste público por render.
 
 Los puntos pendientes deben permanecer abiertos en ROADMAP.md; crear infraestructura de benchmark no basta para declarar completa Phase 8.1.
