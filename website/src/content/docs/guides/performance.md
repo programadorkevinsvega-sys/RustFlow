@@ -11,7 +11,7 @@ RustFlow incluye benchmarks para observar el coste de su runtime reactivo, el re
 |---|---|---|
 | Reactividad | Señales, efectos, dependencias dinámicas, memos, batching, fan-out y limpieza de owners | Actualizaciones del DOM o tiempos del navegador |
 | SSR | Árboles simples, dinámicos, amplios, profundos y listas, mediante la API pública render_to_string | Una solicitud HTTP completa o concurrencia; el tiempo incluye la creación y eliminación del Runtime por render |
-| Browser / DOM | WASM real en Chromium, actualizaciones del contador, listas keyed, reordenamiento y eliminación | Una garantía para todos los navegadores |
+| Browser / DOM | WASM real en Chromium, inserción incremental de 100 filas, montaje inicial de listas keyed de 100 y 1.000 filas, reordenamiento y eliminación | Una garantía para todos los navegadores |
 | Bundle | WASM y assets de producción emitidos por Vite | Tamaño estimado a partir del código fuente |
 | Inicialización | Desde el inicio de init() WASM hasta que termina el montaje inicial | Tiempo hasta que una aplicación real obtiene datos de red |
 
@@ -38,7 +38,7 @@ npx playwright install chromium
 npm run bench:browser
 ~~~
 
-La suite de Playwright inicia la aplicación compilada con Vite Preview y opera sobre el DOM real mediante los eventos del demo RustFlow. Incluye listas de 100 y 1.000 filas; la lista de 10.000 filas es un escenario de estrés opt-in:
+La suite de Playwright inicia la aplicación compilada con Vite Preview y opera sobre el DOM real mediante los eventos del demo RustFlow. Mide cinco muestras de inserción incremental de 100 filas y el montaje inicial de listas keyed de 100 y 1.000 filas. Para esos montajes iniciales utiliza el parámetro de benchmark `?bench_list=N`, que precarga los datos en el runtime antes del primer render; así no confunde el coste de montar una lista grande con el coste de miles de altas consecutivas. La lista inicial de 10.000 filas es un escenario de estrés opt-in:
 
 ~~~bash
 RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 npm run bench:browser
@@ -50,7 +50,7 @@ El informe de bundle separa JavaScript, CSS, WASM y otros assets de dist/assets,
 
 Compara el mismo escenario con igual número de operaciones, muestras, toolchain, sistema operativo, runner y build de producción. Revisa la mediana junto con p90/p95 y la variabilidad: una diferencia pequeña puede ser ruido de planificación, temperatura, carga del runner o compilación.
 
-La inserción de listas del navegador es incremental y mide también la reconciliación que ocurre después de cada alta. No la interpretes como el coste de construir toda la lista en una única operación.
+La inserción incremental de 100 filas mide también la reconciliación que ocurre después de cada alta. Las mediciones de montaje inicial de 100 y 1.000 filas (y 10.000 en modo opt-in) son escenarios distintos: incluyen la inicialización WASM y el primer montaje reactivo del DOM, no una secuencia de altas individuales.
 
 El benchmark SSR invoca render_to_string en cada iteración. Esa API crea y elimina el Runtime en cada llamada, de modo que la medición incluye el ciclo de vida del runtime y la generación del HTML; no es el coste aislado del serializador.
 

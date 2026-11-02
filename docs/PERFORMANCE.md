@@ -8,7 +8,7 @@ Estado: infraestructura de medición inicial de Phase 8.1. Los números producid
 |---|---|---|
 | Reactividad | Runtime, creación/lectura/escritura/actualización de señales, efectos, dependencias dinámicas, memos, batching, fan-out de 1 a 1.024 suscriptores, 1.000 señales y limpieza de owners | Microbenchmarks Rust |
 | SSR | Árbol simple, contenido dinámico, árboles anidados, árboles amplios y listas de 100, 1.000 y 10.000 elementos | API pública render_to_string; incluye Runtime::new, scope raíz, render y dispose por llamada |
-| DOM | Actualizaciones del contador, inserciones incrementales en listas keyed de 100 y 1.000 filas, reordenamiento y eliminación | RustFlow WASM ejecutado en Chromium mediante Playwright |
+| DOM | Actualizaciones del contador, inserciones incrementales de 100 filas, montaje inicial de listas keyed de 100 y 1.000 filas, reordenamiento y eliminación | RustFlow WASM ejecutado en Chromium mediante Playwright |
 | Bundle | WASM de entrada y assets de producción emitidos por Vite; JS, CSS, WASM y otros assets | Artefactos reales de vite build |
 | Inicialización | Marca desde el inicio de init() WASM hasta que termina la inicialización y el montaje inicial | Navegador Chromium |
 | Memoria | RSS máximo del proceso de benchmark en Linux, mediante /usr/bin/time -v; observación JS heap opcional de Chromium | Proceso completo / API específica del navegador |
@@ -39,7 +39,7 @@ npx playwright install chromium
 npm run bench:browser
 ~~~
 
-El suite usa el preview de Vite configurado en playwright.config.js, espera el montaje real del demo y despacha eventos a través de los listeners del runtime. Las inserciones de listas son deliberadamente incrementales: incluyen la reconciliación que ocurre después de cada alta. La lista de 10.000 elementos es un escenario opt-in para estrés:
+El suite usa el preview de Vite configurado en playwright.config.js, espera el montaje real del demo y despacha eventos a través de los listeners del runtime. La inserción incremental mide 100 altas reales y la reconciliación posterior a cada una. Para medir listas grandes sin convertir el tiempo de preparación en cientos o miles de altas repetidas, el demo acepta el parámetro de benchmark `?bench_list=N`: el runtime crea la lista inicial y Playwright mide la inicialización WASM junto con el montaje reactivo del DOM para 100 y 1.000 filas. El parámetro está limitado a 10.000 elementos. La lista de 10.000 elementos es un escenario opt-in de estrés de montaje inicial:
 
 ~~~bash
 RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 npm run bench:browser

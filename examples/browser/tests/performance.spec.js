@@ -34,8 +34,9 @@ function summarize(values, operations, unit) {
   };
 }
 
-async function loadApp(page) {
-  await page.goto("/");
+async function loadApp(page, initialListSize = 0) {
+  const path = initialListSize > 0 ? `/?bench_list=${initialListSize}` : "/";
+  await page.goto(path);
   await page.getByTestId("counter-value").waitFor({ state: "visible" });
   return page.evaluate(() => {
     const entry = performance.getEntriesByName("rustflow:runtime:init")[0];
@@ -52,6 +53,7 @@ async function loadApp(page) {
         };
     return {
       initialization_ms: entry ? entry.duration : null,
+      dom_rows: document.querySelectorAll('[data-testid="todo-list"] li').length,
       memory,
     };
   });
@@ -79,7 +81,7 @@ async function addTodos(page, count) {
 }
 
 test("RustFlow browser runtime performance measurements", async ({ page, browser, browserErrors }) => {
-  test.setTimeout(10 * 60 * 1000);
+  test.setTimeout(5 * 60 * 1000);
 
   const initializationSamples = [];
   const memorySamples = [];
@@ -126,8 +128,27 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     todoRowUpdateSamples.push(...measurements);
   }
 
+  const initialListScenarios = [];
+  for (const [count, repetitions] of [[100, 3], [1_000, 2]]) {
+    const measurements = [];
+    for (let sample = 0; sample < repetitions; sample += 1) {
+      const loaded = await loadApp(page, count);
+      expect(loaded.dom_rows).toBe(count);
+      if (loaded.initialization_ms === null) {
+        throw new Error("RustFlow initialization timing mark was not recorded");
+      }
+      measurements.push(loaded.initialization_ms);
+    }
+    initialListScenarios.push({
+      name: "keyed_list_initial_mount_" + count,
+      ...summarize(measurements, count, "ms"),
+      final_dom_rows: count,
+      measured_scope: "WASM initialization and initial keyed-list DOM mount",
+    });
+  }
+
   const listScenarios = [];
-  for (const [count, repetitions] of [[100, 5], [1_000, 3]]) {
+  for (const [count, repetitions] of [[100, 5]]) {
     const measurements = [];
     for (let sample = 0; sample < repetitions; sample += 1) {
       await loadApp(page);
@@ -185,12 +206,16 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
   expect(removalElapsed.remaining_rows).toBe(0);
 
   if (process.env.RUSTFLOW_BENCH_BROWSER_LARGE_LIST === "1") {
-    await loadApp(page);
-    const large = await addTodos(page, 10_000);
-    listScenarios.push({
-      name: "keyed_list_incremental_insert_10000",
-      ...summarize([large.elapsed_ms], 10_000, "ms"),
+    const large = await loadApp(page, 10_000);
+    expect(large.dom_rows).toBe(10_000);
+    if (large.initialization_ms === null) {
+      throw new Error("RustFlow initialization timing mark was not recorded");
+    }
+    initialListScenarios.push({
+      name: "keyed_list_initial_mount_10000",
+      ...summarize([large.initialization_ms], 10_000, "ms"),
       final_dom_rows: large.dom_rows,
+      measured_scope: "WASM initialization and initial keyed-list DOM mount",
       warning: "single opt-in stress sample; not a CI threshold",
     });
   }
@@ -208,7 +233,8 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     initialization: summarize(initializationSamples, 1, "ms"),
     counter_100_synchronous_dom_updates: summarize(counterSamples, 100, "ms"),
     todo_row_attribute_and_checked_property_update: summarize(todoRowUpdateSamples, 1, "ms"),
-    keyed_lists: listScenarios,
+    keyed_list_initial_mounts: initialListScenarios,
+    keyed_list_incremental_insertions: listScenarios,
     keyed_list_reverse_100: summarize(reorderSamples, 1, "ms"),
     keyed_list_remove_100: {
       elapsed_ms: removalElapsed.elapsed_ms,
@@ -225,7 +251,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     },
     limitations: [
       "These measurements exercise the shipped RustFlow WASM runtime in Chromium and synchronous interactions with its real DOM.",
-      "List insertion is incremental and includes repeated reactive list reconciliation; it is not a single batched list construction.",
+      "Incremental insertion measures repeated reactive reconciliation at 100 rows; initial keyed-list mounting measures 100 and 1,000 rows, with 10,000 rows opt-in.",
       "Timing values are informational and must not fail CI because browser hardware and scheduling vary.",
       "Deep component-tree and multi-browser profiling remain follow-up work; the current demo fixture covers Counter and TodoRow.",
     ],

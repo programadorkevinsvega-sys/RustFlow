@@ -127,7 +127,7 @@ fn main() {
         "main",
         [
             View::text("Before "),
-            View::dynamic(|| Ok(View::element("strong", [View::text("dynamic content")])?)),
+            View::dynamic(|| View::element("strong", [View::text("dynamic content")])),
             View::text(" after"),
         ],
     )
