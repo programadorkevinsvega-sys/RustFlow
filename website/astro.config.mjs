@@ -44,6 +44,7 @@ export default defineConfig({
             { label: 'Estilos y assets', slug: 'guides/styling-assets' },
             { label: 'Accesibilidad', slug: 'guides/accessibility' },
             { label: 'Probar y depurar', slug: 'guides/testing' },
+            { label: 'Medir el rendimiento', slug: 'guides/performance' },
           ],
         },
         {

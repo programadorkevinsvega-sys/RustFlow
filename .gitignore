@@ -4,3 +4,7 @@
 .env.*
 !.env.example
 .DS_Store
+
+# Reproducible performance run artifacts
+/performance-results/
+/examples/browser/performance-results/
