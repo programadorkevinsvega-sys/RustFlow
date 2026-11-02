@@ -149,7 +149,7 @@ fn main() {
             }
         })
         .expect("create batch observer");
-    let batch_iterations = (iterations / 16).max(1).min(10_000);
+    let batch_iterations = (iterations / 16).clamp(1, 10_000);
     measure(
         "batch.sixteen_individual_writes",
         batch_iterations,
@@ -191,7 +191,7 @@ fn main() {
             );
         }
 
-        let fanout_iterations = (iterations / fanout).max(1).min(10_000);
+        let fanout_iterations = (iterations / fanout).clamp(1, 10_000);
         let name = format!("load.shared_signal_fanout_{fanout}");
         measure(&name, fanout_iterations, samples, |index| {
             fanout_signal.set(index.wrapping_add(1));
@@ -243,7 +243,7 @@ fn main() {
     );
     measure(
         "lifecycle.owner_effect_create_and_dispose",
-        (iterations / 10).max(1).min(1_000),
+        (iterations / 10).clamp(1, 1_000),
         samples,
         |index| {
             let owner = lifecycle_root.child().expect("create effect owner");
@@ -260,7 +260,7 @@ fn main() {
     );
     measure(
         "lifecycle.nested_owner_tree_cleanup",
-        (iterations / 100).max(1).min(100),
+        (iterations / 100).clamp(1, 100),
         samples,
         |index| {
             let owner = lifecycle_root.child().expect("create root owner");

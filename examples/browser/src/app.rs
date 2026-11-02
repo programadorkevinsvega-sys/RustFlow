@@ -61,6 +61,7 @@ fn TodoRow(
             <input
                 type="checkbox"
                 aria-label={format!("Mark {} complete", title)}
+                data-done={done.to_string()}
                 prop:checked={done}
                 on:change={move |payload: EventPayload| on_toggle.invoke(payload)}
             />

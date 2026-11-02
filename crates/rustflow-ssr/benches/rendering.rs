@@ -147,7 +147,7 @@ fn main() {
         let tree = wide_tree(width);
         let name = format!("ssr.wide_tree_{width}_components");
         let work_cap = (100_000 / width).max(1);
-        let per_sample = (iterations / (width / 100).max(1)).max(1).min(work_cap);
+        let per_sample = (iterations / (width / 100).max(1)).clamp(1, work_cap);
         measure(&name, per_sample, samples, &tree);
     }
 
@@ -155,7 +155,7 @@ fn main() {
         let tree = list_view(count);
         let name = format!("ssr.list_{count}_items");
         let work_cap = (100_000 / count).max(1);
-        let per_sample = (iterations / (count / 100).max(1)).max(1).min(work_cap);
+        let per_sample = (iterations / (count / 100).max(1)).clamp(1, work_cap);
         measure(&name, per_sample, samples, &tree);
     }
 }

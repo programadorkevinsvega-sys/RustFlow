@@ -100,6 +100,32 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     counterSamples.push(elapsed);
   }
 
+  const todoRowUpdateSamples = [];
+  for (let sample = 0; sample < 5; sample += 1) {
+    await loadApp(page);
+    const created = await addTodos(page, 1);
+    expect(created.dom_rows).toBe(1);
+    const measurements = await page.evaluate(() => {
+      const values = [];
+      for (let index = 0; index < 20; index += 1) {
+        const checkbox = document.querySelector(
+          '[data-testid="todo-1"] input[type="checkbox"]',
+        );
+        if (!checkbox) throw new Error("RustFlow todo row checkbox was not mounted");
+        const next = !checkbox.checked;
+        const started = performance.now();
+        checkbox.checked = next;
+        checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+        values.push(performance.now() - started);
+        if (checkbox.getAttribute("data-done") !== String(next)) {
+          throw new Error("RustFlow did not patch the checkbox data-done attribute");
+        }
+      }
+      return values;
+    });
+    todoRowUpdateSamples.push(...measurements);
+  }
+
   const listScenarios = [];
   for (const [count, repetitions] of [[100, 5], [1_000, 3]]) {
     const measurements = [];
@@ -181,6 +207,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     },
     initialization: summarize(initializationSamples, 1, "ms"),
     counter_100_synchronous_dom_updates: summarize(counterSamples, 100, "ms"),
+    todo_row_attribute_and_checked_property_update: summarize(todoRowUpdateSamples, 1, "ms"),
     keyed_lists: listScenarios,
     keyed_list_reverse_100: summarize(reorderSamples, 1, "ms"),
     keyed_list_remove_100: {
