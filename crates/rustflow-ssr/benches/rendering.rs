@@ -59,8 +59,7 @@ fn measure(name: &str, iterations: usize, samples: usize, view: &View) {
 
 fn list_view(count: usize) -> View {
     let children = (0..count).map(|index| {
-        View::element("li", [View::text(format!("Item {index}"))])
-            .expect("build list item")
+        View::element("li", [View::text(format!("Item {index}"))]).expect("build list item")
     });
     View::element("ul", children).expect("build list")
 }
@@ -128,9 +127,7 @@ fn main() {
         "main",
         [
             View::text("Before "),
-            View::dynamic(|| {
-                Ok(View::element("strong", [View::text("dynamic content")])?)
-            }),
+            View::dynamic(|| Ok(View::element("strong", [View::text("dynamic content")])?)),
             View::text(" after"),
         ],
     )

@@ -133,10 +133,15 @@ fn main() {
     measure("memo.cached_read", iterations, samples, |_| {
         black_box(memo.get());
     });
-    measure("memo.source_update_and_recompute", iterations, samples, |index| {
-        memo_source.set(index.wrapping_add(1));
-        black_box(memo.get());
-    });
+    measure(
+        "memo.source_update_and_recompute",
+        iterations,
+        samples,
+        |index| {
+            memo_source.set(index.wrapping_add(1));
+            black_box(memo.get());
+        },
+    );
 
     let batch_signals = (0..16)
         .map(|value| root.signal(value).expect("create batch signal"))
@@ -201,14 +206,20 @@ fn main() {
     }
 
     let scale_runtime = Runtime::new();
-    let scale_scope = scale_runtime.root_scope().child().expect("create scale scope");
+    let scale_scope = scale_runtime
+        .root_scope()
+        .child()
+        .expect("create scale scope");
     let scale_signals = (0..1_000usize)
         .map(|value| scale_scope.signal(value).expect("create scale signal"))
         .collect::<Vec<_>>();
     let scale_observers = scale_signals.clone();
     let _scale_effect = scale_scope
         .effect(move || {
-            let total = scale_observers.iter().map(|signal| signal.get()).sum::<usize>();
+            let total = scale_observers
+                .iter()
+                .map(|signal| signal.get())
+                .sum::<usize>();
             black_box(total);
         })
         .expect("create scale effect");
