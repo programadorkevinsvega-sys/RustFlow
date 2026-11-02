@@ -2008,7 +2008,7 @@ dependencies = [
 name = "rustflow-macros"
 version = "0.1.0"
 dependencies = [
- "syn 2.0.119",
+ "syn 3.0.9",
 ]
 
 [[package]]
