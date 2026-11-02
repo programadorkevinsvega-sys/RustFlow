@@ -107,7 +107,9 @@ fn main() {
         std::env::consts::OS,
         iterations,
         samples,
-        std::env::var("RUSTFLOW_BENCH_COMMIT").unwrap_or_else(|_| "unspecified".to_owned())
+        std::env::var("GITHUB_SHA")
+            .or_else(|_| std::env::var("RUSTFLOW_BENCH_COMMIT"))
+            .unwrap_or_else(|_| "unspecified".to_owned())
     );
 
     let simple = View::element(
@@ -144,14 +146,16 @@ fn main() {
     for width in [100usize, 1_000] {
         let tree = wide_tree(width);
         let name = format!("ssr.wide_tree_{width}_components");
-        let per_sample = (iterations / (width / 100).max(1)).max(1).min(1_000);
+        let work_cap = (100_000 / width).max(1);
+        let per_sample = (iterations / (width / 100).max(1)).max(1).min(work_cap);
         measure(&name, per_sample, samples, &tree);
     }
 
     for count in [100usize, 1_000, 10_000] {
         let tree = list_view(count);
         let name = format!("ssr.list_{count}_items");
-        let per_sample = (iterations / (count / 100).max(1)).max(1).min(100);
+        let work_cap = (100_000 / count).max(1);
+        let per_sample = (iterations / (count / 100).max(1)).max(1).min(work_cap);
         measure(&name, per_sample, samples, &tree);
     }
 }

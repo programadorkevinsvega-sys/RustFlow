@@ -221,7 +221,7 @@ jobs:
       - name: Run native performance baselines (informational)
         if: matrix.toolchain == 'stable'
         env:
-          RUSTFLOW_BENCH_COMMIT: "${GITHUB_SHA}"
+          RUSTFLOW_BENCH_COMMIT: "${{ github.sha }}"
           RUSTFLOW_BENCH_ITERATIONS: "10000"
           RUSTFLOW_BENCH_SAMPLES: "25"
         run: |

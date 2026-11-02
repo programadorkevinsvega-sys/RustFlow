@@ -61,7 +61,9 @@ fn main() {
         std::env::consts::OS,
         iterations,
         samples,
-        std::env::var("RUSTFLOW_BENCH_COMMIT").unwrap_or_else(|_| "unspecified".to_owned())
+        std::env::var("GITHUB_SHA")
+            .or_else(|_| std::env::var("RUSTFLOW_BENCH_COMMIT"))
+            .unwrap_or_else(|_| "unspecified".to_owned())
     );
 
     let runtime = Runtime::new();
