@@ -14,6 +14,8 @@ RustFlow incluye benchmarks para observar el coste de su runtime reactivo, el re
 | Browser / DOM | WASM real en Chromium, inserción incremental de 100 filas, montaje inicial de listas keyed de 100 y 1.000 filas, reordenamiento y eliminación | Una garantía para todos los navegadores |
 | Bundle | WASM y assets de producción emitidos por Vite | Tamaño estimado a partir del código fuente |
 | Inicialización | Desde el inicio de init() WASM hasta que termina el montaje inicial | Tiempo hasta que una aplicación real obtiene datos de red |
+| Memoria | stats_alloc en benchmark nativo para alloc/dealloc/realloc y saldo de bytes solicitados de owners de componentes | No es RSS ni memoria física; no mide el allocator WASM live |
+| Componentes anidados | Árbol recursivo de componentes reales en Chromium, profundidades 5, 20 y 80 | No sustituye pruebas en Firefox/WebKit |
 
 ## Ejecutar las mediciones nativas
 
@@ -22,6 +24,7 @@ Desde la raíz del repositorio:
 ~~~bash
 RUSTFLOW_BENCH_ITERATIONS=10000 RUSTFLOW_BENCH_SAMPLES=25 cargo bench -p rustflow --bench reactivity
 RUSTFLOW_BENCH_ITERATIONS=1000 RUSTFLOW_BENCH_SAMPLES=25 cargo bench -p rustflow-ssr --bench rendering
+RUSTFLOW_MEMORY_SAMPLES=25 cargo bench -p rustflow --bench memory
 ~~~
 
 Cada benchmark informa mínimo, mediana, p90, p95, throughput y parámetros de muestra en líneas JSONL. p99 solo se calcula con al menos 100 muestras. El escenario de fan-out configura el límite de ejecuciones por descarga del runtime aislado al número de suscriptores, porque 1.024 ejecuciones legítimas superan el límite predeterminado de 1.000. Este ajuste solo existe en el benchmark; no cambia la protección predeterminada de las aplicaciones. Los árboles y señales del escenario se preparan fuera de la operación medida cuando el propósito es medir una operación aislada.
@@ -44,7 +47,9 @@ La suite de Playwright inicia la aplicación compilada con Vite Preview y opera 
 RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 npm run bench:browser
 ~~~
 
-El informe de bundle separa JavaScript, CSS, WASM y otros assets de dist/assets, con tamaños raw, gzip y Brotli. También conserva el tamaño del WASM de entrada usado por la comprobación histórica.
+El informe de bundle separa JavaScript, CSS, WASM y otros assets de dist/assets, con tamaños raw, gzip y Brotli. Aplica presupuestos de bytes iniciales para WASM (raw/gzip/Brotli), JavaScript, CSS y assets comprimidos totales; superar cualquiera falla el job de bundle.
+
+La suite también carga `?bench_depth=5`, `?bench_depth=20` y `?bench_depth=80`. Cada escenario monta una cadena de componentes RustFlow recursivos registrados, valida el número exacto de instancias y mide la inicialización/montaje en Chromium.
 
 ## Interpretar los resultados
 
@@ -60,7 +65,7 @@ CI conserva los informes como artefactos de cada ejecución. Descarga los artefa
 
 El único límite numérico que se sigue aplicando es el presupuesto heredado de **1,5 MiB para el WASM raw de entrada**. Los tamaños de JS/CSS, la latencia DOM, SSR, reactividad e inicialización se registran de forma informativa. No hay nuevos límites de milisegundos porque deben derivarse primero de varias mediciones comparables y de una tolerancia aprobada.
 
-La medición RSS de /usr/bin/time -v corresponde al proceso completo del benchmark, no a memoria retenida por una señal ni a bytes asignados por operación. performance.memory, cuando Chromium la expone, observa el heap JS y no representa la memoria total de Rust/WASM. La documentación técnica explica estas diferencias y las limitaciones actuales en [docs/PERFORMANCE.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/PERFORMANCE.md).
+El benchmark `memory` usa stats_alloc en un ejecutable separado para medir conteos y bytes solicitados por el allocator del sistema mientras se crean y destruyen owner trees con señales. Reporta el saldo de bytes outstanding tras montaje y tras dispose; no se confunde con RSS ni con memoria física. RSS se toma después de precalentar la compilación. performance.memory, cuando Chromium la expone, observa el heap JS y no representa la memoria total de Rust/WASM. La documentación técnica y el baseline candidato están en [docs/PERFORMANCE.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/PERFORMANCE.md) y [docs/performance/baseline-2026-11-03.json](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/performance/baseline-2026-11-03.json).
 
 ## Qué no debes concluir
 
@@ -68,6 +73,7 @@ La medición RSS de /usr/bin/time -v corresponde al proceso completo del benchma
 - Un benchmark SSR aislado no mide HTTP, base de datos ni concurrencia.
 - El heap JS no mide toda la memoria WASM.
 - Una sola ejecución no demuestra escalabilidad ni ausencia de regresiones.
+- Un saldo de bytes allocator netos no equivale al tamaño RSS o a memoria WASM residente.
 - Los resultados de benchmark no son garantías de producción.
 
 La optimización sigue siendo una decisión posterior a perfilar un caso reproducible y comparar antes/después. La implementación de mediciones no autoriza optimizaciones especulativas.
