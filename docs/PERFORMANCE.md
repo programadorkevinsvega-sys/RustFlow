@@ -87,7 +87,7 @@ La memoria live del allocator WASM aún no se mide por componente: el tamaño de
 
 npm run check:bundle lee pkg/rustflow_browser_bg.wasm y la salida de producción dist/assets creada por Vite. Reporta bytes raw, gzip y Brotli por tipo y total. Los tamaños gzip/Brotli son sumas de compresión independiente por archivo; no simulan una conexión HTTP con diccionario compartido.
 
-Se conserva el límite histórico existente de 1,5 MiB para el WASM raw de entrada. Los tamaños de JS, CSS, WASM emitido y el coste de inicialización se publican como mediciones informativas hasta tener suficientes ejecuciones comparables y una decisión aprobada. No se ha añadido un límite arbitrario de milisegundos ni un threshold sensible al hardware.
+El checker aplica presupuestos deterministas de bytes para WASM raw/gzip/Brotli (600/220/160 KiB), JavaScript (24/7/6 KiB), CSS (32/8/8 KiB) y total de assets gzip/Brotli (220/170 KiB). Los límites fallan CI cuando se superan. El histórico 1,5 MiB para WASM raw queda documentado, pero ya no es el umbral activo. Los tiempos de inicialización/DOM/SSR/reactividad siguen siendo warning-only porque dependen de la carga y el hardware del runner.
 
 ## Baselines y presupuestos
 
@@ -100,7 +100,7 @@ Estado del baseline y del control de regresiones:
 | Reactividad | 3 ejecuciones nativas por job, JSONL por escenario | Mediana candidata +25% | Advertencia; nunca falla por timing del runner |
 | SSR | 3 ejecuciones nativas por job, JSONL y bytes HTML | Mediana candidata +25% | Advertencia; nunca falla por timing del runner |
 | DOM / profundidad | Chromium, 5 muestras para la mayoría de escenarios y 3 por profundidad | Percentiles p95 por escenario | Advertencia; nunca falla por timing del runner |
-| Memoria nativa | Benchmark dedicado `stats_alloc` añadido; el run anterior quedó detenido por Clippy antes de emitir artefacto | Pendiente de salida validada del HEAD actual | Sin límite hasta revisar saldos tras dispose |
+| Memoria nativa | 25 muestras por árbol de owner; el saldo outstanding tras dispose fue 0 bytes en las 4 profundidades | Presupuestos de asignación/outstanding setup con margen inicial ≥25%; after-dispose min/max = 0 | Falla si se supera un techo o hay retención tras dispose |
 | JS / CSS / WASM | Tamaños raw/gzip/Brotli del build de producción | Límites de bytes definidos abajo | Falla si se supera |
 | RSS y heap JS | RSS de proceso precompilado; heap JS opcional | Informativo, no sustituyen allocator/retención | Sin gate propio |
 
