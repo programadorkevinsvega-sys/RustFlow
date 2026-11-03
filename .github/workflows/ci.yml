@@ -298,7 +298,7 @@ jobs:
     needs: changes
     if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.full_ci == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - name: Check out repository
@@ -363,8 +363,6 @@ jobs:
 
       - name: Run browser DOM and initialization benchmarks (informational)
         working-directory: examples/browser
-        env:
-          RUSTFLOW_BENCH_BROWSER_EXTENDED: ${{ (github.event_name == 'schedule' || inputs.extended_browser_benchmarks) && '1' || '0' }}
         run: RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
 
       - name: Validate competitive benchmark report generator
@@ -499,6 +497,14 @@ jobs:
           cp -R webdriver-ts/results/. "$result_dir/"
           python3 "$GITHUB_WORKSPACE/scripts/summarize-js-framework-benchmark.py" "$result_dir"
           cd "$GITHUB_WORKSPACE"
+
+      - name: Run extended RustFlow keyed-list stress suite
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.extended_browser_benchmarks) || (github.event_name == 'pull_request' && github.head_ref == 'feat/phase-8-1-measurement-completion') }}
+        working-directory: examples/browser
+        timeout-minutes: 30
+        env:
+          RUSTFLOW_BENCH_BROWSER_EXTENDED: "1"
+        run: RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
 
       - name: Upload browser performance measurements
         if: ${{ always() }}

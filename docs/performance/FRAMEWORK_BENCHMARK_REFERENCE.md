@@ -96,13 +96,14 @@ The RustFlow harness may add stronger controls (same job, same runner, sequentia
 
 ## Acceptance status
 
-The audit and exact source pin are complete. The following are **not** complete merely because this reference document exists:
+The upstream repository and selected lockfiles are pinned, and the RustFlow keyed benchmark page plus the same-runner GitHub Actions harness are now part of PR #78:
 
-- Implementations for the four frameworks in the RustFlow CI harness.
-- The nine upstream-compatible operations.
-- The Phase 8.1 extended 10,000-row operations.
-- Same-runner comparative CPU, memory, initialization and bundle artifacts.
-- Competitive ratios or an aggregate score.
-- Any claim that RustFlow is faster than React, Vue or Svelte.
+- Submodule `benchmarks/js-framework-benchmark` points to `fa510a76ffe066af1d30f3e75fa51d3fcbc14009`.
+- The selected upstream keyed implementations are built from their pinned lockfiles: React 19.2.0, Vue 3.5.39 and Svelte 5.42.1.
+- RustFlow's WASM build is copied into the official runner as `keyed/rustflow`; its controls preserve the upstream button IDs and keyed row lifecycle.
+- The official CPU suite is enabled for PR #78, manual dispatch and weekly scheduled runs. It requires Chromium `156.0.8078.4`, runs all four implementations sequentially on the same browser job, and preserves raw result files plus a geometric-mean comparison report.
+- The extended RustFlow-only suite runs after A/B/A and the upstream comparison on PR #78, manual dispatch and weekly scheduled runs, keeping its extra workload out of earlier timing measurements.
 
-Keep Phase 8.1 open until those measurements exist and satisfy its acceptance gates.
+**Still pending acceptance:** the current HEAD has not yet produced successful CI evidence for the keyed RustFlow fixture, A/B/A stability with the updated warmups, all nine comparative operations, the extended 10k-row checks, memory and size outputs. The startup/Lighthouse startup benchmark is not part of the pinned runner's ordinary CPU/MEM/SIZE list, and upstream memory cases for five updates and five replacements are commented out in the pinned source. These are explicit gaps, not completed measurements.
+
+The suite does not establish competitive superiority until a complete same-runner artifact contains all four frameworks and all nine CPU operation identifiers. The geometric mean is calculated only from those paired CPU samples; memory and bundle results remain separate. Phase 8.1 stays open until the artifacts have been reviewed and the required checks pass.
