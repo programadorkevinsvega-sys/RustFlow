@@ -284,7 +284,7 @@ jobs:
     needs: changes
     if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.full_ci == 'true') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
@@ -348,7 +348,7 @@ jobs:
 
       - name: Run browser DOM and initialization benchmarks (informational)
         working-directory: examples/browser
-        run: RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 npm run bench:browser
+        run: RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
 
       - name: Controlled same-runner keyed reconciliation A/B/A (Phase 8.1)
         if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/phase-8-1-') }}
@@ -377,13 +377,13 @@ jobs:
 
           echo "Building the base DOM reconciler ($PHASE_BASE_SHA) on the same runner."
           npm run build
-          RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 npm run bench:browser
+          RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
           cp performance-results/browser.json performance-results/browser-unoptimized.json
 
           echo "Restoring the optimized DOM reconciler ($PHASE_HEAD_SHA) and repeating the suite."
           cp "$optimized_source" "$browser_source"
           npm run build
-          RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 npm run bench:browser
+          RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
           cp performance-results/browser.json performance-results/browser-optimized-after.json
 
           python3 ../../scripts/compare-browser-performance.py \

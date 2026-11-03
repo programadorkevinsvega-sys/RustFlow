@@ -168,6 +168,7 @@ def main() -> int:
     secondary_comparisons: dict[str, Any] = {
         "initial_keyed_list_mounts": {},
         "nested_component_depths": {},
+        "isolated_keyed_mutations": {},
     }
     secondary_regression_limit = 25.0
     secondary_drift_limit = 15.0
@@ -330,6 +331,72 @@ def main() -> int:
                 f"{-gain:.1f}%, exceeding the {secondary_regression_limit:.0f}% same-runner limit"
             )
 
+    # One insert/remove against an already-mounted list, distinct from
+    # sequential growth and with preparation/restoration outside the timed click.
+    for operation in ("insert", "remove"):
+        for count in (100, 1_000, 5_000):
+            name = f"keyed_list_single_{operation}_{count}"
+            before_item = scenario(opt_before, "keyed_list_isolated_mutations", name)
+            control_item = scenario(control, "keyed_list_isolated_mutations", name)
+            after_item = scenario(opt_after, "keyed_list_isolated_mutations", name)
+            items = [
+                ("optimized-before", before_item),
+                ("unoptimized", control_item),
+                ("optimized-after", after_item),
+            ]
+            sample_sets: dict[str, list[float]] = {}
+            for label, item in items:
+                raw = [float(x) for x in item.get("samples_raw", [])]
+                sample_sets[label] = raw
+                if item.get("preexisting_rows") != count or item.get("final_dom_rows") != count:
+                    violations.append(f"{label}: {name} must begin/end with exactly {count} rows")
+                if item.get("warmup_samples") != 1:
+                    violations.append(f"{label}: {name} requires one discarded warm-up operation")
+                if item.get("measured_samples") != len(raw):
+                    violations.append(f"{label}: {name} measured_samples does not match raw samples")
+                if len(raw) < 20:
+                    violations.append(f"{label}: {name} requires 20 samples; got {len(raw)}")
+            if any(len(sample_sets[label]) < 20 for label, _ in items):
+                continue
+
+            before_samples = sample_sets["optimized-before"]
+            control_samples = sample_sets["unoptimized"]
+            after_samples = sample_sets["optimized-after"]
+            optimized_samples = before_samples + after_samples
+            comparison = {
+                "minimum_samples_per_variant": 20,
+                "unoptimized": summarize(control_samples),
+                "optimized": summarize(optimized_samples),
+                "optimized_before_dom_operation_counts": before_item.get("dom_operation_counts"),
+                "unoptimized_dom_operation_counts": control_item.get("dom_operation_counts"),
+                "optimized_after_dom_operation_counts": after_item.get("dom_operation_counts"),
+            }
+            gain = improvement(comparison["unoptimized"]["median_ms"], comparison["optimized"]["median_ms"])
+            comparison["median_improvement_percent"] = gain
+            comparison["p95_improvement_percent"] = improvement(
+                comparison["unoptimized"]["p95_ms"], comparison["optimized"]["p95_ms"]
+            )
+            first_median = statistics.median(before_samples)
+            second_median = statistics.median(after_samples)
+            drift = (
+                abs(second_median - first_median) / min(first_median, second_median) * 100
+                if min(first_median, second_median) > 0 else 0.0
+            )
+            comparison["optimized_before_median_ms"] = first_median
+            comparison["optimized_after_median_ms"] = second_median
+            comparison["optimized_a_to_a_median_drift_percent"] = drift
+            secondary_comparisons["isolated_keyed_mutations"][name] = comparison
+            if drift > secondary_drift_limit:
+                violations.append(
+                    f"{name}: optimized A/A median drift {drift:.1f}% exceeds "
+                    f"{secondary_drift_limit:.0f}%; comparison is unstable"
+                )
+            if gain < -secondary_regression_limit:
+                violations.append(
+                    f"{name}: optimized median regressed by {-gain:.1f}%, "
+                    f"exceeding {secondary_regression_limit:.0f}%"
+                )
+
     environment = args.environment.read_text(encoding="utf-8")
     output = {
         "schema_version": 1,
@@ -361,9 +428,23 @@ def main() -> int:
                 "nested_component_depth_5",
                 "nested_component_depth_20",
                 "nested_component_depth_80",
+                "keyed_list_single_insert_100",
+                "keyed_list_single_insert_1000",
+                "keyed_list_single_insert_5000",
+                "keyed_list_single_remove_100",
+                "keyed_list_single_remove_1000",
+                "keyed_list_single_remove_5000",
             ],
+            "minimum_isolated_keyed_samples_per_variant": 20,
             "minimum_secondary_samples_per_variant": 7,
             "minimum_initial_mount_warmup_samples_per_variant": 1,
+            "isolated_keyed_mutation_sampling": {
+                "preexisting_rows": [100, 1000, 5000],
+                "discarded_warmup_operations": 1,
+                "measured_samples_per_operation": 20,
+                "timed_scope": "only Add/Remove click; preparation, selectors, verification, and restoration excluded",
+                "dom_boundary_counters": "instrumented separately from latency samples",
+            },
             "nested_component_sampling": {
                 "depth_5": {"discarded_warmup_samples": 1, "measured_samples": 7},
                 "depth_20": {"discarded_warmup_samples": 3, "measured_samples": 25},

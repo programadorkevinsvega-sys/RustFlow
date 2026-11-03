@@ -88,8 +88,190 @@ async function addTodos(page, count) {
   }, count);
 }
 
+async function measureIsolatedKeyedMutations(page, count) {
+  const loaded = await loadApp(page, count);
+  if (loaded.dom_rows !== count) throw new Error("Expected " + count + " pre-existing rows");
+
+  const repetitions = 20;
+  const result = await page.evaluate(({ initialRows, repetitions }) => {
+    const list = document.querySelector('[data-testid="todo-list"]');
+    const input = document.querySelector("#todo-input");
+    const add = Array.from(document.querySelectorAll("#app button")).find((button) =>
+      button.textContent.includes("Add todo"),
+    );
+    if (!list || !input || !add) throw new Error("Todo controls not mounted");
+
+    const rows = () => Array.from(list.querySelectorAll(":scope > li"));
+    const assertRows = (expected, context) => {
+      const actual = rows().length;
+      if (actual !== expected) throw new Error(context + ": expected " + expected + ", got " + actual);
+    };
+    const prepare = (value) => {
+      input.value = value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    const removeButton = (row) => {
+      const button = row.querySelector('button[aria-label^="Remove "]');
+      if (!button) throw new Error("Remove button missing");
+      return button;
+    };
+
+    // Unmeasured warm-up for each operation.
+    prepare("isolated warmup insert");
+    add.click();
+    assertRows(initialRows + 1, "insert warmup");
+    removeButton(rows()[rows().length - 1]).click();
+    assertRows(initialRows, "insert warmup cleanup");
+
+    removeButton(rows()[0]).click();
+    assertRows(initialRows - 1, "remove warmup");
+    prepare("isolated warmup restore");
+    add.click();
+    assertRows(initialRows, "remove warmup restore");
+
+    const insertionSamples = [];
+    for (let sample = 0; sample < repetitions; sample += 1) {
+      prepare("isolated insert " + sample);
+      const start = performance.now();
+      add.click();
+      insertionSamples.push(performance.now() - start);
+      const current = rows();
+      if (current.length !== initialRows + 1) throw new Error("insert did not yield N+1 rows");
+      removeButton(current[current.length - 1]).click();
+      assertRows(initialRows, "insert cleanup");
+    }
+
+    const removalSamples = [];
+    const targetIndexes = [];
+    const positions = [0, Math.floor(initialRows / 2), initialRows - 1];
+    for (let sample = 0; sample < repetitions; sample += 1) {
+      const before = rows();
+      const index = positions[sample % positions.length];
+      const target = before[index];
+      if (!target) throw new Error("deletion target missing");
+      const targetId = target.getAttribute("data-todo-id");
+      const button = removeButton(target);
+      targetIndexes.push(index);
+
+      const start = performance.now();
+      button.click();
+      removalSamples.push(performance.now() - start);
+
+      const after = rows();
+      if (after.length !== initialRows - 1 || target.isConnected ||
+          after.some((row) => row.getAttribute("data-todo-id") === targetId)) {
+        throw new Error("deletion did not remove the selected keyed row");
+      }
+      prepare("isolated remove restore " + sample);
+      add.click();
+      assertRows(initialRows, "remove restore");
+    }
+
+    return {
+      insertion_samples_raw: insertionSamples,
+      removal_samples_raw: removalSamples,
+      deletion_target_indexes: targetIndexes,
+      final_dom_rows: rows().length,
+    };
+  }, { initialRows: count, repetitions });
+
+  if (result.final_dom_rows !== count) throw new Error("isolated benchmark did not restore N rows");
+
+  // Gather DOM/JS boundary counts in a separate, non-timed pass.
+  const domCounts = await page.evaluate((initialRows) => {
+    const list = document.querySelector('[data-testid="todo-list"]');
+    const input = document.querySelector("#todo-input");
+    const add = Array.from(document.querySelectorAll("#app button")).find((button) =>
+      button.textContent.includes("Add todo"),
+    );
+    if (!list || !input || !add) throw new Error("Todo controls missing for instrumentation");
+    const counts = {
+      set_attribute: 0, remove_attribute: 0, insert_before: 0, remove_child: 0,
+      create_element: 0, create_text_node: 0, create_comment: 0,
+      add_event_listener: 0, remove_event_listener: 0, reflect_get: 0, reflect_set: 0,
+    };
+    const restores = [];
+    const wrap = (target, method, key) => {
+      const original = target[method];
+      if (typeof original !== "function") return;
+      target[method] = function (...args) {
+        counts[key] += 1;
+        return original.apply(this, args);
+      };
+      restores.push(() => { target[method] = original; });
+    };
+    const reset = () => Object.keys(counts).forEach((key) => { counts[key] = 0; });
+    const snapshot = () => ({ ...counts });
+    const rows = () => Array.from(list.querySelectorAll(":scope > li"));
+    const prepare = (value) => {
+      input.value = value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    const removeButton = (row) => {
+      const button = row.querySelector('button[aria-label^="Remove "]');
+      if (!button) throw new Error("Remove button missing");
+      return button;
+    };
+    try {
+      wrap(Element.prototype, "setAttribute", "set_attribute");
+      wrap(Element.prototype, "removeAttribute", "remove_attribute");
+      wrap(Node.prototype, "insertBefore", "insert_before");
+      wrap(Node.prototype, "removeChild", "remove_child");
+      wrap(Document.prototype, "createElement", "create_element");
+      wrap(Document.prototype, "createTextNode", "create_text_node");
+      wrap(Document.prototype, "createComment", "create_comment");
+      wrap(EventTarget.prototype, "addEventListener", "add_event_listener");
+      wrap(EventTarget.prototype, "removeEventListener", "remove_event_listener");
+      wrap(Reflect, "get", "reflect_get");
+      wrap(Reflect, "set", "reflect_set");
+
+      prepare("instrumented insert");
+      reset();
+      add.click();
+      const insertion = snapshot();
+      removeButton(rows()[rows().length - 1]).click();
+
+      const target = rows()[Math.floor(initialRows / 2)];
+      const button = removeButton(target);
+      reset();
+      button.click();
+      const removal = snapshot();
+
+      prepare("instrumented restore");
+      add.click();
+      return { insertion, removal };
+    } finally {
+      for (const restore of restores.reverse()) restore();
+    }
+  }, count);
+
+  return [
+    {
+      name: "keyed_list_single_insert_" + count,
+      ...summarize(result.insertion_samples_raw, 1, "ms"),
+      warmup_samples: 1,
+      measured_samples: result.insertion_samples_raw.length,
+      preexisting_rows: count,
+      final_dom_rows: count,
+      measured_scope: "Add click only; input preparation, selector lookup, verification and cleanup excluded",
+      dom_operation_counts: domCounts.insertion,
+    },
+    {
+      name: "keyed_list_single_remove_" + count,
+      ...summarize(result.removal_samples_raw, 1, "ms"),
+      warmup_samples: 1,
+      measured_samples: result.removal_samples_raw.length,
+      preexisting_rows: count,
+      final_dom_rows: count,
+      deletion_target_indexes: result.deletion_target_indexes,
+      measured_scope: "Selected Remove click only; selector lookup, verification and restoration excluded",
+      dom_operation_counts: domCounts.removal,
+    },
+  ];
+}
+
 test("RustFlow browser runtime performance measurements", async ({ page, browser, browserErrors }) => {
-  test.setTimeout(5 * 60 * 1000);
+  test.setTimeout(10 * 60 * 1000);
 
   const initializationSamples = [];
   const memorySamples = [];
@@ -251,6 +433,13 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
   expect(removalElapsed.removed).toBe(100);
   expect(removalElapsed.remaining_rows).toBe(0);
 
+  const isolatedKeyedMutationScenarios = [];
+  if (process.env.RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS === "1") {
+    for (const count of [100, 1_000, 5_000]) {
+      isolatedKeyedMutationScenarios.push(...(await measureIsolatedKeyedMutations(page, count)));
+    }
+  }
+
   if (process.env.RUSTFLOW_BENCH_BROWSER_LARGE_LIST === "1") {
     // A 10k-row mount has higher startup and host-scheduling variance than the
     // smaller lists. Warm the exact workload once, then use the same seven
@@ -298,6 +487,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     keyed_list_initial_mounts: initialListScenarios,
     nested_component_depth_initial_mounts: nestedComponentScenarios,
     keyed_list_incremental_insertions: listScenarios,
+    keyed_list_isolated_mutations: isolatedKeyedMutationScenarios,
     keyed_list_reverse_100: summarize(reorderSamples, 1, "ms"),
     keyed_list_remove_100: {
       elapsed_ms: removalElapsed.elapsed_ms,
@@ -314,7 +504,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     },
     limitations: [
       "These measurements exercise the shipped RustFlow WASM runtime in Chromium and synchronous interactions with its real DOM.",
-      "Incremental insertion measures repeated reactive reconciliation at 100 rows; initial keyed-list mounting measures 100 and 1,000 rows, with 10,000 rows opt-in.",
+      "Incremental insertion measures repeated reactive reconciliation at 100 rows; the opt-in isolated suite measures one insert/remove on pre-existing lists of 100, 1,000, and 5,000 rows.",
       "Timing values are informational and must not fail CI because browser hardware and scheduling vary.",
       "Nested component depth is exercised at depths 5, 20, and 80 in Chromium; Firefox/WebKit profiling remains follow-up work.",
     ],
