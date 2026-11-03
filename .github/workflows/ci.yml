@@ -257,6 +257,8 @@ jobs:
             cargo bench -p rustflow --bench memory \
             > performance-results/native/owner-memory.jsonl
 
+          python3 scripts/check-native-performance-budgets.py performance-results/native
+
           RUSTFLOW_BENCH_ITERATIONS=100 RUSTFLOW_BENCH_BULK_SIZE=50 \
             cargo bench -p rustflow-server --bench persistence \
             > performance-results/native/persistence-smoke.txt 2>&1
