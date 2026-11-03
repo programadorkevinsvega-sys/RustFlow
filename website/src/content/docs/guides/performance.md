@@ -55,7 +55,7 @@ La suite también carga `?bench_depth=5`, `?bench_depth=20` y `?bench_depth=80`.
 
 Con `RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1`, Playwright precarga listas con baseline de 100, 1.000 o 5.000 filas y mide 20 pares complementarios por escala: una inserción N→N+1 y, a continuación, una eliminación N+1→N. Cada par devuelve el fixture al tamaño estable sin clicks adicionales de restauración. La eliminación empieza con una fila más que el baseline; el JSON declara el número de filas al inicio y al final de cada operación para mantener esa diferencia explícita. El cronómetro rodea únicamente el click de Add o el botón de eliminación localizado previamente. La preparación del input, el despacho de eventos, los selectores y la verificación quedan fuera. Las eliminaciones cubren posiciones inicial, media y final. Se conservan 20 muestras de cada operación y se informan mediana, p90 y p95.
 
-Los contadores de atributos, movimientos DOM, creación de nodos, listeners y `Reflect.get/set` se recogen en una pasada aparte para no contaminar las latencias. No equivalen a contadores internos de renders Rust ni a mediciones de clones de señales.
+Los contadores de atributos, movimientos DOM, creación de nodos y listeners se recogen en una pasada aparte para no contaminar las latencias. No se envuelven globalmente `Reflect.get/set`: ese hook añade overhead a cada acceso JavaScript y no corresponde a una mutación DOM concreta. Los contadores restantes tampoco equivalen a contadores internos de renders Rust ni a mediciones de clones de señales.
 
 ## Interpretar los resultados
 
