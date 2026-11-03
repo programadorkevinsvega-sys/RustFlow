@@ -27,7 +27,7 @@ jobs:
       - name: Check out selected RustFlow commit and pinned upstream submodule
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.rustflow_commit || github.sha }}
+          ref: ${{ github.event.inputs.rustflow_commit || github.sha }}
           fetch-depth: 0
           submodules: true
 
