@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize the pinned js-framework-benchmark raw JSON files without rewriting them."""
+"""Summarize raw JSON from the pinned js-framework-benchmark runner."""
 from __future__ import annotations
 
 import json
@@ -8,7 +8,8 @@ import statistics
 import sys
 from pathlib import Path
 
-OPERATIONS = [
+UPSTREAM_COMMIT = "fa510a76ffe066af1d30f3e75fa51d3fcbc14009"
+CPU_OPERATIONS = [
     "01_run1k",
     "02_replace1k",
     "03_update10th1k_x16",
@@ -18,6 +19,16 @@ OPERATIONS = [
     "07_create10k",
     "08_create1k-after1k_x2",
     "09_clear1k_x8",
+]
+MEMORY_OPERATIONS = [
+    "21_ready-memory",
+    "22_run-memory",
+    "25_run-clear-memory",
+]
+SIZE_OPERATIONS = [
+    "41_size-uncompressed",
+    "42_size-compressed",
+    "43_first-paint",
 ]
 FRAMEWORKS = {
     "react": ("react-hooks", "react"),
@@ -33,6 +44,18 @@ def percentile(values: list[float], fraction: float) -> float:
     return ordered[index]
 
 
+def summarize(values: list[float]) -> dict[str, object]:
+    if not values:
+        raise ValueError("cannot summarize empty sample set")
+    return {
+        "samples": len(values),
+        "p50": statistics.median(values),
+        "p90": percentile(values, 0.90),
+        "p95": percentile(values, 0.95),
+        "raw": values,
+    }
+
+
 def identify_framework(name: str) -> str | None:
     lower = name.lower()
     for canonical, needles in FRAMEWORKS.items():
@@ -41,12 +64,55 @@ def identify_framework(name: str) -> str | None:
     return None
 
 
+def require_complete(results: dict[str, dict[str, dict[str, object]]], operations: list[str], kind: str) -> None:
+    missing = {
+        framework: [operation for operation in operations if operation not in values[kind]]
+        for framework, values in results.items()
+    }
+    missing = {framework: operations for framework, operations in missing.items() if operations}
+    if missing:
+        raise SystemExit(f"incomplete upstream {kind} comparison; missing: " + json.dumps(missing))
+
+
+def build_comparisons(
+    results: dict[str, dict[str, dict[str, object]]],
+    operations: list[str],
+    kind: str,
+    metric: str,
+) -> dict[str, dict[str, object]]:
+    comparisons: dict[str, dict[str, object]] = {}
+    for competitor in ("react", "vue", "svelte"):
+        per_operation: dict[str, object] = {}
+        ratios: list[float] = []
+        for operation in operations:
+            rustflow = float(results["rustflow"][kind][operation][metric]["p50"])
+            baseline = float(results[competitor][kind][operation][metric]["p50"])
+            ratio = rustflow / baseline if baseline else math.inf
+            ratios.append(ratio)
+            per_operation[operation] = {
+                "rustflow_p50": rustflow,
+                f"{competitor}_p50": baseline,
+                "ratio_rustflow_over_{competitor}": ratio,
+                "interpretation": (
+                    "rustflow_lower" if ratio < 1 else "tie" if ratio == 1 else "rustflow_higher"
+                ),
+            }
+        comparison: dict[str, object] = {"operations": per_operation}
+        if kind == "cpu":
+            geometric_mean = math.exp(sum(math.log(value) for value in ratios) / len(ratios))
+            comparison["geometric_mean_ratio_rustflow_over_competitor"] = geometric_mean
+            comparison["rustflow_aggregate_faster"] = geometric_mean < 1
+        comparisons[competitor] = comparison
+    return comparisons
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: summarize-js-framework-benchmark.py RESULT_DIRECTORY")
     directory = Path(sys.argv[1])
     results: dict[str, dict[str, dict[str, object]]] = {
-        framework: {} for framework in FRAMEWORKS
+        framework: {"cpu": {}, "memory": {}, "size": {}}
+        for framework in FRAMEWORKS
     }
 
     for path in directory.glob("*.json"):
@@ -56,108 +122,109 @@ def main() -> int:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        benchmark = payload.get("benchmark")
         framework = identify_framework(str(payload.get("framework", "")))
-        if framework is None or benchmark not in OPERATIONS:
+        benchmark = payload.get("benchmark")
+        if framework is None:
             continue
-        total = payload.get("values", {}).get("total", {}).get("values")
-        if not isinstance(total, list) or not total:
-            raise SystemExit(f"missing CPU total samples in {path}")
-        samples = [float(value) for value in total]
-        values = payload.get("values", {})
-        metrics = {}
-        for metric in ("total", "script", "paint"):
-            raw = values.get(metric, {}).get("values")
-            if isinstance(raw, list) and raw:
+
+        if benchmark in CPU_OPERATIONS:
+            values = payload.get("values", {})
+            metrics: dict[str, object] = {}
+            for metric in ("total", "script", "paint"):
+                raw = values.get(metric, {}).get("values")
+                if not isinstance(raw, list) or not raw:
+                    raise SystemExit(f"missing CPU {metric} samples in {path}")
                 numeric = [float(value) for value in raw]
-                metrics[metric] = {
-                    "samples": len(numeric),
-                    "p50": statistics.median(numeric),
-                    "p90": percentile(numeric, 0.90),
-                    "p95": percentile(numeric, 0.95),
-                    "raw": numeric,
-                }
-        results[framework][benchmark] = {
-            "source_file": path.name,
-            "metrics": metrics,
-        }
-
-    missing = {
-        framework: [operation for operation in OPERATIONS if operation not in values]
-        for framework, values in results.items()
-    }
-    missing = {framework: operations for framework, operations in missing.items() if operations}
-    if missing:
-        raise SystemExit("incomplete official CPU comparison; missing: " + json.dumps(missing))
-
-    comparisons = {}
-    for competitor in ("react", "vue", "svelte"):
-        per_operation = {}
-        ratios = []
-        for operation in OPERATIONS:
-            rustflow = results["rustflow"][operation]["metrics"]["total"]["p50"]
-            baseline = results[competitor][operation]["metrics"]["total"]["p50"]
-            ratio = rustflow / baseline if baseline else math.inf
-            ratios.append(ratio)
-            per_operation[operation] = {
-                "rustflow_p50_ms": rustflow,
-                f"{competitor}_p50_ms": baseline,
-                "ratio_rustflow_over_{competitor}": ratio,
-                "interpretation": "rustflow_faster" if ratio < 1 else "tie" if ratio == 1 else "rustflow_slower",
+                metrics[metric] = summarize(numeric)
+            results[framework]["cpu"][benchmark] = {
+                "source_file": path.name,
+                "metrics": metrics,
             }
-        geometric_mean = math.exp(sum(math.log(value) for value in ratios) / len(ratios))
-        comparisons[competitor] = {
-            "geometric_mean_ratio_rustflow_over_competitor": geometric_mean,
-            "rustflow_aggregate_faster": geometric_mean < 1,
-            "operations": per_operation,
-        }
+        elif benchmark in MEMORY_OPERATIONS or benchmark in SIZE_OPERATIONS:
+            raw = payload.get("values", {}).get("DEFAULT", {}).get("values")
+            if not isinstance(raw, list) or not raw:
+                raise SystemExit(f"missing {payload.get('type')} samples in {path}")
+            numeric = [float(value) for value in raw]
+            kind = "memory" if benchmark in MEMORY_OPERATIONS else "size"
+            results[framework][kind][benchmark] = {
+                "source_file": path.name,
+                "unit": "MiB" if kind == "memory" else "KiB" if "size-" in benchmark else "ms",
+                "metrics": summarize(numeric),
+            }
 
-    metadata_path = directory / "environment.txt"
+    require_complete(results, CPU_OPERATIONS, "cpu")
+    require_complete(results, MEMORY_OPERATIONS, "memory")
+    require_complete(results, SIZE_OPERATIONS, "size")
+
+    comparisons = {
+        "cpu": build_comparisons(results, CPU_OPERATIONS, "cpu", "total"),
+        "memory": build_comparisons(results, MEMORY_OPERATIONS, "memory", "metrics"),
+        "size": build_comparisons(results, SIZE_OPERATIONS, "size", "metrics"),
+    }
     report = {
-        "schema_version": 1,
-        "comparison_kind": "upstream-compatible keyed CPU benchmarks",
-        "upstream_commit": "fa510a76ffe066af1d30f3e75fa51d3fcbc14009",
-        "operations": OPERATIONS,
+        "schema_version": 2,
+        "comparison_kind": "upstream-compatible keyed benchmarks",
+        "upstream_commit": UPSTREAM_COMMIT,
         "frameworks": results,
         "comparisons": comparisons,
         "competitive_superiority_claimed": False,
         "notes": [
-            "CPU values use the pinned upstream Playwright/CDP trace pipeline, not performance.now around a click.",
-            "Only exact same-job/same-runner samples are compared.",
-            "The upstream README versus executable-runner discrepancies are documented in docs/performance/FRAMEWORK_BENCHMARK_REFERENCE.md.",
-            "Memory and size files are retained raw alongside this summary; they are not mixed into the CPU geometric-mean index.",
+            "CPU values use the pinned upstream Playwright/CDP trace pipeline and retain total/script/paint metrics.",
+            "Memory values use performance.measureUserAgentSpecificMemory after the upstream forced-GC protocol.",
+            "Size values use the upstream server response-size hook: uncompressed KiB, Brotli-compressed KiB and first paint.",
+            "All four frameworks are measured sequentially in the same CI job and browser job.",
+            "The CPU geometric-mean index uses only the nine official CPU operation ratios; memory and size are never blended into that index.",
+            "The pinned upstream runner does not normally execute Lighthouse startup; memory IDs 23 and 24 are commented out upstream.",
+            "The upstream README and executable-runner row-count differences are documented in docs/performance/FRAMEWORK_BENCHMARK_REFERENCE.md.",
         ],
     }
     (directory / "framework-comparison.json").write_text(
-        json.dumps(report, indent=2) + "\n", encoding="utf-8"
+        json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8"
     )
 
     lines = [
         "# Keyed framework comparison",
         "",
-        "Upstream pin: `fa510a76ffe066af1d30f3e75fa51d3fcbc14009`",
+        f"Upstream pin: `{UPSTREAM_COMMIT}`",
+        "",
+        "## CPU trace results",
         "",
         "| Operation | React p50 (ms) | Vue p50 (ms) | Svelte p50 (ms) | RustFlow p50 (ms) |",
         "|---|---:|---:|---:|---:|",
     ]
-    for operation in OPERATIONS:
+    for operation in CPU_OPERATIONS:
         row = [operation]
         for framework in ("react", "vue", "svelte", "rustflow"):
-            row.append(f'{results[framework][operation]["metrics"]["total"]["p50"]:.3f}')
+            row.append(f'{results[framework]["cpu"][operation]["metrics"]["total"]["p50"]:.3f}')
         lines.append("| " + " | ".join(row) + " |")
-    lines += ["", "## Geometric mean ratios", ""]
-    for framework, summary in comparisons.items():
+    lines += ["", "## Memory", "", "| Scenario | React p50 (MiB) | Vue p50 (MiB) | Svelte p50 (MiB) | RustFlow p50 (MiB) |", "|---|---:|---:|---:|---:|"]
+    for operation in MEMORY_OPERATIONS:
+        row = [operation]
+        for framework in ("react", "vue", "svelte", "rustflow"):
+            row.append(f'{results[framework]["memory"][operation]["metrics"]["p50"]:.3f}')
+        lines.append("| " + " | ".join(row) + " |")
+    lines += ["", "## Bundle and first paint", "", "| Metric | React p50 | Vue p50 | Svelte p50 | RustFlow p50 |", "|---|---:|---:|---:|---:|"]
+    for operation in SIZE_OPERATIONS:
+        row = [operation]
+        for framework in ("react", "vue", "svelte", "rustflow"):
+            item = results[framework]["size"][operation]
+            row.append(f'{item["metrics"]["p50"]:.3f} {item["unit"]}')
+        lines.append("| " + " | ".join(row) + " |")
+    lines += ["", "## Geometric mean CPU ratios", ""]
+    for framework, summary in comparisons["cpu"].items():
+        gm = float(summary["geometric_mean_ratio_rustflow_over_competitor"])
         lines.append(
-            f'- RustFlow / {framework}: **{summary["geometric_mean_ratio_rustflow_over_competitor"]:.4f}** '
-            f'({"faster" if summary["rustflow_aggregate_faster"] else "not faster in aggregate"}).'
+            f'- RustFlow / {framework}: **{gm:.4f}** '
+            f'({"faster in aggregate" if gm < 1 else "not faster in aggregate"}).'
         )
     lines += [
         "",
-        "This report contains same-runner measurements from the upstream trace runner. It does not assert broad superiority outside this pinned environment.",
+        "The CPU geometric mean contains only the nine upstream CPU operation ratios. Memory, bundle size and first paint are reported separately.",
+        "This report does not assert broad superiority outside this pinned runner/browser environment.",
         "",
     ]
     (directory / "framework-comparison.md").write_text("\n".join(lines), encoding="utf-8")
-    print(json.dumps({"comparisons": comparisons, "report": str(directory / "framework-comparison.json")}, indent=2))
+    print(json.dumps({"comparisons": comparisons, "report": str(directory / "framework-comparison.json")}, indent=2, allow_nan=False))
     return 0
 
 

@@ -107,3 +107,6 @@ Se puede ejecutar desde GitHub Actions mediante `workflow_dispatch` marcando `ex
 El job del PR de Phase 8.1, además de las ejecuciones manuales/semanales, compara las implementaciones keyed del benchmark oficial fijado y la aplicación RustFlow WASM bajo el mismo runner y Chromium. Usa la traza oficial para distinguir trabajo total, JavaScript y paint; conserva muestras crudas por operación, p50/p90/p95 y el índice de media geométrica. Los artefactos se publican como `phase-8-1-browser-performance`. La comparación no se ejecuta en cada PR ordinario. Consulta el contrato técnico de [comparación oficial](../../../../../docs/performance/FRAMEWORK_BENCHMARK_REFERENCE.md) y el [historial de medición](../../../../../docs/PERFORMANCE.md).
 
 No se publicará una victoria si falta alguna de las nueve operaciones, un framework no llega a producir muestras o el navegador/runner no coincide con los requisitos.
+
+
+El informe comparativo también resume memoria (p50/p90/p95), tamaño sin comprimir, Brotli y first paint por implementación. Estas métricas se mantienen separadas del índice geométrico de latencia CPU.
