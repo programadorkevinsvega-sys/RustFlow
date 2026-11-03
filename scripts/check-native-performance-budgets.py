@@ -109,7 +109,7 @@ def main() -> int:
 
     review["warnings"] = warnings
     output = RESULTS_DIR / "native-budget-review.json"
-    output.write_text(json.dumps(review, indent=2) + "\\n", encoding="utf-8")
+    output.write_text(json.dumps(review, indent=2) + "\n", encoding="utf-8")
     print(f"Wrote native timing budget review to {output}")
     print(
         f"Compared {sum(len(group['scenarios']) for group in review['groups'].values())} "
