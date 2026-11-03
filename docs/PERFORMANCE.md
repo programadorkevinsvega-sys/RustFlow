@@ -123,13 +123,6 @@ Esta es una optimización candidata basada en el perfil, no una mejora ya acepta
 
 El primer artefacto posterior, [optimized-candidate-2026-11-03.json](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/performance/optimized-candidate-2026-11-03.json), proviene de una ejecución de CI donde los 20 E2E de browser pasaron. La comparación inicial con el baseline preoptimización mostró diferencias grandes, pero una segunda prueba control reveló que los jobs se ejecutaron en modelos de CPU distintos (AMD EPYC 9V45 frente a AMD EPYC 7763). Esos porcentajes se conservan como observaciones históricas, pero **no se aceptan como comparación de rendimiento controlada ni como evidencia de cierre**.
 
-| Escenario | Antes (mediana / p95) | Después (mediana / p95) | Cambio de mediana |
-|---|---:|---:|---:|
-| 100 inserciones keyed incrementales | 631,9 / 662,2 ms | 278,0 / 308,6 ms | −56,0% |
-| Reordenar 100 filas keyed | 13,8 / 16,7 ms | 5,5 / 6,2 ms | −60,1% |
-| Montaje inicial de 100 filas | 19,8 / 21,8 ms | 9,3 / 11,0 ms | −53,0% |
-| Montaje inicial de 1.000 filas | 97,8 / 97,8 ms | 55,5 / 55,5 ms | −43,3% |
-
 La ejecución control mostró por qué no debe usarse esta comparación entre jobs: ambos usaron Ubuntu 24.04 y Chromium 156.0.8078.4, pero el modelo de CPU difirió (AMD EPYC 9V45 para el optimizado y AMD EPYC 7763 para el control). El job de browser ahora ejecuta un A/B/A dentro del mismo runner: mide optimizado, reconstruye el archivo DOM desde el SHA base de la PR, mide el control y vuelve a medir optimizado. De esa forma CPU, Node, Chromium, Rust y condiciones del proceso permanecen iguales. El resultado controlado se guarda como `browser-ab-comparison.json` y exige una mejora mínima de 20% en la mediana de inserción keyed y reverse; los tiempos absolutos siguen siendo warning-only.
 
 
