@@ -116,55 +116,48 @@ async function measureIsolatedKeyedMutations(page, count) {
       return button;
     };
 
-    // Unmeasured warm-up for each operation.
+    // One discarded insert/remove pair warms both mutation paths and restores
+    // the steady-state list size without an additional cleanup mutation.
     prepare("isolated warmup insert");
     add.click();
     assertRows(initialRows + 1, "insert warmup");
-    removeButton(rows()[rows().length - 1]).click();
-    assertRows(initialRows, "insert warmup cleanup");
-
     removeButton(rows()[0]).click();
-    assertRows(initialRows - 1, "remove warmup");
-    prepare("isolated warmup restore");
-    add.click();
-    assertRows(initialRows, "remove warmup restore");
+    assertRows(initialRows, "remove warmup");
 
     const insertionSamples = [];
-    for (let sample = 0; sample < repetitions; sample += 1) {
-      prepare("isolated insert " + sample);
-      const start = performance.now();
-      add.click();
-      insertionSamples.push(performance.now() - start);
-      const current = rows();
-      if (current.length !== initialRows + 1) throw new Error("insert did not yield N+1 rows");
-      removeButton(current[current.length - 1]).click();
-      assertRows(initialRows, "insert cleanup");
-    }
-
     const removalSamples = [];
     const targetIndexes = [];
-    const positions = [0, Math.floor(initialRows / 2), initialRows - 1];
+    // Removal runs immediately after its paired insertion, so it starts with
+    // N+1 rows and returns the fixture to N. The exact operation sizes are
+    // recorded below rather than implying both operations start at N.
+    const positions = [0, Math.floor((initialRows + 1) / 2), initialRows];
     for (let sample = 0; sample < repetitions; sample += 1) {
-      const before = rows();
+      prepare("isolated insert " + sample);
+      const insertionStart = performance.now();
+      add.click();
+      insertionSamples.push(performance.now() - insertionStart);
+
+      const afterInsert = rows();
+      if (afterInsert.length !== initialRows + 1) {
+        throw new Error("insert did not yield N+1 rows");
+      }
+
       const index = positions[sample % positions.length];
-      const target = before[index];
+      const target = afterInsert[index];
       if (!target) throw new Error("deletion target missing");
       const targetId = target.getAttribute("data-todo-id");
       const button = removeButton(target);
       targetIndexes.push(index);
 
-      const start = performance.now();
+      const removalStart = performance.now();
       button.click();
-      removalSamples.push(performance.now() - start);
+      removalSamples.push(performance.now() - removalStart);
 
-      const after = rows();
-      if (after.length !== initialRows - 1 || target.isConnected ||
-          after.some((row) => row.getAttribute("data-todo-id") === targetId)) {
-        throw new Error("deletion did not remove the selected keyed row");
+      const afterRemoval = rows();
+      if (afterRemoval.length !== initialRows || target.isConnected ||
+          afterRemoval.some((row) => row.getAttribute("data-todo-id") === targetId)) {
+        throw new Error("deletion did not remove the selected keyed row or restore the baseline size");
       }
-      prepare("isolated remove restore " + sample);
-      add.click();
-      assertRows(initialRows, "remove restore");
     }
 
     return {
@@ -177,7 +170,8 @@ async function measureIsolatedKeyedMutations(page, count) {
 
   if (result.final_dom_rows !== count) throw new Error("isolated benchmark did not restore N rows");
 
-  // Gather DOM/JS boundary counts in a separate, non-timed pass.
+  // Gather DOM/JS boundary counts in a separate, non-timed pass. The same
+  // insert/remove pair keeps the list at its steady-state size.
   const domCounts = await page.evaluate((initialRows) => {
     const list = document.querySelector('[data-testid="todo-list"]');
     const input = document.querySelector("#todo-input");
@@ -229,16 +223,15 @@ async function measureIsolatedKeyedMutations(page, count) {
       reset();
       add.click();
       const insertion = snapshot();
-      removeButton(rows()[rows().length - 1]).click();
 
-      const target = rows()[Math.floor(initialRows / 2)];
+      const target = rows()[Math.floor((initialRows + 1) / 2)];
       const button = removeButton(target);
       reset();
       button.click();
       const removal = snapshot();
-
-      prepare("instrumented restore");
-      add.click();
+      if (rows().length !== initialRows) {
+        throw new Error("instrumented insert/remove pair did not restore the baseline row count");
+      }
       return { insertion, removal };
     } finally {
       for (const restore of restores.reverse()) restore();
@@ -251,9 +244,13 @@ async function measureIsolatedKeyedMutations(page, count) {
       ...summarize(result.insertion_samples_raw, 1, "ms"),
       warmup_samples: 1,
       measured_samples: result.insertion_samples_raw.length,
-      preexisting_rows: count,
+      baseline_dom_rows: count,
+      operation_start_rows: count,
+      operation_end_rows: count + 1,
       final_dom_rows: count,
-      measured_scope: "Add click only; input preparation, selector lookup, verification and cleanup excluded",
+      paired_operation: "single_remove",
+      measured_scope:
+        "Add click only; followed by the separately timed paired Remove click to restore the steady-state baseline",
       dom_operation_counts: domCounts.insertion,
     },
     {
@@ -261,10 +258,14 @@ async function measureIsolatedKeyedMutations(page, count) {
       ...summarize(result.removal_samples_raw, 1, "ms"),
       warmup_samples: 1,
       measured_samples: result.removal_samples_raw.length,
-      preexisting_rows: count,
+      baseline_dom_rows: count,
+      operation_start_rows: count + 1,
+      operation_end_rows: count,
       final_dom_rows: count,
       deletion_target_indexes: result.deletion_target_indexes,
-      measured_scope: "Selected Remove click only; selector lookup, verification and restoration excluded",
+      paired_operation: "single_insert",
+      measured_scope:
+        "Selected Remove click only; one appended row is present at operation start and the paired removal returns the steady-state list to baseline",
       dom_operation_counts: domCounts.removal,
     },
   ];
