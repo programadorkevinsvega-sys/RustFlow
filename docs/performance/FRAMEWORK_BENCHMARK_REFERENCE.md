@@ -1,6 +1,6 @@
 # Competitive framework benchmark reference
 
-**Status:** upstream audit and source pin completed; the comparative suite is not implemented or accepted yet.  
+**Status:** upstream audit/source pin and executable workflow merged; the official comparison has not yet been run or accepted.  
 **Audit date:** 2026-11-03  
 **Repository:** [krausest/js-framework-benchmark](https://github.com/krausest/js-framework-benchmark)  
 **Pinned source commit:** [`fa510a76ffe066af1d30f3e75fa51d3fcbc14009`](https://github.com/krausest/js-framework-benchmark/commit/fa510a76ffe066af1d30f3e75fa51d3fcbc14009)  
