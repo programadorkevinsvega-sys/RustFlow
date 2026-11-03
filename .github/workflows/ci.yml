@@ -309,6 +309,22 @@ jobs:
         working-directory: examples/browser
         run: npm install --no-package-lock --no-audit --no-fund
 
+      - name: Record browser performance environment
+        working-directory: examples/browser
+        shell: bash
+        run: |
+          mkdir -p performance-results
+          {
+            echo "runner_os=$(uname -s)"
+            echo "runner_kernel=$(uname -r)"
+            echo "runner_arch=$(uname -m)"
+            echo "node=$(node --version)"
+            echo "npm=$(npm --version)"
+            echo "rustc=$(rustc --version)"
+            echo "cpu:"
+            lscpu
+          } > performance-results/environment.txt
+
       - name: Build executable browser bundle and static assets
         working-directory: examples/browser
         run: npm run build
