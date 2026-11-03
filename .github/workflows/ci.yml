@@ -236,17 +236,26 @@ jobs:
             lscpu
           } > performance-results/native/environment.txt
 
+          # Build the timing harnesses before collecting RSS. Measuring the first
+          # cargo bench invocation would otherwise include compilation memory.
+          cargo bench -p rustflow --bench reactivity > /dev/null
+          cargo bench -p rustflow-ssr --bench rendering > /dev/null
+
           for run in 1 2 3; do
             echo "Reactivity repetition ${run}/3"
-            /usr/bin/time -v -o "performance-results/native/reactivity-memory-${run}.txt" \
+            /usr/bin/time -v -o "performance-results/native/reactivity-rss-${run}.txt" \
               cargo bench -p rustflow --bench reactivity \
               > "performance-results/native/reactivity-${run}.jsonl"
 
             echo "SSR repetition ${run}/3"
-            /usr/bin/time -v -o "performance-results/native/ssr-memory-${run}.txt" \
+            /usr/bin/time -v -o "performance-results/native/ssr-rss-${run}.txt" \
               cargo bench -p rustflow-ssr --bench rendering \
               > "performance-results/native/ssr-${run}.jsonl"
           done
+
+          RUSTFLOW_MEMORY_SAMPLES=25 \
+            cargo bench -p rustflow --bench memory \
+            > performance-results/native/owner-memory.jsonl
 
           RUSTFLOW_BENCH_ITERATIONS=100 RUSTFLOW_BENCH_BULK_SIZE=50 \
             cargo bench -p rustflow-server --bench persistence \
