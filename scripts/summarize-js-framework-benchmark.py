@@ -92,8 +92,14 @@ def build_comparisons(
         per_operation: dict[str, object] = {}
         ratios: list[float] = []
         for operation in operations:
-            rustflow = float(results["rustflow"][kind][operation][metric]["p50"])
-            baseline = float(results[competitor][kind][operation][metric]["p50"])
+            if kind == "cpu":
+                rustflow_summary = results["rustflow"][kind][operation]["metrics"][metric]
+                baseline_summary = results[competitor][kind][operation]["metrics"][metric]
+            else:
+                rustflow_summary = results["rustflow"][kind][operation][metric]
+                baseline_summary = results[competitor][kind][operation][metric]
+            rustflow = float(rustflow_summary["p50"])
+            baseline = float(baseline_summary["p50"])
             ratio = rustflow / baseline if baseline else math.inf
             ratios.append(ratio)
             per_operation[operation] = {
