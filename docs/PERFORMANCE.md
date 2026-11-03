@@ -141,7 +141,18 @@ El archivo [baseline-2026-11-03.json](https://github.com/programadorkevinsvega-s
 | SSR | Baselines representativas +25% | Advertencia informativa en la revisión de resultados |
 | Browser init, DOM y listas | Baseline por escenario +25–40% según dispersión observada | Advertencia informativa, nunca gate de timing sensible al host |
 | Owner scopes / memoria | 25 ciclos por árbol de scopes a profundidades 1, 5, 20 y 80; outstanding después de dispose = 0 | Presupuestos de allocaciones/bytes con ~25% de margen | Gate determinista; falla por retención o por superar cualquier techo |
-| ComponentInstance / memoria | Cuatro escenarios reales de mount/unmount; 25 muestras; after-dispose debe ser 0 | Techos de asignaciones/bytes pendientes de revisar el primer artefacto de ComponentInstance | Gate de cero retención activo; techos se fijan con la medición real |
+| ComponentInstance / memoria | Cuatro escenarios reales de mount/render/unmount; 25 muestras por profundidad 1, 5, 20 y 80 | Techos medidos con ~25% de margen: allocations 32/120/440/1.720; bytes 3.072/13.312/54.272/217.856 | Gate determinista de allocations, bytes, outstanding setup y outstanding after-unmount = 0 |
+
+Los cuatro escenarios reales de `ComponentInstance` se midieron en 25 ciclos cada uno mediante `ComponentDefinition` reutilizada, `ComponentInstance::mount`, creación de señales, render inicial y `unmount`. Los presupuestos iniciales se derivan de esa medición con un margen aproximado del 25%; los límites de bytes se redondean hacia arriba a múltiplos de 256 y las asignaciones a múltiplos de 8:
+
+| Profundidad | Allocaciones observadas/ciclo | Bytes solicitados/ciclo | Outstanding máximo tras mount | Máx. allocaciones | Máx. bytes | Máx. outstanding tras mount |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 21 | 2.330 | 2.279 | 32 | 3.072 | 3.072 |
+| 5 | 93 | 10.466 | 8.291 | 120 | 13.312 | 10.496 |
+| 20 | 352 | 43.248 | 32.060 | 440 | 54.272 | 40.192 |
+| 80 | 1.376 | 174.184 | 127.136 | 1.720 | 217.856 | 158.976 |
+
+La referencia se obtuvo del artefacto nativo del CI #860 (PR #78, HEAD `61f6d2f`, commit de ejecución `d2f83e30c54f594a6ca10c42ef1afe1ba0658ccb`, runner Ubuntu 24.04 / AMD EPYC 7763, Rust 1.99.1). Las 25 muestras de cada profundidad registraron allocaciones y bytes liberados iguales a los asignados, cero reallocaciones y outstanding mínimo/máximo/promedio exactamente 0 después de `unmount`. Es un baseline candidato que se vuelve a validar en cada CI del HEAD actual; no es RSS ni memoria física. La fuente y los límites completos están registrados separadamente en `memory_component_instance_lifecycle` dentro del JSON baseline.
 
 Los techos de bundle dejan margen aproximado de 20–30% sobre el primer artefacto medido. No son objetivos de tamaño recomendado; son límites de regresión para esta aplicación de demostración. Los presupuestos absolutos de tiempo se revisan con mediana y p90/p95 y permanecen warning-only debido al ruido del runner. La memoria nativa tiene límites deterministas por escenario y exige saldo outstanding cero después de dispose; la reconciliación keyed tiene un gate relativo de mejora mínima de 20% en un A/B/A dentro del mismo runner.
 
