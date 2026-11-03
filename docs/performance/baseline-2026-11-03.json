@@ -30,14 +30,18 @@
     "effect.single_subscriber_set_and_flush": 373.6,
     "effect.dynamic_dependency_switch": 509.7,
     "memo.cached_read": 31.7,
-    "memo.source_update_and_recompute": 476.0,
+    "memo.source_update_and_recompute": 476,
     "batch.sixteen_individual_writes": 38291.6,
     "batch.sixteen_coalesced_writes": 4087.1,
     "load.shared_signal_fanout_1024": 381256.1,
     "load.one_effect_with_1000_signal_dependencies": 285567.6,
     "lifecycle.owner_signal_create_and_dispose": 380.4,
     "lifecycle.owner_effect_create_and_dispose": 864.8,
-    "lifecycle.nested_owner_tree_cleanup": 1380.6
+    "lifecycle.nested_owner_tree_cleanup": 1380.6,
+    "load.shared_signal_fanout_1": 374.46,
+    "load.shared_signal_fanout_16": 4978.168,
+    "load.shared_signal_fanout_64": 20384.84,
+    "load.shared_signal_fanout_256": 87017.795
   },
   "native_ssr_median_ns_per_render_across_three_runs": {
     "ssr.simple_static_tree": 575.4,
@@ -56,19 +60,31 @@
       "samples": 5,
       "median": 6.6,
       "p95": 21.6,
-      "raw": [21.6, 14.0, 6.0, 6.6, 5.3]
+      "raw": [
+        21.6,
+        14,
+        6,
+        6.6,
+        5.3
+      ]
     },
     "counter_100_synchronous_dom_updates_ms": {
       "samples": 5,
       "median": 2.2,
       "p95": 8.1,
-      "raw": [8.1, 2.0, 2.4, 2.2, 1.8]
+      "raw": [
+        8.1,
+        2,
+        2.4,
+        2.2,
+        1.8
+      ]
     },
     "todo_row_attribute_and_checked_property_update_ms": {
       "samples": 100,
       "median": 0.1,
       "p95": 0.2,
-      "p99": 1.0
+      "p99": 1
     },
     "keyed_list_initial_mount_100_ms": {
       "samples": 3,
@@ -88,7 +104,7 @@
     },
     "keyed_list_reverse_100_ms": {
       "samples": 10,
-      "median": 7.0,
+      "median": 7,
       "p95": 10.4
     },
     "keyed_list_remove_100_ms": {
@@ -97,11 +113,21 @@
     },
     "nested_component_depth": {
       "status": "not_measured_in_source_run",
-      "next_scenarios": [5, 20, 80]
+      "next_scenarios": [
+        5,
+        20,
+        80
+      ]
     },
     "js_heap": {
       "source": "Chromium performance.memory",
-      "used_js_heap_bytes_observed": [10000000, 10000000, 10000000, 10000000, 10000000],
+      "used_js_heap_bytes_observed": [
+        10000000,
+        10000000,
+        10000000,
+        10000000,
+        10000000
+      ],
       "note": "This headless-Chromium observation is quantized at this scale and is not a useful per-component retention signal."
     }
   },
@@ -120,8 +146,16 @@
     "total_brotli": 135906
   },
   "process_rss_kib": {
-    "reactivity_raw_samples": [184808, 140336, 140252],
-    "ssr_raw_samples": [275152, 52624, 52896],
+    "reactivity_raw_samples": [
+      184808,
+      140336,
+      140252
+    ],
+    "ssr_raw_samples": [
+      275152,
+      52624,
+      52896
+    ],
     "note": "The first cargo bench invocation included compilation and is not a valid runtime-only RSS sample. The two later repetitions are useful only as an initial warm-process estimate; the follow-up workflow precompiles before timing RSS."
   },
   "proposed_regression_guardrails": {
