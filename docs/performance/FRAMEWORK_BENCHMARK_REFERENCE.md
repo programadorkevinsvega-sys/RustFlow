@@ -96,14 +96,22 @@ The RustFlow harness may add stronger controls (same job, same runner, sequentia
 
 ## Acceptance status
 
-The upstream repository and selected lockfiles are pinned, and the RustFlow keyed benchmark page plus the same-runner GitHub Actions harness are now part of PR #78:
+The source audit and exact pin are complete. PR #78 now contains the following implementation scaffolding:
 
-- Submodule `benchmarks/js-framework-benchmark` points to `fa510a76ffe066af1d30f3e75fa51d3fcbc14009`.
-- The selected upstream keyed implementations are built from their pinned lockfiles: React 19.2.0, Vue 3.5.39 and Svelte 5.42.1.
-- RustFlow's WASM build is copied into the official runner as `keyed/rustflow`; its controls preserve the upstream button IDs and keyed row lifecycle.
-- The official CPU suite is enabled for PR #78, manual dispatch and weekly scheduled runs. It requires Chromium `156.0.8078.4`, runs all four implementations sequentially on the same browser job, and preserves raw result files plus a geometric-mean comparison report.
-- The extended RustFlow-only suite runs after A/B/A and the upstream comparison on PR #78, manual dispatch and weekly scheduled runs, keeping its extra workload out of earlier timing measurements.
+- The repository is tracked as submodule `benchmarks/js-framework-benchmark` at `fa510a76ffe066af1d30f3e75fa51d3fcbc14009`.
+- The selected keyed upstream implementations are React 19.2.0, Vue 3.5.39 and Svelte 5.42.1, built from their pinned upstream lockfiles.
+- RustFlow has a keyed browser implementation under the official path `/frameworks/keyed/rustflow/`, using the benchmark's expected controls (`run`, `runlots`, `add`, `update`, `clear`, `swaprows`), keyed row IDs, selection class and remove action.
+- The Phase 8.1 browser workflow checks out the submodule, builds the selected upstream frameworks, serves the RustFlow WASM build beside them, verifies the actual Chromium version is `156.0.8078.4`, and invokes the upstream Playwright runner. The CPU aggregate is generated from the upstream raw total/script/paint trace results.
+- For the dedicated PR #78, the sequence is standard RustFlow browser measurements, same-runner A/B/A, official four-framework comparison, then the RustFlow-only extended list stress suite. The extended stress workload therefore does not precede and contaminate the A/B/A or cross-framework samples.
 
-**Still pending acceptance:** the current HEAD has not yet produced successful CI evidence for the keyed RustFlow fixture, A/B/A stability with the updated warmups, all nine comparative operations, the extended 10k-row checks, memory and size outputs. The startup/Lighthouse startup benchmark is not part of the pinned runner's ordinary CPU/MEM/SIZE list, and upstream memory cases for five updates and five replacements are commented out in the pinned source. These are explicit gaps, not completed measurements.
+**Execution evidence is still pending.** A wired workflow, a compiled fixture or a test source file is not accepted measurement evidence. The latest HEAD must pass the WASM build, browser E2E, A/B/A comparator, full extended suite and official four-framework runner, and must publish complete raw artifacts before this phase can be accepted.
 
-The suite does not establish competitive superiority until a complete same-runner artifact contains all four frameworks and all nine CPU operation identifiers. The geometric mean is calculated only from those paired CPU samples; memory and bundle results remain separate. Phase 8.1 stays open until the artifacts have been reviewed and the required checks pass.
+### Known coverage gaps in the pinned upstream runner
+
+- The pinned `benchmarkInfos` array includes CPU, memory and size benchmarks but does not include the declared Lighthouse startup main benchmark in its normal executable list. It does not produce a comparable official startup/Lighthouse result through the invoked runner. RustFlow initialization timing remains a separate specialized metric until a separate equivalent startup protocol is implemented.
+- The memory IDs `23_update5-memory` and `24_run5-memory` are defined but commented out of `memBenchmarkInfosArray` at the pinned commit. The runnable upstream memory cases are `21_ready-memory`, `22_run-memory` and `25_run-clear-memory`. The report must not say that five-update or five-replacement memory was measured by upstream.
+- The executable runner's row-count and warmup differences from the README are documented above. The upstream-compatible aggregate uses the executable runner's behavior; 10,000-row extended semantics remain separate.
+
+The competitive CPU aggregate is valid only when each of the nine official operation IDs has non-empty samples from React, Vue, Svelte and RustFlow collected by the same CI job and browser. Compute each ratio as `median(RustFlow) / median(framework)` and aggregate the nine ratios with a geometric mean. Do not mix memory, bundle or startup measurements into that CPU index.
+
+Keep Phase 8.1 open until the complete current-HEAD evidence is reviewed, all required checks pass and the result shows the actual state against every framework. Do not declare superiority from the internal RustFlow A/B/A comparison.
