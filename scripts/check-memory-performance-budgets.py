@@ -28,16 +28,26 @@ BUDGETS = {
         "max_bytes_allocated_per_lifecycle": 156672,
         "max_outstanding_requested_bytes_after_setup": 102912,
     },
-}
-
-# Actual ComponentInstance lifecycle scenarios are collected alongside owner-scope
-# baselines. Their allocation ceilings are added only after the first 25-sample
-# artifact has been inspected; until then, disposal-to-zero remains mandatory.
-PENDING_BUDGET_SCENARIOS = {
-    "component_instance.depth_1_states_3",
-    "component_instance.depth_5_states_3",
-    "component_instance.depth_20_states_3",
-    "component_instance.depth_80_states_3",
+    "component_instance.depth_1_states_3": {
+        "max_allocations_per_lifecycle": 32,
+        "max_bytes_allocated_per_lifecycle": 3072,
+        "max_outstanding_requested_bytes_after_setup": 3072,
+    },
+    "component_instance.depth_5_states_3": {
+        "max_allocations_per_lifecycle": 120,
+        "max_bytes_allocated_per_lifecycle": 13312,
+        "max_outstanding_requested_bytes_after_setup": 10496,
+    },
+    "component_instance.depth_20_states_3": {
+        "max_allocations_per_lifecycle": 440,
+        "max_bytes_allocated_per_lifecycle": 54272,
+        "max_outstanding_requested_bytes_after_setup": 40192,
+    },
+    "component_instance.depth_80_states_3": {
+        "max_allocations_per_lifecycle": 1720,
+        "max_bytes_allocated_per_lifecycle": 217856,
+        "max_outstanding_requested_bytes_after_setup": 158976,
+    },
 }
 
 
@@ -55,13 +65,13 @@ def main() -> int:
         "source": str(path),
         "samples_required": 25,
         "scenario_budgets": {},
-        "pending_budget_scenarios": sorted(PENDING_BUDGET_SCENARIOS),
+        "pending_budget_scenarios": [],
         "violations": [],
-        "policy": "Hard bytes/alloc count ceilings; every measured owner tree must return outstanding requested bytes to zero after dispose.",
+        "policy": "Hard bytes/alloc count ceilings for Scope owner trees and real ComponentInstance mount/unmount lifecycles; every sampled lifecycle must return outstanding requested bytes to zero after dispose/unmount.",
     }
 
-    for name in sorted(set(BUDGETS) | PENDING_BUDGET_SCENARIOS):
-        budget = BUDGETS.get(name)
+    for name in sorted(BUDGETS):
+        budget = BUDGETS[name]
         measurement = measurements.get(name)
         if measurement is None:
             errors.append(f"missing memory scenario: {name}")
@@ -83,12 +93,12 @@ def main() -> int:
                 "outstanding_requested_bytes_after_dispose_max"
             ),
             "budgets": budget,
-            "budget_status": "enforced" if budget is not None else "pending_initial_measurement_review",
+            "budget_status": "enforced",
         }
         report["scenario_budgets"][name] = scenario
 
-        if int(measurement["samples"]) < 25:
-            errors.append(f"{name}: only {measurement['samples']} samples; 25 required")
+        if int(measurement["samples"]) != 25:
+            errors.append(f"{name}: expected exactly 25 samples; got {measurement['samples']}")
 
         if budget is not None:
             checks = [
@@ -122,7 +132,7 @@ def main() -> int:
         elif any(float(value) != 0.0 for value in after_dispose):
             errors.append(f"{name}: outstanding requested bytes after dispose must be zero; got {after_dispose}")
 
-    expected_scenarios = set(BUDGETS) | PENDING_BUDGET_SCENARIOS
+    expected_scenarios = set(BUDGETS)
     unexpected = sorted(set(measurements) - expected_scenarios)
     if unexpected:
         errors.append(f"unexpected memory scenarios require an explicit budget: {unexpected}")
@@ -135,7 +145,7 @@ def main() -> int:
     print(f"Wrote memory budget review to {output}")
     if errors:
         return 1
-    print(f"Validated {len(BUDGETS)} owner-lifecycle memory scenarios.")
+    print(f"Validated {len(BUDGETS)} Scope and ComponentInstance memory scenarios.")
     return 0
 
 
