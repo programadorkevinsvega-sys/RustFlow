@@ -9,7 +9,7 @@ use std::{
     rc::Rc,
 };
 
-use js_sys::{Map, Reflect, Set};
+use js_sys::Reflect;
 use rustflow::{
     components::{ComponentError, ComponentInstance, ComponentRegistry, RenderTarget},
     reactivity::{Effect, Runtime, RuntimeError, Scope, untrack},
@@ -256,55 +256,21 @@ struct PlannedChild {
 struct DiffContext<'a> {
     component_regions: &'a [ComponentRegion],
     dynamic_regions: &'a [DynamicRegion],
-    keyed_components: HashMap<(String, Key), Vec<usize>>,
-    dynamics_by_id: HashMap<u64, Vec<usize>>,
     used_components: Vec<bool>,
     used_dynamics: Vec<bool>,
 }
 
 impl<'a> DiffContext<'a> {
     fn new(component_regions: &'a [ComponentRegion], dynamic_regions: &'a [DynamicRegion]) -> Self {
-        let mut keyed_components = HashMap::<(String, Key), Vec<usize>>::new();
-        for (index, region) in component_regions.iter().enumerate() {
-            if let Some(key) = region.descriptor.key() {
-                keyed_components
-                    .entry((region.descriptor.name().to_owned(), key.clone()))
-                    .or_default()
-                    .push(index);
-            }
-        }
-
-        let mut dynamics_by_id = HashMap::<u64, Vec<usize>>::new();
-        for (index, region) in dynamic_regions.iter().enumerate() {
-            dynamics_by_id
-                .entry(region.dynamic.id())
-                .or_default()
-                .push(index);
-        }
-
         Self {
             component_regions,
             dynamic_regions,
-            keyed_components,
-            dynamics_by_id,
             used_components: vec![false; component_regions.len()],
             used_dynamics: vec![false; dynamic_regions.len()],
         }
     }
 
     fn take_component(&mut self, descriptor: &ComponentNode) -> Option<usize> {
-        if let Some(key) = descriptor.key() {
-            let identity = (descriptor.name().to_owned(), key.clone());
-            let index = self.keyed_components.get(&identity).and_then(|indices| {
-                indices.iter().copied().find(|index| {
-                    !self.used_components[*index]
-                        && self.component_regions[*index].descriptor == *descriptor
-                })
-            })?;
-            self.used_components[index] = true;
-            return Some(index);
-        }
-
         let index = self
             .component_regions
             .iter()
@@ -317,12 +283,13 @@ impl<'a> DiffContext<'a> {
     }
 
     fn take_dynamic(&mut self, dynamic: &DynamicChild) -> Option<usize> {
-        let index = self.dynamics_by_id.get(&dynamic.id()).and_then(|indices| {
-            indices
-                .iter()
-                .copied()
-                .find(|index| !self.used_dynamics[*index])
-        })?;
+        let index = self
+            .dynamic_regions
+            .iter()
+            .enumerate()
+            .find_map(|(index, region)| {
+                (!self.used_dynamics[index] && region.dynamic.id() == dynamic.id()).then_some(index)
+            })?;
         self.used_dynamics[index] = true;
         Some(index)
     }
@@ -1890,17 +1857,17 @@ impl DomRenderer {
         owner_scope: &Scope,
     ) -> Result<Vec<PlannedChild>, DomError> {
         let old_children = previous.children();
-        // KeyedList rejects duplicate keys at construction, so a key-to-index
-        // lookup is sufficient and avoids a full scan of the old list per child.
-        let previous_by_key = old_children
-            .iter()
-            .enumerate()
-            .map(|(index, child)| (child.key().clone(), index))
-            .collect::<HashMap<_, _>>();
+        let mut used = vec![false; old_children.len()];
         let mut planned = Vec::with_capacity(next.children().len());
         for child in next.children() {
-            let matched = previous_by_key.get(child.key()).copied();
+            let matched = old_children
+                .iter()
+                .enumerate()
+                .find_map(|(index, candidate)| {
+                    (!used[index] && candidate.key() == child.key()).then_some(index)
+                });
             let child_plan = if let Some(previous_index) = matched {
+                used[previous_index] = true;
                 self.plan_diff_with_context(
                     old_children[previous_index].view(),
                     child.view(),
@@ -2255,20 +2222,6 @@ impl DomRenderer {
         previous_dynamics: &mut Vec<DynamicRegion>,
         resources: &mut RenderedNodes,
     ) -> Result<Vec<Node>, DomError> {
-        let component_indices_by_start = Map::new();
-        for (index, region) in previous_components.iter().enumerate() {
-            let start: Node = region.mounted.start.clone().unchecked_into();
-            component_indices_by_start.set(start.as_ref(), &JsValue::from_f64(index as f64));
-        }
-        let dynamic_indices_by_start = Map::new();
-        for (index, region) in previous_dynamics.iter().enumerate() {
-            let state = region.state.borrow();
-            if let Some(current) = state.as_ref() {
-                let start: Node = current.mounted.start.clone().unchecked_into();
-                dynamic_indices_by_start.set(start.as_ref(), &JsValue::from_f64(index as f64));
-            }
-        }
-
         let mut ranges = Vec::with_capacity(previous.len());
         let mut cursor = 0usize;
         for view in previous {
@@ -2278,8 +2231,6 @@ impl DomRenderer {
                 cursor,
                 previous_components,
                 previous_dynamics,
-                &component_indices_by_start,
-                &dynamic_indices_by_start,
             )
             .ok_or_else(|| {
                 DomError::JavaScript(
@@ -2325,26 +2276,8 @@ impl DomRenderer {
         }
 
         remove_obsolete_nodes(parent, existing_nodes, &result)?;
-
-        // Walk from right to left and retain an already-correct node in place.
-        // For an append to a large keyed list this moves only the newly-created
-        // suffix instead of removing/reinserting every existing sibling.
-        let mut cursor = before.cloned();
-        for node in result.iter().rev() {
-            let already_in_position = node
-                .parent_node()
-                .is_some_and(|actual_parent| actual_parent.is_same_node(Some(parent)))
-                && match (node.next_sibling(), cursor.as_ref()) {
-                    (Some(next_sibling), Some(cursor)) => next_sibling.is_same_node(Some(cursor)),
-                    (None, None) => true,
-                    _ => false,
-                };
-            if !already_in_position {
-                parent
-                    .insert_before(node, cursor.as_ref())
-                    .map_err(js_error)?;
-            }
-            cursor = Some(node.clone());
+        for node in &result {
+            parent.insert_before(node, before).map_err(js_error)?;
         }
         Ok(result)
     }
@@ -2490,8 +2423,6 @@ fn view_node_count_at(
     cursor: usize,
     components: &[ComponentRegion],
     dynamics: &[DynamicRegion],
-    component_indices_by_start: &Map,
-    dynamic_indices_by_start: &Map,
 ) -> Option<usize> {
     match view {
         View::Text(_) | View::Element(_) => {
@@ -2507,8 +2438,6 @@ fn view_node_count_at(
                     offset,
                     components,
                     dynamics,
-                    component_indices_by_start,
-                    dynamic_indices_by_start,
                 )?)?;
             }
             offset.checked_sub(cursor)
@@ -2522,22 +2451,16 @@ fn view_node_count_at(
                     offset,
                     components,
                     dynamics,
-                    component_indices_by_start,
-                    dynamic_indices_by_start,
                 )?)?;
             }
             offset.checked_sub(cursor)
         }
-        View::Component(component) => {
+        View::Component(_) => {
             let first = existing_nodes.get(cursor)?;
-            let region_index = component_indices_by_start
-                .get(first.as_ref())
-                .as_f64()
-                .map(|index| index as usize)?;
-            let region = components.get(region_index)?;
-            if region.descriptor != *component {
-                return None;
-            }
+            let region = components.iter().find(|region| {
+                let start: Node = region.mounted.start.clone().unchecked_into();
+                start.is_same_node(Some(first))
+            })?;
             range_node_count(
                 &region.mounted.start,
                 &region.mounted.end,
@@ -2547,11 +2470,13 @@ fn view_node_count_at(
         }
         View::Dynamic(_) => {
             let first = existing_nodes.get(cursor)?;
-            let region_index = dynamic_indices_by_start
-                .get(first.as_ref())
-                .as_f64()
-                .map(|index| index as usize)?;
-            let region = dynamics.get(region_index)?;
+            let region = dynamics.iter().find(|region| {
+                let state = region.state.borrow();
+                state.as_ref().is_some_and(|current| {
+                    let start: Node = current.mounted.start.clone().unchecked_into();
+                    start.is_same_node(Some(first))
+                })
+            })?;
             let state = region.state.borrow();
             let current = state.as_ref()?;
             range_node_count(
@@ -2836,15 +2761,11 @@ fn set_preserve_on_drop(mounted: &mut MountedDom, preserve: bool) {
 }
 
 fn remove_obsolete_nodes(parent: &Node, previous: &[Node], next: &[Node]) -> Result<(), DomError> {
-    // JS Set uses object identity for DOM nodes. This keeps the retain/remove
-    // pass linear instead of comparing every old node with every new node.
-    let retained_nodes = Set::new(&JsValue::UNDEFINED);
-    for node in next {
-        retained_nodes.add(node.as_ref());
-    }
-
     for old_node in previous {
-        if !retained_nodes.has(old_node.as_ref())
+        let retained = next
+            .iter()
+            .any(|new_node| new_node.is_same_node(Some(old_node)));
+        if !retained
             && old_node
                 .parent_node()
                 .is_some_and(|actual_parent| actual_parent.is_same_node(Some(parent)))
