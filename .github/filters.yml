@@ -45,6 +45,13 @@ dependencies:
   - '.github/workflows/**'
   - '.github/actions/**'
 
+performance_tools:
+  - 'scripts/compare-browser-performance.py'
+  - 'scripts/summarize-js-framework-benchmark.py'
+  - 'scripts/patch-js-framework-benchmark.py'
+  - 'scripts/check-*-performance-budgets.py'
+  - 'scripts/tests/**'
+
 full_ci:
   - '.github/workflows/**'
   - '.github/actions/**'
