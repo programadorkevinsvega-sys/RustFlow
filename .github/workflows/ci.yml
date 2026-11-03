@@ -402,7 +402,11 @@ jobs:
 
           echo "Building the base DOM reconciler ($PHASE_BASE_SHA) on the same runner."
           npm run build
-          RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
+          # Keep the base A/B/A control on the critical 100-row insertion/reverse
+          # and secondary mount/depth workloads. The 100/1k/5k isolated mutation
+          # series run on both optimized passes; the base keyed matcher is
+          # quadratic and 20 pairs at 5k exceed the Playwright deadline.
+          RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=0 npm run bench:browser
           cp performance-results/browser.json performance-results/browser-unoptimized.json
 
           echo "Restoring the optimized DOM reconciler ($PHASE_HEAD_SHA) and repeating the suite."
