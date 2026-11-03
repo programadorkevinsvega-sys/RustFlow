@@ -134,7 +134,7 @@ def main() -> int:
         if framework is None:
             continue
 
-        if benchmark in CPU_OPERATIONS:
+        if benchmark in CPU_OPERATIONS or benchmark in EXTENDED_CPU_OPERATIONS:
             values = payload.get("values", {})
             metrics: dict[str, object] = {}
             for metric in ("total", "script", "paint"):
