@@ -67,7 +67,24 @@ const otherFiles = assetFiles.filter(
 const wasmBytes = readFileSync(wasmPath);
 const rawWasmBytes = statSync(wasmPath).size;
 const wasmCompressed = compress(wasmBytes);
-const budgetBytes = 1.5 * 1024 * 1024;
+
+// Initial hard bundle ceilings leave roughly 20–30% headroom above the first
+// measured production artifact. They are deterministic byte limits, not timing
+// thresholds. The historical 1.5 MiB WASM ceiling remains recorded for context.
+const budgets = {
+  wasmRawBytes: 600 * 1024,
+  wasmGzipBytes: 220 * 1024,
+  wasmBrotliBytes: 160 * 1024,
+  javascriptRawBytes: 24 * 1024,
+  javascriptGzipBytes: 7 * 1024,
+  javascriptBrotliBytes: 6 * 1024,
+  cssRawBytes: 32 * 1024,
+  cssGzipBytes: 8 * 1024,
+  cssBrotliBytes: 8 * 1024,
+  totalGzipBytes: 225_280,
+  totalBrotliBytes: 174_080,
+};
+const legacyWasmBudgetBytes = 1.5 * 1024 * 1024;
 
 const report = {
   schema_version: 1,
@@ -79,8 +96,13 @@ const report = {
     raw_bytes: rawWasmBytes,
     gzip_bytes: wasmCompressed.gzip_bytes,
     brotli_bytes: wasmCompressed.brotli_bytes,
-    existing_raw_budget_bytes: budgetBytes,
-    existing_raw_budget_passed: rawWasmBytes <= budgetBytes,
+    legacy_raw_budget_bytes: legacyWasmBudgetBytes,
+    active_raw_budget_bytes: budgets.wasmRawBytes,
+    active_raw_budget_passed: rawWasmBytes <= budgets.wasmRawBytes,
+    gzip_budget_bytes: budgets.wasmGzipBytes,
+    gzip_budget_passed: wasmCompressed.gzip_bytes <= budgets.wasmGzipBytes,
+    brotli_budget_bytes: budgets.wasmBrotliBytes,
+    brotli_budget_passed: wasmCompressed.brotli_bytes <= budgets.wasmBrotliBytes,
   },
   vite_production_assets: {
     directory: "dist/assets",
@@ -94,10 +116,21 @@ const report = {
       bytes: statSync(path).size,
     })),
   },
+  budgets: {
+    ...budgets,
+    javascript_raw_passed: summarize(jsFiles).raw_bytes <= budgets.javascriptRawBytes,
+    javascript_gzip_passed: summarize(jsFiles).gzip_bytes <= budgets.javascriptGzipBytes,
+    javascript_brotli_passed: summarize(jsFiles).brotli_bytes <= budgets.javascriptBrotliBytes,
+    css_raw_passed: summarize(cssFiles).raw_bytes <= budgets.cssRawBytes,
+    css_gzip_passed: summarize(cssFiles).gzip_bytes <= budgets.cssGzipBytes,
+    css_brotli_passed: summarize(cssFiles).brotli_bytes <= budgets.cssBrotliBytes,
+    total_gzip_passed: summarize(assetFiles).gzip_bytes <= budgets.totalGzipBytes,
+    total_brotli_passed: summarize(assetFiles).brotli_bytes <= budgets.totalBrotliBytes,
+  },
   notes: [
     "Compressed totals are per-file compression sums, not a simulated HTTP transfer with shared cross-file dictionaries.",
     "Vite production assets exclude source maps from the aggregate.",
-    "Only the pre-existing raw WASM budget is enforced; JavaScript and CSS thresholds remain informational until a stable baseline is approved.",
+    "Active hard ceilings are initial regression guards with measured baseline headroom; timing budgets remain informational because runner noise is hardware-dependent.",
   ],
 };
 
@@ -127,10 +160,27 @@ for (const [name, result] of Object.entries(report.vite_production_assets)) {
       result.brotli_bytes,
   );
 }
-console.log("Existing raw WASM budget: " + budgetBytes + " bytes");
+console.log("Active raw WASM budget: " + budgets.wasmRawBytes + " bytes");
+console.log("Legacy raw WASM budget: " + legacyWasmBudgetBytes + " bytes");
 console.log("Bundle report: " + reportPath);
 
-if (rawWasmBytes > budgetBytes) {
-  console.error("WASM bundle exceeds the existing raw WASM size budget.");
+const checks = [
+  ["WASM raw", rawWasmBytes, budgets.wasmRawBytes],
+  ["WASM gzip", wasmCompressed.gzip_bytes, budgets.wasmGzipBytes],
+  ["WASM Brotli", wasmCompressed.brotli_bytes, budgets.wasmBrotliBytes],
+  ["JavaScript raw", report.vite_production_assets.javascript.raw_bytes, budgets.javascriptRawBytes],
+  ["JavaScript gzip", report.vite_production_assets.javascript.gzip_bytes, budgets.javascriptGzipBytes],
+  ["JavaScript Brotli", report.vite_production_assets.javascript.brotli_bytes, budgets.javascriptBrotliBytes],
+  ["CSS raw", report.vite_production_assets.css.raw_bytes, budgets.cssRawBytes],
+  ["CSS gzip", report.vite_production_assets.css.gzip_bytes, budgets.cssGzipBytes],
+  ["CSS Brotli", report.vite_production_assets.css.brotli_bytes, budgets.cssBrotliBytes],
+  ["total gzip", report.vite_production_assets.total.gzip_bytes, budgets.totalGzipBytes],
+  ["total Brotli", report.vite_production_assets.total.brotli_bytes, budgets.totalBrotliBytes],
+];
+const violations = checks.filter(([, actual, budget]) => actual > budget);
+if (violations.length > 0) {
+  for (const [name, actual, budget] of violations) {
+    console.error(name + " bundle budget exceeded: " + actual + " > " + budget + " bytes");
+  }
   process.exit(1);
 }
