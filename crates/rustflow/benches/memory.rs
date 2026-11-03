@@ -44,10 +44,10 @@ impl Totals {
     fn record(&mut self, created: Stats, disposed: Stats) {
         let release = disposed - created;
         self.allocations += disposed.allocations as u128;
-        self.deallocations += release.deallocations as u128;
+        self.deallocations += disposed.deallocations as u128;
         self.reallocations += disposed.reallocations as u128;
         self.bytes_allocated += disposed.bytes_allocated as u128;
-        self.bytes_deallocated += release.bytes_deallocated as u128;
+        self.bytes_deallocated += disposed.bytes_deallocated as u128;
         self.bytes_reallocated += disposed.bytes_reallocated as i128;
 
         let after_setup = outstanding_requested_bytes(created);
