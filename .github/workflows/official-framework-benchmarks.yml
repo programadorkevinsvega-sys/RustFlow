@@ -224,6 +224,39 @@ jobs:
             cp -a "$upstream/webdriver-ts/traces/." "$result_dir/traces/"
           fi
 
+      - name: Generate fail-closed report for complete or partial data
+        if: always()
+        shell: bash
+        env:
+          RUSTFLOW_EXPECTED_COMMIT: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          result_dir="$GITHUB_WORKSPACE/examples/browser/performance-results/official"
+          mkdir -p "$result_dir"
+          if [[ ! -f "$result_dir/environment.txt" ]]; then
+            {
+              echo "rustflow_commit=${RUSTFLOW_EXPECTED_COMMIT:-unavailable}"
+              echo "upstream_commit=unavailable"
+              echo "node=$(node --version 2>/dev/null || echo unavailable)"
+              echo "npm=$(npm --version 2>/dev/null || echo unavailable)"
+              echo "rustc=$(rustc --version 2>/dev/null || echo unavailable)"
+              echo "chromium_version=unavailable"
+            } > "$result_dir/environment.txt"
+          fi
+          RUSTFLOW_EXPECTED_COMMIT="${RUSTFLOW_EXPECTED_COMMIT:-}" \
+            python3 scripts/summarize-js-framework-benchmark.py "$result_dir" || true
+          report="$result_dir/framework-comparison.json"
+          if [[ -f "$report" ]]; then
+            python3 - "$report" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if report.get("status") != "valid":
+              print("The partial benchmark report is diagnostic only; comparison is not accepted.")
+          PY
+          fi
+
       - name: Record comparison execution status
         if: always()
         shell: bash
