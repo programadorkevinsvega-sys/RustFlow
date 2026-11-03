@@ -189,5 +189,98 @@
       "status": "pending_first_stats_alloc_artifact",
       "method": "Set per-scenario ceilings only after reviewing allocations, bytes requested, outstanding bytes after setup, and outstanding bytes after dispose from the separate memory benchmark. Do not derive an owner/component memory budget from RSS."
     }
+  },
+  "memory_owner_lifecycle": {
+    "source": {
+      "workflow": "CI",
+      "workflow_run_id": 41562885761,
+      "workflow_run_number": 824,
+      "pr": 78,
+      "pr_head": "2978405ccc76037280a65b31e0c266cc67c9b505",
+      "workflow_merge_sha": "b4c86304d2d246f8595f3ab8d41eabe532eec29c",
+      "artifact_id": 13198521457,
+      "artifact_name": "phase-8-1-native-performance"
+    },
+    "environment": {
+      "os": "Ubuntu 24.04 GitHub-hosted",
+      "architecture": "x86_64",
+      "cpu": "AMD EPYC 9V45 96-Core Processor (4 vCPU exposed)",
+      "rustc": "1.99.1",
+      "allocator": "stats_alloc 0.1.10 over System"
+    },
+    "methodology": {
+      "samples_per_scenario": 25,
+      "scenarios": "component-scoped owner trees with 3 String signals per owner; depths 1, 5, 20, and 80",
+      "measurements": "alloc/dealloc/realloc counts, bytes allocated/deallocated, requested outstanding bytes after setup and after disposing/dropping the owner tree",
+      "note": "Requested bytes reported by allocator counters are not RSS, resident pages, allocator fragmentation, or WASM memory."
+    },
+    "measured": {
+      "component_owner.depth_1_states_3": {
+        "allocations_per_lifecycle": 15,
+        "deallocations_per_lifecycle": 15,
+        "reallocations_per_lifecycle": 0,
+        "bytes_allocated_per_lifecycle": 1718,
+        "bytes_deallocated_per_lifecycle": 1718,
+        "outstanding_requested_bytes_after_setup_mean": 1718,
+        "outstanding_requested_bytes_after_setup_max": 1718,
+        "outstanding_requested_bytes_after_dispose_mean": 0
+      },
+      "component_owner.depth_5_states_3": {
+        "allocations_per_lifecycle": 63,
+        "deallocations_per_lifecycle": 63,
+        "reallocations_per_lifecycle": 0,
+        "bytes_allocated_per_lifecycle": 7406,
+        "bytes_deallocated_per_lifecycle": 7406,
+        "outstanding_requested_bytes_after_setup_mean": 5486,
+        "outstanding_requested_bytes_after_setup_max": 5486,
+        "outstanding_requested_bytes_after_dispose_mean": 0
+      },
+      "component_owner.depth_20_states_3": {
+        "allocations_per_lifecycle": 232,
+        "deallocations_per_lifecycle": 232,
+        "reallocations_per_lifecycle": 0,
+        "bytes_allocated_per_lifecycle": 31008,
+        "bytes_deallocated_per_lifecycle": 31008,
+        "outstanding_requested_bytes_after_setup_mean": 20840,
+        "outstanding_requested_bytes_after_setup_max": 20840,
+        "outstanding_requested_bytes_after_dispose_mean": 0
+      },
+      "component_owner.depth_80_states_3": {
+        "allocations_per_lifecycle": 896,
+        "deallocations_per_lifecycle": 896,
+        "reallocations_per_lifecycle": 0,
+        "bytes_allocated_per_lifecycle": 125224,
+        "bytes_deallocated_per_lifecycle": 125224,
+        "outstanding_requested_bytes_after_setup_mean": 82256,
+        "outstanding_requested_bytes_after_setup_max": 82256,
+        "outstanding_requested_bytes_after_dispose_mean": 0
+      }
+    },
+    "proposed_hard_budgets": {
+      "derivation": "Measured maximum plus approximately 25% headroom, rounded to the next 256 bytes for requested-byte ceilings; allocation-count ceilings have at least 25% headroom rounded to a small integer bound. A zero after-dispose min/max requirement is checked per sampled lifecycle on the updated bench.",
+      "scenarios": {
+        "component_owner.depth_1_states_3": {
+          "max_allocations_per_lifecycle": 24,
+          "max_bytes_allocated_per_lifecycle": 2304,
+          "max_outstanding_requested_bytes_after_setup": 2304
+        },
+        "component_owner.depth_5_states_3": {
+          "max_allocations_per_lifecycle": 80,
+          "max_bytes_allocated_per_lifecycle": 9472,
+          "max_outstanding_requested_bytes_after_setup": 6912
+        },
+        "component_owner.depth_20_states_3": {
+          "max_allocations_per_lifecycle": 296,
+          "max_bytes_allocated_per_lifecycle": 38912,
+          "max_outstanding_requested_bytes_after_setup": 26112
+        },
+        "component_owner.depth_80_states_3": {
+          "max_allocations_per_lifecycle": 1120,
+          "max_bytes_allocated_per_lifecycle": 156672,
+          "max_outstanding_requested_bytes_after_setup": 102912
+        }
+      },
+      "dispose_requirement": "outstanding_requested_bytes_after_dispose_min == 0 and max == 0 for every measured lifecycle"
+    }
   }
 }
