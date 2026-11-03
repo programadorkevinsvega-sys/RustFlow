@@ -174,7 +174,7 @@ def main() -> int:
 
     for count in (100, 1_000, 10_000):
         name = f"keyed_list_initial_mount_{count}"
-        min_samples = 3 if count == 10_000 else 7
+        min_samples = 7
         before_item = scenario(opt_before, "keyed_list_initial_mounts", name)
         control_item = scenario(control, "keyed_list_initial_mounts", name)
         after_item = scenario(opt_after, "keyed_list_initial_mounts", name)
@@ -185,6 +185,13 @@ def main() -> int:
         ]:
             if item.get("final_dom_rows") != count:
                 violations.append(f"{label}: {name} expected {count} verified DOM rows")
+            if item.get("warmup_samples") != 1:
+                violations.append(f"{label}: {name} requires exactly one discarded warm-up sample")
+            raw_count = len(item.get("samples_raw", []))
+            if item.get("measured_samples") != raw_count:
+                violations.append(
+                    f"{label}: {name} declared measured_samples does not match {raw_count} raw samples"
+                )
 
         before_samples = [float(x) for x in before_item.get("samples_raw", [])]
         control_samples = [float(x) for x in control_item.get("samples_raw", [])]
@@ -338,7 +345,7 @@ def main() -> int:
                 "nested_component_depth_80",
             ],
             "minimum_secondary_samples_per_variant": 7,
-            "minimum_10000_row_samples_per_variant": 3,
+            "minimum_initial_mount_warmup_samples_per_variant": 1,
             "maximum_secondary_optimized_a_to_a_median_drift_percent": 15.0,
             "maximum_secondary_median_regression_percent": 25.0,
             "timing_budgets": "absolute timing thresholds remain warning-only; same-runner A/B/A gates the critical improvements, requires stable secondary A/A medians, and rejects secondary median regressions above 25%",
