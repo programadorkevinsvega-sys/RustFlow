@@ -256,21 +256,55 @@ struct PlannedChild {
 struct DiffContext<'a> {
     component_regions: &'a [ComponentRegion],
     dynamic_regions: &'a [DynamicRegion],
+    keyed_components: HashMap<(String, Key), Vec<usize>>,
+    dynamics_by_id: HashMap<u64, Vec<usize>>,
     used_components: Vec<bool>,
     used_dynamics: Vec<bool>,
 }
 
 impl<'a> DiffContext<'a> {
     fn new(component_regions: &'a [ComponentRegion], dynamic_regions: &'a [DynamicRegion]) -> Self {
+        let mut keyed_components = HashMap::<(String, Key), Vec<usize>>::new();
+        for (index, region) in component_regions.iter().enumerate() {
+            if let Some(key) = region.descriptor.key() {
+                keyed_components
+                    .entry((region.descriptor.name().to_owned(), key.clone()))
+                    .or_default()
+                    .push(index);
+            }
+        }
+
+        let mut dynamics_by_id = HashMap::<u64, Vec<usize>>::new();
+        for (index, region) in dynamic_regions.iter().enumerate() {
+            dynamics_by_id
+                .entry(region.dynamic.id())
+                .or_default()
+                .push(index);
+        }
+
         Self {
             component_regions,
             dynamic_regions,
+            keyed_components,
+            dynamics_by_id,
             used_components: vec![false; component_regions.len()],
             used_dynamics: vec![false; dynamic_regions.len()],
         }
     }
 
     fn take_component(&mut self, descriptor: &ComponentNode) -> Option<usize> {
+        if let Some(key) = descriptor.key() {
+            let identity = (descriptor.name().to_owned(), key.clone());
+            let index = self.keyed_components.get(&identity).and_then(|indices| {
+                indices.iter().copied().find(|index| {
+                    !self.used_components[*index]
+                        && self.component_regions[*index].descriptor == *descriptor
+                })
+            })?;
+            self.used_components[index] = true;
+            return Some(index);
+        }
+
         let index = self
             .component_regions
             .iter()
@@ -284,11 +318,13 @@ impl<'a> DiffContext<'a> {
 
     fn take_dynamic(&mut self, dynamic: &DynamicChild) -> Option<usize> {
         let index = self
-            .dynamic_regions
-            .iter()
-            .enumerate()
-            .find_map(|(index, region)| {
-                (!self.used_dynamics[index] && region.dynamic.id() == dynamic.id()).then_some(index)
+            .dynamics_by_id
+            .get(&dynamic.id())
+            .and_then(|indices| {
+                indices
+                    .iter()
+                    .copied()
+                    .find(|index| !self.used_dynamics[*index])
             })?;
         self.used_dynamics[index] = true;
         Some(index)
@@ -2222,6 +2258,23 @@ impl DomRenderer {
         previous_dynamics: &mut Vec<DynamicRegion>,
         resources: &mut RenderedNodes,
     ) -> Result<Vec<Node>, DomError> {
+        let mut keyed_components = HashMap::<(String, Key), Vec<usize>>::new();
+        for (index, region) in previous_components.iter().enumerate() {
+            if let Some(key) = region.descriptor.key() {
+                keyed_components
+                    .entry((region.descriptor.name().to_owned(), key.clone()))
+                    .or_default()
+                    .push(index);
+            }
+        }
+        let mut dynamics_by_id = HashMap::<u64, Vec<usize>>::new();
+        for (index, region) in previous_dynamics.iter().enumerate() {
+            dynamics_by_id
+                .entry(region.dynamic.id())
+                .or_default()
+                .push(index);
+        }
+
         let mut ranges = Vec::with_capacity(previous.len());
         let mut cursor = 0usize;
         for view in previous {
@@ -2231,6 +2284,8 @@ impl DomRenderer {
                 cursor,
                 previous_components,
                 previous_dynamics,
+                &keyed_components,
+                &dynamics_by_id,
             )
             .ok_or_else(|| {
                 DomError::JavaScript(
@@ -2441,6 +2496,8 @@ fn view_node_count_at(
     cursor: usize,
     components: &[ComponentRegion],
     dynamics: &[DynamicRegion],
+    keyed_components: &HashMap<(String, Key), Vec<usize>>,
+    dynamics_by_id: &HashMap<u64, Vec<usize>>,
 ) -> Option<usize> {
     match view {
         View::Text(_) | View::Element(_) => {
@@ -2456,6 +2513,8 @@ fn view_node_count_at(
                     offset,
                     components,
                     dynamics,
+                    keyed_components,
+                    dynamics_by_id,
                 )?)?;
             }
             offset.checked_sub(cursor)
@@ -2473,12 +2532,20 @@ fn view_node_count_at(
             }
             offset.checked_sub(cursor)
         }
-        View::Component(_) => {
-            let first = existing_nodes.get(cursor)?;
-            let region = components.iter().find(|region| {
-                let start: Node = region.mounted.start.clone().unchecked_into();
-                start.is_same_node(Some(first))
-            })?;
+        View::Component(component) => {
+            let region = if let Some(key) = component.key() {
+                let identity = (component.name().to_owned(), key.clone());
+                keyed_components
+                    .get(&identity)?
+                    .iter()
+                    .copied()
+                    .map(|index| &components[index])
+                    .find(|region| region.descriptor == *component)?
+            } else {
+                components
+                    .iter()
+                    .find(|region| region.descriptor == *component)?
+            };
             range_node_count(
                 &region.mounted.start,
                 &region.mounted.end,
@@ -2486,15 +2553,13 @@ fn view_node_count_at(
                 cursor,
             )
         }
-        View::Dynamic(_) => {
-            let first = existing_nodes.get(cursor)?;
-            let region = dynamics.iter().find(|region| {
-                let state = region.state.borrow();
-                state.as_ref().is_some_and(|current| {
-                    let start: Node = current.mounted.start.clone().unchecked_into();
-                    start.is_same_node(Some(first))
-                })
-            })?;
+        View::Dynamic(dynamic) => {
+            let region_index = dynamics_by_id
+                .get(&dynamic.id())?
+                .iter()
+                .copied()
+                .next()?;
+            let region = dynamics.get(region_index)?;
             let state = region.state.borrow();
             let current = state.as_ref()?;
             range_node_count(
