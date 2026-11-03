@@ -239,6 +239,7 @@ enum ReconciliationAction {
     Component {
         region_index: usize,
         next_view: View,
+        preview_required: bool,
         child_plan: Box<ReconciliationPlan>,
     },
     Dynamic {
@@ -1729,9 +1730,21 @@ impl DomRenderer {
                     return self.replacement_plan(previous, next, owner_scope);
                 };
                 let region = &context.component_regions[region_index];
-                let next_view = region
-                    .instance
-                    .preview_update(&new.properties().to_vec(), &new.children().to_vec())?;
+                // Component render callbacks are pure by contract. If the descriptor
+                // inputs are identical, re-running preview_update only rebuilds the
+                // same view tree and allocates temporary props/children. Reuse the
+                // last accepted view while still planning its descendants so nested
+                // component/dynamic regions are marked reused and their DOM remains
+                // eligible for reconciliation.
+                let preview_required =
+                    old.properties() != new.properties() || old.children() != new.children();
+                let next_view = if preview_required {
+                    region
+                        .instance
+                        .preview_update(&new.properties().to_vec(), &new.children().to_vec())?
+                } else {
+                    region.view.clone()
+                };
                 self.validate_view(&next_view)?;
                 self.validate_node_refs_for_view(&next_view, Some(&region.mounted))?;
                 let mut nested_context =
@@ -1745,6 +1758,7 @@ impl DomRenderer {
                 ReconciliationAction::Component {
                     region_index,
                     next_view,
+                    preview_required,
                     child_plan: Box::new(child_plan),
                 }
             }
@@ -2178,6 +2192,7 @@ impl DomRenderer {
             ReconciliationAction::Component {
                 region_index,
                 next_view,
+                preview_required,
                 child_plan,
             } => {
                 let View::Component(next) = &plan.next else {
@@ -2190,8 +2205,6 @@ impl DomRenderer {
                         "component diff plan references a missing mounted region".into(),
                     )
                 })?;
-                let next_properties = next.properties().to_vec();
-                let next_children = next.children().to_vec();
                 let mut renderer = DomRenderer::new(
                     self.document.clone(),
                     self.runtime.clone(),
@@ -2200,16 +2213,19 @@ impl DomRenderer {
                 renderer.root_scope = region.instance.scope().clone();
                 renderer.error_sink = self.error_sink.clone();
 
-                // The rendered view was precomputed during diff planning. Commit
-                // its child plan before accepting the new props on the instance.
+                // Descendant plans still run so nested dynamic/component ranges are
+                // marked reused and can process their own reactive updates. Only
+                // accept new component inputs when the preview phase actually ran.
                 renderer.update_with_plan(&mut region.mounted, *child_plan)?;
-                region.instance.commit_preview_update(
-                    next_properties,
-                    next_children,
-                    next_view.clone(),
-                )?;
+                if preview_required {
+                    region.instance.commit_preview_update(
+                        next.properties().to_vec(),
+                        next.children().to_vec(),
+                        next_view.clone(),
+                    )?;
+                    region.view = next_view;
+                }
                 region.descriptor = next.clone();
-                region.view = next_view;
                 region.reused = true;
                 Ok(mounted_range_nodes(&region.mounted))
             }
