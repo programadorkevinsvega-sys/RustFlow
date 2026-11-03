@@ -42,7 +42,6 @@ struct Totals {
 
 impl Totals {
     fn record(&mut self, created: Stats, disposed: Stats) {
-        let release = disposed - created;
         self.allocations += disposed.allocations as u128;
         self.deallocations += disposed.deallocations as u128;
         self.reallocations += disposed.reallocations as u128;
