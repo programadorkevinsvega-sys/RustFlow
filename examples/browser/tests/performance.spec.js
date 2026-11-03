@@ -442,9 +442,9 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
   }
 
   if (process.env.RUSTFLOW_BENCH_BROWSER_LARGE_LIST === "1") {
-    // A 10k-row mount has higher startup and host-scheduling variance than the
-    // smaller lists. Warm the exact workload once, then use the same seven
-    // measured samples per A/B/A variant as the other initial-mount scenarios.
+    // A 10k-row mount has higher startup and host-scheduling cost than the
+    // smaller lists. Keep it as a single optimized informational stress run;
+    // the controlled A/B/A comparison intentionally excludes this workload.
     const warmup = await loadApp(page, 10_000);
     expect(warmup.dom_rows).toBe(10_000);
     if (warmup.initialization_ms === null) {
