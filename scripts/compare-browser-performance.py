@@ -162,13 +162,114 @@ def main() -> int:
                 f"{name}: expected at least 20% median improvement on same-runner A/B; got {gain:.1f}%"
             )
 
-    # Ensure the stress scenario was actually exercised with 10,000 mounted rows
-    # in both variants; timings remain informational due the small sample count.
-    large_name = "keyed_list_initial_mount_10000"
-    for label, report in [("optimized-before", opt_before), ("unoptimized", control), ("optimized-after", opt_after)]:
-        large = scenario(report, "keyed_list_initial_mounts", large_name)
-        if large.get("final_dom_rows") != 10_000 or len(large.get("samples_raw", [])) < 3:
-            violations.append(f"{label}: expected three verified 10,000-row mount samples")
+    # Compare the full initial-mount scale and recursive component workloads as
+    # secondary same-runner scenarios. Absolute times remain informational, but a
+    # median slowdown above 25% is treated as a material regression.
+    secondary_comparisons: dict[str, Any] = {
+        "initial_keyed_list_mounts": {},
+        "nested_component_depths": {},
+    }
+    secondary_regression_limit = 25.0
+
+    for count in (100, 1_000, 10_000):
+        name = f"keyed_list_initial_mount_{count}"
+        before_item = scenario(opt_before, "keyed_list_initial_mounts", name)
+        control_item = scenario(control, "keyed_list_initial_mounts", name)
+        after_item = scenario(opt_after, "keyed_list_initial_mounts", name)
+        for label, item in [
+            ("optimized-before", before_item),
+            ("unoptimized", control_item),
+            ("optimized-after", after_item),
+        ]:
+            if item.get("final_dom_rows") != count:
+                violations.append(f"{label}: {name} expected {count} verified DOM rows")
+        if count == 10_000:
+            for label, item in [
+                ("optimized-before", before_item),
+                ("unoptimized", control_item),
+                ("optimized-after", after_item),
+            ]:
+                if len(item.get("samples_raw", [])) < 3:
+                    violations.append(f"{label}: expected three verified 10,000-row mount samples")
+
+        before_samples = [float(x) for x in before_item.get("samples_raw", [])]
+        control_samples = [float(x) for x in control_item.get("samples_raw", [])]
+        after_samples = [float(x) for x in after_item.get("samples_raw", [])]
+        optimized_samples = before_samples + after_samples
+        comparison = {
+            "unoptimized": summarize(control_samples),
+            "optimized": summarize(optimized_samples),
+        }
+        gain = improvement(
+            comparison["unoptimized"]["median_ms"],
+            comparison["optimized"]["median_ms"],
+        )
+        comparison["median_improvement_percent"] = gain
+        comparison["p95_improvement_percent"] = improvement(
+            comparison["unoptimized"]["p95_ms"],
+            comparison["optimized"]["p95_ms"],
+        )
+        first_median = statistics.median(before_samples)
+        second_median = statistics.median(after_samples)
+        drift = (
+            abs(second_median - first_median) / min(first_median, second_median) * 100
+            if min(first_median, second_median) > 0
+            else 0.0
+        )
+        comparison["optimized_before_median_ms"] = first_median
+        comparison["optimized_after_median_ms"] = second_median
+        comparison["optimized_a_to_a_drift_percent"] = drift
+        secondary_comparisons["initial_keyed_list_mounts"][name] = comparison
+        if gain < -secondary_regression_limit:
+            violations.append(
+                f"{name}: optimized median regressed by {-gain:.1f}%, "
+                f"exceeding the {secondary_regression_limit:.0f}% same-runner limit"
+            )
+
+    for depth in (5, 20, 80):
+        def find_nested(report: dict[str, Any]) -> dict[str, Any]:
+            for item in report.get("nested_component_depth_initial_mounts", []):
+                if int(item.get("depth", -1)) == depth:
+                    return item
+            raise ValueError(f"missing nested component depth {depth}")
+
+        before_item = find_nested(opt_before)
+        control_item = find_nested(control)
+        after_item = find_nested(opt_after)
+        before_samples = [float(x) for x in before_item.get("samples_raw", [])]
+        control_samples = [float(x) for x in control_item.get("samples_raw", [])]
+        after_samples = [float(x) for x in after_item.get("samples_raw", [])]
+        optimized_samples = before_samples + after_samples
+        comparison = {
+            "component_instances": before_item.get("component_instances"),
+            "unoptimized": summarize(control_samples),
+            "optimized": summarize(optimized_samples),
+        }
+        gain = improvement(
+            comparison["unoptimized"]["median_ms"],
+            comparison["optimized"]["median_ms"],
+        )
+        comparison["median_improvement_percent"] = gain
+        comparison["p95_improvement_percent"] = improvement(
+            comparison["unoptimized"]["p95_ms"],
+            comparison["optimized"]["p95_ms"],
+        )
+        first_median = statistics.median(before_samples)
+        second_median = statistics.median(after_samples)
+        drift = (
+            abs(second_median - first_median) / min(first_median, second_median) * 100
+            if min(first_median, second_median) > 0
+            else 0.0
+        )
+        comparison["optimized_before_median_ms"] = first_median
+        comparison["optimized_after_median_ms"] = second_median
+        comparison["optimized_a_to_a_drift_percent"] = drift
+        secondary_comparisons["nested_component_depths"][str(depth)] = comparison
+        if gain < -secondary_regression_limit:
+            violations.append(
+                f"nested component depth {depth}: optimized median regressed by "
+                f"{-gain:.1f}%, exceeding the {secondary_regression_limit:.0f}% same-runner limit"
+            )
 
     environment = args.environment.read_text(encoding="utf-8")
     output = {
@@ -186,6 +287,7 @@ def main() -> int:
             "optimized_after": str(args.optimized_after),
         },
         "comparisons": comparisons,
+        "secondary_comparisons": secondary_comparisons,
         "policy": {
             "critical_scenarios": [
                 "keyed_list_incremental_insert_100",
@@ -193,7 +295,16 @@ def main() -> int:
             ],
             "minimum_median_improvement_percent": 20.0,
             "maximum_optimized_a_to_a_median_drift_percent": 15.0,
-            "timing_budgets": "warning-only; this script gates only the controlled relative improvement and 10k stress-scenario integrity",
+            "secondary_scenarios": [
+                "keyed_list_initial_mount_100",
+                "keyed_list_initial_mount_1000",
+                "keyed_list_initial_mount_10000",
+                "nested_component_depth_5",
+                "nested_component_depth_20",
+                "nested_component_depth_80",
+            ],
+            "maximum_secondary_median_regression_percent": 25.0,
+            "timing_budgets": "absolute timing thresholds remain warning-only; same-runner A/B/A gates the critical improvements and rejects secondary median regressions above 25%",
         },
         "violations": violations,
         "accepted": not violations,
