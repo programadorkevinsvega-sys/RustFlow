@@ -11,7 +11,9 @@ Estado: infraestructura de medición inicial de Phase 8.1. Los números producid
 | DOM | Actualizaciones del contador, inserciones incrementales de 100 filas, montaje inicial de listas keyed de 100 y 1.000 filas, reordenamiento y eliminación | RustFlow WASM ejecutado en Chromium mediante Playwright |
 | Bundle | WASM de entrada y assets de producción emitidos por Vite; JS, CSS, WASM y otros assets | Artefactos reales de vite build |
 | Inicialización | Marca desde el inicio de init() WASM hasta que termina la inicialización y el montaje inicial | Navegador Chromium |
-| Memoria | RSS máximo del proceso de benchmark en Linux, mediante /usr/bin/time -v; observación JS heap opcional de Chromium | Proceso completo / API específica del navegador |
+| Memoria nativa | Conteos de alloc/dealloc/realloc y bytes solicitados; delta neto mientras viven y después de destruir árboles de scopes que representan owners de componentes con 3 señales por owner | Benchmark separado con stats_alloc sobre System; no altera el allocator de producción |
+| Memoria de proceso/navegador | RSS máximo de los procesos de benchmark tras precompilar; observación opcional del heap JS de Chromium | El RSS no identifica objetos RustFlow; performance.memory no mide el heap WASM |
+| Componentes anidados | Montaje de árboles reales de componentes recursivos en browser a profundidad 5, 20 y 80 | Chromium; la marca incluye inicialización WASM y el montaje inicial del árbol aislado |
 
 El escenario de fan-out usa un Runtime aislado con `Runtime::with_cycle_limit(fanout)`: el scheduler debe ejecutar una vez cada suscriptor en una misma descarga y el límite predeterminado de 1.000 rechazaría el caso de 1.024 aunque no exista un ciclo. Este ajuste pertenece solo al microbenchmark; `Runtime::new()` y el límite de seguridad de producción no cambian.
 
@@ -24,12 +26,19 @@ Desde la raíz del repositorio:
 ~~~bash
 RUSTFLOW_BENCH_ITERATIONS=10000 RUSTFLOW_BENCH_SAMPLES=25 cargo bench -p rustflow --bench reactivity
 RUSTFLOW_BENCH_ITERATIONS=1000 RUSTFLOW_BENCH_SAMPLES=25 cargo bench -p rustflow-ssr --bench rendering
+RUSTFLOW_MEMORY_SAMPLES=25 cargo bench -p rustflow --bench memory
 
-/usr/bin/time -v -o reactivity-memory.txt cargo bench -p rustflow --bench reactivity
+# Precompila antes de medir RSS para no incluir consumo de compilación:
+cargo bench -p rustflow --bench reactivity > /dev/null
+/usr/bin/time -v -o reactivity-rss.txt cargo bench -p rustflow --bench reactivity
 /usr/bin/time -v -o ssr-memory.txt cargo bench -p rustflow-ssr --bench rendering
 ~~~
 
 Los benchmarks imprimen líneas JSONL. Cada medición separa preparación de escenario y operación medida, excepto los nombres que explícitamente describen create_and_drop, create_and_dispose o lifecycle. RUSTFLOW_BENCH_ITERATIONS controla operaciones por muestra; RUSTFLOW_BENCH_SAMPLES controla el número de muestras. Los percentiles p50, p90 y p95 se calculan sobre el tiempo medio por operación de cada muestra. p99 se emite solo con al menos 100 muestras.
+
+El benchmark de memoria usa `stats_alloc 0.1.10` como wrapper del allocator del sistema, declarado únicamente en el ejecutable `benches/memory.rs`. No agrega código inseguro al framework ni cambia el allocator de una aplicación. Reporta operaciones de alloc/dealloc/realloc, bytes solicitados/liberados y el saldo solicitado tras crear el árbol y después de ejecutar la limpieza del owner. El saldo es una métrica de solicitudes del allocator: no equivale a páginas RSS, fragmentación interna ni memoria física residente. Los escenarios crean 1, 5, 20 y 80 owners anidados, cada uno con tres señales de estado; destruir el owner superior debe liberar sus descendientes y señales.
+
+El paso de CI precompila los benchmarks de tiempo antes de envolver las ejecuciones con `/usr/bin/time -v`. Esto evita contabilizar la compilación inicial como parte del RSS del benchmark. Las mediciones instrumentadas de memoria se ejecutan en un proceso aparte y no se usan para inferir tiempos de latencia.
 
 Para el navegador, desde examples/browser/:
 
@@ -47,6 +56,8 @@ El suite usa el preview de Vite configurado en playwright.config.js, espera el m
 RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 npm run bench:browser
 ~~~
 
+Para medir profundidad real de componentes en Chromium, el fixture admite `?bench_depth=5`, `?bench_depth=20` y `?bench_depth=80`. La ruta de benchmark contiene únicamente una cadena recursiva de componentes RustFlow registrados, cuenta las instancias montadas y mide el montaje inicial de cada profundidad; no construye solo elementos HTML anidados.
+
 ## Artefactos y comparación
 
 El workflow CI guarda artefactos de medición para cada ejecución:
@@ -60,10 +71,17 @@ Los artefactos CI son evidencia de una ejecución y tienen la retención configu
 
 ## Memoria: qué significa cada dato
 
-- Maximum resident set size de GNU time -v es el máximo RSS de todo el proceso durante esa ejecución. Incluye runtime, harness, buffers, allocator y datos del proceso. No es memoria retenida por una señal, memoria por operación ni heap exclusivamente de RustFlow.
-- performance.memory.usedJSHeapSize es una observación del heap JS de Chromium cuando el navegador la expone. No mide RSS del proceso del browser ni memoria Rust/WASM de forma completa.
-- La infraestructura actual no mide bytes asignados por operación, conteo de asignaciones, memoria retenida después de GC ni memoria de WASM por componente. Esas métricas no deben inferirse de RSS o del heap JS.
-- Los ciclos de crear/destruir owners y la eliminación de filas se incluyen como escenarios de comportamiento, pero no equivalen a una prueba de ausencia de fugas. Para certificar retención se necesita un profiler/allocator instrumentado y un protocolo estable.
+La medición distingue cuatro magnitudes que no deben mezclarse:
+
+- **Allocaciones por ciclo de vida:** conteos y bytes solicitados/liberados por el allocator de sistema mientras se crea y destruye el árbol de owners.
+- **Bytes solicitados netos tras setup:** bytes de alloc y realloc que siguen outstanding según los contadores después de montar el árbol. Es una aproximación a memoria solicitada por las estructuras vivas del escenario, no al RSS ni a bytes físicos.
+- **Bytes solicitados netos tras dispose:** el mismo saldo después de disponer el owner raíz y liberar las referencias del benchmark. Un saldo distinto de cero debe investigarse; no se debe convertir automáticamente en un diagnóstico de fuga porque también existen referencias y estado de proceso fuera del escenario.
+- **RSS máximo:** máximo del proceso completo en Linux. Se recoge después de precompilar para excluir la memoria del compilador, pero sigue incluyendo harness, runtime y allocator. Es un dato auxiliar, no una métrica por componente.
+- **Heap JS de Chromium:** observación de `performance.memory` cuando está disponible; la resolución puede ser gruesa. No incluye toda la memoria lineal de WASM.
+
+El benchmark de memoria usa un allocator instrumentado exclusivamente en el ejecutable nativo `benches/memory.rs`. Está separado de los microbenchmarks de tiempo porque el wrapper introduce overhead y no debe contaminar las latencias. No se incorpora al runtime ni a los binarios de las aplicaciones.
+
+La memoria live del allocator WASM aún no se mide por componente: el tamaño de `WebAssembly.Memory.buffer`, cuando esté disponible, representa capacidad lineal reservada/crecida y no bytes vivos internos del allocator. No se debe presentar como memoria retenida por un componente.
 
 ## Bundle e inicialización
 
@@ -86,14 +104,32 @@ Estado inicial:
 | JavaScript / CSS | Tamaños Vite raw/gzip/Brotli | Pendiente de referencia estable | Informativo |
 | WASM raw de entrada | Medición existente | 1,5 MiB, presupuesto heredado | Límite existente |
 
+### Presupuestos iniciales y política de regresión
+
+El archivo [baseline-2026-11-03.json](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/performance/baseline-2026-11-03.json) conserva la primera referencia candidata con commit, runner, toolchain, Chromium y muestras reales. Se usa una tolerancia inicial de aproximadamente 25% para permitir variación en runners alojados; los umbrales de tiempo generan advertencias, no fallos, hasta acumular ejecuciones equivalentes. Los límites de bytes del bundle son deterministas y sí fallan CI.
+
+| Área | Presupuesto inicial | Comportamiento CI |
+|---|---:|---|
+| WASM raw | 600 KiB | Falla si se supera; reemplaza al límite más laxo como guardrail activo, y mantiene documentado el histórico de 1,5 MiB |
+| WASM gzip / Brotli | 220 KiB / 160 KiB | Falla si se supera |
+| JavaScript raw / gzip / Brotli | 24 KiB / 7 KiB / 6 KiB | Falla si se supera |
+| CSS raw / gzip / Brotli | 32 KiB / 8 KiB / 8 KiB | Falla si se supera; la referencia inicial no emite CSS |
+| Total assets gzip / Brotli | 220 KiB / 170 KiB | Falla si se supera |
+| Reactividad | Baselines representativas +25% | Advertencia informativa en la revisión de resultados |
+| SSR | Baselines representativas +25% | Advertencia informativa en la revisión de resultados |
+| Browser init, DOM y listas | Baseline por escenario +25–40% según dispersión observada | Advertencia informativa, nunca gate de timing sensible al host |
+| Owners / memoria | Baseline allocator por escenario a completar con el artefacto de esta rama | No se fija un límite hasta revisar alloc/dealloc y saldo tras dispose |
+
+Los techos de bundle dejan margen aproximado de 20–30% sobre el primer artefacto medido. No son objetivos de tamaño recomendado; son límites de regresión para esta aplicación de demostración. Los presupuestos de tiempo se revisan con mediana y p90/p95 sobre el mismo runner/toolchain. Los presupuestos de memoria se aprobarán solo después de inspeccionar la primera salida instrumentada y verificar que el saldo tras dispose vuelve al nivel esperado.
+
 Las mediciones de rendimiento no sustituyen pruebas funcionales. Los benchmarks no provocan fallos de CI por variaciones de latencia.
 
 ## Limitaciones conocidas
 
 1. El DOM se mide en Chromium; todavía no es una matriz multi-navegador ni cubre Firefox/WebKit.
-2. El fixture browser actual ejercita Counter y TodoRow, listas keyed y actualizaciones síncronas; no ofrece todavía un barrido independiente y parametrizado de profundidad de componentes.
+2. La profundidad de componentes se mide en Chromium para 5, 20 y 80 niveles; aún no hay comparación multi-navegador.
 3. No hay benchmark concurrente de SSR ni benchmark de solicitudes HTTP completas.
-4. Memoria asignada/retendida por operación no está disponible con una herramienta instrumentada bajo la política actual de unsafe_code = forbid; no se sustituye con estimaciones.
+4. La memoria por owner se mide en un benchmark nativo separado; la memoria live interna del allocator WASM todavía no se mide por componente.
 5. Los artefactos CI requieren descarga para comparación; no se mantiene todavía una serie histórica comprometida en Git.
 6. No se ejecutan optimizaciones en esta infraestructura. Solo se justifican después de perfilar un cuello de botella y comparar el mismo caso antes/después.
 
