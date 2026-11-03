@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import math
 import sys
 from pathlib import Path
 
@@ -115,7 +114,7 @@ def main() -> int:
 
     report["violations"] = errors
     output = path.with_name("memory-budget-review.json")
-    output.write_text(json.dumps(report, indent=2) + "\\n", encoding="utf-8")
+    output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     for error in errors:
         print(f"::error::{error}")
     print(f"Wrote memory budget review to {output}")
