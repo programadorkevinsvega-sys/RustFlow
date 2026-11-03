@@ -41,7 +41,7 @@ npx playwright install chromium
 npm run bench:browser
 ~~~
 
-La suite de Playwright inicia la aplicación compilada con Vite Preview y opera sobre el DOM real mediante los eventos del demo RustFlow. Mide cinco muestras de inserción incremental de 100 filas y el montaje inicial de listas keyed de 100 y 1.000 filas. Para esos montajes iniciales utiliza el parámetro de benchmark `?bench_list=N`, que precarga los datos en el runtime antes del primer render; así no confunde el coste de montar una lista grande con el coste de miles de altas consecutivas. La lista inicial de 10.000 filas es un escenario de estrés opt-in:
+La suite de Playwright inicia la aplicación compilada con Vite Preview y opera sobre el DOM real mediante los eventos del demo RustFlow. Mide cinco muestras de inserción incremental de 100 filas y el montaje inicial de listas keyed de 100 y 1.000 filas. Para esos montajes iniciales utiliza el parámetro de benchmark `?bench_list=N`, que precarga los datos en el runtime antes del primer render; así no confunde el coste de montar una lista grande con el coste de miles de altas consecutivas. La lista inicial de 10.000 filas es ahora un escenario de estrés automático de CI, medido en tres muestras por variante dentro de la comparación A/B/A. El mismo comando permite ejecutarlo manualmente:
 
 ~~~bash
 RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 npm run bench:browser
