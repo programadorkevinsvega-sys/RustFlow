@@ -12,6 +12,7 @@ The shared source of truth is `.github/filters.yml`. The CI, website, and depend
 | --- | --- | --- |
 | `rust` | Workspace and crate manifests/lockfiles, Rust toolchain/Cargo configuration, `crates/**`, Rust example sources and manifests | `Rust checks (1.85)`, `Rust checks (stable)` |
 | `browser` | Browser example, DOM/view/runtime/macro crates, and workspace Cargo/toolchain configuration | `WebAssembly target check`, `Browser E2E and bundle size` |
+| `performance_tools` | Performance benchmark comparators, aggregators, patchers, budget checkers, and `scripts/tests/**` | `Performance tooling tests` |
 | `website` | `website/**` and the website workflow definition | `Build documentation` |
 | `dependencies` | Cargo/npm manifests and lockfiles, GitHub Actions workflow/action definitions | `Review dependency changes` |
 | `full_ci` | `.github/workflows/**`, `.github/actions/**`, and `.github/filters.yml` | Forces the Rust, WASM, and browser jobs to run |
@@ -19,6 +20,8 @@ The shared source of truth is `.github/filters.yml`. The CI, website, and depend
 Governance checks are intentionally unconditional and remain fast. Website validation is independent from Rust validation. Changes to the public website do not run the Rust matrix; changes limited to backend crates do not run WASM/browser checks or rebuild the website.
 
 The browser example's own JavaScript, HTML, CSS, package, script, or Playwright changes run the WASM/browser validation path. They do not trigger the two-toolchain Rust workspace matrix unless a Rust crate, Rust source, or Cargo manifest also changes. The browser build still compiles its Rust-to-WASM application as required by the browser E2E contract.
+
+Performance tooling is validated separately from the browser runtime: edits to the comparator, upstream aggregator/patcher, budget-check scripts, or `scripts/tests/**` run Python syntax checks and the complete standard-library test suite in `Performance tooling tests`. This keeps script-only changes from being silently skipped when they do not touch browser runtime paths.
 
 ## Required-check safety
 
@@ -50,6 +53,7 @@ This dashboard setting cannot be committed in this repository. Until it is appli
 | `crates/rustflow-server/**` only | Run | Skip | Skip | Skip |
 | `crates/rustflow-dom/**` | Run | Run | Skip | Skip |
 | `examples/browser/src/**` or `examples/browser/tests/**` | Skip | Run | Skip | Skip |
+| `scripts/compare-browser-performance.py` or `scripts/tests/**` | Skip | Skip | Skip | Skip; run `Performance tooling tests` |
 | Cargo/npm manifest, lockfile, or Actions workflow changes | Per matching scopes; workflow changes force broad CI | Per matching scopes; workflow changes force broad CI | If website or docs workflow changed | Run |
 
 All checks required by the `main` ruleset retain their existing names. A skipped job is successful for required-check evaluation; a failed change detector activates the conservative fallback instead of relying on a skipped required check.
