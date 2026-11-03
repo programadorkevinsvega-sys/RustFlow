@@ -39,7 +39,7 @@ fn Counter(initial: i32, label: String) -> impl IntoView {
 }
 
 #[rustflow::component]
-fn NestedBenchmarkNode(depth: usize) -> impl IntoView {
+fn NestedBenchmarkNode(depth: i32) -> impl IntoView {
     if depth == 0 {
         rustflow::view! {
             <div data-bench-depth={depth.to_string()}>
@@ -410,7 +410,7 @@ pub fn start() -> Result<(), JsValue> {
             if benchmark_component_depth > 0 {
                 return View::component(
                     "NestedBenchmarkNode",
-                    [Property::new("depth", benchmark_component_depth)?],
+                    [Property::new("depth", benchmark_component_depth as i32)?],
                     [],
                     None,
                 )
