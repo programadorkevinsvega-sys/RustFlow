@@ -34,10 +34,17 @@ function summarize(values, operations, unit) {
   };
 }
 
-async function loadApp(page, initialListSize = 0) {
-  const path = initialListSize > 0 ? `/?bench_list=${initialListSize}` : "/";
+async function loadApp(page, initialListSize = 0, nestedDepth = 0) {
+  const parameters = [];
+  if (initialListSize > 0) parameters.push(`bench_list=${initialListSize}`);
+  if (nestedDepth > 0) parameters.push(`bench_depth=${nestedDepth}`);
+  const path = parameters.length > 0 ? `/?${parameters.join("&")}` : "/";
   await page.goto(path);
-  await page.getByTestId("counter-value").waitFor({ state: "visible" });
+  if (nestedDepth > 0) {
+    await page.locator('[data-bench-depth="0"]').waitFor({ state: "attached" });
+  } else {
+    await page.getByTestId("counter-value").waitFor({ state: "visible" });
+  }
   return page.evaluate(() => {
     const entry = performance.getEntriesByName("rustflow:runtime:init")[0];
     const memory = performance.memory
@@ -54,6 +61,7 @@ async function loadApp(page, initialListSize = 0) {
     return {
       initialization_ms: entry ? entry.duration : null,
       dom_rows: document.querySelectorAll('[data-testid="todo-list"] li').length,
+      nested_component_count: document.querySelectorAll("[data-bench-depth]").length,
       memory,
     };
   });
@@ -147,6 +155,26 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     });
   }
 
+  const nestedComponentScenarios = [];
+  for (const [depth, repetitions] of [[5, 3], [20, 3], [80, 3]]) {
+    const measurements = [];
+    for (let sample = 0; sample < repetitions; sample += 1) {
+      const loaded = await loadApp(page, 0, depth);
+      expect(loaded.nested_component_count).toBe(depth + 1);
+      if (loaded.initialization_ms === null) {
+        throw new Error("RustFlow nested component initialization timing mark was not recorded");
+      }
+      measurements.push(loaded.initialization_ms);
+    }
+    nestedComponentScenarios.push({
+      depth,
+      component_instances: depth + 1,
+      ...summarize(measurements, depth + 1, "ms"),
+      measured_scope:
+        "WASM initialization, recursive component setup, component rendering, and real DOM mount",
+    });
+  }
+
   const listScenarios = [];
   for (const [count, repetitions] of [[100, 5]]) {
     const measurements = [];
@@ -234,6 +262,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     counter_100_synchronous_dom_updates: summarize(counterSamples, 100, "ms"),
     todo_row_attribute_and_checked_property_update: summarize(todoRowUpdateSamples, 1, "ms"),
     keyed_list_initial_mounts: initialListScenarios,
+    nested_component_depth_initial_mounts: nestedComponentScenarios,
     keyed_list_incremental_insertions: listScenarios,
     keyed_list_reverse_100: summarize(reorderSamples, 1, "ms"),
     keyed_list_remove_100: {
@@ -253,7 +282,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
       "These measurements exercise the shipped RustFlow WASM runtime in Chromium and synchronous interactions with its real DOM.",
       "Incremental insertion measures repeated reactive reconciliation at 100 rows; initial keyed-list mounting measures 100 and 1,000 rows, with 10,000 rows opt-in.",
       "Timing values are informational and must not fail CI because browser hardware and scheduling vary.",
-      "Deep component-tree and multi-browser profiling remain follow-up work; the current demo fixture covers Counter and TodoRow.",
+      "Nested component depth is exercised at depths 5, 20, and 80 in Chromium; Firefox/WebKit profiling remains follow-up work.",
     ],
   };
 
