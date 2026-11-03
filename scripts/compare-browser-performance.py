@@ -113,6 +113,29 @@ def validate_nested_component_cycle_report(
     return samples, unmount_samples, violations
 
 
+def check_a_to_a_median_drift(
+    scenario_name: str,
+    before_samples: list[float],
+    after_samples: list[float],
+    maximum_drift_percent: float,
+) -> tuple[float, str | None]:
+    """Return median drift and a fail-closed violation above the configured limit."""
+    before_median = statistics.median(before_samples)
+    after_median = statistics.median(after_samples)
+    drift = (
+        abs(after_median - before_median) / min(before_median, after_median) * 100
+        if min(before_median, after_median) > 0
+        else 0.0
+    )
+    if drift > maximum_drift_percent:
+        return (
+            drift,
+            f"{scenario_name}: optimized A-to-A median drift {drift:.1f}% exceeds "
+            f"{maximum_drift_percent:.0f}%; comparison is unstable",
+        )
+    return drift, None
+
+
 
 def compare_optimized_isolated_keyed_mutations(
     optimized_before: dict[str, Any],
@@ -481,21 +504,18 @@ def main() -> int:
         )
         first_median = statistics.median(before_samples)
         second_median = statistics.median(after_samples)
-        drift = (
-            abs(second_median - first_median) / min(first_median, second_median) * 100
-            if min(first_median, second_median) > 0
-            else 0.0
+        drift, drift_violation = check_a_to_a_median_drift(
+            f"nested component depth {depth}",
+            before_samples,
+            after_samples,
+            secondary_drift_limit,
         )
         comparison["optimized_before_median_ms"] = first_median
         comparison["optimized_after_median_ms"] = second_median
         comparison["optimized_a_to_a_drift_percent"] = drift
         secondary_comparisons["nested_component_depths"][str(depth)] = comparison
-        if drift > secondary_drift_limit:
-            violations.append(
-                f"nested component depth {depth}: optimized A-to-A median drift "
-                f"{drift:.1f}% exceeds {secondary_drift_limit:.0f}%; "
-                f"secondary runner comparison is unstable"
-            )
+        if drift_violation is not None:
+            violations.append(drift_violation)
         if gain < -secondary_regression_limit:
             violations.append(
                 f"nested component depth {depth}: optimized median regressed by "

@@ -467,7 +467,11 @@ jobs:
           NODE
 
           cd "$upstream"
-          npm ci
+          # The pinned upstream snapshot declares eslint@10 with eslint-plugin-react@7.37.5,
+          # whose peer range stops at eslint@9.7. Its root ESLint tooling is not used by the
+          # benchmark build/run; permit this upstream root install while keeping the nested
+          # webdriver, results, and server npm ci installs in install-local strict.
+          npm ci --legacy-peer-deps
           python3 "$GITHUB_WORKSPACE/scripts/patch-js-framework-benchmark.py" "$upstream"
           npm run install-local
           node cli.js rebuild-single --ci -f keyed/react-hooks keyed/vue keyed/svelte

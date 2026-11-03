@@ -206,6 +206,32 @@ class NestedComponentMountCycleContractTests(unittest.TestCase):
         self.assertTrue(any("did not verify all expected unmounts" in item for item in cleanup_errors))
 
 
+class NestedComponentAATimingGateTests(unittest.TestCase):
+    def test_nested_component_a_to_a_accepts_exactly_fifteen_percent(self) -> None:
+        before = [10.0] * 25
+        after = [11.5] * 25
+
+        drift, violation = COMPARATOR.check_a_to_a_median_drift(
+            "nested component depth 5", before, after, 15.0
+        )
+
+        self.assertAlmostEqual(drift, 15.0)
+        self.assertIsNone(violation)
+
+    def test_nested_component_a_to_a_rejects_drift_above_fifteen_percent(self) -> None:
+        before = [10.0] * 25
+        after = [11.6] * 25
+
+        drift, violation = COMPARATOR.check_a_to_a_median_drift(
+            "nested component depth 80", before, after, 15.0
+        )
+
+        self.assertGreater(drift, 15.0)
+        self.assertIsNotNone(violation)
+        self.assertIn("optimized A-to-A median drift", violation)
+        self.assertIn("exceeds 15%", violation)
+
+
 class ComparatorMainIntegrationTests(unittest.TestCase):
     def test_main_serializes_complete_report_and_accepts_a_valid_ab_a_run(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -255,6 +281,7 @@ class ComparatorMainIntegrationTests(unittest.TestCase):
                 self.assertEqual(nested[depth]["cycles_per_measured_sample"], 10)
                 self.assertEqual(nested[depth]["optimized"]["samples"], 50)
                 self.assertEqual(nested[depth]["optimized_unmount"]["samples"], 50)
+                self.assertAlmostEqual(nested[depth]["optimized_a_to_a_drift_percent"], 0.0)
 
 
 
