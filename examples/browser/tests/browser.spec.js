@@ -118,6 +118,65 @@ test("todo CRUD and keyed reorder preserve existing row identity", async ({ page
   await expect(page.getByTestId("todo-2")).toContainText("✓ Second task");
 });
 
+test("keyed parent updates skip redundant attribute writes on retained rows", async ({ page }) => {
+  const input = page.getByRole("textbox", { name: "New todo" });
+  await input.fill("First task");
+  await page.getByRole("button", { name: "Add todo" }).click();
+  await input.fill("Second task");
+  await page.getByRole("button", { name: "Add todo" }).click();
+
+  const secondRow = page.getByTestId("todo-2");
+  const originalSecondRow = await secondRow.elementHandle();
+  await page.evaluate(() => {
+    const writes = { set: [], remove: [] };
+    const originalSet = Element.prototype.setAttribute;
+    const originalRemove = Element.prototype.removeAttribute;
+    Element.prototype.setAttribute = function (name, value) {
+      if (this.closest('[data-todo-id="2"]')) writes.set.push(name);
+      return originalSet.call(this, name, value);
+    };
+    Element.prototype.removeAttribute = function (name) {
+      if (this.closest('[data-todo-id="2"]')) writes.remove.push(name);
+      return originalRemove.call(this, name);
+    };
+    window.__rustflowAttributeWriteProbe = {
+      writes,
+      restore() {
+        Element.prototype.setAttribute = originalSet;
+        Element.prototype.removeAttribute = originalRemove;
+      },
+    };
+  });
+
+  try {
+    // Change the first row's key. The second row remains keyed and its
+    // attributes remain semantically equal throughout the parent update.
+    await page.getByTestId("change-todo-key").click();
+    await expect(secondRow).toContainText("Second task");
+    expect(
+      await originalSecondRow.evaluate(
+        (node) => node === document.querySelector('[data-testid="todo-2"]'),
+      ),
+    ).toBe(true);
+
+    const writes = await page.evaluate(() => {
+      const probe = window.__rustflowAttributeWriteProbe;
+      probe.restore();
+      delete window.__rustflowAttributeWriteProbe;
+      return probe.writes;
+    });
+    expect(writes).toEqual({ set: [], remove: [] });
+  } finally {
+    await page.evaluate(() => {
+      const probe = window.__rustflowAttributeWriteProbe;
+      if (probe) {
+        probe.restore();
+        delete window.__rustflowAttributeWriteProbe;
+      }
+    });
+  }
+});
+
 test("conditional child mounts and unmounts without replacing the application", async ({ page }) => {
   const heading = page.getByRole("heading", { name: "RustFlow Phase 3 browser demo" });
   const headingNode = await heading.elementHandle();

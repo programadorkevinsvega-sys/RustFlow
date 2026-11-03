@@ -1,0 +1,401 @@
+{
+  "schema_version": 1,
+  "status": "candidate_baseline",
+  "captured_at_utc": "2026-11-03T00:18:51Z",
+  "source": {
+    "workflow_name": "CI",
+    "workflow_run_id": 41551029706,
+    "workflow_run_number": 807,
+    "artifact_id": 13193280848,
+    "artifact_names": [
+      "phase-8-1-native-performance",
+      "phase-8-1-browser-performance"
+    ],
+    "reported_commit": "e4dbe6a970f1e38bafc47ff71d8a673a1d417b0b",
+    "note": "All native reactivity and SSR medians below were recalculated from the three original JSONL files in artifact 13193280848; each value is the median of the three per-run medians. See environment.txt for the exact runner and toolchain. This is a candidate baseline, not a hardware-independent guarantee."
+  },
+  "environment": {
+    "os": "Linux Ubuntu 24.04 GitHub-hosted runner",
+    "architecture": "x86_64",
+    "cpu": "AMD EPYC 7763, 4 vCPU exposed to runner",
+    "rustc": "1.99.1",
+    "cargo": "1.99.1",
+    "node": "v22.23.4",
+    "browser": "Chromium 156.0.8078.4"
+  },
+  "native_reactivity_median_ns_per_operation_across_three_runs": {
+    "runtime.create_and_drop": 90.755,
+    "signal.read": 31.606,
+    "signal.set_changed_value": 54.816,
+    "signal.update": 88.669,
+    "effect.single_subscriber_set_and_flush": 373.62,
+    "effect.dynamic_dependency_switch": 509.689,
+    "memo.cached_read": 31.742,
+    "memo.source_update_and_recompute": 475.981,
+    "batch.sixteen_individual_writes": 38291.597,
+    "batch.sixteen_coalesced_writes": 4087.062,
+    "load.shared_signal_fanout_1": 374.46,
+    "load.shared_signal_fanout_16": 4978.168,
+    "load.shared_signal_fanout_64": 20384.84,
+    "load.shared_signal_fanout_256": 87017.795,
+    "load.shared_signal_fanout_1024": 381256.111,
+    "load.one_effect_with_1000_signal_dependencies": 285567.6,
+    "lifecycle.owner_signal_create_and_dispose": 380.421,
+    "lifecycle.owner_effect_create_and_dispose": 864.79,
+    "lifecycle.nested_owner_tree_cleanup": 1380.58
+  },
+  "native_ssr_median_ns_per_render_across_three_runs": {
+    "ssr.simple_static_tree": 575.404,
+    "ssr.dynamic_content_tree": 687.882,
+    "ssr.nested_tree_depth_5": 1420.417,
+    "ssr.nested_tree_depth_20": 4580.145,
+    "ssr.nested_tree_depth_80": 17083.924,
+    "ssr.wide_tree_100_components": 24964.844,
+    "ssr.wide_tree_1000_components": 252826.89,
+    "ssr.list_100_items": 13540.902,
+    "ssr.list_1000_items": 127970.36,
+    "ssr.list_10000_items": 1253258.1
+  },
+  "browser": {
+    "initialization_ms": {
+      "samples": 5,
+      "median": 6.6,
+      "p95": 21.6,
+      "raw": [
+        21.6,
+        14,
+        6,
+        6.6,
+        5.3
+      ]
+    },
+    "counter_100_synchronous_dom_updates_ms": {
+      "samples": 5,
+      "median": 2.2,
+      "p95": 8.1,
+      "raw": [
+        8.1,
+        2,
+        2.4,
+        2.2,
+        1.8
+      ]
+    },
+    "todo_row_attribute_and_checked_property_update_ms": {
+      "samples": 100,
+      "median": 0.1,
+      "p95": 0.2,
+      "p99": 1
+    },
+    "keyed_list_initial_mount_100_ms": {
+      "samples": 3,
+      "median": 10.2,
+      "p95": 10.6
+    },
+    "keyed_list_initial_mount_1000_ms": {
+      "samples": 2,
+      "median": 53.9,
+      "p95": 53.9
+    },
+    "keyed_list_incremental_insert_100_ms": {
+      "samples": 5,
+      "median": 311.3,
+      "p95": 322.6,
+      "median_ms_per_insert": 3.113
+    },
+    "keyed_list_reverse_100_ms": {
+      "samples": 10,
+      "median": 7,
+      "p95": 10.4
+    },
+    "keyed_list_remove_100_ms": {
+      "samples": 1,
+      "elapsed_ms": 319.1
+    },
+    "nested_component_depth": {
+      "status": "not_measured_in_source_run",
+      "next_scenarios": [
+        5,
+        20,
+        80
+      ]
+    },
+    "js_heap": {
+      "source": "Chromium performance.memory",
+      "used_js_heap_bytes_observed": [
+        10000000,
+        10000000,
+        10000000,
+        10000000,
+        10000000
+      ],
+      "note": "This headless-Chromium observation is quantized at this scale and is not a useful per-component retention signal."
+    }
+  },
+  "bundle_bytes": {
+    "source_wasm_raw": 482965,
+    "source_wasm_gzip": 173959,
+    "source_wasm_brotli": 131169,
+    "javascript_raw": 19382,
+    "javascript_gzip": 5500,
+    "javascript_brotli": 4737,
+    "css_raw": 0,
+    "css_gzip": 0,
+    "css_brotli": 0,
+    "total_raw": 502347,
+    "total_gzip": 179459,
+    "total_brotli": 135906
+  },
+  "process_rss_kib": {
+    "reactivity_raw_samples": [
+      184808,
+      140336,
+      140252
+    ],
+    "ssr_raw_samples": [
+      275152,
+      52624,
+      52896
+    ],
+    "note": "The first cargo bench invocation included compilation and is not a valid runtime-only RSS sample. The two later repetitions are useful only as an initial warm-process estimate; the follow-up workflow precompiles before timing RSS."
+  },
+  "proposed_regression_guardrails": {
+    "policy": "Bundle byte ceilings are hard failures. Timing ceilings are warnings because hosted-runner performance varies. Values are initial ceilings with roughly 20–30% headroom above this measured snapshot; review after at least three comparable workflow runs.",
+    "bundle": {
+      "wasm_raw_bytes": 614400,
+      "wasm_gzip_bytes": 225280,
+      "wasm_brotli_bytes": 163840,
+      "javascript_raw_bytes": 24576,
+      "javascript_gzip_bytes": 7168,
+      "javascript_brotli_bytes": 6144,
+      "css_raw_bytes": 32768,
+      "css_gzip_bytes": 8192,
+      "css_brotli_bytes": 8192,
+      "total_gzip_bytes": 225280,
+      "total_brotli_bytes": 174080
+    },
+    "browser_timing_warnings": {
+      "runtime_initialization_p95_ms": 30,
+      "counter_100_updates_p95_ms": 10,
+      "todo_row_update_p95_ms": 0.3,
+      "keyed_list_initial_mount_1000_p95_ms": 70,
+      "keyed_list_incremental_insert_100_p95_ms": 400,
+      "keyed_list_reverse_100_p95_ms": 14
+    },
+    "native_timing_warnings": {
+      "method": "Compare representative medians against the values in native_reactivity_median_ns_per_operation_across_three_runs and native_ssr_median_ns_per_render_across_three_runs with a 25% tolerance on the same runner/toolchain. Warn only; do not fail CI on hosted-runner time variation."
+    },
+    "allocator_memory": {
+      "status": "pending_first_stats_alloc_artifact",
+      "method": "Set per-scenario ceilings only after reviewing allocations, bytes requested, outstanding bytes after setup, and outstanding bytes after dispose from the separate memory benchmark. Do not derive an owner/component memory budget from RSS."
+    }
+  },
+  "memory_owner_lifecycle": {
+    "source": {
+      "workflow": "CI",
+      "workflow_run_id": 41562885761,
+      "workflow_run_number": 824,
+      "pr": 78,
+      "pr_head": "2978405ccc76037280a65b31e0c266cc67c9b505",
+      "workflow_merge_sha": "b4c86304d2d246f8595f3ab8d41eabe532eec29c",
+      "artifact_id": 13198521457,
+      "artifact_name": "phase-8-1-native-performance"
+    },
+    "environment": {
+      "os": "Ubuntu 24.04 GitHub-hosted",
+      "architecture": "x86_64",
+      "cpu": "AMD EPYC 9V45 96-Core Processor (4 vCPU exposed)",
+      "rustc": "1.99.1",
+      "allocator": "stats_alloc 0.1.10 over System"
+    },
+    "methodology": {
+      "samples_per_scenario": 25,
+      "scenarios": "component-scoped owner trees with 3 String signals per owner; depths 1, 5, 20, and 80",
+      "measurements": "alloc/dealloc/realloc counts, bytes allocated/deallocated, requested outstanding bytes after setup and after disposing/dropping the owner tree",
+      "note": "Requested bytes reported by allocator counters are not RSS, resident pages, allocator fragmentation, or WASM memory."
+    },
+    "measured": {
+      "component_owner.depth_1_states_3": {
+        "allocations_per_lifecycle": 15,
+        "deallocations_per_lifecycle": 15,
+        "reallocations_per_lifecycle": 0,
+        "bytes_allocated_per_lifecycle": 1718,
+        "bytes_deallocated_per_lifecycle": 1718,
+        "outstanding_requested_bytes_after_setup_mean": 1718,
+        "outstanding_requested_bytes_after_setup_max": 1718,
+        "outstanding_requested_bytes_after_dispose_mean": 0
+      },
+      "component_owner.depth_5_states_3": {
+        "allocations_per_lifecycle": 63,
+        "deallocations_per_lifecycle": 63,
+        "reallocations_per_lifecycle": 0,
+        "bytes_allocated_per_lifecycle": 7406,
+        "bytes_deallocated_per_lifecycle": 7406,
+        "outstanding_requested_bytes_after_setup_mean": 5486,
+        "outstanding_requested_bytes_after_setup_max": 5486,
+        "outstanding_requested_bytes_after_dispose_mean": 0
+      },
+      "component_owner.depth_20_states_3": {
+        "allocations_per_lifecycle": 232,
+        "deallocations_per_lifecycle": 232,
+        "reallocations_per_lifecycle": 0,
+        "bytes_allocated_per_lifecycle": 31008,
+        "bytes_deallocated_per_lifecycle": 31008,
+        "outstanding_requested_bytes_after_setup_mean": 20840,
+        "outstanding_requested_bytes_after_setup_max": 20840,
+        "outstanding_requested_bytes_after_dispose_mean": 0
+      },
+      "component_owner.depth_80_states_3": {
+        "allocations_per_lifecycle": 896,
+        "deallocations_per_lifecycle": 896,
+        "reallocations_per_lifecycle": 0,
+        "bytes_allocated_per_lifecycle": 125224,
+        "bytes_deallocated_per_lifecycle": 125224,
+        "outstanding_requested_bytes_after_setup_mean": 82256,
+        "outstanding_requested_bytes_after_setup_max": 82256,
+        "outstanding_requested_bytes_after_dispose_mean": 0
+      }
+    },
+    "proposed_hard_budgets": {
+      "derivation": "Measured maximum plus approximately 25% headroom, rounded to the next 256 bytes for requested-byte ceilings; allocation-count ceilings have at least 25% headroom rounded to a small integer bound. A zero after-dispose min/max requirement is checked per sampled lifecycle on the updated bench.",
+      "scenarios": {
+        "component_owner.depth_1_states_3": {
+          "max_allocations_per_lifecycle": 24,
+          "max_bytes_allocated_per_lifecycle": 2304,
+          "max_outstanding_requested_bytes_after_setup": 2304
+        },
+        "component_owner.depth_5_states_3": {
+          "max_allocations_per_lifecycle": 80,
+          "max_bytes_allocated_per_lifecycle": 9472,
+          "max_outstanding_requested_bytes_after_setup": 6912
+        },
+        "component_owner.depth_20_states_3": {
+          "max_allocations_per_lifecycle": 296,
+          "max_bytes_allocated_per_lifecycle": 38912,
+          "max_outstanding_requested_bytes_after_setup": 26112
+        },
+        "component_owner.depth_80_states_3": {
+          "max_allocations_per_lifecycle": 1120,
+          "max_bytes_allocated_per_lifecycle": 156672,
+          "max_outstanding_requested_bytes_after_setup": 102912
+        }
+      },
+      "dispose_requirement": "outstanding_requested_bytes_after_dispose_min == 0 and max == 0 for every measured lifecycle"
+    }
+  },
+  "memory_component_instance_lifecycle": {
+    "source": {
+      "workflow": "CI",
+      "workflow_run_id": 41569774034,
+      "workflow_run_number": 860,
+      "pull_request": 78,
+      "pull_request_head": "61f6d2f2d97b5594c6e4346a41922152624eb327",
+      "workflow_commit": "d2f83e30c54f594a6ca10c42ef1afe1ba0658ccb",
+      "artifact_id": 13200463952,
+      "artifact_name": "phase-8-1-native-performance",
+      "artifact_file": "owner-memory.jsonl",
+      "note": "ComponentInstance measurements were collected in the same stats_alloc executable as Scope owners. The memory benchmark source is unchanged except for the later outstanding-byte accounting correction; this run had zero reallocations in all eight scenarios, so the corrected outstanding values are identical. Revalidate on the latest PR HEAD before Phase 8.1 acceptance."
+    },
+    "environment": {
+      "os": "Ubuntu 24.04 GitHub-hosted runner",
+      "architecture": "x86_64",
+      "cpu": "AMD EPYC 7763 64-Core Processor (4 vCPU exposed)",
+      "rustc": "1.99.1 (58cf8f9c3 2026-10-13)",
+      "cargo": "1.99.1 (5f94df478 2026-08-27)",
+      "allocator": "stats_alloc 0.1.10 over System"
+    },
+    "methodology": {
+      "samples_per_scenario": 25,
+      "definition": "One ComponentDefinition with three String signals per component; shared definition created outside measured samples.",
+      "lifecycle": "Runtime creation, real ComponentInstance::mount, owner-scoped signal setup, initial render, reverse-order unmount, drop instances and runtime.",
+      "depths": [
+        1,
+        5,
+        20,
+        80
+      ],
+      "outstanding_formula": "bytes_allocated - bytes_deallocated; stats_alloc already accounts for realloc growth/shrink in these counters; bytes_reallocated remains a separate diagnostic.",
+      "note": "Requested allocator bytes are not RSS, resident pages, allocator fragmentation, JavaScript heap or WASM linear-memory capacity."
+    },
+    "measured": {
+      "component_instance.depth_1_states_3": {
+        "samples": 25,
+        "allocations_per_lifecycle": 21,
+        "deallocations_per_lifecycle": 21,
+        "reallocations_per_lifecycle": 0,
+        "bytes_allocated_per_lifecycle": 2330,
+        "bytes_deallocated_per_lifecycle": 2330,
+        "bytes_reallocated_net_per_lifecycle": 0,
+        "outstanding_requested_bytes_after_setup_max": 2279,
+        "outstanding_requested_bytes_after_dispose_mean": 0,
+        "outstanding_requested_bytes_after_dispose_min": 0,
+        "outstanding_requested_bytes_after_dispose_max": 0
+      },
+      "component_instance.depth_5_states_3": {
+        "samples": 25,
+        "allocations_per_lifecycle": 93,
+        "deallocations_per_lifecycle": 93,
+        "reallocations_per_lifecycle": 0,
+        "bytes_allocated_per_lifecycle": 10466,
+        "bytes_deallocated_per_lifecycle": 10466,
+        "bytes_reallocated_net_per_lifecycle": 0,
+        "outstanding_requested_bytes_after_setup_max": 8291,
+        "outstanding_requested_bytes_after_dispose_mean": 0,
+        "outstanding_requested_bytes_after_dispose_min": 0,
+        "outstanding_requested_bytes_after_dispose_max": 0
+      },
+      "component_instance.depth_20_states_3": {
+        "samples": 25,
+        "allocations_per_lifecycle": 352,
+        "deallocations_per_lifecycle": 352,
+        "reallocations_per_lifecycle": 0,
+        "bytes_allocated_per_lifecycle": 43248,
+        "bytes_deallocated_per_lifecycle": 43248,
+        "bytes_reallocated_net_per_lifecycle": 0,
+        "outstanding_requested_bytes_after_setup_max": 32060,
+        "outstanding_requested_bytes_after_dispose_mean": 0,
+        "outstanding_requested_bytes_after_dispose_min": 0,
+        "outstanding_requested_bytes_after_dispose_max": 0
+      },
+      "component_instance.depth_80_states_3": {
+        "samples": 25,
+        "allocations_per_lifecycle": 1376,
+        "deallocations_per_lifecycle": 1376,
+        "reallocations_per_lifecycle": 0,
+        "bytes_allocated_per_lifecycle": 174184,
+        "bytes_deallocated_per_lifecycle": 174184,
+        "bytes_reallocated_net_per_lifecycle": 0,
+        "outstanding_requested_bytes_after_setup_max": 127136,
+        "outstanding_requested_bytes_after_dispose_mean": 0,
+        "outstanding_requested_bytes_after_dispose_min": 0,
+        "outstanding_requested_bytes_after_dispose_max": 0
+      }
+    },
+    "proposed_hard_budgets": {
+      "derivation": "Observed allocation counts plus approximately 25% headroom, rounded upward to a multiple of 8; observed requested-byte totals and setup outstanding maxima plus approximately 25% headroom, rounded upward to the next 256 bytes.",
+      "scenarios": {
+        "component_instance.depth_1_states_3": {
+          "max_allocations_per_lifecycle": 32,
+          "max_bytes_allocated_per_lifecycle": 3072,
+          "max_outstanding_requested_bytes_after_setup": 3072
+        },
+        "component_instance.depth_5_states_3": {
+          "max_allocations_per_lifecycle": 120,
+          "max_bytes_allocated_per_lifecycle": 13312,
+          "max_outstanding_requested_bytes_after_setup": 10496
+        },
+        "component_instance.depth_20_states_3": {
+          "max_allocations_per_lifecycle": 440,
+          "max_bytes_allocated_per_lifecycle": 54272,
+          "max_outstanding_requested_bytes_after_setup": 40192
+        },
+        "component_instance.depth_80_states_3": {
+          "max_allocations_per_lifecycle": 1720,
+          "max_bytes_allocated_per_lifecycle": 217856,
+          "max_outstanding_requested_bytes_after_setup": 158976
+        }
+      },
+      "unmount_requirement": "outstanding_requested_bytes_after_dispose_min == 0 and max == 0 for every sampled ComponentInstance lifecycle"
+    }
+  }
+}

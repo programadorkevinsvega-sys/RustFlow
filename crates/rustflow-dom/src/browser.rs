@@ -9,7 +9,7 @@ use std::{
     rc::Rc,
 };
 
-use js_sys::Reflect;
+use js_sys::{Map, Reflect, Set};
 use rustflow::{
     components::{ComponentError, ComponentInstance, ComponentRegistry, RenderTarget},
     reactivity::{Effect, Runtime, RuntimeError, Scope, untrack},
@@ -239,6 +239,7 @@ enum ReconciliationAction {
     Component {
         region_index: usize,
         next_view: View,
+        preview_required: bool,
         child_plan: Box<ReconciliationPlan>,
     },
     Dynamic {
@@ -256,21 +257,55 @@ struct PlannedChild {
 struct DiffContext<'a> {
     component_regions: &'a [ComponentRegion],
     dynamic_regions: &'a [DynamicRegion],
+    keyed_components: HashMap<(String, Key), Vec<usize>>,
+    dynamics_by_id: HashMap<u64, Vec<usize>>,
     used_components: Vec<bool>,
     used_dynamics: Vec<bool>,
 }
 
 impl<'a> DiffContext<'a> {
     fn new(component_regions: &'a [ComponentRegion], dynamic_regions: &'a [DynamicRegion]) -> Self {
+        let mut keyed_components = HashMap::<(String, Key), Vec<usize>>::new();
+        for (index, region) in component_regions.iter().enumerate() {
+            if let Some(key) = region.descriptor.key() {
+                keyed_components
+                    .entry((region.descriptor.name().to_owned(), key.clone()))
+                    .or_default()
+                    .push(index);
+            }
+        }
+
+        let mut dynamics_by_id = HashMap::<u64, Vec<usize>>::new();
+        for (index, region) in dynamic_regions.iter().enumerate() {
+            dynamics_by_id
+                .entry(region.dynamic.id())
+                .or_default()
+                .push(index);
+        }
+
         Self {
             component_regions,
             dynamic_regions,
+            keyed_components,
+            dynamics_by_id,
             used_components: vec![false; component_regions.len()],
             used_dynamics: vec![false; dynamic_regions.len()],
         }
     }
 
     fn take_component(&mut self, descriptor: &ComponentNode) -> Option<usize> {
+        if let Some(key) = descriptor.key() {
+            let identity = (descriptor.name().to_owned(), key.clone());
+            let index = self.keyed_components.get(&identity).and_then(|indices| {
+                indices.iter().copied().find(|index| {
+                    !self.used_components[*index]
+                        && self.component_regions[*index].descriptor == *descriptor
+                })
+            })?;
+            self.used_components[index] = true;
+            return Some(index);
+        }
+
         let index = self
             .component_regions
             .iter()
@@ -283,13 +318,12 @@ impl<'a> DiffContext<'a> {
     }
 
     fn take_dynamic(&mut self, dynamic: &DynamicChild) -> Option<usize> {
-        let index = self
-            .dynamic_regions
-            .iter()
-            .enumerate()
-            .find_map(|(index, region)| {
-                (!self.used_dynamics[index] && region.dynamic.id() == dynamic.id()).then_some(index)
-            })?;
+        let index = self.dynamics_by_id.get(&dynamic.id()).and_then(|indices| {
+            indices
+                .iter()
+                .copied()
+                .find(|index| !self.used_dynamics[*index])
+        })?;
         self.used_dynamics[index] = true;
         Some(index)
     }
@@ -1696,9 +1730,21 @@ impl DomRenderer {
                     return self.replacement_plan(previous, next, owner_scope);
                 };
                 let region = &context.component_regions[region_index];
-                let next_view = region
-                    .instance
-                    .preview_update(&new.properties().to_vec(), &new.children().to_vec())?;
+                // Component render callbacks are pure by contract. If the descriptor
+                // inputs are identical, re-running preview_update only rebuilds the
+                // same view tree and allocates temporary props/children. Reuse the
+                // last accepted view while still planning its descendants so nested
+                // component/dynamic regions are marked reused and their DOM remains
+                // eligible for reconciliation.
+                let preview_required =
+                    old.properties() != new.properties() || old.children() != new.children();
+                let next_view = if preview_required {
+                    region
+                        .instance
+                        .preview_update(&new.properties().to_vec(), &new.children().to_vec())?
+                } else {
+                    region.view.clone()
+                };
                 self.validate_view(&next_view)?;
                 self.validate_node_refs_for_view(&next_view, Some(&region.mounted))?;
                 let mut nested_context =
@@ -1712,6 +1758,7 @@ impl DomRenderer {
                 ReconciliationAction::Component {
                     region_index,
                     next_view,
+                    preview_required,
                     child_plan: Box::new(child_plan),
                 }
             }
@@ -1857,17 +1904,17 @@ impl DomRenderer {
         owner_scope: &Scope,
     ) -> Result<Vec<PlannedChild>, DomError> {
         let old_children = previous.children();
-        let mut used = vec![false; old_children.len()];
+        // KeyedList rejects duplicate keys at construction, so a key-to-index
+        // lookup is sufficient and avoids a full scan of the old list per child.
+        let previous_by_key = old_children
+            .iter()
+            .enumerate()
+            .map(|(index, child)| (child.key().clone(), index))
+            .collect::<HashMap<_, _>>();
         let mut planned = Vec::with_capacity(next.children().len());
         for child in next.children() {
-            let matched = old_children
-                .iter()
-                .enumerate()
-                .find_map(|(index, candidate)| {
-                    (!used[index] && candidate.key() == child.key()).then_some(index)
-                });
+            let matched = previous_by_key.get(child.key()).copied();
             let child_plan = if let Some(previous_index) = matched {
-                used[previous_index] = true;
                 self.plan_diff_with_context(
                     old_children[previous_index].view(),
                     child.view(),
@@ -1932,24 +1979,38 @@ impl DomRenderer {
         }
 
         for attribute in next.attributes() {
+            // AttributeValue has semantic equality, so unchanged values can be
+            // validated without repeating a Wasm -> JavaScript DOM mutation.
+            let unchanged = previous
+                .attributes()
+                .iter()
+                .find(|old_attribute| old_attribute.name() == attribute.name())
+                .is_some_and(|old_attribute| old_attribute.value() == attribute.value());
+
             match attribute.value() {
                 AttributeValue::Boolean(true) => {
                     validate_attribute(attribute.name(), "")?;
-                    element
-                        .set_attribute(attribute.name(), "")
-                        .map_err(js_error)?;
+                    if !unchanged {
+                        element
+                            .set_attribute(attribute.name(), "")
+                            .map_err(js_error)?;
+                    }
                 }
                 AttributeValue::Boolean(false) => {
                     validate_attribute(attribute.name(), "")?;
-                    element
-                        .remove_attribute(attribute.name())
-                        .map_err(js_error)?;
+                    if !unchanged {
+                        element
+                            .remove_attribute(attribute.name())
+                            .map_err(js_error)?;
+                    }
                 }
                 AttributeValue::Text(value) => {
                     validate_attribute(attribute.name(), value)?;
-                    element
-                        .set_attribute(attribute.name(), value)
-                        .map_err(js_error)?;
+                    if !unchanged {
+                        element
+                            .set_attribute(attribute.name(), value)
+                            .map_err(js_error)?;
+                    }
                 }
             }
         }
@@ -2131,6 +2192,7 @@ impl DomRenderer {
             ReconciliationAction::Component {
                 region_index,
                 next_view,
+                preview_required,
                 child_plan,
             } => {
                 let View::Component(next) = &plan.next else {
@@ -2143,8 +2205,6 @@ impl DomRenderer {
                         "component diff plan references a missing mounted region".into(),
                     )
                 })?;
-                let next_properties = next.properties().to_vec();
-                let next_children = next.children().to_vec();
                 let mut renderer = DomRenderer::new(
                     self.document.clone(),
                     self.runtime.clone(),
@@ -2153,16 +2213,19 @@ impl DomRenderer {
                 renderer.root_scope = region.instance.scope().clone();
                 renderer.error_sink = self.error_sink.clone();
 
-                // The rendered view was precomputed during diff planning. Commit
-                // its child plan before accepting the new props on the instance.
+                // Descendant plans still run so nested dynamic/component ranges are
+                // marked reused and can process their own reactive updates. Only
+                // accept new component inputs when the preview phase actually ran.
                 renderer.update_with_plan(&mut region.mounted, *child_plan)?;
-                region.instance.commit_preview_update(
-                    next_properties,
-                    next_children,
-                    next_view.clone(),
-                )?;
+                if preview_required {
+                    region.instance.commit_preview_update(
+                        next.properties().to_vec(),
+                        next.children().to_vec(),
+                        next_view.clone(),
+                    )?;
+                    region.view = next_view;
+                }
                 region.descriptor = next.clone();
-                region.view = next_view;
                 region.reused = true;
                 Ok(mounted_range_nodes(&region.mounted))
             }
@@ -2222,6 +2285,20 @@ impl DomRenderer {
         previous_dynamics: &mut Vec<DynamicRegion>,
         resources: &mut RenderedNodes,
     ) -> Result<Vec<Node>, DomError> {
+        let component_indices_by_start = Map::new();
+        for (index, region) in previous_components.iter().enumerate() {
+            let start: Node = region.mounted.start.clone().unchecked_into();
+            component_indices_by_start.set(start.as_ref(), &JsValue::from_f64(index as f64));
+        }
+        let dynamic_indices_by_start = Map::new();
+        for (index, region) in previous_dynamics.iter().enumerate() {
+            let state = region.state.borrow();
+            if let Some(current) = state.as_ref() {
+                let start: Node = current.mounted.start.clone().unchecked_into();
+                dynamic_indices_by_start.set(start.as_ref(), &JsValue::from_f64(index as f64));
+            }
+        }
+
         let mut ranges = Vec::with_capacity(previous.len());
         let mut cursor = 0usize;
         for view in previous {
@@ -2231,6 +2308,8 @@ impl DomRenderer {
                 cursor,
                 previous_components,
                 previous_dynamics,
+                &component_indices_by_start,
+                &dynamic_indices_by_start,
             )
             .ok_or_else(|| {
                 DomError::JavaScript(
@@ -2276,8 +2355,26 @@ impl DomRenderer {
         }
 
         remove_obsolete_nodes(parent, existing_nodes, &result)?;
-        for node in &result {
-            parent.insert_before(node, before).map_err(js_error)?;
+
+        // Walk from right to left and retain an already-correct node in place.
+        // For an append to a large keyed list this moves only the newly-created
+        // suffix instead of removing/reinserting every existing sibling.
+        let mut cursor = before.cloned();
+        for node in result.iter().rev() {
+            let already_in_position = node
+                .parent_node()
+                .is_some_and(|actual_parent| actual_parent.is_same_node(Some(parent)))
+                && match (node.next_sibling(), cursor.as_ref()) {
+                    (Some(next_sibling), Some(cursor)) => next_sibling.is_same_node(Some(cursor)),
+                    (None, None) => true,
+                    _ => false,
+                };
+            if !already_in_position {
+                parent
+                    .insert_before(node, cursor.as_ref())
+                    .map_err(js_error)?;
+            }
+            cursor = Some(node.clone());
         }
         Ok(result)
     }
@@ -2423,6 +2520,8 @@ fn view_node_count_at(
     cursor: usize,
     components: &[ComponentRegion],
     dynamics: &[DynamicRegion],
+    component_indices_by_start: &Map,
+    dynamic_indices_by_start: &Map,
 ) -> Option<usize> {
     match view {
         View::Text(_) | View::Element(_) => {
@@ -2438,6 +2537,8 @@ fn view_node_count_at(
                     offset,
                     components,
                     dynamics,
+                    component_indices_by_start,
+                    dynamic_indices_by_start,
                 )?)?;
             }
             offset.checked_sub(cursor)
@@ -2451,16 +2552,22 @@ fn view_node_count_at(
                     offset,
                     components,
                     dynamics,
+                    component_indices_by_start,
+                    dynamic_indices_by_start,
                 )?)?;
             }
             offset.checked_sub(cursor)
         }
-        View::Component(_) => {
+        View::Component(component) => {
             let first = existing_nodes.get(cursor)?;
-            let region = components.iter().find(|region| {
-                let start: Node = region.mounted.start.clone().unchecked_into();
-                start.is_same_node(Some(first))
-            })?;
+            let region_index = component_indices_by_start
+                .get(first.as_ref())
+                .as_f64()
+                .map(|index| index as usize)?;
+            let region = components.get(region_index)?;
+            if region.descriptor != *component {
+                return None;
+            }
             range_node_count(
                 &region.mounted.start,
                 &region.mounted.end,
@@ -2470,13 +2577,11 @@ fn view_node_count_at(
         }
         View::Dynamic(_) => {
             let first = existing_nodes.get(cursor)?;
-            let region = dynamics.iter().find(|region| {
-                let state = region.state.borrow();
-                state.as_ref().is_some_and(|current| {
-                    let start: Node = current.mounted.start.clone().unchecked_into();
-                    start.is_same_node(Some(first))
-                })
-            })?;
+            let region_index = dynamic_indices_by_start
+                .get(first.as_ref())
+                .as_f64()
+                .map(|index| index as usize)?;
+            let region = dynamics.get(region_index)?;
             let state = region.state.borrow();
             let current = state.as_ref()?;
             range_node_count(
@@ -2761,11 +2866,15 @@ fn set_preserve_on_drop(mounted: &mut MountedDom, preserve: bool) {
 }
 
 fn remove_obsolete_nodes(parent: &Node, previous: &[Node], next: &[Node]) -> Result<(), DomError> {
+    // JS Set uses object identity for DOM nodes. This keeps the retain/remove
+    // pass linear instead of comparing every old node with every new node.
+    let retained_nodes = Set::new(&JsValue::UNDEFINED);
+    for node in next {
+        retained_nodes.add(node.as_ref());
+    }
+
     for old_node in previous {
-        let retained = next
-            .iter()
-            .any(|new_node| new_node.is_same_node(Some(old_node)));
-        if !retained
+        if !retained_nodes.has(old_node.as_ref())
             && old_node
                 .parent_node()
                 .is_some_and(|actual_parent| actual_parent.is_same_node(Some(parent)))

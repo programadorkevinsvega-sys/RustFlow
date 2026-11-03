@@ -4,6 +4,15 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      extended_browser_benchmarks:
+        description: Run the full 100/1,000/5,000/10,000-row RustFlow browser stress suite
+        type: boolean
+        required: false
+        default: true
+  schedule:
+    - cron: "17 6 * * 1"
 
 permissions:
   contents: read
@@ -236,17 +245,30 @@ jobs:
             lscpu
           } > performance-results/native/environment.txt
 
+          # Build the timing harnesses before collecting RSS. Measuring the first
+          # cargo bench invocation would otherwise include compilation memory.
+          cargo bench -p rustflow --bench reactivity > /dev/null
+          cargo bench -p rustflow-ssr --bench rendering > /dev/null
+
           for run in 1 2 3; do
             echo "Reactivity repetition ${run}/3"
-            /usr/bin/time -v -o "performance-results/native/reactivity-memory-${run}.txt" \
+            /usr/bin/time -v -o "performance-results/native/reactivity-rss-${run}.txt" \
               cargo bench -p rustflow --bench reactivity \
               > "performance-results/native/reactivity-${run}.jsonl"
 
             echo "SSR repetition ${run}/3"
-            /usr/bin/time -v -o "performance-results/native/ssr-memory-${run}.txt" \
+            /usr/bin/time -v -o "performance-results/native/ssr-rss-${run}.txt" \
               cargo bench -p rustflow-ssr --bench rendering \
               > "performance-results/native/ssr-${run}.jsonl"
           done
+
+          RUSTFLOW_MEMORY_SAMPLES=25 \
+            cargo bench -p rustflow --bench memory \
+            > performance-results/native/owner-memory.jsonl
+
+          python3 scripts/check-memory-performance-budgets.py performance-results/native/owner-memory.jsonl
+
+          python3 scripts/check-native-performance-budgets.py performance-results/native
 
           RUSTFLOW_BENCH_ITERATIONS=100 RUSTFLOW_BENCH_BULK_SIZE=50 \
             cargo bench -p rustflow-server --bench persistence \
@@ -269,13 +291,15 @@ jobs:
   browser-e2e:
     name: Browser E2E and bundle size
     needs: changes
-    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.full_ci == 'true') }}
+    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.full_ci == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 120
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Install Rust and the browser target
         uses: dtolnay/rust-toolchain@master
@@ -298,6 +322,22 @@ jobs:
         working-directory: examples/browser
         run: npm install --no-package-lock --no-audit --no-fund
 
+      - name: Record browser performance environment
+        working-directory: examples/browser
+        shell: bash
+        run: |
+          mkdir -p performance-results
+          {
+            echo "runner_os=$(uname -s)"
+            echo "runner_kernel=$(uname -r)"
+            echo "runner_arch=$(uname -m)"
+            echo "node=$(node --version)"
+            echo "npm=$(npm --version)"
+            echo "rustc=$(rustc --version)"
+            echo "cpu:"
+            lscpu
+          } > performance-results/environment.txt
+
       - name: Build executable browser bundle and static assets
         working-directory: examples/browser
         run: npm run build
@@ -317,7 +357,76 @@ jobs:
 
       - name: Run browser DOM and initialization benchmarks (informational)
         working-directory: examples/browser
-        run: npm run bench:browser
+        run: RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
+
+      - name: Validate competitive benchmark report generator
+        run: python3 -m py_compile scripts/summarize-js-framework-benchmark.py
+      - name: Validate browser A/B/A comparison script
+        run: python3 -m py_compile scripts/compare-browser-performance.py
+      - name: Test performance benchmark aggregators and A/B/A comparisons
+        run: python3 -m unittest discover -s scripts/tests -v
+      - name: Validate upstream benchmark patch script
+        run: python3 -m py_compile scripts/patch-js-framework-benchmark.py
+      - name: Validate startup benchmark script
+        working-directory: examples/browser
+        run: node --check scripts/measure-framework-startup.mjs
+
+      - name: Controlled same-runner keyed reconciliation A/B/A (Phase 8.1)
+        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/phase-8-1-') }}
+        working-directory: examples/browser
+        env:
+          PHASE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PHASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_repo_path="crates/rustflow-dom/src/browser.rs"
+          browser_source="../../$browser_repo_path"
+          optimized_source="$RUNNER_TEMP/rustflow-browser-optimized.rs"
+          cp "$browser_source" "$optimized_source"
+          cp performance-results/browser.json performance-results/browser-optimized-before.json
+
+          git cat-file -e "$PHASE_BASE_SHA:$browser_repo_path"
+          git show "$PHASE_BASE_SHA:$browser_repo_path" > "$browser_source"
+          restore_optimized() {
+            if ! cmp -s "$optimized_source" "$browser_source"; then
+              cp "$optimized_source" "$browser_source"
+              npm run build
+            fi
+          }
+          trap restore_optimized EXIT
+
+          echo "Building the base DOM reconciler ($PHASE_BASE_SHA) on the same runner."
+          npm run build
+          # Keep the base A/B/A control on the critical 100-row insertion/reverse
+          # and secondary mount/depth workloads. The 100/1k/5k isolated mutation
+          # series run on both optimized passes; the base keyed matcher is
+          # quadratic and 20 pairs at 5k exceed the Playwright deadline.
+          RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=0 npm run bench:browser
+          cp performance-results/browser.json performance-results/browser-unoptimized.json
+
+          echo "Restoring the optimized DOM reconciler ($PHASE_HEAD_SHA) and repeating the suite."
+          cp "$optimized_source" "$browser_source"
+          npm run build
+          RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
+          cp performance-results/browser.json performance-results/browser-optimized-after.json
+
+          python3 ../../scripts/compare-browser-performance.py \
+            --optimized-before performance-results/browser-optimized-before.json \
+            --unoptimized performance-results/browser-unoptimized.json \
+            --optimized-after performance-results/browser-optimized-after.json \
+            --environment performance-results/environment.txt \
+            --base-sha "$PHASE_BASE_SHA" \
+            --head-sha "$PHASE_HEAD_SHA" \
+            --output performance-results/browser-ab-comparison.json
+
+      - name: Run extended RustFlow keyed-list stress suite
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.extended_browser_benchmarks) || (github.event_name == 'pull_request' && github.head_ref == 'feat/phase-8-1-measurement-completion') }}
+        working-directory: examples/browser
+        timeout-minutes: 30
+        env:
+          RUSTFLOW_BENCH_BROWSER_EXTENDED: "1"
+        run: RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
 
       - name: Upload browser performance measurements
         if: ${{ always() }}

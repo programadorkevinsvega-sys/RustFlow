@@ -13,10 +13,10 @@ Una fase no se cierra por añadir tests: deben ejecutarse correctamente en las v
 
 ## Fase 1.4 — Rendimiento
 
-El repositorio incorpora microbenchmarks para lecturas, escrituras, scheduling de un efecto y fan-out de 256 efectos. La CI ejecuta tres repeticiones con el perfil optimizado y ya se registró una línea base inicial con medianas y detalles del entorno en [docs/REACTIVITY_VERIFICATION.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/REACTIVITY_VERIFICATION.md). Los tiempos de un runner compartido son una referencia inicial, no una garantía de rendimiento.
+La referencia de esta fase conserva el microbenchmark original de Phase 1.4, que incluía lecturas, escrituras, un efecto y un lote de 256 efectos dependientes. Esa tabla y sus tres repeticiones son un **registro histórico**, no describen toda la suite actual. El benchmark de reactividad se amplió después: ahora mide creación/destrucción del runtime, señales, efectos y dependencias dinámicas, memos, batching, fan-out de 1 a 1.024 suscriptores, una dependencia de 1.000 señales y ciclos de vida de owners. La guía actualizada de [rendimiento](https://rustflow.pages.dev/guides/performance/) y el [contrato Phase 8.1](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/PERFORMANCE.md) documentan la suite completa, incluida la medición separada de SSR, DOM, memoria, inicialización y bundle.
 
-Para establecer una línea base reproducible, registra el commit, las versiones de Rust y Cargo, sistema operativo/kernel, CPU, número de iteraciones y todas las salidas. Ejecuta varias repeticiones en una máquina inactiva y compara medianas obtenidas en entornos equivalentes.
+Para establecer una línea base reproducible, registra el commit, las versiones de Rust y Cargo, sistema operativo/kernel, CPU, número de iteraciones y todas las salidas. Ejecuta varias repeticiones en una máquina inactiva y compara medianas obtenidas en entornos equivalentes. Los tiempos de un runner compartido son una referencia inicial, no una garantía de rendimiento.
 
 ## Protocolo detallado
 
-Consulta [docs/REACTIVITY_VERIFICATION.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/REACTIVITY_VERIFICATION.md) para comandos de validación, cargas medidas y metodología reproducible.
+Consulta [docs/REACTIVITY_VERIFICATION.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/REACTIVITY_VERIFICATION.md) para el registro histórico y protocolo de verificación de reactividad, y [docs/PERFORMANCE.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/PERFORMANCE.md) para la metodología completa vigente de Phase 8.1.

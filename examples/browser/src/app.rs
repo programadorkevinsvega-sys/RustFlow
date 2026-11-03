@@ -39,6 +39,23 @@ fn Counter(initial: i32, label: String) -> impl IntoView {
 }
 
 #[rustflow::component]
+fn NestedBenchmarkNode(depth: i32) -> impl IntoView {
+    if depth == 0 {
+        rustflow::view! {
+            <div data-bench-depth={depth.to_string()}>
+                "Nested benchmark leaf"
+            </div>
+        }
+    } else {
+        rustflow::view! {
+            <div data-bench-depth={depth.to_string()}>
+                <NestedBenchmarkNode depth={depth - 1} />
+            </div>
+        }
+    }
+}
+
+#[rustflow::component]
 fn TodoRow(
     id: i64,
     title: String,
@@ -124,6 +141,242 @@ fn todo_component(
     )
 }
 
+#[derive(Clone, PartialEq)]
+struct OfficialBenchmarkRowData {
+    id: i64,
+    label: String,
+}
+
+fn official_random(max: usize) -> usize {
+    ((js_sys::Math::random() * 1_000.0).round() as usize) % max
+}
+
+fn official_benchmark_rows(count: usize, first_id: i64) -> Vec<OfficialBenchmarkRowData> {
+    const ADJECTIVES: [&str; 25] = [
+        "pretty",
+        "large",
+        "big",
+        "small",
+        "tall",
+        "short",
+        "long",
+        "handsome",
+        "plain",
+        "quaint",
+        "clean",
+        "elegant",
+        "easy",
+        "angry",
+        "crazy",
+        "helpful",
+        "mushy",
+        "odd",
+        "unsightly",
+        "adorable",
+        "important",
+        "inexpensive",
+        "cheap",
+        "expensive",
+        "fancy",
+    ];
+    const COLORS: [&str; 11] = [
+        "red", "yellow", "blue", "green", "pink", "brown", "purple", "brown", "white", "black",
+        "orange",
+    ];
+    const NOUNS: [&str; 13] = [
+        "table", "chair", "house", "bbq", "desk", "car", "pony", "cookie", "sandwich", "burger",
+        "pizza", "mouse", "keyboard",
+    ];
+
+    (0..count)
+        .map(|offset| OfficialBenchmarkRowData {
+            id: first_id + offset as i64,
+            label: format!(
+                "{} {} {}",
+                ADJECTIVES[official_random(ADJECTIVES.len())],
+                COLORS[official_random(COLORS.len())],
+                NOUNS[official_random(NOUNS.len())]
+            ),
+        })
+        .collect()
+}
+
+#[rustflow::component]
+fn OfficialBenchmarkRow(
+    id: i64,
+    label: String,
+    selected: bool,
+    on_select: EventHandler,
+    on_remove: EventHandler,
+) -> impl IntoView {
+    rustflow::view! {
+        <tr class={if selected { "danger" } else { "" }}>
+            <td class="col-md-1">{id}</td>
+            <td class="col-md-4">
+                <a on:click={move |_payload| on_select.invoke(EventPayload::default())}>
+                    {label}
+                </a>
+            </td>
+            <td class="col-md-1">
+                <a on:click={move |_payload| on_remove.invoke(EventPayload::default())}>
+                    <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
+                </a>
+            </td>
+            <td class="col-md-6"></td>
+        </tr>
+    }
+}
+
+fn official_benchmark_button(
+    id: &'static str,
+    label: &'static str,
+    on_click: impl Fn(EventPayload) + 'static,
+) -> Result<View, rustflow::view::ViewError> {
+    Ok(ViewElement::new("div")?
+        .with_attribute("class", "col-sm-6 smallpad")?
+        .with_children([ViewElement::new("button")?
+            .with_attribute("type", "button")?
+            .with_attribute("class", "btn btn-primary btn-block")?
+            .with_attribute("id", id)?
+            .with_event("click", on_click)?
+            .with_children([View::text(label)])
+            .build()])
+        .build())
+}
+
+#[rustflow::component]
+fn OfficialBenchmark() -> impl IntoView {
+    let rows = signal(Vec::<OfficialBenchmarkRowData>::new());
+    let selected = signal(0_i64);
+    let next_id = signal(1_i64);
+
+    let run_rows = rows.clone();
+    let run_selected = selected.clone();
+    let run_next_id = next_id.clone();
+    let run_button = official_benchmark_button("run", "Create 1,000 rows", move |_payload| {
+        let first_id = run_next_id.get();
+        run_next_id.update(|next| *next += 1_000);
+        run_rows.set(official_benchmark_rows(1_000, first_id));
+        run_selected.set(0);
+    })
+    .expect("valid official benchmark run button");
+
+    let run_lots_rows = rows.clone();
+    let run_lots_selected = selected.clone();
+    let run_lots_next_id = next_id.clone();
+    let run_lots_button =
+        official_benchmark_button("runlots", "Create 10,000 rows", move |_payload| {
+            let first_id = run_lots_next_id.get();
+            run_lots_next_id.update(|next| *next += 10_000);
+            run_lots_rows.set(official_benchmark_rows(10_000, first_id));
+            run_lots_selected.set(0);
+        })
+        .expect("valid official benchmark runlots button");
+
+    let append_rows = rows.clone();
+    let append_next_id = next_id.clone();
+    let append_button = official_benchmark_button("add", "Append 1,000 rows", move |_payload| {
+        let first_id = append_next_id.get();
+        append_next_id.update(|next| *next += 1_000);
+        append_rows.update(|items| items.extend(official_benchmark_rows(1_000, first_id)));
+    })
+    .expect("valid official benchmark append button");
+
+    let update_rows = rows.clone();
+    let update_button =
+        official_benchmark_button("update", "Update every 10th row", move |_payload| {
+            update_rows.update(|items| {
+                for item in items.iter_mut().step_by(10) {
+                    item.label.push_str(" !!!");
+                }
+            });
+        })
+        .expect("valid official benchmark update button");
+
+    let clear_rows = rows.clone();
+    let clear_selected = selected.clone();
+    let clear_button = official_benchmark_button("clear", "Clear", move |_payload| {
+        clear_rows.set(Vec::new());
+        clear_selected.set(0);
+    })
+    .expect("valid official benchmark clear button");
+
+    let swap_rows = rows.clone();
+    let swap_button = official_benchmark_button("swaprows", "Swap Rows", move |_payload| {
+        swap_rows.update(|items| {
+            if items.len() > 998 {
+                items.swap(1, 998);
+            }
+        });
+    })
+    .expect("valid official benchmark swap button");
+
+    let rows_for_region = rows.clone();
+    let rows_for_actions = rows.clone();
+    let selected_for_region = selected.clone();
+    let selected_for_actions = selected.clone();
+    let rows_region = View::dynamic(move || {
+        let snapshot = rows_for_region.get();
+        let selected_id = selected_for_region.get();
+        let mut children = Vec::with_capacity(snapshot.len());
+        for item in snapshot {
+            let id = item.id;
+            let select_state = selected_for_actions.clone();
+            let select_handler = EventHandler::new(move |_payload: EventPayload| {
+                select_state.set(id);
+            });
+            let remove_state = rows_for_actions.clone();
+            let remove_handler = EventHandler::new(move |_payload: EventPayload| {
+                remove_state.update(|items| items.retain(|candidate| candidate.id != id));
+            });
+            children.push(KeyedChild::new(
+                id.to_string(),
+                View::component(
+                    "OfficialBenchmarkRow",
+                    [
+                        Property::new("id", item.id)?,
+                        Property::new("label", item.label)?,
+                        Property::new("selected", selected_id == id)?,
+                        Property::new("on_select", PropertyValue::Callback(select_handler))?,
+                        Property::new("on_remove", PropertyValue::Callback(remove_handler))?,
+                    ],
+                    [],
+                    None,
+                )?,
+            ));
+        }
+        View::keyed_list(children)
+    });
+
+    let controls = View::fragment([
+        run_button,
+        run_lots_button,
+        append_button,
+        update_button,
+        clear_button,
+        swap_button,
+    ]);
+
+    rustflow::view! {
+        <div id="main" class="container">
+            <div class="jumbotron">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h1>"RustFlow (keyed)"</h1>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="row">{controls}</div>
+                    </div>
+                </div>
+            </div>
+            <table class="table table-hover table-striped test-data">
+                <tbody>{rows_region}</tbody>
+            </table>
+            <span class="preloadicon glyphicon glyphicon-remove" aria-hidden="true"></span>
+        </div>
+    }
+}
+
 #[wasm_bindgen(start)]
 pub fn start() -> Result<(), JsValue> {
     let window =
@@ -155,6 +408,30 @@ pub fn start() -> Result<(), JsValue> {
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|count| *count <= 10_000)
         .unwrap_or(0);
+    // The browser performance suite can request an isolated nested component tree.
+    // The limit protects the demo route from unbounded recursive component setup.
+    let benchmark_component_depth = window
+        .location()
+        .search()?
+        .trim_start_matches('?')
+        .split('&')
+        .find_map(|parameter| parameter.strip_prefix("bench_depth="))
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|depth| (1..=80).contains(depth))
+        .unwrap_or(0);
+    let benchmark_depth_signal = runtime
+        .signal(benchmark_component_depth as i32)
+        .map_err(display_error)?;
+    let benchmark_controls_enabled = window
+        .location()
+        .search()?
+        .trim_start_matches('?')
+        .split('&')
+        .any(|parameter| parameter == "bench_controls=1");
+    let official_benchmark_mode = window
+        .location()
+        .pathname()?
+        .contains("/frameworks/keyed/rustflow/");
     let initial_todos = (0..benchmark_list_size)
         .map(|index| Todo {
             id: index as i64 + 1,
@@ -197,6 +474,9 @@ pub fn start() -> Result<(), JsValue> {
     let mut registry = ComponentRegistry::new();
     register_counter(&mut registry).map_err(display_error)?;
     register_todorow(&mut registry).map_err(display_error)?;
+    register_nestedbenchmarknode(&mut registry).map_err(display_error)?;
+    register_officialbenchmark(&mut registry).map_err(display_error)?;
+    register_officialbenchmarkrow(&mut registry).map_err(display_error)?;
 
     // This optional fixture is injected only by the browser E2E tests. It exercises the
     // same public hydration API against server-shaped HTML without affecting the demo page.
@@ -373,9 +653,49 @@ pub fn start() -> Result<(), JsValue> {
 
     let mut renderer = DomRenderer::new(document.clone(), runtime, registry);
     let route_for_render = current_route.clone();
+    let benchmark_depth_for_toggle = benchmark_depth_signal.clone();
+    let benchmark_depth_for_region = benchmark_depth_signal.clone();
     let mounted = renderer
         .mount_reactive(&target, &root_scope, move || {
             let route = route_for_render.get();
+            if official_benchmark_mode {
+                return View::component("OfficialBenchmark", [], [], None).map_err(DomError::from);
+            }
+            // The browser benchmark keeps one WASM runtime alive and toggles only
+            // the recursive component subtree. This isolates component mount/unmount
+            // work from full-page navigation, WASM startup, and browser cache effects.
+            if benchmark_component_depth > 0 {
+                let depth_for_toggle = benchmark_depth_for_toggle.clone();
+                let depth_for_region = benchmark_depth_for_region.clone();
+                let toggle = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-depth-toggle")?
+                    .with_attribute("hidden", "")?
+                    .with_event("click", move |_payload| {
+                        depth_for_toggle.update(|depth| {
+                            *depth = if *depth == 0 {
+                                benchmark_component_depth as i32
+                            } else {
+                                0
+                            };
+                        });
+                    })?
+                    .build();
+                let nested_tree = View::dynamic(move || {
+                    let depth = depth_for_region.get();
+                    if depth == 0 {
+                        Ok(View::fragment([]))
+                    } else {
+                        View::component(
+                            "NestedBenchmarkNode",
+                            [Property::new("depth", depth)?],
+                            [],
+                            None,
+                        )
+                    }
+                });
+                return Ok(View::fragment([toggle, nested_tree]));
+            }
             match route.split('?').next().unwrap_or("/") {
                 "/" => {}
                 "/about" => {
@@ -438,6 +758,175 @@ pub fn start() -> Result<(), JsValue> {
                 }
                 View::keyed_list(children)
             });
+
+            let benchmark_controls_enabled = benchmark_controls_enabled;
+            let benchmark_controls = if benchmark_controls_enabled {
+                let update_todos = todos.clone();
+                let update_every_tenth = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-update-every-10th")?
+                    .with_event("click", move |_payload| {
+                        update_todos.update(|items| {
+                            for item in items.iter_mut().step_by(10) {
+                                item.title.push_str(" !!!");
+                            }
+                        });
+                    })?
+                    .with_children([View::text("Update every tenth row")])
+                    .build();
+
+                let swap_todos = todos.clone();
+                let swap_rows = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-swap-rows")?
+                    .with_event("click", move |_payload| {
+                        swap_todos.update(|items| {
+                            if items.len() > 998 {
+                                items.swap(1, 998);
+                            }
+                        });
+                    })?
+                    .with_children([View::text("Swap rows 2 and 999")])
+                    .build();
+
+                let move_first_todos = todos.clone();
+                let move_first_to_end = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-move-first-to-end")?
+                    .with_event("click", move |_payload| {
+                        move_first_todos.update(|items| {
+                            if items.len() > 1 {
+                                items.rotate_left(1);
+                            }
+                        });
+                    })?
+                    .with_children([View::text("Move first row to end")])
+                    .build();
+
+                let move_last_todos = todos.clone();
+                let move_last_to_front = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-move-last-to-front")?
+                    .with_event("click", move |_payload| {
+                        move_last_todos.update(|items| {
+                            if items.len() > 1 {
+                                items.rotate_right(1);
+                            }
+                        });
+                    })?
+                    .with_children([View::text("Move last row to front")])
+                    .build();
+
+                let reverse_section_todos = todos.clone();
+                let reverse_first_section = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-reverse-first-section")?
+                    .with_event("click", move |_payload| {
+                        reverse_section_todos.update(|items| {
+                            let count = items.len().min(100);
+                            items[..count].reverse();
+                        });
+                    })?
+                    .with_children([View::text("Reverse first 100 rows")])
+                    .build();
+
+                let append_todos = todos.clone();
+                let append_next_id = next_id.clone();
+                let append_one_thousand = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-append-1000")?
+                    .with_event("click", move |_payload| {
+                        let first_id = append_next_id.get();
+                        append_next_id.update(|next| *next += 1_000);
+                        append_todos.update(|items| {
+                            items.extend((0..1_000).map(|offset| {
+                                let id = first_id + offset;
+                                Todo {
+                                    id,
+                                    title: format!("benchmark item {id}"),
+                                    done: false,
+                                }
+                            }));
+                        });
+                    })?
+                    .with_children([View::text("Append 1,000 rows")])
+                    .build();
+
+                let remove_last_todos = todos.clone();
+                let remove_last_one_thousand = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-remove-last-1000")?
+                    .with_event("click", move |_payload| {
+                        remove_last_todos.update(|items| {
+                            let start = items.len().saturating_sub(1_000);
+                            items.truncate(start);
+                        });
+                    })?
+                    .with_children([View::text("Remove last 1,000 rows")])
+                    .build();
+
+                let replace_todos = todos.clone();
+                let replace_next_id = next_id.clone();
+                let replace_one_thousand = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-replace-1000")?
+                    .with_event("click", move |_payload| {
+                        let first_id = replace_next_id.get();
+                        replace_next_id.update(|next| *next += 1_000);
+                        replace_todos.update(|items| {
+                            *items = (0..1_000)
+                                .map(|offset| {
+                                    let id = first_id + offset;
+                                    Todo {
+                                        id,
+                                        title: format!("benchmark item {id}"),
+                                        done: false,
+                                    }
+                                })
+                                .collect();
+                        });
+                    })?
+                    .with_children([View::text("Replace with 1,000 rows")])
+                    .build();
+
+                let remove_section_todos = todos.clone();
+                let remove_first_section = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-remove-first-section")?
+                    .with_event("click", move |_payload| {
+                        remove_section_todos.update(|items| {
+                            let count = items.len().min(100);
+                            items.drain(..count);
+                        });
+                    })?
+                    .with_children([View::text("Remove first 100 rows")])
+                    .build();
+
+                let clear_todos = todos.clone();
+                let clear_all_rows = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-clear-all")?
+                    .with_event("click", move |_payload| {
+                        clear_todos.update(|items| items.clear());
+                    })?
+                    .with_children([View::text("Clear all rows")])
+                    .build();
+
+                View::fragment([
+                    update_every_tenth,
+                    swap_rows,
+                    move_first_to_end,
+                    move_last_to_front,
+                    reverse_first_section,
+                    append_one_thousand,
+                    remove_last_one_thousand,
+                    replace_one_thousand,
+                    remove_first_section,
+                    clear_all_rows,
+                ])
+            } else {
+                View::fragment([])
+            };
 
             let show_for_region = show_for_region.clone();
             let todo_input_ref_for_add = todo_input_ref.clone();
@@ -512,6 +1001,7 @@ pub fn start() -> Result<(), JsValue> {
                         </button>
                     </section>
                     <ul data-testid="todo-list">{todo_region}</ul>
+                    {benchmark_controls}
                     <p data-testid="todo-unmount-count">"Unmounted rows: " {cleanup_count_for_display}</p>
                     <section aria-label="DOM element reference demo">
                         {dom_ref_region}

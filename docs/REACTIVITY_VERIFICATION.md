@@ -19,23 +19,28 @@ A green test run is necessary but not proof of exhaustive correctness. New regre
 
 ## Benchmark workloads
 
-The dependency-free benchmark at `crates/rustflow/benches/reactivity.rs` measures:
+The current dependency-free benchmark at `crates/rustflow/benches/reactivity.rs` has expanded beyond the original Phase 1.4 workload. It measures:
 
-- signal reads;
-- signal writes;
-- scheduling and running one dependent effect;
-- a batch that invalidates 256 dependent effects.
+- runtime creation/drop; signal reads, changed-value writes, and updates;
+- one-subscriber effect scheduling/flush and dynamic dependency switching;
+- cached memo reads and source-update/recompute;
+- individual versus coalesced writes to 16 signals;
+- shared-signal fan-out with 1, 16, 64, 256, and 1,024 subscribers;
+- one effect observing 1,000 signal dependencies;
+- owner signal/effect creation and disposal, plus nested owner-tree cleanup.
 
-Run it with the optimized Cargo bench profile:
+The fan-out scenarios use an isolated benchmark runtime whose cycle guard equals that scenario's subscriber count. This permits measuring 1,024 legitimate subscribers without changing the production runtime's default cycle limit. The historical table below remains the original Phase 1.4 snapshot (including its 256-effect batch); it is not the baseline for the expanded Phase 8 suite.
+
+Run the current benchmark with the optimized Cargo bench profile:
 
 ```sh
 rustc --version
 cargo --version
 uname -a
-RUSTFLOW_BENCH_ITERATIONS=100000 cargo bench -p rustflow --bench reactivity
+RUSTFLOW_BENCH_ITERATIONS=10000 RUSTFLOW_BENCH_SAMPLES=25 cargo bench -p rustflow --bench reactivity
 ```
 
-The iteration count can be changed with `RUSTFLOW_BENCH_ITERATIONS`. High-fan-out uses one tenth of the configured count (at least one iteration). The program prints elapsed nanoseconds and average nanoseconds per operation.
+`RUSTFLOW_BENCH_ITERATIONS` defaults to 10,000 and `RUSTFLOW_BENCH_SAMPLES` defaults to 25. Each fan-out case scales its iterations by the subscriber count (clamped to 1–10,000). The program emits JSONL with minimum, median, p90, p95, p99 when at least 100 samples are requested, and median throughput. For the full current Phase 8 methodology—including SSR, browser DOM, memory, initialization, bundle budgets, and controlled comparisons—see [PERFORMANCE.md](PERFORMANCE.md).
 
 ## Reproducibility and interpretation
 

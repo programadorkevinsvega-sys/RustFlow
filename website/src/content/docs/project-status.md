@@ -5,6 +5,17 @@ description: Capacidades implementadas, límites conocidos y estado verificable 
 
 RustFlow sigue siendo un prototipo pre-1.0. El roadmap es la fuente de verdad de los criterios y estados de fase; una funcionalidad implementada no implica estabilidad de API ni preparación para producción. Este resumen es para que un usuario pueda decidir qué probar hoy sin confundir el objetivo futuro con el código disponible.
 
+### Phase 8 — Performance, accesibilidad y DX (en progreso)
+
+**8.1 Performance continúa abierta.** El CI #893 histórico aceptó el A/B/A interno del reconciliador en el mismo runner (45,30% de mejora mediana en inserción incremental keyed y 54,67% en reverse keyed), con deriva A/A máxima observada de 0,23%. Las mutaciones aisladas históricas mejoraron entre 53,52% y 95,83% para inserciones y entre 54,79% y 95,71% para eliminaciones en listas de 100/1.000/5.000 filas. La memoria nativa histórica terminó con outstanding = 0 y el bundle estuvo dentro de los límites deterministas; el montaje de 10.000 filas fue informativo, no A/B/A. Esto demuestra mejoras frente al reconciliador base de RustFlow, **no** superioridad frente a React, Vue y Svelte.
+
+El PR #78 ahora contiene el fixture keyed RustFlow dentro del benchmark upstream fijado, un runner comparativo que ejecuta React 19.2.0, Vue 3.5.39, Svelte 5.42.1 y RustFlow en un único job/runner/Chromium, nueve operaciones upstream más tres operaciones Phase 8.1 extendidas sobre 10.000 filas, cinco mediciones de memoria y tres mediciones de tamaño. También se añadió una pasada separada de arranque/primera interacción (tres warmups y 15 muestras por framework en orden rotatorio) y una suite de estrés RustFlow 100/1.000/5.000/10.000 filas. El agregador conserva p50/p90/p95 y muestras crudas, y calcula índices geométricos separados para las nueve operaciones upstream, las tres extensiones y las doce combinadas. El workflow incluye la validación interna A/B/A antes de las comparaciones y el estrés extendido.
+
+**La infraestructura está conectada, pero no hay todavía un artefacto competitivo aceptado del HEAD actual.** El CI #914 correspondiente al HEAD `103f554f5765463550c71dbc216590e2ffba11a6` aparece pendiente al momento de esta actualización. No se publican ratios ni victoria competitiva hasta revisar los resultados completos de cuatro frameworks y confirmar todos los checks. El parseo/compilación/ejecución separados del hilo principal siguen pendientes de un protocolo de tracing específico. Consulta [Medir el rendimiento](/guides/performance/) y el [contrato técnico](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/PERFORMANCE.md).
+
+**8.2 DX y 8.3 accesibilidad/compatibilidad todavía no se han iniciado.** No se anuncian hot reload, compatibilidad multi-navegador ni garantías de accesibilidad como entregadas por Phase 8.
+
+
 ### Fase 7.1 — Capacidades operativas (completada e integrada)
 
 Phase 7.1 se implementó y fusionó mediante el PR #68 el 1 de noviembre de 2026. El commit de integración en `main` es `c6ef2232d99233becb08008dc8b1a4a38b5bbd2f`. El SHA final de la PR (`491703f2263f20896128673aaaec66b6837711c1`) pasó los checks requeridos de Rust 1.85 y stable, formato, Clippy, pruebas de workspace y contratos de integración de bases de datos, WebAssembly, Browser E2E/bundle, build de documentación, gobernanza, revisión de dependencias y Cloudflare Pages. La prueba de apagado graceful con un handler atascado pasó en ambos toolchains.
