@@ -38,6 +38,8 @@ struct Totals {
     outstanding_after_setup: i128,
     outstanding_after_dispose: i128,
     max_outstanding_after_setup: i128,
+    min_outstanding_after_dispose: Option<i128>,
+    max_outstanding_after_dispose: Option<i128>,
 }
 
 impl Totals {
@@ -54,6 +56,14 @@ impl Totals {
         self.outstanding_after_setup += after_setup;
         self.outstanding_after_dispose += after_dispose;
         self.max_outstanding_after_setup = self.max_outstanding_after_setup.max(after_setup);
+        self.min_outstanding_after_dispose = Some(
+            self.min_outstanding_after_dispose
+                .map_or(after_dispose, |value| value.min(after_dispose)),
+        );
+        self.max_outstanding_after_dispose = Some(
+            self.max_outstanding_after_dispose
+                .map_or(after_dispose, |value| value.max(after_dispose)),
+        );
     }
 }
 
@@ -78,7 +88,7 @@ fn measure_lifecycle<T>(
 
     let divisor = samples as f64;
     println!(
-        "{{\"type\":\"memory_measurement\",\"name\":\"{}\",\"samples\":{},\"allocations_per_lifecycle\":{:.3},\"deallocations_per_lifecycle\":{:.3},\"reallocations_per_lifecycle\":{:.3},\"bytes_allocated_per_lifecycle\":{:.3},\"bytes_deallocated_per_lifecycle\":{:.3},\"bytes_reallocated_net_per_lifecycle\":{:.3},\"outstanding_requested_bytes_after_setup_mean\":{:.3},\"outstanding_requested_bytes_after_dispose_mean\":{:.3},\"outstanding_requested_bytes_after_setup_max\":{}}}",
+        "{{\"type\":\"memory_measurement\",\"name\":\"{}\",\"samples\":{},\"allocations_per_lifecycle\":{:.3},\"deallocations_per_lifecycle\":{:.3},\"reallocations_per_lifecycle\":{:.3},\"bytes_allocated_per_lifecycle\":{:.3},\"bytes_deallocated_per_lifecycle\":{:.3},\"bytes_reallocated_net_per_lifecycle\":{:.3},\"outstanding_requested_bytes_after_setup_mean\":{:.3},\"outstanding_requested_bytes_after_dispose_mean\":{:.3},\"outstanding_requested_bytes_after_setup_max\":{},\"outstanding_requested_bytes_after_dispose_min\":{},\"outstanding_requested_bytes_after_dispose_max\":{}}}",
         name,
         samples,
         totals.allocations as f64 / divisor,
@@ -89,7 +99,9 @@ fn measure_lifecycle<T>(
         totals.bytes_reallocated as f64 / divisor,
         totals.outstanding_after_setup as f64 / divisor,
         totals.outstanding_after_dispose as f64 / divisor,
-        totals.max_outstanding_after_setup
+        totals.max_outstanding_after_setup,
+        totals.min_outstanding_after_dispose.unwrap_or_default(),
+        totals.max_outstanding_after_dispose.unwrap_or_default()
     );
 }
 
