@@ -367,6 +367,9 @@ jobs:
           RUSTFLOW_BENCH_BROWSER_EXTENDED: ${{ (github.event_name == 'schedule' || inputs.extended_browser_benchmarks) && '1' || '0' }}
         run: RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
 
+      - name: Validate competitive benchmark report generator
+        run: python3 -m py_compile scripts/summarize-js-framework-benchmark.py
+
       - name: Run pinned upstream keyed framework comparison
         if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.official_framework_comparison) }}
         shell: bash
