@@ -1,405 +1,405 @@
-name: CI
 
-on:
-  pull_request:
-  push:
-    branches: [main]
 
-permissions:
-  contents: read
 
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
-jobs:
-  changes:
-    name: Detect changed areas
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      rust: ${{ steps.filter.outputs.rust }}
-      browser: ${{ steps.filter.outputs.browser }}
-      full_ci: ${{ steps.filter.outputs.full_ci }}
-    steps:
-      - name: Check out repository history for push diff detection
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
-      - name: Classify changed paths
-        uses: dorny/paths-filter@v4.0.3
-        id: filter
-        with:
-          filters: .github/filters.yml
-          predicate-quantifier: some-with-excludes
 
-  wasm:
-    name: WebAssembly target check
-    needs: changes
-    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.full_ci == 'true') }}
-    runs-on: ubuntu-24.04
 
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
 
-      - name: Install Rust and the browser target
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
 
-      - name: Cache Cargo artifacts
-        uses: Swatinem/rust-cache@v2
 
-      - name: Compile the DOM adapter for WebAssembly
-        run: cargo check -p rustflow-dom --target wasm32-unknown-unknown
 
-      - name: Reject server-only dependencies from the browser graph
-        shell: bash
-        run: |
-          set -euo pipefail
-          dependencies="$(cargo tree --locked -p rustflow-browser --target wasm32-unknown-unknown --edges normal)"
-          if grep -E '(^|[[:space:]])(rustflow-server|rustflow-ssr|axum|tokio|tower|rustls)([[:space:]]|$)' <<<"$dependencies"; then
-            echo "::error::Browser dependency graph contains a known server-only dependency."
-            exit 1
-          fi
 
-  rust:
-    name: Rust checks (${{ matrix.toolchain }})
-    needs: changes
-    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.full_ci == 'true') }}
-    runs-on: ubuntu-24.04
-    services:
-      postgres:
-        image: postgres:16.15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: rustflow_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d rustflow_test"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      mysql:
-        image: mysql:8.4.13
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: rustflow_test
-          MYSQL_USER: rustflow
-          MYSQL_PASSWORD: rustflow
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-      mariadb:
-        image: mariadb:11.4.13
-        env:
-          MARIADB_ROOT_PASSWORD: root
-          MARIADB_DATABASE: rustflow_test
-          MARIADB_USER: rustflow
-          MARIADB_PASSWORD: rustflow
-        ports:
-          - 3307:3306
-        options: >-
-          --health-cmd "healthcheck.sh --connect --innodb_initialized"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      RUSTFLOW_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/rustflow_test
-      RUSTFLOW_TEST_MYSQL_URL: mysql://rustflow:rustflow@127.0.0.1:3306/rustflow_test
-      RUSTFLOW_TEST_MARIADB_URL: mysql://rustflow:rustflow@127.0.0.1:3307/rustflow_test
-    strategy:
-      fail-fast: false
-      matrix:
-        toolchain: ["1.85", "stable"]
 
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.toolchain }}
-          components: rustfmt, clippy
 
-      - name: Cache Cargo artifacts
-        uses: Swatinem/rust-cache@v2
 
-      - name: Start MongoDB 7.0.45 single-node replica set
-        run: |
-          set -euo pipefail
-          docker run --detach --name rustflow-mongodb --publish 27017:27017 \
-            mongo:7.0.45 mongod --replSet rs0 --bind_ip_all
-          for attempt in $(seq 1 60); do
-            if docker exec rustflow-mongodb mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q '^1$'; then
-              break
-            fi
-            sleep 1
-          done
-          docker exec rustflow-mongodb mongosh --quiet --eval \
-            'rs.initiate({_id: "rs0", members: [{_id: 0, host: "127.0.0.1:27017"}]})'
-          primary=""
-          for attempt in $(seq 1 60); do
-            primary="$(docker exec rustflow-mongodb mongosh --quiet --eval 'rs.status().myState' 2>/dev/null || true)"
-            if [ "$primary" = "1" ]; then
-              break
-            fi
-            sleep 1
-          done
-          if [ "$primary" != "1" ]; then
-            docker logs rustflow-mongodb
-            echo "::error::MongoDB replica set did not become primary."
-            exit 1
-          fi
 
-          docker run --detach --name rustflow-mongodb-standalone --publish 27018:27017 \
-            mongo:7.0.45 mongod --bind_ip_all
-          standalone_ready=""
-          for attempt in $(seq 1 60); do
-            standalone_ready="$(docker exec rustflow-mongodb-standalone mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' 2>/dev/null || true)"
-            if [ "$standalone_ready" = "1" ]; then
-              break
-            fi
-            sleep 1
-          done
-          if [ "$standalone_ready" != "1" ]; then
-            docker logs rustflow-mongodb-standalone
-            echo "::error::MongoDB standalone service did not become ready."
-            exit 1
-          fi
 
-          printf '%s\n' 'RUSTFLOW_TEST_MONGODB_URI=mongodb://127.0.0.1:27017/rustflow_test?replicaSet=rs0' >> "$GITHUB_ENV"
-          printf '%s\n' 'RUSTFLOW_TEST_MONGODB_STANDALONE_URI=mongodb://127.0.0.1:27018/rustflow_test_standalone' >> "$GITHUB_ENV"
 
-      - name: Audit the resolved Cargo dependency graph
-        if: matrix.toolchain == 'stable'
-        run: |
-          cargo install cargo-audit --locked --version 0.22.2
-          cargo audit --deny warnings
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
 
-      - name: Run Clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-      - name: Run tests
-        run: cargo test --workspace --all-features
 
-      - name: Verify the authenticated example through in-process requests
-        run: cargo test -p rustflow-server --features testing --example authenticated
 
-      - name: Run MySQL and MariaDB integration contracts explicitly
-        run: cargo test -p rustflow-server --test database_engines -- --test-threads=1
 
-      - name: Run PostgreSQL migrations contract in isolated post-workspace step
-        run: cargo test -p rustflow-server --test database_engines postgres_migrations_are_repeatable_and_reversible -- --ignored --test-threads=1
 
-      - name: Run MongoDB integration contract explicitly
-        run: cargo test -p rustflow-server --test mongodb_adapter -- --test-threads=1
 
-      - name: Install and smoke-test the CLI
-        if: matrix.toolchain == 'stable'
-        run: |
-          install_root="$RUNNER_TEMP/rustflow-cli-install"
-          cargo install --path crates/rustflow-cli --locked --root "$install_root"
-          "$install_root/bin/rustflow" --help
-          "$install_root/bin/rustflow" --version
 
-      - name: Run native performance baselines (informational)
-        if: matrix.toolchain == 'stable'
-        env:
-          RUSTFLOW_BENCH_COMMIT: "${{ github.sha }}"
-          RUSTFLOW_BENCH_ITERATIONS: "10000"
-          RUSTFLOW_BENCH_SAMPLES: "25"
-        run: |
-          set -euo pipefail
-          mkdir -p performance-results/native
-          {
-            echo "commit=$(git rev-parse HEAD)"
-            echo "rustc=$(rustc --version)"
-            echo "cargo=$(cargo --version)"
-            echo "os=$(uname -a)"
-            echo "cpu:"
-            lscpu
-          } > performance-results/native/environment.txt
 
-          # Build the timing harnesses before collecting RSS. Measuring the first
-          # cargo bench invocation would otherwise include compilation memory.
-          cargo bench -p rustflow --bench reactivity > /dev/null
-          cargo bench -p rustflow-ssr --bench rendering > /dev/null
 
-          for run in 1 2 3; do
-            echo "Reactivity repetition ${run}/3"
-            /usr/bin/time -v -o "performance-results/native/reactivity-rss-${run}.txt" \
-              cargo bench -p rustflow --bench reactivity \
-              > "performance-results/native/reactivity-${run}.jsonl"
 
-            echo "SSR repetition ${run}/3"
-            /usr/bin/time -v -o "performance-results/native/ssr-rss-${run}.txt" \
-              cargo bench -p rustflow-ssr --bench rendering \
-              > "performance-results/native/ssr-${run}.jsonl"
-          done
 
-          RUSTFLOW_MEMORY_SAMPLES=25 \
-            cargo bench -p rustflow --bench memory \
-            > performance-results/native/owner-memory.jsonl
 
-          python3 scripts/check-memory-performance-budgets.py performance-results/native/owner-memory.jsonl
 
-          python3 scripts/check-native-performance-budgets.py performance-results/native
 
-          RUSTFLOW_BENCH_ITERATIONS=100 RUSTFLOW_BENCH_BULK_SIZE=50 \
-            cargo bench -p rustflow-server --bench persistence \
-            > performance-results/native/persistence-smoke.txt 2>&1
 
-      - name: Upload native performance measurements
-        if: ${{ always() && matrix.toolchain == 'stable' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase-8-1-native-performance
-          path: performance-results/native/
-          if-no-files-found: warn
-          retention-days: 30
 
-      - name: Build documentation
-        run: cargo doc --workspace --all-features --no-deps
-        env:
-          RUSTDOCFLAGS: -D warnings
 
-  browser-e2e:
-    name: Browser E2E and bundle size
-    needs: changes
-    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.full_ci == 'true') }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
 
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
-      - name: Install Rust and the browser target
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
 
-      - name: Cache Cargo artifacts
-        uses: Swatinem/rust-cache@v2
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: "22"
 
-      - name: Install wasm-pack
-        run: cargo install wasm-pack --locked --version 0.13.1
 
-      - name: Install browser example dependencies
-        working-directory: examples/browser
-        run: npm install --no-package-lock --no-audit --no-fund
 
-      - name: Record browser performance environment
-        working-directory: examples/browser
-        shell: bash
-        run: |
-          mkdir -p performance-results
-          {
-            echo "runner_os=$(uname -s)"
-            echo "runner_kernel=$(uname -r)"
-            echo "runner_arch=$(uname -m)"
-            echo "node=$(node --version)"
-            echo "npm=$(npm --version)"
-            echo "rustc=$(rustc --version)"
-            echo "cpu:"
-            lscpu
-          } > performance-results/environment.txt
 
-      - name: Build executable browser bundle and static assets
-        working-directory: examples/browser
-        run: npm run build
 
-      - name: Measure and enforce the raw WASM bundle budget
-        working-directory: examples/browser
-        run: npm run check:bundle
 
-      - name: Install Chromium for Playwright
-        working-directory: examples/browser
-        timeout-minutes: 10
-        run: npx playwright install --with-deps chromium
 
-      - name: Run browser end-to-end tests
-        working-directory: examples/browser
-        run: npm run test:e2e
 
-      - name: Run browser DOM and initialization benchmarks (informational)
-        working-directory: examples/browser
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         run: RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
 
-      - name: Controlled same-runner keyed reconciliation A/B/A (Phase 8.1)
-        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/phase-8-1-') }}
-        working-directory: examples/browser
-        env:
-          PHASE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PHASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          browser_repo_path="crates/rustflow-dom/src/browser.rs"
-          browser_source="../../$browser_repo_path"
-          optimized_source="$RUNNER_TEMP/rustflow-browser-optimized.rs"
-          cp "$browser_source" "$optimized_source"
-          cp performance-results/browser.json performance-results/browser-optimized-before.json
 
-          git cat-file -e "$PHASE_BASE_SHA:$browser_repo_path"
-          git show "$PHASE_BASE_SHA:$browser_repo_path" > "$browser_source"
-          restore_optimized() {
-            if ! cmp -s "$optimized_source" "$browser_source"; then
-              cp "$optimized_source" "$browser_source"
-              npm run build
-            fi
-          }
-          trap restore_optimized EXIT
 
-          echo "Building the base DOM reconciler ($PHASE_BASE_SHA) on the same runner."
-          npm run build
-          RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
-          cp performance-results/browser.json performance-results/browser-unoptimized.json
 
-          echo "Restoring the optimized DOM reconciler ($PHASE_HEAD_SHA) and repeating the suite."
-          cp "$optimized_source" "$browser_source"
-          npm run build
-          RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
-          cp performance-results/browser.json performance-results/browser-optimized-after.json
 
-          python3 ../../scripts/compare-browser-performance.py \
-            --optimized-before performance-results/browser-optimized-before.json \
-            --unoptimized performance-results/browser-unoptimized.json \
-            --optimized-after performance-results/browser-optimized-after.json \
-            --environment performance-results/environment.txt \
-            --base-sha "$PHASE_BASE_SHA" \
-            --head-sha "$PHASE_HEAD_SHA" \
-            --output performance-results/browser-ab-comparison.json
 
-      - name: Upload browser performance measurements
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase-8-1-browser-performance
-          path: examples/browser/performance-results/
-          if-no-files-found: warn
-          retention-days: 30
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
+
+
+
+
+
+          RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
