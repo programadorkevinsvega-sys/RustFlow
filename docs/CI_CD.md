@@ -46,14 +46,14 @@ This dashboard setting cannot be committed in this repository. Until it is appli
 
 ## Expected behavior examples
 
-| Pull request changes | Rust matrix | WASM / Browser E2E | Astro site build | Dependency review |
-| --- | ---: | ---: | ---: | ---: |
-| `README.md`, `ROADMAP.md`, or `docs/**` only | Skip | Skip | Skip | Skip |
-| `website/**` only | Skip | Skip | Run | Skip |
-| `crates/rustflow-server/**` only | Run | Skip | Skip | Skip |
-| `crates/rustflow-dom/**` | Run | Run | Skip | Skip |
-| `examples/browser/src/**` or `examples/browser/tests/**` | Skip | Run | Skip | Skip |
-| `scripts/compare-browser-performance.py` or `scripts/tests/**` | Skip | Skip | Skip | Skip; run `Performance tooling tests` |
-| Cargo/npm manifest, lockfile, or Actions workflow changes | Per matching scopes; workflow changes force broad CI | Per matching scopes; workflow changes force broad CI | If website or docs workflow changed | Run |
+| Pull request changes | Rust matrix | WASM / Browser E2E | Astro site build | Dependency review | Performance tooling tests |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `README.md`, `ROADMAP.md`, or `docs/**` only | Skip | Skip | Skip | Skip | Skip |
+| `website/**` only | Skip | Skip | Run | Skip | Skip |
+| `crates/rustflow-server/**` only | Run | Skip | Skip | Skip | Skip |
+| `crates/rustflow-dom/**` | Run | Run | Skip | Skip | Skip |
+| `examples/browser/src/**` or `examples/browser/tests/**` | Skip | Run | Skip | Skip | Skip |
+| `scripts/compare-browser-performance.py` or `scripts/tests/**` | Skip | Skip | Skip | Skip | Run |
+| Cargo/npm manifest, lockfile, or Actions workflow changes | Per matching scopes; workflow changes force broad CI | Per matching scopes; workflow changes force broad CI | If website or docs workflow changed | Run | Run only when performance tools also change or broad CI is forced |
 
 All checks required by the `main` ruleset retain their existing names. A skipped job is successful for required-check evaluation; a failed change detector activates the conservative fallback instead of relying on a skipped required check.
