@@ -35,7 +35,7 @@ jobs:
         id: commit
         shell: bash
         env:
-          REQUESTED_SHA: ${{ inputs.rustflow_commit }}
+          REQUESTED_SHA: ${{ github.event.inputs.rustflow_commit }}
         run: |
           set -euo pipefail
           checked_out_sha="$(git rev-parse HEAD)"
