@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -90,19 +89,34 @@ def main() -> int:
     if len(identities) != 1:
         raise ValueError(f"tool/browser identity differs across A/B runs: {identities}")
 
-    optimized_insert = combine_samples(
-        [opt_before, opt_after], "keyed_list_incremental_insertions",
-        "keyed_list_incremental_insert_100",
-    )
+    insert_name = "keyed_list_incremental_insert_100"
+    insert_before = [
+        float(value)
+        for value in scenario(opt_before, "keyed_list_incremental_insertions", insert_name)[
+            "samples_raw"
+        ]
+    ]
+    insert_after = [
+        float(value)
+        for value in scenario(opt_after, "keyed_list_incremental_insertions", insert_name)[
+            "samples_raw"
+        ]
+    ]
+    optimized_insert = insert_before + insert_after
     control_insert = combine_samples(
-        [control], "keyed_list_incremental_insertions",
-        "keyed_list_incremental_insert_100",
+        [control], "keyed_list_incremental_insertions", insert_name
     )
-    optimized_reverse = (
-        opt_before["keyed_list_reverse_100"]["samples_raw"]
-        + opt_after["keyed_list_reverse_100"]["samples_raw"]
-    )
-    control_reverse = control["keyed_list_reverse_100"]["samples_raw"]
+
+    reverse_before = [
+        float(value) for value in opt_before["keyed_list_reverse_100"]["samples_raw"]
+    ]
+    reverse_after = [
+        float(value) for value in opt_after["keyed_list_reverse_100"]["samples_raw"]
+    ]
+    optimized_reverse = reverse_before + reverse_after
+    control_reverse = [
+        float(value) for value in control["keyed_list_reverse_100"]["samples_raw"]
+    ]
 
     comparisons = {
         "keyed_list_incremental_insert_100": {
@@ -115,6 +129,10 @@ def main() -> int:
         },
     }
     violations: list[str] = []
+    optimized_pairs = {
+        "keyed_list_incremental_insert_100": (insert_before, insert_after),
+        "keyed_list_reverse_100": (reverse_before, reverse_after),
+    }
     for name, data in comparisons.items():
         before = data["unoptimized"]["median_ms"]
         after = data["optimized"]["median_ms"]
@@ -123,6 +141,22 @@ def main() -> int:
         data["p95_improvement_percent"] = improvement(
             data["unoptimized"]["p95_ms"], data["optimized"]["p95_ms"]
         )
+
+        first, second = optimized_pairs[name]
+        first_median = statistics.median(first)
+        second_median = statistics.median(second)
+        drift = (
+            abs(second_median - first_median) / min(first_median, second_median) * 100
+            if min(first_median, second_median) > 0
+            else 0.0
+        )
+        data["optimized_before_median_ms"] = first_median
+        data["optimized_after_median_ms"] = second_median
+        data["optimized_a_to_a_drift_percent"] = drift
+        if drift > 15.0:
+            violations.append(
+                f"{name}: optimized A-to-A median drift {drift:.1f}% exceeds 15%; runner comparison is unstable"
+            )
         if gain < 20.0:
             violations.append(
                 f"{name}: expected at least 20% median improvement on same-runner A/B; got {gain:.1f}%"
@@ -158,6 +192,7 @@ def main() -> int:
                 "keyed_list_reverse_100",
             ],
             "minimum_median_improvement_percent": 20.0,
+            "maximum_optimized_a_to_a_median_drift_percent": 15.0,
             "timing_budgets": "warning-only; this script gates only the controlled relative improvement and 10k stress-scenario integrity",
         },
         "violations": violations,
