@@ -211,7 +211,7 @@ fn OfficialBenchmarkRow(
 fn official_benchmark_button(
     id: &'static str,
     label: &'static str,
-    on_click: impl FnMut(EventPayload) + 'static,
+    on_click: impl Fn(EventPayload) + 'static,
 ) -> Result<View, rustflow::view::ViewError> {
     Ok(ViewElement::new("div")?
         .with_attribute("class", "col-sm-6 smallpad")?
