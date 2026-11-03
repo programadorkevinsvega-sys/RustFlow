@@ -61,6 +61,8 @@ El benchmark SSR invoca render_to_string en cada iteración. Esa API crea y elim
 
 CI conserva los informes como artefactos de cada ejecución. Descarga los artefactos de dos commits para comparar sus archivos JSON/JSONL. Los resultados de runners distintos no constituyen una comparación controlada.
 
+La referencia preoptimización [continuation-candidate-2026-11-03.json](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/performance/continuation-candidate-2026-11-03.json) registró 631,9 ms de mediana para 100 inserciones keyed incrementales (p95 662,2 ms). La inspección detectó búsquedas de claves y comprobaciones de identidad DOM anidadas, además de reinserciones innecesarias. La continuación propone resolver claves con un mapa, retención de nodos mediante identidad DOM y colocación estable desde el final. Aún no se considera una mejora aceptada: se debe comparar el mismo escenario después del cambio y volver a pasar E2E de identidad de filas/estado.
+
 ## Presupuestos y límites actuales
 
 El build aplica límites deterministas de bytes para WASM raw/gzip/Brotli, JavaScript, CSS y assets comprimidos totales. Los límites actuales son guardrails iniciales con margen por encima del artefacto medido: WASM 600/220/160 KiB (raw/gzip/Brotli), JavaScript 24/7/6 KiB, CSS 32/8/8 KiB y total gzip/Brotli 220/170 KiB. El límite histórico de 1,5 MiB para WASM raw queda documentado, pero ya no es el umbral activo. Los umbrales de tiempo para browser, reactividad y SSR son advertencias, no fallos, porque deben revisarse con varias ejecuciones comparables y ruido del runner.
@@ -78,4 +80,4 @@ El job nativo compara las medianas de tres ejecuciones de reactividad y SSR cont
 - Un saldo de bytes allocator netos no equivale al tamaño RSS o a memoria WASM residente.
 - Los resultados de benchmark no son garantías de producción.
 
-La optimización sigue siendo una decisión posterior a perfilar un caso reproducible y comparar antes/después. La implementación de mediciones no autoriza optimizaciones especulativas.
+La optimización keyed incluida en la continuación está pendiente de evidencia antes/después. No se afirma una mejora hasta comparar los artefactos equivalentes y validar que la identidad DOM y el estado local se conservan.
