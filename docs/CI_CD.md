@@ -15,7 +15,7 @@ The shared source of truth is `.github/filters.yml`. The CI, website, and depend
 | `performance_tools` | Performance benchmark comparators, aggregators, patchers, budget checkers, and `scripts/tests/**` | `Performance tooling tests` |
 | `website` | `website/**` and the website workflow definition | `Build documentation` |
 | `dependencies` | Cargo/npm manifests and lockfiles, GitHub Actions workflow/action definitions | `Review dependency changes` |
-| `full_ci` | `.github/workflows/**`, `.github/actions/**`, and `.github/filters.yml` | Forces the Rust, WASM, and browser jobs to run |
+| `full_ci` | `.github/workflows/**`, `.github/actions/**`, and `.github/filters.yml` | Forces Rust, WASM, browser, and performance tooling test jobs to run |
 
 Governance checks are intentionally unconditional and remain fast. Website validation is independent from Rust validation. Changes to the public website do not run the Rust matrix; changes limited to backend crates do not run WASM/browser checks or rebuild the website.
 
@@ -27,7 +27,7 @@ Performance tooling is validated separately from the browser runtime: edits to t
 
 Keep the existing required job names stable. Do not add workflow-level `paths` or `paths-ignore` filters to workflows that publish required checks.
 
-Each expensive job uses `always()` with its change-detection dependency. If path detection fails, the affected workflow runs the conservative fallback (Rust + WASM + browser, website build, or dependency review) rather than silently skipping validation. The change-detection job needs `contents: read` and `pull-requests: read`; the latter is needed to read the changed-file list for pull requests.
+Each expensive job uses `always()` with its change-detection dependency. If path detection fails, the affected workflow runs the conservative fallback (Rust + WASM + browser + performance tooling, website build, or dependency review) rather than silently skipping validation. The change-detection job needs `contents: read` and `pull-requests: read`; the latter is needed to read the changed-file list for pull requests.
 
 A change to the filters or any workflow definition deliberately runs the broad CI path so changes to the pipeline itself receive full validation. When adding a new crate or browser dependency, review `.github/filters.yml` and update these scope descriptions in the same pull request.
 
