@@ -2261,20 +2261,14 @@ impl DomRenderer {
         let component_indices_by_start = Map::new();
         for (index, region) in previous_components.iter().enumerate() {
             let start: Node = region.mounted.start.clone().unchecked_into();
-            component_indices_by_start.set(
-                start.as_ref(),
-                &JsValue::from_f64(index as f64),
-            );
+            component_indices_by_start.set(start.as_ref(), &JsValue::from_f64(index as f64));
         }
         let dynamic_indices_by_start = Map::new();
         for (index, region) in previous_dynamics.iter().enumerate() {
             let state = region.state.borrow();
             if let Some(current) = state.as_ref() {
                 let start: Node = current.mounted.start.clone().unchecked_into();
-                dynamic_indices_by_start.set(
-                    start.as_ref(),
-                    &JsValue::from_f64(index as f64),
-                );
+                dynamic_indices_by_start.set(start.as_ref(), &JsValue::from_f64(index as f64));
             }
         }
 
@@ -2351,7 +2345,9 @@ impl DomRenderer {
                     _ => false,
                 };
             if !already_in_position {
-                parent.insert_before(node, cursor.as_ref()).map_err(js_error)?;
+                parent
+                    .insert_before(node, cursor.as_ref())
+                    .map_err(js_error)?;
             }
             cursor = Some(node.clone());
         }
