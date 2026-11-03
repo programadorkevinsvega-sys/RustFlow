@@ -474,8 +474,8 @@ jobs:
           npm ci --legacy-peer-deps
           python3 "$GITHUB_WORKSPACE/scripts/patch-js-framework-benchmark.py" "$upstream"
           npm run install-local
-          node cli.js rebuild-single --ci -f keyed/react-hooks keyed/vue keyed/svelte
-
+          # The pinned upstream rebuild command checks /ls over HTTP. Start the
+          # server and verify its framework list before invoking that command.
           PORT=8080 npm start > "$result_dir/upstream-server.log" 2>&1 &
           server_pid=$!
           cleanup() {
@@ -498,6 +498,11 @@ jobs:
           for framework in react-hooks vue svelte rustflow; do
             grep -q "\"directory\":\"$framework\"" "$result_dir/frameworks.json"
           done
+
+          # Match the IPv4 address used by the readiness probe; do not rely on
+          # localhost resolving to the same address family in Node and curl.
+          export HOST=127.0.0.1
+          node cli.js rebuild-single --ci -f keyed/react-hooks keyed/vue keyed/svelte
 
           chrome_bin="$(cd "$GITHUB_WORKSPACE/examples/browser" && node --input-type=module -e 'import { chromium } from "@playwright/test"; process.stdout.write(chromium.executablePath())')"
           chrome_version="$("$chrome_bin" --version)"
