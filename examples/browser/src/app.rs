@@ -141,7 +141,6 @@ fn todo_component(
     )
 }
 
-
 #[derive(Clone, PartialEq)]
 struct OfficialBenchmarkRowData {
     id: i64,
@@ -154,9 +153,31 @@ fn official_random(max: usize) -> usize {
 
 fn official_benchmark_rows(count: usize, first_id: i64) -> Vec<OfficialBenchmarkRowData> {
     const ADJECTIVES: [&str; 25] = [
-        "pretty", "large", "big", "small", "tall", "short", "long", "handsome", "plain",
-        "quaint", "clean", "elegant", "easy", "angry", "crazy", "helpful", "mushy", "odd",
-        "unsightly", "adorable", "important", "inexpensive", "cheap", "expensive", "fancy",
+        "pretty",
+        "large",
+        "big",
+        "small",
+        "tall",
+        "short",
+        "long",
+        "handsome",
+        "plain",
+        "quaint",
+        "clean",
+        "elegant",
+        "easy",
+        "angry",
+        "crazy",
+        "helpful",
+        "mushy",
+        "odd",
+        "unsightly",
+        "adorable",
+        "important",
+        "inexpensive",
+        "cheap",
+        "expensive",
+        "fancy",
     ];
     const COLORS: [&str; 11] = [
         "red", "yellow", "blue", "green", "pink", "brown", "purple", "brown", "white", "black",
@@ -168,16 +189,14 @@ fn official_benchmark_rows(count: usize, first_id: i64) -> Vec<OfficialBenchmark
     ];
 
     (0..count)
-        .map(|offset| {
-            OfficialBenchmarkRowData {
-                id: first_id + offset as i64,
-                label: format!(
-                    "{} {} {}",
-                    ADJECTIVES[official_random(ADJECTIVES.len())],
-                    COLORS[official_random(COLORS.len())],
-                    NOUNS[official_random(NOUNS.len())]
-                ),
-            }
+        .map(|offset| OfficialBenchmarkRowData {
+            id: first_id + offset as i64,
+            label: format!(
+                "{} {} {}",
+                ADJECTIVES[official_random(ADJECTIVES.len())],
+                COLORS[official_random(COLORS.len())],
+                NOUNS[official_random(NOUNS.len())]
+            ),
         })
         .collect()
 }
@@ -239,17 +258,20 @@ fn OfficialBenchmark() -> impl IntoView {
         run_next_id.update(|next| *next += 1_000);
         run_rows.set(official_benchmark_rows(1_000, first_id));
         run_selected.set(0);
-    }).expect("valid official benchmark run button");
+    })
+    .expect("valid official benchmark run button");
 
     let run_lots_rows = rows.clone();
     let run_lots_selected = selected.clone();
     let run_lots_next_id = next_id.clone();
-    let run_lots_button = official_benchmark_button("runlots", "Create 10,000 rows", move |_payload| {
-        let first_id = run_lots_next_id.get();
-        run_lots_next_id.update(|next| *next += 10_000);
-        run_lots_rows.set(official_benchmark_rows(10_000, first_id));
-        run_lots_selected.set(0);
-    }).expect("valid official benchmark runlots button");
+    let run_lots_button =
+        official_benchmark_button("runlots", "Create 10,000 rows", move |_payload| {
+            let first_id = run_lots_next_id.get();
+            run_lots_next_id.update(|next| *next += 10_000);
+            run_lots_rows.set(official_benchmark_rows(10_000, first_id));
+            run_lots_selected.set(0);
+        })
+        .expect("valid official benchmark runlots button");
 
     let append_rows = rows.clone();
     let append_next_id = next_id.clone();
@@ -257,23 +279,27 @@ fn OfficialBenchmark() -> impl IntoView {
         let first_id = append_next_id.get();
         append_next_id.update(|next| *next += 1_000);
         append_rows.update(|items| items.extend(official_benchmark_rows(1_000, first_id)));
-    }).expect("valid official benchmark append button");
+    })
+    .expect("valid official benchmark append button");
 
     let update_rows = rows.clone();
-    let update_button = official_benchmark_button("update", "Update every 10th row", move |_payload| {
-        update_rows.update(|items| {
-            for item in items.iter_mut().step_by(10) {
-                item.label.push_str(" !!!");
-            }
-        });
-    }).expect("valid official benchmark update button");
+    let update_button =
+        official_benchmark_button("update", "Update every 10th row", move |_payload| {
+            update_rows.update(|items| {
+                for item in items.iter_mut().step_by(10) {
+                    item.label.push_str(" !!!");
+                }
+            });
+        })
+        .expect("valid official benchmark update button");
 
     let clear_rows = rows.clone();
     let clear_selected = selected.clone();
     let clear_button = official_benchmark_button("clear", "Clear", move |_payload| {
         clear_rows.set(Vec::new());
         clear_selected.set(0);
-    }).expect("valid official benchmark clear button");
+    })
+    .expect("valid official benchmark clear button");
 
     let swap_rows = rows.clone();
     let swap_button = official_benchmark_button("swaprows", "Swap Rows", move |_payload| {
@@ -282,7 +308,8 @@ fn OfficialBenchmark() -> impl IntoView {
                 items.swap(1, 998);
             }
         });
-    }).expect("valid official benchmark swap button");
+    })
+    .expect("valid official benchmark swap button");
 
     let rows_for_region = rows.clone();
     let rows_for_actions = rows.clone();
