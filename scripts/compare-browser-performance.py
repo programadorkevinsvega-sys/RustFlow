@@ -99,12 +99,10 @@ def main() -> int:
         "keyed_list_incremental_insert_100",
     )
     optimized_reverse = (
-        scenario(opt_before, "keyed_list_reverse_100", "keyed_list_reverse_100")["samples_raw"]
-        + scenario(opt_after, "keyed_list_reverse_100", "keyed_list_reverse_100")["samples_raw"]
+        opt_before["keyed_list_reverse_100"]["samples_raw"]
+        + opt_after["keyed_list_reverse_100"]["samples_raw"]
     )
-    control_reverse = scenario(
-        control, "keyed_list_reverse_100", "keyed_list_reverse_100"
-    )["samples_raw"]
+    control_reverse = control["keyed_list_reverse_100"]["samples_raw"]
 
     comparisons = {
         "keyed_list_incremental_insert_100": {
