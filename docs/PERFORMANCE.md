@@ -1,6 +1,6 @@
 # RustFlow performance measurements
 
-Estado: infraestructura de medición inicial de Phase 8.1. Los números producidos por un runner son observaciones de ese entorno, no garantías universales.
+Estado: Phase 8.1 sigue en progreso. `main` contiene la infraestructura inicial y esta continuación amplía la medición de memoria, profundidad de componentes y presupuestos. El baseline versionado es candidato hasta revisar ejecuciones comparables y los artefactos instrumentados. Los números de un runner son observaciones de ese entorno, no garantías universales.
 
 ## Alcance medido
 
