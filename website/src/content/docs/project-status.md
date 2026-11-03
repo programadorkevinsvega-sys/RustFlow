@@ -5,6 +5,13 @@ description: Capacidades implementadas, límites conocidos y estado verificable 
 
 RustFlow sigue siendo un prototipo pre-1.0. El roadmap es la fuente de verdad de los criterios y estados de fase; una funcionalidad implementada no implica estabilidad de API ni preparación para producción. Este resumen es para que un usuario pueda decidir qué probar hoy sin confundir el objetivo futuro con el código disponible.
 
+### Phase 8 — Performance, accesibilidad y DX (en progreso)
+
+**8.1 Performance continúa abierta.** La infraestructura inicial de benchmarks nativos, SSR, DOM/WASM, bundle e inicialización ya está integrada. La continuación mide allocaciones y bytes solicitados del ciclo de vida de owners de componentes, perfila profundidad de componentes reales en Chromium y añade presupuestos reproducibles para assets y tiempos. Aún deben revisarse los artefactos de memoria/profundidad, varias ejecuciones comparables y el perfil de listas; cualquier optimización debe demostrar una mejora antes/después sin perder identidad DOM ni semántica. El roadmap no marca 8.1 completada hasta aceptar toda esa evidencia. Consulta [Medir el rendimiento](/guides/performance/) y el [contrato técnico](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/PERFORMANCE.md).
+
+**8.2 DX y 8.3 accesibilidad/compatibilidad todavía no se han iniciado.** No se anuncian hot reload, compatibilidad multi-navegador ni garantías de accesibilidad como entregadas por Phase 8.
+
+
 ### Fase 7.1 — Capacidades operativas (completada e integrada)
 
 Phase 7.1 se implementó y fusionó mediante el PR #68 el 1 de noviembre de 2026. El commit de integración en `main` es `c6ef2232d99233becb08008dc8b1a4a38b5bbd2f`. El SHA final de la PR (`491703f2263f20896128673aaaec66b6837711c1`) pasó los checks requeridos de Rust 1.85 y stable, formato, Clippy, pruebas de workspace y contratos de integración de bases de datos, WebAssembly, Browser E2E/bundle, build de documentación, gobernanza, revisión de dependencias y Cloudflare Pages. La prueba de apagado graceful con un handler atascado pasó en ambos toolchains.
