@@ -67,7 +67,7 @@ def write_complete_results(directory: Path) -> None:
     startup = {
         "warmup_rounds": 3,
         "measured_rounds": 15,
-        "frameworks": {name: {"samples_raw": [{"final_dom_rows": 1000}] * 15} for name in names},
+        "frameworks": {("react-hooks" if name == "react" else name): {"samples_raw": [{"final_dom_rows": 1000}] * 15} for name in names},
     }
     (directory / "startup-comparison.json").write_text(json.dumps(startup), encoding="utf-8")
 
