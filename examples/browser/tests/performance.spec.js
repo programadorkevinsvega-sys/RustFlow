@@ -137,7 +137,11 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
   }
 
   const initialListScenarios = [];
-  for (const [count, repetitions] of [[100, 3], [1_000, 2]]) {
+  for (const [count, repetitions] of [[100, 7], [1_000, 7]]) {
+    // Discard one untimed navigation/mount to warm the browser/WASM path before
+    // collecting samples. The warm-up is not included in the reported statistics.
+    const warmup = await loadApp(page, count);
+    expect(warmup.dom_rows).toBe(count);
     const measurements = [];
     for (let sample = 0; sample < repetitions; sample += 1) {
       const loaded = await loadApp(page, count);
@@ -156,7 +160,10 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
   }
 
   const nestedComponentScenarios = [];
-  for (const [depth, repetitions] of [[5, 3], [20, 3], [80, 3]]) {
+  for (const [depth, repetitions] of [[5, 7], [20, 7], [80, 7]]) {
+    // Warm the same recursive component path once, outside the measured samples.
+    const warmup = await loadApp(page, 0, depth);
+    expect(warmup.nested_component_count).toBe(depth + 1);
     const measurements = [];
     for (let sample = 0; sample < repetitions; sample += 1) {
       const loaded = await loadApp(page, 0, depth);

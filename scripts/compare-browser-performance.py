@@ -163,16 +163,18 @@ def main() -> int:
             )
 
     # Compare the full initial-mount scale and recursive component workloads as
-    # secondary same-runner scenarios. Absolute times remain informational, but a
-    # median slowdown above 25% is treated as a material regression.
+    # secondary same-runner scenarios. Require adequate samples and stable A/A
+    # medians before interpreting either an improvement or a regression.
     secondary_comparisons: dict[str, Any] = {
         "initial_keyed_list_mounts": {},
         "nested_component_depths": {},
     }
     secondary_regression_limit = 25.0
+    secondary_drift_limit = 15.0
 
     for count in (100, 1_000, 10_000):
         name = f"keyed_list_initial_mount_{count}"
+        min_samples = 3 if count == 10_000 else 7
         before_item = scenario(opt_before, "keyed_list_initial_mounts", name)
         control_item = scenario(control, "keyed_list_initial_mounts", name)
         after_item = scenario(opt_after, "keyed_list_initial_mounts", name)
@@ -183,20 +185,26 @@ def main() -> int:
         ]:
             if item.get("final_dom_rows") != count:
                 violations.append(f"{label}: {name} expected {count} verified DOM rows")
-        if count == 10_000:
-            for label, item in [
-                ("optimized-before", before_item),
-                ("unoptimized", control_item),
-                ("optimized-after", after_item),
-            ]:
-                if len(item.get("samples_raw", [])) < 3:
-                    violations.append(f"{label}: expected three verified 10,000-row mount samples")
 
         before_samples = [float(x) for x in before_item.get("samples_raw", [])]
         control_samples = [float(x) for x in control_item.get("samples_raw", [])]
         after_samples = [float(x) for x in after_item.get("samples_raw", [])]
+        sample_counts = {
+            "optimized-before": len(before_samples),
+            "unoptimized": len(control_samples),
+            "optimized-after": len(after_samples),
+        }
+        for label, actual_samples in sample_counts.items():
+            if actual_samples < min_samples:
+                violations.append(
+                    f"{label}: {name} requires at least {min_samples} samples; got {actual_samples}"
+                )
+        if min(sample_counts.values()) < min_samples:
+            continue
+
         optimized_samples = before_samples + after_samples
         comparison = {
+            "minimum_samples_per_variant": min_samples,
             "unoptimized": summarize(control_samples),
             "optimized": summarize(optimized_samples),
         }
@@ -220,6 +228,11 @@ def main() -> int:
         comparison["optimized_after_median_ms"] = second_median
         comparison["optimized_a_to_a_drift_percent"] = drift
         secondary_comparisons["initial_keyed_list_mounts"][name] = comparison
+        if drift > secondary_drift_limit:
+            violations.append(
+                f"{name}: optimized A-to-A median drift {drift:.1f}% exceeds "
+                f"{secondary_drift_limit:.0f}%; secondary runner comparison is unstable"
+            )
         if gain < -secondary_regression_limit:
             violations.append(
                 f"{name}: optimized median regressed by {-gain:.1f}%, "
@@ -239,9 +252,24 @@ def main() -> int:
         before_samples = [float(x) for x in before_item.get("samples_raw", [])]
         control_samples = [float(x) for x in control_item.get("samples_raw", [])]
         after_samples = [float(x) for x in after_item.get("samples_raw", [])]
+        sample_counts = {
+            "optimized-before": len(before_samples),
+            "unoptimized": len(control_samples),
+            "optimized-after": len(after_samples),
+        }
+        for label, actual_samples in sample_counts.items():
+            if actual_samples < 7:
+                violations.append(
+                    f"{label}: nested component depth {depth} requires at least 7 samples; "
+                    f"got {actual_samples}"
+                )
+        if min(sample_counts.values()) < 7:
+            continue
+
         optimized_samples = before_samples + after_samples
         comparison = {
             "component_instances": before_item.get("component_instances"),
+            "minimum_samples_per_variant": 7,
             "unoptimized": summarize(control_samples),
             "optimized": summarize(optimized_samples),
         }
@@ -265,6 +293,12 @@ def main() -> int:
         comparison["optimized_after_median_ms"] = second_median
         comparison["optimized_a_to_a_drift_percent"] = drift
         secondary_comparisons["nested_component_depths"][str(depth)] = comparison
+        if drift > secondary_drift_limit:
+            violations.append(
+                f"nested component depth {depth}: optimized A-to-A median drift "
+                f"{drift:.1f}% exceeds {secondary_drift_limit:.0f}%; "
+                f"secondary runner comparison is unstable"
+            )
         if gain < -secondary_regression_limit:
             violations.append(
                 f"nested component depth {depth}: optimized median regressed by "
@@ -303,8 +337,11 @@ def main() -> int:
                 "nested_component_depth_20",
                 "nested_component_depth_80",
             ],
+            "minimum_secondary_samples_per_variant": 7,
+            "minimum_10000_row_samples_per_variant": 3,
+            "maximum_secondary_optimized_a_to_a_median_drift_percent": 15.0,
             "maximum_secondary_median_regression_percent": 25.0,
-            "timing_budgets": "absolute timing thresholds remain warning-only; same-runner A/B/A gates the critical improvements and rejects secondary median regressions above 25%",
+            "timing_budgets": "absolute timing thresholds remain warning-only; same-runner A/B/A gates the critical improvements, requires stable secondary A/A medians, and rejects secondary median regressions above 25%",
         },
         "violations": violations,
         "accepted": not violations,
