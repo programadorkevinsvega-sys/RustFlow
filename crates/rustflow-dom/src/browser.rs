@@ -9,7 +9,7 @@ use std::{
     rc::Rc,
 };
 
-use js_sys::Reflect;
+use js_sys::{Reflect, Set};
 use rustflow::{
     components::{ComponentError, ComponentInstance, ComponentRegistry, RenderTarget},
     reactivity::{Effect, Runtime, RuntimeError, Scope, untrack},
@@ -1857,17 +1857,17 @@ impl DomRenderer {
         owner_scope: &Scope,
     ) -> Result<Vec<PlannedChild>, DomError> {
         let old_children = previous.children();
-        let mut used = vec![false; old_children.len()];
+        // KeyedList rejects duplicate keys at construction, so a key-to-index
+        // lookup is sufficient and avoids a full scan of the old list per child.
+        let previous_by_key = old_children
+            .iter()
+            .enumerate()
+            .map(|(index, child)| (child.key().clone(), index))
+            .collect::<HashMap<_, _>>();
         let mut planned = Vec::with_capacity(next.children().len());
         for child in next.children() {
-            let matched = old_children
-                .iter()
-                .enumerate()
-                .find_map(|(index, candidate)| {
-                    (!used[index] && candidate.key() == child.key()).then_some(index)
-                });
+            let matched = previous_by_key.get(child.key()).copied();
             let child_plan = if let Some(previous_index) = matched {
-                used[previous_index] = true;
                 self.plan_diff_with_context(
                     old_children[previous_index].view(),
                     child.view(),
@@ -2276,8 +2276,26 @@ impl DomRenderer {
         }
 
         remove_obsolete_nodes(parent, existing_nodes, &result)?;
-        for node in &result {
-            parent.insert_before(node, before).map_err(js_error)?;
+
+        // Walk from right to left and retain an already-correct node in place.
+        // For an append to a large keyed list this moves only the newly-created
+        // suffix instead of removing/reinserting every existing sibling.
+        let mut cursor = before.cloned();
+        for node in result.iter().rev() {
+            let already_in_position = node
+                .parent_node()
+                .is_some_and(|actual_parent| actual_parent.is_same_node(Some(parent)))
+                && match (node.next_sibling(), cursor.as_ref()) {
+                    (Some(next_sibling), Some(cursor)) => {
+                        next_sibling.is_same_node(Some(cursor))
+                    }
+                    (None, None) => true,
+                    _ => false,
+                };
+            if !already_in_position {
+                parent.insert_before(node, cursor.as_ref()).map_err(js_error)?;
+            }
+            cursor = Some(node.clone());
         }
         Ok(result)
     }
@@ -2761,11 +2779,15 @@ fn set_preserve_on_drop(mounted: &mut MountedDom, preserve: bool) {
 }
 
 fn remove_obsolete_nodes(parent: &Node, previous: &[Node], next: &[Node]) -> Result<(), DomError> {
+    // JS Set uses object identity for DOM nodes. This keeps the retain/remove
+    // pass linear instead of comparing every old node with every new node.
+    let retained_nodes = Set::new(&JsValue::UNDEFINED);
+    for node in next {
+        retained_nodes.add(node.as_ref());
+    }
+
     for old_node in previous {
-        let retained = next
-            .iter()
-            .any(|new_node| new_node.is_same_node(Some(old_node)));
-        if !retained
+        if !retained_nodes.has(old_node.as_ref())
             && old_node
                 .parent_node()
                 .is_some_and(|actual_parent| actual_parent.is_same_node(Some(parent)))
