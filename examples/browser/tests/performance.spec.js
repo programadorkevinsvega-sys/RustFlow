@@ -234,17 +234,21 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
   expect(removalElapsed.remaining_rows).toBe(0);
 
   if (process.env.RUSTFLOW_BENCH_BROWSER_LARGE_LIST === "1") {
-    const large = await loadApp(page, 10_000);
-    expect(large.dom_rows).toBe(10_000);
-    if (large.initialization_ms === null) {
-      throw new Error("RustFlow initialization timing mark was not recorded");
+    const measurements = [];
+    for (let sample = 0; sample < 3; sample += 1) {
+      const large = await loadApp(page, 10_000);
+      expect(large.dom_rows).toBe(10_000);
+      if (large.initialization_ms === null) {
+        throw new Error("RustFlow initialization timing mark was not recorded");
+      }
+      measurements.push(large.initialization_ms);
     }
     initialListScenarios.push({
       name: "keyed_list_initial_mount_10000",
-      ...summarize([large.initialization_ms], 10_000, "ms"),
-      final_dom_rows: large.dom_rows,
+      ...summarize(measurements, 10_000, "ms"),
+      final_dom_rows: 10_000,
       measured_scope: "WASM initialization and initial keyed-list DOM mount",
-      warning: "single opt-in stress sample; not a CI threshold",
+      note: "CI stress scenario; timing is warning-only until repeated runner baselines are approved",
     });
   }
 
@@ -324,6 +328,16 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     70,
   );
   checkTimingBudget("keyed_list_reverse_100", report.keyed_list_reverse_100.p95, 14);
+  for (const [depth, budget] of [[5, 16], [20, 16], [80, 16]]) {
+    const scenario = report.nested_component_depth_initial_mounts.find(
+      (item) => item.depth === depth,
+    );
+    checkTimingBudget(
+      "nested_component_depth_" + depth,
+      scenario?.p95,
+      budget,
+    );
+  }
   report.timing_budget_warnings = timingBudgetWarnings;
   report.timing_budget_policy =
     "Warning-only on GitHub-hosted runners; compare repeated samples on the same runner class before changing budgets.";
