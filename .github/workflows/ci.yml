@@ -367,8 +367,10 @@ jobs:
 
       - name: Validate competitive benchmark report generator
         run: python3 -m py_compile scripts/summarize-js-framework-benchmark.py
-      - name: Test competitive benchmark report aggregation
-        run: python3 -m unittest scripts/tests/test_summarize_js_framework_benchmark.py
+      - name: Validate browser A/B/A comparison script
+        run: python3 -m py_compile scripts/compare-browser-performance.py
+      - name: Test performance benchmark aggregators and A/B/A comparisons
+        run: python3 -m unittest discover -s scripts/tests -v
       - name: Validate upstream benchmark patch script
         run: python3 -m py_compile scripts/patch-js-framework-benchmark.py
       - name: Validate startup benchmark script
