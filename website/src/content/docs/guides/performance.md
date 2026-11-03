@@ -63,9 +63,11 @@ CI conserva los informes como artefactos de cada ejecución. Descarga los artefa
 
 ## Presupuestos y límites actuales
 
-El único límite numérico que se sigue aplicando es el presupuesto heredado de **1,5 MiB para el WASM raw de entrada**. Los tamaños de JS/CSS, la latencia DOM, SSR, reactividad e inicialización se registran de forma informativa. No hay nuevos límites de milisegundos porque deben derivarse primero de varias mediciones comparables y de una tolerancia aprobada.
+El build aplica límites deterministas de bytes para WASM raw/gzip/Brotli, JavaScript, CSS y assets comprimidos totales. Los límites actuales son guardrails iniciales con margen por encima del artefacto medido: WASM 600/220/160 KiB (raw/gzip/Brotli), JavaScript 24/7/6 KiB, CSS 32/8/8 KiB y total gzip/Brotli 220/170 KiB. El límite histórico de 1,5 MiB para WASM raw queda documentado, pero ya no es el umbral activo. Los umbrales de tiempo para browser, reactividad y SSR son advertencias, no fallos, porque deben revisarse con varias ejecuciones comparables y ruido del runner.
 
 El benchmark `memory` usa stats_alloc en un ejecutable separado para medir conteos y bytes solicitados por el allocator del sistema mientras se crean y destruyen owner trees con señales. Reporta el saldo de bytes outstanding tras montaje y tras dispose; no se confunde con RSS ni con memoria física. RSS se toma después de precalentar la compilación. performance.memory, cuando Chromium la expone, observa el heap JS y no representa la memoria total de Rust/WASM. La documentación técnica y el baseline candidato están en [docs/PERFORMANCE.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/PERFORMANCE.md) y [docs/performance/baseline-2026-11-03.json](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/performance/baseline-2026-11-03.json).
+
+El job nativo compara las medianas de tres ejecuciones de reactividad y SSR contra el baseline versionado con tolerancia de +25%. Los avisos se escriben en `native-budget-review.json` dentro del artefacto CI. El baseline es candidato, no una garantía universal; debe revisarse tras acumular varias ejecuciones equivalentes. Los límites de bundle sí son reproducibles por bytes y bloquean regresiones.
 
 ## Qué no debes concluir
 
