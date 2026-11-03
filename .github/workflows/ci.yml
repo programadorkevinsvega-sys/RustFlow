@@ -4,6 +4,15 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      extended_browser_benchmarks:
+        description: Run the full 100/1,000/5,000/10,000-row RustFlow browser stress suite
+        type: boolean
+        required: false
+        default: true
+  schedule:
+    - cron: "17 6 * * 1"
 
 permissions:
   contents: read
@@ -282,9 +291,9 @@ jobs:
   browser-e2e:
     name: Browser E2E and bundle size
     needs: changes
-    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.full_ci == 'true') }}
+    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.full_ci == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Check out repository
@@ -348,6 +357,8 @@ jobs:
 
       - name: Run browser DOM and initialization benchmarks (informational)
         working-directory: examples/browser
+        env:
+          RUSTFLOW_BENCH_BROWSER_EXTENDED: ${{ (github.event_name == 'schedule' || inputs.extended_browser_benchmarks) && '1' || '0' }}
         run: RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
 
       - name: Controlled same-runner keyed reconciliation A/B/A (Phase 8.1)

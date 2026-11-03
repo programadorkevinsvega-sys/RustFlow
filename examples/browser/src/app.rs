@@ -645,6 +645,7 @@ pub fn start() -> Result<(), JsValue> {
                     move_last_to_front,
                     reverse_first_section,
                     append_one_thousand,
+                    remove_last_one_thousand,
                     replace_one_thousand,
                     remove_first_section,
                     clear_all_rows,

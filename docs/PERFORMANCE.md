@@ -94,6 +94,24 @@ El benchmark de memoria usa un allocator instrumentado exclusivamente en el ejec
 
 La memoria live del allocator WASM aún no se mide por componente: el tamaño de `WebAssembly.Memory.buffer`, cuando esté disponible, representa capacidad lineal reservada/crecida y no bytes vivos internos del allocator. No se debe presentar como memoria retenida por un componente.
 
+## Suite extendida de listas RustFlow
+
+La suite de estrés ampliada se ejecuta bajo demanda con:
+
+~~~bash
+cd examples/browser
+RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 \
+RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 \
+RUSTFLOW_BENCH_BROWSER_EXTENDED=1 \
+npm run bench:browser
+~~~
+
+Mide inserción/eliminación aisladas con 20 muestras por operación en listas de 100, 1.000, 5.000 y 10.000 filas; actualización individual en filas inicial, media y final; actualización de cada décima fila; swap, movimiento inicial/final e inversión de sección; append de 1.000 filas; reemplazo de 1.000; eliminación de secciones y limpieza completa. Las comprobaciones de identidad keyed y los contadores de owners desmontados se ejecutan fuera de los intervalos de latencia. El apéndice masivo se empareja con una retirada fuera del intervalo cronometrado para restaurar el tamaño inicial.
+
+La suite se activa manualmente mediante `workflow_dispatch` (input `extended_browser_benchmarks`) y semanalmente los lunes a las 06:17 UTC. Los PR ordinarios ejecutan la suite estándar y el A/B/A; no ejecutan automáticamente el conjunto extendido. Sus resultados se publican en el artefacto de browser performance. La suite extendida es específica de RustFlow y **no** es parte del índice comparativo upstream ni de una afirmación competitiva.
+
+El reemplazo total se mide sobre un fixture de 1.000 filas. La creación inicial de 10.000 filas se mide en el escenario de montaje inicial; no se confunde con el tiempo de inicialización ni con el tiempo del botón de reemplazo.
+
 ## Bundle e inicialización
 
 npm run check:bundle lee pkg/rustflow_browser_bg.wasm y la salida de producción dist/assets creada por Vite. Reporta bytes raw, gzip y Brotli por tipo y total. Los tamaños gzip/Brotli son sumas de compresión independiente por archivo; no simulan una conexión HTTP con diccionario compartido.

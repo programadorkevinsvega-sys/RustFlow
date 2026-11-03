@@ -94,3 +94,9 @@ La comparación inicial entre jobs no se acepta como evidencia porque el control
 La referencia upstream está fijada al commit `fa510a76ffe066af1d30f3e75fa51d3fcbc14009` de `krausest/js-framework-benchmark`. Las implementaciones keyed seleccionadas fijan React 19.2.0, Vue 3.5.39 y Svelte 5.42.1 en sus lockfiles originales. La auditoría detectó diferencias entre el README y las operaciones que ejecuta realmente el runner oficial: por eso RustFlow separará la reproducción compatible con el runner de los escenarios extendidos de 10.000 filas. Consulta el [contrato de referencia y las discrepancias](https://github.com/programadorkevinsvega-sys/RustFlow/blob/feat/phase-8-1-measurement-completion/docs/performance/FRAMEWORK_BENCHMARK_REFERENCE.md).
 
 Esta auditoría **no es una comparación de rendimiento**. La suite ejecutable, sus artefactos en el mismo runner y los resultados por operación siguen pendientes. No se afirma superioridad competitiva ni se importan tiempos del leaderboard público como mediciones de RustFlow.
+
+## Suite extendida de listas
+
+Además de la suite estándar, RustFlow dispone de un estrés específico de listas de 100, 1.000, 5.000 y 10.000 filas. Incluye altas/bajas aisladas, cambios de fila, actualizaciones de cada décima fila, reordenamientos, append de 1.000, reemplazo total, eliminación de secciones y cleanup de todos los componentes. El protocolo comprueba identidad de nodos y el recuento de owners desmontados.
+
+Se puede ejecutar desde GitHub Actions mediante `workflow_dispatch` marcando `extended_browser_benchmarks`; también se ejecuta semanalmente. Los PR habituales no lanzan este conjunto pesado. No es el benchmark oficial comparativo y sus resultados no se mezclan con el índice de React/Vue/Svelte.

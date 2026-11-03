@@ -102,7 +102,7 @@ async function measureIsolatedKeyedMutations(page, count) {
     );
     const cleanupCounter = document.querySelector('[data-testid="todo-unmount-count"]');
     if (!list || !input || !add || !cleanupCounter) throw new Error("Todo controls not mounted");
-    const readCleanupCount = () => Number(cleanupCounter.textContent.match(/\\d+/)?.[0] ?? 0);
+    const readCleanupCount = () => Number(cleanupCounter.textContent.match(/[0-9]+/)?.[0] ?? 0);
 
     const rows = () => Array.from(list.querySelectorAll(":scope > li"));
     const assertRows = (expected, context) => {
@@ -528,7 +528,7 @@ async function measureExtendedRustFlowScenarios(page) {
     });
   }
 
-  if (true) {
+  {
     const replaceSamples = [];
     for (let sample = 0; sample < 20; sample += 1) {
       await loadApp(page, 1_000, 0, true);
