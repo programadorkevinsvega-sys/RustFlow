@@ -20,6 +20,7 @@ def main() -> int:
     root = Path(sys.argv[1])
     common = root / "webdriver-ts/src/benchmarksCommon.ts"
     playwright = root / "webdriver-ts/src/benchmarksPlaywright.ts"
+    playwright_access = root / "webdriver-ts/src/playwrightAccess.ts"
 
     replace_once(
         common,
@@ -207,6 +208,13 @@ def main() -> int:
         '   benchUpdate5Memory,\n'
         '   benchReplace5Memory,\n'
         '   benchCreateClear5Memory,',
+    )
+    replace_once(
+        playwright_access,
+        'function browserPath(benchmarkOptions: BenchmarkOptions) {\n  if (benchmarkOptions.chromeBinaryPath) return benchmarkOptions.chromeBinaryPath;',
+        'function browserPath(benchmarkOptions: BenchmarkOptions) {\n'
+        '  if (benchmarkOptions.chromeBinaryPath) return benchmarkOptions.chromeBinaryPath;\n'
+        '  if (process.env.CHROME_BIN) return process.env.CHROME_BIN;',
     )
     return 0
 

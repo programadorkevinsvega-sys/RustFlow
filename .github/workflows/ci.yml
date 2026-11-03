@@ -499,18 +499,24 @@ jobs:
             grep -q "\"directory\":\"$framework\"" "$result_dir/frameworks.json"
           done
 
-          # Match the IPv4 address used by the readiness probe; do not rely on
-          # localhost resolving to the same address family in Node and curl.
-          export HOST=127.0.0.1
-          node cli.js rebuild-single --ci -f keyed/react-hooks keyed/vue keyed/svelte
-
           chrome_bin="$(cd "$GITHUB_WORKSPACE/examples/browser" && node --input-type=module -e 'import { chromium } from "@playwright/test"; process.stdout.write(chromium.executablePath())')"
+          if [ ! -x "$chrome_bin" ]; then
+            echo "::error::Playwright Chromium executable is missing: $chrome_bin"
+            exit 1
+          fi
           chrome_version="$("$chrome_bin" --version)"
           echo "chromium_version=$chrome_version" >> "$result_dir/environment.txt"
           if ! grep -Eq '156\.0\.8078\.4' <<<"$chrome_version"; then
             echo "::error::Expected pinned Chromium 156.0.8078.4, got: $chrome_version"
             exit 1
           fi
+          export CHROME_BIN="$chrome_bin"
+
+          # Match the IPv4 address used by the readiness probe; do not rely on
+          # localhost resolving to the same address family in Node and curl.
+          export HOST=127.0.0.1
+          node cli.js rebuild-single --ci -f keyed/react-hooks keyed/vue keyed/svelte
+
 
           rm -rf webdriver-ts/results webdriver-ts/traces
           mkdir -p webdriver-ts/results webdriver-ts/traces
