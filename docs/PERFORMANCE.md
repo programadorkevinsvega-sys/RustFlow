@@ -114,7 +114,7 @@ Una ejecución solo es comparación oficial válida cuando framework-comparison.
 
 Para comparar commits distintos, revisa el mismo SHA upstream, la versión de Chromium, Node/npm/Rust y la clase de runner, además de los recuentos completos y los artefactos crudos. Los resultados históricos de runners diferentes se conservan como contexto, no como prueba A/B/A ni como evidencia de mejora. La prueba A/B/A válida debe ejecutar ambas variantes y el control en el mismo job y runner.
 
-La infraestructura comparativa y esta separación **no declaran Phase 8.1 completada**. Los criterios y las casillas de ROADMAP.md permanecen abiertos hasta revisar y aceptar toda la evidencia de rendimiento requerida.
+La infraestructura comparativa y esta separación **no declara Phase 8.1 completada**. Los criterios y las casillas de ROADMAP.md permanecen abiertos hasta revisar y aceptar toda la evidencia de rendimiento requerida.
 
 ## Suite extendida de listas RustFlow
 
