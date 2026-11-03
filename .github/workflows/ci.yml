@@ -370,6 +370,51 @@ jobs:
       - name: Validate competitive benchmark report generator
         run: python3 -m py_compile scripts/summarize-js-framework-benchmark.py
 
+      - name: Controlled same-runner keyed reconciliation A/B/A (Phase 8.1)
+        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/phase-8-1-') }}
+        working-directory: examples/browser
+        env:
+          PHASE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PHASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_repo_path="crates/rustflow-dom/src/browser.rs"
+          browser_source="../../$browser_repo_path"
+          optimized_source="$RUNNER_TEMP/rustflow-browser-optimized.rs"
+          cp "$browser_source" "$optimized_source"
+          cp performance-results/browser.json performance-results/browser-optimized-before.json
+
+          git cat-file -e "$PHASE_BASE_SHA:$browser_repo_path"
+          git show "$PHASE_BASE_SHA:$browser_repo_path" > "$browser_source"
+          restore_optimized() {
+            if ! cmp -s "$optimized_source" "$browser_source"; then
+              cp "$optimized_source" "$browser_source"
+              npm run build
+            fi
+          }
+          trap restore_optimized EXIT
+
+          echo "Building the base DOM reconciler ($PHASE_BASE_SHA) on the same runner."
+          npm run build
+          RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
+          cp performance-results/browser.json performance-results/browser-unoptimized.json
+
+          echo "Restoring the optimized DOM reconciler ($PHASE_HEAD_SHA) and repeating the suite."
+          cp "$optimized_source" "$browser_source"
+          npm run build
+          RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
+          cp performance-results/browser.json performance-results/browser-optimized-after.json
+
+          python3 ../../scripts/compare-browser-performance.py \
+            --optimized-before performance-results/browser-optimized-before.json \
+            --unoptimized performance-results/browser-unoptimized.json \
+            --optimized-after performance-results/browser-optimized-after.json \
+            --environment performance-results/environment.txt \
+            --base-sha "$PHASE_BASE_SHA" \
+            --head-sha "$PHASE_HEAD_SHA" \
+            --output performance-results/browser-ab-comparison.json
+
       - name: Run pinned upstream keyed framework comparison
         if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.official_framework_comparison) || (github.event_name == 'pull_request' && github.head_ref == 'feat/phase-8-1-measurement-completion') }}
         shell: bash
@@ -454,51 +499,6 @@ jobs:
           cp -R webdriver-ts/results/. "$result_dir/"
           python3 "$GITHUB_WORKSPACE/scripts/summarize-js-framework-benchmark.py" "$result_dir"
           cd "$GITHUB_WORKSPACE"
-
-      - name: Controlled same-runner keyed reconciliation A/B/A (Phase 8.1)
-        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/phase-8-1-') }}
-        working-directory: examples/browser
-        env:
-          PHASE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PHASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          browser_repo_path="crates/rustflow-dom/src/browser.rs"
-          browser_source="../../$browser_repo_path"
-          optimized_source="$RUNNER_TEMP/rustflow-browser-optimized.rs"
-          cp "$browser_source" "$optimized_source"
-          cp performance-results/browser.json performance-results/browser-optimized-before.json
-
-          git cat-file -e "$PHASE_BASE_SHA:$browser_repo_path"
-          git show "$PHASE_BASE_SHA:$browser_repo_path" > "$browser_source"
-          restore_optimized() {
-            if ! cmp -s "$optimized_source" "$browser_source"; then
-              cp "$optimized_source" "$browser_source"
-              npm run build
-            fi
-          }
-          trap restore_optimized EXIT
-
-          echo "Building the base DOM reconciler ($PHASE_BASE_SHA) on the same runner."
-          npm run build
-          RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
-          cp performance-results/browser.json performance-results/browser-unoptimized.json
-
-          echo "Restoring the optimized DOM reconciler ($PHASE_HEAD_SHA) and repeating the suite."
-          cp "$optimized_source" "$browser_source"
-          npm run build
-          RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
-          cp performance-results/browser.json performance-results/browser-optimized-after.json
-
-          python3 ../../scripts/compare-browser-performance.py \
-            --optimized-before performance-results/browser-optimized-before.json \
-            --unoptimized performance-results/browser-unoptimized.json \
-            --optimized-after performance-results/browser-optimized-after.json \
-            --environment performance-results/environment.txt \
-            --base-sha "$PHASE_BASE_SHA" \
-            --head-sha "$PHASE_HEAD_SHA" \
-            --output performance-results/browser-ab-comparison.json
 
       - name: Upload browser performance measurements
         if: ${{ always() }}
