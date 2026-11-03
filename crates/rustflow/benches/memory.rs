@@ -165,10 +165,9 @@ fn measured_component_definition(state_values_per_component: usize) -> Component
     .expect("valid memory benchmark component definition")
 }
 
-fn build_component_tree(depth: usize, state_values_per_component: usize) -> ComponentTree {
+fn build_component_tree(depth: usize, definition: &ComponentDefinition) -> ComponentTree {
     let runtime = Runtime::new();
     let mut parent_scope = runtime.root_scope();
-    let definition = measured_component_definition(state_values_per_component);
     let mut instances = Vec::with_capacity(depth);
 
     for _ in 0..depth {
@@ -225,10 +224,13 @@ fn main() {
         );
     }
 
+    // Component definitions are application-startup metadata, not per-instance
+    // allocations. Reuse one definition across samples and measure mount/unmount only.
+    let definition = measured_component_definition(3);
     measure_lifecycle(
         "component_instance.depth_1_states_3",
         samples,
-        || build_component_tree(1, 3),
+        || build_component_tree(1, &definition),
         dispose_component_tree,
     );
 
@@ -237,7 +239,7 @@ fn main() {
         measure_lifecycle(
             &name,
             samples,
-            || build_component_tree(depth, 3),
+            || build_component_tree(depth, &definition),
             dispose_component_tree,
         );
     }
