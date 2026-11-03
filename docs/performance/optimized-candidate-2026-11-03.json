@@ -1,0 +1,202 @@
+{
+  "schema_version": 1,
+  "status": "candidate_after_optimization",
+  "source": {
+    "pull_request": 78,
+    "workflow_name": "CI",
+    "workflow_run_id": 41562885761,
+    "workflow_run_number": 822,
+    "workflow_head": "2978405ccc76037280a65b31e0c266cc67c9b505",
+    "workflow_merge_sha": "b4c86304d2d246f8595f3ab8d41eabe532eec29c",
+    "artifact_id": 13198456122,
+    "artifact_name": "phase-8-1-browser-performance",
+    "captured_at_utc": "2026-11-03T01:56:54Z",
+    "unoptimized_reference_file": "docs/performance/continuation-candidate-2026-11-03.json",
+    "unoptimized_workflow_run_id": 41560838917,
+    "unoptimized_artifact_id": 13196109647
+  },
+  "environment": {
+    "os_runner": "ubuntu-24.04 GitHub-hosted",
+    "browser": "Chromium 156.0.8078.4",
+    "node_before": "v22.23.4",
+    "node_after": "v22.23.3",
+    "hardware": "not recorded in the browser job artifact; exact CPU equivalence is unverified",
+    "note": "Same runner image and Chromium build. Node patch version differs by one patch level and browser-job CPU metadata was not recorded; repeat runs and environment capture are still required for a controlled comparison."
+  },
+  "comparisons": {
+    "keyed_list_incremental_insert_100": {
+      "before": {
+        "samples": 5,
+        "median_ms": 631.9,
+        "p95_ms": 662.2,
+        "raw_ms": [
+          662.2,
+          631.9,
+          633.6,
+          627.6,
+          611.3
+        ]
+      },
+      "after": {
+        "samples": 5,
+        "median_ms": 278,
+        "p95_ms": 308.6,
+        "raw_ms": [
+          308.6,
+          275.2,
+          271.6,
+          280.2,
+          278
+        ]
+      },
+      "median_improvement_percent": 56,
+      "p95_improvement_percent": 53.4,
+      "operations_per_sample": 100
+    },
+    "keyed_list_reverse_100": {
+      "before": {
+        "samples": 10,
+        "median_ms": 13.8,
+        "p95_ms": 16.7,
+        "raw_ms": [
+          16.7,
+          14.3,
+          13.9,
+          13.6,
+          13.7,
+          13.7,
+          13.7,
+          13.8,
+          13.8,
+          13.8
+        ]
+      },
+      "after": {
+        "samples": 10,
+        "median_ms": 5.5,
+        "p95_ms": 6.2,
+        "raw_ms": [
+          6.2,
+          5.6,
+          5.6,
+          5.4,
+          5.6,
+          5.4,
+          5.5,
+          5.3,
+          5.5,
+          5.3
+        ]
+      },
+      "median_improvement_percent": 60.1,
+      "p95_improvement_percent": 62.9
+    },
+    "keyed_list_initial_mount_100": {
+      "before": {
+        "samples": 3,
+        "median_ms": 19.8,
+        "p95_ms": 21.8
+      },
+      "after": {
+        "samples": 3,
+        "median_ms": 9.3,
+        "p95_ms": 11
+      },
+      "median_improvement_percent": 53
+    },
+    "keyed_list_initial_mount_1000": {
+      "before": {
+        "samples": 2,
+        "median_ms": 97.8,
+        "p95_ms": 97.8
+      },
+      "after": {
+        "samples": 2,
+        "median_ms": 55.5,
+        "p95_ms": 55.5
+      },
+      "median_improvement_percent": 43.3
+    },
+    "keyed_list_remove_100": {
+      "before": {
+        "samples": 1,
+        "elapsed_ms": 636.9
+      },
+      "after": {
+        "samples": 1,
+        "elapsed_ms": 272.7
+      },
+      "interpretation": "Single samples on each side; directional observation only, not an accepted comparison."
+    }
+  },
+  "optimized_browser_metrics": {
+    "initialization_ms": {
+      "samples": 5,
+      "median": 8.1,
+      "p95": 17.5
+    },
+    "counter_100_updates_ms": {
+      "samples": 5,
+      "median": 2.4,
+      "p95": 9.1
+    },
+    "todo_row_attribute_checked_update_ms": {
+      "samples": 100,
+      "median": 0.1,
+      "p95": 0.3,
+      "p99": 1
+    },
+    "nested_component_depth": [
+      {
+        "depth": 5,
+        "instances": 6,
+        "samples": 3,
+        "median_ms": 5.3,
+        "p95_ms": 7.6
+      },
+      {
+        "depth": 20,
+        "instances": 21,
+        "samples": 3,
+        "median_ms": 5.8,
+        "p95_ms": 6.1
+      },
+      {
+        "depth": 80,
+        "instances": 81,
+        "samples": 3,
+        "median_ms": 6.7,
+        "p95_ms": 7.2
+      }
+    ],
+    "timing_budget_warnings": []
+  },
+  "bundle_bytes": {
+    "wasm": {
+      "raw": 502011,
+      "gzip": 180619,
+      "brotli": 135818
+    },
+    "javascript": {
+      "raw": 19730,
+      "gzip": 5615,
+      "brotli": 4825
+    },
+    "css": {
+      "raw": 0,
+      "gzip": 0,
+      "brotli": 0
+    },
+    "total": {
+      "raw": 521741,
+      "gzip": 186234,
+      "brotli": 140643
+    },
+    "all_active_byte_budgets_passed": true
+  },
+  "interpretation": {
+    "finding": "The candidate optimized keyed reconciliation reduced the measured incremental insertion median by 56.0% and reverse median by 60.1%; the same E2E browser suite passed on this workflow run.",
+    "acceptance": "Not yet accepted as a stable final performance claim. Repeat under recorded equivalent runner hardware/toolchain and inspect native allocator data; use the same operation counts and browser version.",
+    "timing_threshold_policy": "Warning-only; do not turn hardware-dependent browser timings into hard CI failures."
+  }
+}
