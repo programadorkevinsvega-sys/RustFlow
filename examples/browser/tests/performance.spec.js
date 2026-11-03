@@ -182,7 +182,7 @@ async function measureIsolatedKeyedMutations(page, count) {
     const counts = {
       set_attribute: 0, remove_attribute: 0, insert_before: 0, remove_child: 0,
       create_element: 0, create_text_node: 0, create_comment: 0,
-      add_event_listener: 0, remove_event_listener: 0, reflect_get: 0, reflect_set: 0,
+      add_event_listener: 0, remove_event_listener: 0,
     };
     const restores = [];
     const wrap = (target, method, key) => {
@@ -216,8 +216,6 @@ async function measureIsolatedKeyedMutations(page, count) {
       wrap(Document.prototype, "createComment", "create_comment");
       wrap(EventTarget.prototype, "addEventListener", "add_event_listener");
       wrap(EventTarget.prototype, "removeEventListener", "remove_event_listener");
-      wrap(Reflect, "get", "reflect_get");
-      wrap(Reflect, "set", "reflect_set");
 
       prepare("instrumented insert");
       reset();
