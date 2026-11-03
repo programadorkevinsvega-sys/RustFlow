@@ -1,0 +1,215 @@
+{
+  "schema_version": 1,
+  "status": "unoptimized_candidate_baseline",
+  "source": {
+    "workflow": "CI",
+    "workflow_run_id": 41560838917,
+    "workflow_run_number": 817,
+    "pull_request": 78,
+    "pull_request_head": "ae76f89c45c08933c1f3f5a7e4856ad0fac9df77",
+    "workflow_merge_sha": "06eaf0490338fb9cf7e41b797e85eeb228cc7e09",
+    "artifact_id": 13196109647,
+    "artifact_name": "phase-8-1-browser-performance",
+    "captured_at_utc": "2026-11-03T01:39:44.182Z"
+  },
+  "environment": {
+    "runner_image": "ubuntu-24.04 GitHub-hosted",
+    "node": "v22.23.4",
+    "browser": "Chromium 156.0.8078.4",
+    "note": "The browser artifact does not include CPU model data; no hardware model is inferred."
+  },
+  "browser": {
+    "initialization_ms": {
+      "samples": 5,
+      "median": 13.4,
+      "p95": 41.3,
+      "raw": [
+        41.3,
+        14.9,
+        11.7,
+        10.6,
+        13.4
+      ]
+    },
+    "counter_100_synchronous_dom_updates_ms": {
+      "samples": 5,
+      "median": 4.5,
+      "p95": 9.6,
+      "raw": [
+        9.6,
+        4.4,
+        4,
+        4.5,
+        5.4
+      ]
+    },
+    "todo_row_attribute_checked_update_ms": {
+      "samples": 100,
+      "median": 0.2,
+      "p90": 0.4,
+      "p95": 0.5,
+      "p99": 1.7
+    },
+    "keyed_list_initial_mount_100_ms": {
+      "samples": 3,
+      "median": 19.8,
+      "p95": 21.8,
+      "raw": [
+        19.8,
+        21.8,
+        19.6
+      ]
+    },
+    "keyed_list_initial_mount_1000_ms": {
+      "samples": 2,
+      "median": 97.8,
+      "p95": 97.8,
+      "raw": [
+        97.8,
+        89.8
+      ]
+    },
+    "keyed_list_incremental_insert_100_ms": {
+      "samples": 5,
+      "median": 631.9,
+      "p90": 662.2,
+      "p95": 662.2,
+      "median_ms_per_insert": 6.319,
+      "raw": [
+        662.2,
+        631.9,
+        633.6,
+        627.6,
+        611.3
+      ]
+    },
+    "keyed_list_reverse_100_ms": {
+      "samples": 10,
+      "median": 13.8,
+      "p95": 16.7,
+      "raw": [
+        16.7,
+        14.3,
+        13.9,
+        13.6,
+        13.7,
+        13.7,
+        13.7,
+        13.8,
+        13.8,
+        13.8
+      ]
+    },
+    "keyed_list_remove_100_ms": {
+      "samples": 1,
+      "elapsed": 636.9,
+      "removed": 100,
+      "remaining": 0
+    },
+    "nested_component_depth_initial_mounts_ms": [
+      {
+        "depth": 5,
+        "instances": 6,
+        "samples": 3,
+        "median": 9.3,
+        "p95": 12.1,
+        "raw": [
+          9.3,
+          12.1,
+          8.7
+        ]
+      },
+      {
+        "depth": 20,
+        "instances": 21,
+        "samples": 3,
+        "median": 10,
+        "p95": 12,
+        "raw": [
+          12,
+          9.5,
+          10
+        ]
+      },
+      {
+        "depth": 80,
+        "instances": 81,
+        "samples": 3,
+        "median": 11.9,
+        "p95": 11.9,
+        "raw": [
+          10.8,
+          11.9,
+          11.9
+        ]
+      }
+    ],
+    "js_heap": {
+      "api": "Chromium performance.memory",
+      "samples": 5,
+      "used_js_heap_bytes": [
+        10000000,
+        10000000,
+        10000000,
+        10000000,
+        10000000
+      ],
+      "note": "Quantized reading at this scale; not a useful retained component memory measure."
+    },
+    "timing_warnings": [
+      {
+        "scenario": "runtime_initialization",
+        "measured_p95_ms": 41.3,
+        "budget_ms": 30
+      },
+      {
+        "scenario": "todo_row_update",
+        "measured_p95_ms": 0.5,
+        "budget_ms": 0.3
+      },
+      {
+        "scenario": "keyed_list_incremental_insert_100",
+        "measured_p95_ms": 662.2,
+        "budget_ms": 400
+      },
+      {
+        "scenario": "keyed_list_initial_mount_1000",
+        "measured_p95_ms": 97.8,
+        "budget_ms": 70
+      },
+      {
+        "scenario": "keyed_list_reverse_100",
+        "measured_p95_ms": 16.7,
+        "budget_ms": 14
+      }
+    ]
+  },
+  "bundle_bytes": {
+    "wasm": {
+      "raw": 488854,
+      "gzip": 175722,
+      "brotli": 132592
+    },
+    "javascript": {
+      "raw": 19382,
+      "gzip": 5502,
+      "brotli": 4749
+    },
+    "css": {
+      "raw": 0,
+      "gzip": 0,
+      "brotli": 0
+    },
+    "total": {
+      "raw": 508236,
+      "gzip": 181224,
+      "brotli": 137341
+    }
+  },
+  "analysis": {
+    "bottleneck_candidate": "keyed_list_incremental_insert_100",
+    "finding": "This scenario repeatedly reconciles a growing keyed list. Code inspection found a linear scan through previous keys for every new child, an old-node-by-new-node nested identity comparison when removing obsolete nodes, and unconditional insert_before calls for every resulting sibling.",
+    "optimization_commit": "85e72c7cf642743a01b4e819ffa7df57bda07a5d",
+    "note": "This file is the pre-optimization reference. The measurement includes JS/WASM setup and DOM operations inside each of 100 reactive updates. Timing is warning-only and must be compared using equivalent workflow runs and scenario counts."
+  }
+}
