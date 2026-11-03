@@ -224,6 +224,12 @@ def main() -> int:
         '  if (benchmarkOptions.chromeBinaryPath) return benchmarkOptions.chromeBinaryPath;\n'
         '  if (process.env.CHROME_BIN) return process.env.CHROME_BIN;',
     )
+    replace_once(
+        puppeteer_access,
+        '  if (benchmarkOptions.headless) args.push("--headless=new");',
+        '  if (benchmarkOptions.headless) args.push("--headless=new");\n'
+        '  if (process.env.CI) args.push("--no-sandbox", "--disable-setuid-sandbox");',
+    )
     return 0
 
 
