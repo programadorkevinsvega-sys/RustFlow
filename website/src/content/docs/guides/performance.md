@@ -11,7 +11,7 @@ RustFlow incluye benchmarks para observar el coste de su runtime reactivo, el re
 |---|---|---|
 | Reactividad | Señales, efectos, dependencias dinámicas, memos, batching, fan-out de hasta 1.024 suscriptores y limpieza de owners | Actualizaciones del DOM o tiempos del navegador |
 | SSR | Árboles simples, dinámicos, amplios, profundos y listas, mediante la API pública render_to_string | Una solicitud HTTP completa o concurrencia; el tiempo incluye la creación y eliminación del Runtime por render |
-| Browser / DOM | WASM real en Chromium, inserción incremental de 100 filas, montaje inicial de listas keyed de 100, 1.000 y 10.000 filas, reordenamiento y eliminación | Una garantía para todos los navegadores |
+| Browser / DOM | WASM real en Chromium, inserción incremental de 100 filas, altas/bajas individuales sobre listas preexistentes de 100, 1.000 y 5.000 filas, montajes keyed, reordenamiento y eliminación | Una garantía para todos los navegadores |
 | Bundle | WASM y assets de producción emitidos por Vite | Tamaño estimado a partir del código fuente |
 | Inicialización | Desde el inicio de init() WASM hasta que termina el montaje inicial | Tiempo hasta que una aplicación real obtiene datos de red |
 | Memoria | stats_alloc en benchmark nativo para alloc/dealloc/realloc y saldo de bytes solicitados de owners de componentes | No es RSS ni memoria física; no mide el allocator WASM live |
@@ -44,12 +44,18 @@ npm run bench:browser
 La suite de Playwright inicia la aplicación compilada con Vite Preview y opera sobre el DOM real mediante los eventos del demo RustFlow. Mide cinco muestras de inserción incremental de 100 filas y el montaje inicial de listas keyed de 100 y 1.000 filas. Para esos montajes iniciales utiliza el parámetro de benchmark `?bench_list=N`, que precarga los datos en el runtime antes del primer render; así no confunde el coste de montar una lista grande con el coste de miles de altas consecutivas. La lista inicial de 10.000 filas es ahora un escenario de estrés automático de CI: cada variante A/B/A descarta un calentamiento y recoge siete muestras medidas. El mismo comando permite ejecutarlo manualmente:
 
 ~~~bash
-RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 npm run bench:browser
+RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
 ~~~
 
 El informe de bundle separa JavaScript, CSS, WASM y otros assets de dist/assets, con tamaños raw, gzip y Brotli. Aplica presupuestos de bytes iniciales para WASM (raw/gzip/Brotli), JavaScript, CSS y assets comprimidos totales; superar cualquiera falla el job de bundle.
 
-La suite también carga `?bench_depth=5`, `?bench_depth=20` y `?bench_depth=80`. Cada escenario monta una cadena de componentes RustFlow recursivos registrados, valida el número exacto de instancias y mide la inicialización/montaje en Chromium. En el A/B/A, profundidades 5 y 80 descartan un calentamiento y recogen siete muestras por variante; profundidad 20 descarta tres calentamientos y recoge 25 muestras para estabilizar su mediana. El comparador comprueba los metadatos y el número real de muestras; el límite A/A sigue siendo 15%.
+La suite también carga `?bench_depth=5`, `?bench_depth=20` y `?bench_depth=80`. Cada escenario monta una cadena de componentes RustFlow recursivos registrados, valida el número exacto de instancias y mide la inicialización/montaje en Chromium. Profundidades 20 y 80 usan tres calentamientos descartados y 25 muestras; profundidad 5 conserva un calentamiento y siete muestras. El montaje inicial de 100 filas ahora usa tres calentamientos y 25 muestras; el límite A/A sigue siendo 15% y no se reduce.
+
+## Operaciones keyed individuales
+
+Con `RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1`, Playwright precarga 100, 1.000 o 5.000 filas y mide 20 altas y 20 eliminaciones individuales por escala. El cronómetro rodea únicamente el click de Add o el botón de eliminación localizado previamente. La preparación del input, el despacho de eventos, los selectores, la verificación y la restauración quedan fuera. Las eliminaciones alternan posiciones inicial, media y final. Se conservan todas las muestras y se informan mediana, p90 y p95.
+
+Los contadores de atributos, movimientos DOM, creación de nodos, listeners y `Reflect.get/set` se recogen en una pasada aparte para no contaminar las latencias. No equivalen a contadores internos de renders Rust ni a mediciones de clones de señales.
 
 ## Interpretar los resultados
 

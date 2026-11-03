@@ -44,6 +44,7 @@ def summarize(values: list[float]) -> dict[str, Any]:
     return {
         "samples": len(values),
         "median_ms": statistics.median(values),
+        "p90_ms": percentile(values, 0.90),
         "p95_ms": percentile(values, 0.95),
         "raw_ms": values,
     }
@@ -175,7 +176,8 @@ def main() -> int:
 
     for count in (100, 1_000, 10_000):
         name = f"keyed_list_initial_mount_{count}"
-        min_samples = 7
+        min_samples = 25 if count == 100 else 7
+        expected_warmups = 3 if count == 100 else 1
         before_item = scenario(opt_before, "keyed_list_initial_mounts", name)
         control_item = scenario(control, "keyed_list_initial_mounts", name)
         after_item = scenario(opt_after, "keyed_list_initial_mounts", name)
@@ -186,8 +188,10 @@ def main() -> int:
         ]:
             if item.get("final_dom_rows") != count:
                 violations.append(f"{label}: {name} expected {count} verified DOM rows")
-            if item.get("warmup_samples") != 1:
-                violations.append(f"{label}: {name} requires exactly one discarded warm-up sample")
+            if item.get("warmup_samples") != expected_warmups:
+                violations.append(
+                    f"{label}: {name} requires exactly {expected_warmups} discarded warm-up samples"
+                )
             raw_count = len(item.get("samples_raw", []))
             if item.get("measured_samples") != raw_count:
                 violations.append(
@@ -265,8 +269,8 @@ def main() -> int:
             "unoptimized": len(control_samples),
             "optimized-after": len(after_samples),
         }
-        minimum_samples = 25 if depth == 20 else 7
-        expected_warmups = 3 if depth == 20 else 1
+        minimum_samples = 25 if depth in (20, 80) else 7
+        expected_warmups = 3 if depth in (20, 80) else 1
         for label, item, actual_samples in [
             ("optimized-before", before_item, sample_counts["optimized-before"]),
             ("unoptimized", control_item, sample_counts["unoptimized"]),

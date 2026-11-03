@@ -319,11 +319,13 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
   }
 
   const initialListScenarios = [];
-  for (const [count, repetitions] of [[100, 7], [1_000, 7]]) {
-    // Discard one untimed navigation/mount to warm the browser/WASM path before
-    // collecting samples. The warm-up is not included in the reported statistics.
-    const warmup = await loadApp(page, count);
-    expect(warmup.dom_rows).toBe(count);
+  for (const [count, repetitions, warmupSamples] of [[100, 25, 3], [1_000, 7, 1]]) {
+    // The 100-row A/A median drift exceeded 15% in the first controlled run.
+    // Increase only that scenario's sampling; do not relax the A/A limit.
+    for (let warmupSample = 0; warmupSample < warmupSamples; warmupSample += 1) {
+      const warmup = await loadApp(page, count);
+      expect(warmup.dom_rows).toBe(count);
+    }
     const measurements = [];
     for (let sample = 0; sample < repetitions; sample += 1) {
       const loaded = await loadApp(page, count);
@@ -336,7 +338,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     initialListScenarios.push({
       name: "keyed_list_initial_mount_" + count,
       ...summarize(measurements, count, "ms"),
-      warmup_samples: 1,
+      warmup_samples: warmupSamples,
       measured_samples: repetitions,
       final_dom_rows: count,
       measured_scope: "WASM initialization and initial keyed-list DOM mount",
@@ -347,7 +349,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
   for (const { depth, warmupRepetitions, repetitions } of [
     { depth: 5, warmupRepetitions: 1, repetitions: 7 },
     { depth: 20, warmupRepetitions: 3, repetitions: 25 },
-    { depth: 80, warmupRepetitions: 1, repetitions: 7 },
+    { depth: 80, warmupRepetitions: 3, repetitions: 25 },
   ]) {
     // Depth 20 has a short (~5 ms) setup path, so it gets additional discarded
     // warm-ups and measured repetitions to stabilize its A/A median.
