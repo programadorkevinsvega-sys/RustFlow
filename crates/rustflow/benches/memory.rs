@@ -148,11 +148,7 @@ type ComponentTree = (Runtime, Vec<ComponentInstance>);
 fn measured_component_definition(state_values_per_component: usize) -> ComponentDefinition {
     ComponentDefinition::new("MeasuredMemoryComponent", move |context, _properties| {
         let states = (0..state_values_per_component)
-            .map(|index| {
-                context
-                    .scope()
-                    .signal(format!("component-state-{index}"))
-            })
+            .map(|index| context.scope().signal(format!("component-state-{index}")))
             .collect::<Result<Vec<_>, _>>()?;
         let render: ComponentRender = Rc::new(move |_properties, _children| {
             for state in &states {
