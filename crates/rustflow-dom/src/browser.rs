@@ -317,15 +317,12 @@ impl<'a> DiffContext<'a> {
     }
 
     fn take_dynamic(&mut self, dynamic: &DynamicChild) -> Option<usize> {
-        let index = self
-            .dynamics_by_id
-            .get(&dynamic.id())
-            .and_then(|indices| {
-                indices
-                    .iter()
-                    .copied()
-                    .find(|index| !self.used_dynamics[*index])
-            })?;
+        let index = self.dynamics_by_id.get(&dynamic.id()).and_then(|indices| {
+            indices
+                .iter()
+                .copied()
+                .find(|index| !self.used_dynamics[*index])
+        })?;
         self.used_dynamics[index] = true;
         Some(index)
     }
@@ -2338,9 +2335,7 @@ impl DomRenderer {
                 .parent_node()
                 .is_some_and(|actual_parent| actual_parent.is_same_node(Some(parent)))
                 && match (node.next_sibling(), cursor.as_ref()) {
-                    (Some(next_sibling), Some(cursor)) => {
-                        next_sibling.is_same_node(Some(cursor))
-                    }
+                    (Some(next_sibling), Some(cursor)) => next_sibling.is_same_node(Some(cursor)),
                     (None, None) => true,
                     _ => false,
                 };
