@@ -359,13 +359,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          browser_source="crates/rustflow-dom/src/browser.rs"
+          browser_repo_path="crates/rustflow-dom/src/browser.rs"
+          browser_source="../../$browser_repo_path"
           optimized_source="$RUNNER_TEMP/rustflow-browser-optimized.rs"
           cp "$browser_source" "$optimized_source"
           cp performance-results/browser.json performance-results/browser-optimized-before.json
 
-          git cat-file -e "$PHASE_BASE_SHA:$browser_source"
-          git show "$PHASE_BASE_SHA:$browser_source" > "$browser_source"
+          git cat-file -e "$PHASE_BASE_SHA:$browser_repo_path"
+          git show "$PHASE_BASE_SHA:$browser_repo_path" > "$browser_source"
           restore_optimized() {
             if ! cmp -s "$optimized_source" "$browser_source"; then
               cp "$optimized_source" "$browser_source"
