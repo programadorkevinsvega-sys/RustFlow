@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "compare-browser-performance.py"
@@ -86,6 +89,104 @@ class IsolatedKeyedMutationComparisonTests(unittest.TestCase):
         )
 
         self.assertTrue(any("A/A median drift" in item for item in violations))
+
+
+def comparison_report(*, optimized: bool) -> dict[str, object]:
+    scale = 1.0 if optimized else 2.0
+    report: dict[str, object] = {
+        "suite": "rustflow-browser-dom",
+        "commit": "optimized" if optimized else "base",
+        "node_version": "v22.23.4",
+        "browser": {"engine": "Chromium", "version": "156.0.8078.4"},
+        "keyed_list_incremental_insertions": [
+            {
+                "name": "keyed_list_incremental_insert_100",
+                "samples_raw": [5.0 * scale + index / 100 for index in range(5)],
+            }
+        ],
+        "keyed_list_reverse_100": {"samples_raw": [5.0 * scale + index / 100 for index in range(10)]},
+        "keyed_list_initial_mounts": [],
+        "nested_component_depth_initial_mounts": [],
+        "keyed_list_isolated_mutations": [],
+    }
+
+    mounts = report["keyed_list_initial_mounts"]
+    assert isinstance(mounts, list)
+    for count, warmups, samples in ((100, 3, 25), (1_000, 1, 7)):
+        mounts.append({
+            "name": f"keyed_list_initial_mount_{count}",
+            "final_dom_rows": count,
+            "warmup_samples": warmups,
+            "measured_samples": samples,
+            "samples_raw": [10.0 * scale + index / 100 for index in range(samples)],
+        })
+
+    nested = report["nested_component_depth_initial_mounts"]
+    assert isinstance(nested, list)
+    for depth, warmups, samples in ((5, 1, 7), (20, 3, 25), (80, 3, 25)):
+        nested.append({
+            "depth": depth,
+            "component_instances": depth + 1,
+            "warmup_samples": warmups,
+            "measured_samples": samples,
+            "samples_raw": [10.0 * scale + index / 100 for index in range(samples)],
+        })
+
+    isolated = report["keyed_list_isolated_mutations"]
+    assert isinstance(isolated, list)
+    if optimized:
+        for operation in ("insert", "remove"):
+            for count in (100, 1_000, 5_000):
+                isolated.append(isolated_item(operation, count, 10.0))
+    else:
+        # The quadratic base control intentionally does not run 5k isolated pairs.
+        isolated = report["keyed_list_isolated_mutations"] = []
+    return report
+
+
+class ComparatorMainIntegrationTests(unittest.TestCase):
+    def test_main_serializes_complete_report_and_accepts_a_valid_ab_a_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            optimized_before = root / "optimized-before.json"
+            unoptimized = root / "unoptimized.json"
+            optimized_after = root / "optimized-after.json"
+            environment = root / "environment.txt"
+            output = root / "browser-ab-comparison.json"
+
+            optimized_before.write_text(
+                json.dumps(comparison_report(optimized=True)), encoding="utf-8"
+            )
+            unoptimized.write_text(
+                json.dumps(comparison_report(optimized=False)), encoding="utf-8"
+            )
+            optimized_after.write_text(
+                json.dumps(comparison_report(optimized=True)), encoding="utf-8"
+            )
+            environment.write_text("runner=synthetic-test\\n", encoding="utf-8")
+
+            argv = [
+                "compare-browser-performance.py",
+                "--optimized-before", str(optimized_before),
+                "--unoptimized", str(unoptimized),
+                "--optimized-after", str(optimized_after),
+                "--environment", str(environment),
+                "--base-sha", "base-sha",
+                "--head-sha", "head-sha",
+                "--output", str(output),
+            ]
+            with patch("sys.argv", argv):
+                result = COMPARATOR.main()
+
+            self.assertEqual(result, 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertTrue(payload["accepted"])
+            self.assertEqual(payload["violations"], [])
+            self.assertFalse(
+                payload["policy"]["isolated_keyed_mutation_sampling"]["base_control_comparison"]
+            )
+            self.assertEqual(len(payload["secondary_comparisons"]["isolated_keyed_mutations"]), 6)
+
 
 
 if __name__ == "__main__":
