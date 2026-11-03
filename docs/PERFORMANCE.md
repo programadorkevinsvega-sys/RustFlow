@@ -140,7 +140,8 @@ El archivo [baseline-2026-11-03.json](https://github.com/programadorkevinsvega-s
 | Reactividad | Baselines representativas +25% | Advertencia informativa en la revisión de resultados |
 | SSR | Baselines representativas +25% | Advertencia informativa en la revisión de resultados |
 | Browser init, DOM y listas | Baseline por escenario +25–40% según dispersión observada | Advertencia informativa, nunca gate de timing sensible al host |
-| Owners / memoria | 25 ciclos por owner tree a profundidades 1, 5, 20 y 80; outstanding después de dispose = 0 en todas las muestras | Presupuestos de allocaciones/bytes con ~25% de margen; outstanding after-dispose min/max = 0 | Gate determinista; falla por retención o por superar cualquier techo |
+| Owner scopes / memoria | 25 ciclos por árbol de scopes a profundidades 1, 5, 20 y 80; outstanding después de dispose = 0 | Presupuestos de allocaciones/bytes con ~25% de margen | Gate determinista; falla por retención o por superar cualquier techo |
+| ComponentInstance / memoria | Cuatro escenarios reales de mount/unmount; 25 muestras; after-dispose debe ser 0 | Techos de asignaciones/bytes pendientes de revisar el primer artefacto de ComponentInstance | Gate de cero retención activo; techos se fijan con la medición real |
 
 Los techos de bundle dejan margen aproximado de 20–30% sobre el primer artefacto medido. No son objetivos de tamaño recomendado; son límites de regresión para esta aplicación de demostración. Los presupuestos absolutos de tiempo se revisan con mediana y p90/p95 y permanecen warning-only debido al ruido del runner. La memoria nativa tiene límites deterministas por escenario y exige saldo outstanding cero después de dispose; la reconciliación keyed tiene un gate relativo de mejora mínima de 20% en un A/B/A dentro del mismo runner.
 
