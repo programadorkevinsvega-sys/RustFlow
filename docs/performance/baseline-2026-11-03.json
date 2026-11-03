@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "status": "candidate_baseline",
+  "captured_at_utc": "2026-11-03T00:18:51Z",
+  "source": {
+    "workflow_name": "CI",
+    "workflow_run_id": 41551029706,
+    "workflow_run_number": 807,
+    "artifact_names": [
+      "phase-8-1-native-performance",
+      "phase-8-1-browser-performance"
+    ],
+    "reported_commit": "e4dbe6a970f1e38bafc47ff71d8a673a1d417b0b",
+    "note": "Candidate snapshot from the initial Phase 8.1 infrastructure run. Timing values are sample medians from one workflow run (native benchmarks contain three repeated executions); repeat on comparable runners before treating the values as a stable long-term baseline."
+  },
+  "environment": {
+    "os": "Linux Ubuntu 24.04 GitHub-hosted runner",
+    "architecture": "x86_64",
+    "cpu": "AMD EPYC 7763, 4 vCPU exposed to runner",
+    "rustc": "1.99.1",
+    "cargo": "1.99.1",
+    "node": "v22.23.4",
+    "browser": "Chromium 156.0.8078.4"
+  },
+  "native_reactivity_median_ns_per_operation_across_three_runs": {
+    "runtime.create_and_drop": 90.8,
+    "signal.read": 31.6,
+    "signal.set_changed_value": 54.8,
+    "signal.update": 88.7,
+    "effect.single_subscriber_set_and_flush": 373.6,
+    "effect.dynamic_dependency_switch": 509.7,
+    "memo.cached_read": 31.7,
+    "memo.source_update_and_recompute": 476.0,
+    "batch.sixteen_individual_writes": 38291.6,
+    "batch.sixteen_coalesced_writes": 4087.1,
+    "load.shared_signal_fanout_1024": 381256.1,
+    "load.one_effect_with_1000_signal_dependencies": 285567.6,
+    "lifecycle.owner_signal_create_and_dispose": 380.4,
+    "lifecycle.owner_effect_create_and_dispose": 864.8,
+    "lifecycle.nested_owner_tree_cleanup": 1380.6
+  },
+  "native_ssr_median_ns_per_render_across_three_runs": {
+    "ssr.simple_static_tree": 575.4,
+    "ssr.dynamic_content_tree": 687.9,
+    "ssr.nested_tree_depth_5": 1420.4,
+    "ssr.nested_tree_depth_20": 4580.1,
+    "ssr.nested_tree_depth_80": 17083.9,
+    "ssr.wide_tree_100_components": 24964.8,
+    "ssr.wide_tree_1000_components": 252826.9,
+    "ssr.list_100_items": 13540.9,
+    "ssr.list_1000_items": 127970.4,
+    "ssr.list_10000_items": 1253258.1
+  },
+  "browser": {
+    "initialization_ms": {
+      "samples": 5,
+      "median": 6.6,
+      "p95": 21.6,
+      "raw": [21.6, 14.0, 6.0, 6.6, 5.3]
+    },
+    "counter_100_synchronous_dom_updates_ms": {
+      "samples": 5,
+      "median": 2.2,
+      "p95": 8.1,
+      "raw": [8.1, 2.0, 2.4, 2.2, 1.8]
+    },
+    "todo_row_attribute_and_checked_property_update_ms": {
+      "samples": 100,
+      "median": 0.1,
+      "p95": 0.2,
+      "p99": 1.0
+    },
+    "keyed_list_initial_mount_100_ms": {
+      "samples": 3,
+      "median": 10.2,
+      "p95": 10.6
+    },
+    "keyed_list_initial_mount_1000_ms": {
+      "samples": 2,
+      "median": 53.9,
+      "p95": 53.9
+    },
+    "keyed_list_incremental_insert_100_ms": {
+      "samples": 5,
+      "median": 311.3,
+      "p95": 322.6,
+      "median_ms_per_insert": 3.113
+    },
+    "keyed_list_reverse_100_ms": {
+      "samples": 10,
+      "median": 7.0,
+      "p95": 10.4
+    },
+    "keyed_list_remove_100_ms": {
+      "samples": 1,
+      "elapsed_ms": 319.1
+    },
+    "nested_component_depth": {
+      "status": "not_measured_in_source_run",
+      "next_scenarios": [5, 20, 80]
+    },
+    "js_heap": {
+      "source": "Chromium performance.memory",
+      "used_js_heap_bytes_observed": [10000000, 10000000, 10000000, 10000000, 10000000],
+      "note": "This headless-Chromium observation is quantized at this scale and is not a useful per-component retention signal."
+    }
+  },
+  "bundle_bytes": {
+    "source_wasm_raw": 482965,
+    "source_wasm_gzip": 173959,
+    "source_wasm_brotli": 131169,
+    "javascript_raw": 19382,
+    "javascript_gzip": 5500,
+    "javascript_brotli": 4737,
+    "css_raw": 0,
+    "css_gzip": 0,
+    "css_brotli": 0,
+    "total_raw": 502347,
+    "total_gzip": 179459,
+    "total_brotli": 135906
+  },
+  "process_rss_kib": {
+    "reactivity_raw_samples": [184808, 140336, 140252],
+    "ssr_raw_samples": [275152, 52624, 52896],
+    "note": "The first cargo bench invocation included compilation and is not a valid runtime-only RSS sample. The two later repetitions are useful only as an initial warm-process estimate; the follow-up workflow precompiles before timing RSS."
+  },
+  "proposed_regression_guardrails": {
+    "policy": "Bundle byte ceilings are hard failures. Timing ceilings are warnings because hosted-runner performance varies. Values are initial ceilings with roughly 20–30% headroom above this measured snapshot; review after at least three comparable workflow runs.",
+    "bundle": {
+      "wasm_raw_bytes": 614400,
+      "wasm_gzip_bytes": 225280,
+      "wasm_brotli_bytes": 163840,
+      "javascript_raw_bytes": 24576,
+      "javascript_gzip_bytes": 7168,
+      "javascript_brotli_bytes": 6144,
+      "css_raw_bytes": 32768,
+      "css_gzip_bytes": 8192,
+      "css_brotli_bytes": 8192,
+      "total_gzip_bytes": 225280,
+      "total_brotli_bytes": 174080
+    },
+    "browser_timing_warnings": {
+      "runtime_initialization_p95_ms": 30,
+      "counter_100_updates_p95_ms": 10,
+      "todo_row_update_p95_ms": 0.3,
+      "keyed_list_initial_mount_1000_p95_ms": 70,
+      "keyed_list_incremental_insert_100_p95_ms": 400,
+      "keyed_list_reverse_100_p95_ms": 14
+    },
+    "native_timing_warnings": {
+      "method": "Compare representative medians against the values in native_reactivity_median_ns_per_operation_across_three_runs and native_ssr_median_ns_per_render_across_three_runs with a 25% tolerance on the same runner/toolchain. Warn only; do not fail CI on hosted-runner time variation."
+    },
+    "allocator_memory": {
+      "status": "pending_first_stats_alloc_artifact",
+      "method": "Set per-scenario ceilings only after reviewing allocations, bytes requested, outstanding bytes after setup, and outstanding bytes after dispose from the separate memory benchmark. Do not derive an owner/component memory budget from RSS."
+    }
+  }
+}
