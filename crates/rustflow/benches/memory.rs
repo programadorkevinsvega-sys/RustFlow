@@ -111,7 +111,9 @@ fn build_owner_tree(depth: usize, state_values_per_component: usize) -> OwnerTre
         }
 
         if component_index + 1 < depth {
-            current_owner = current_owner.child().expect("create nested component owner");
+            current_owner = current_owner
+                .child()
+                .expect("create nested component owner");
         }
     }
 
