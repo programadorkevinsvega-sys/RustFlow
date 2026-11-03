@@ -39,6 +39,23 @@ fn Counter(initial: i32, label: String) -> impl IntoView {
 }
 
 #[rustflow::component]
+fn NestedBenchmarkNode(depth: usize) -> impl IntoView {
+    if depth == 0 {
+        rustflow::view! {
+            <div data-bench-depth={depth.to_string()}>
+                "Nested benchmark leaf"
+            </div>
+        }
+    } else {
+        rustflow::view! {
+            <div data-bench-depth={depth.to_string()}>
+                <NestedBenchmarkNode depth={depth - 1} />
+            </div>
+        }
+    }
+}
+
+#[rustflow::component]
 fn TodoRow(
     id: i64,
     title: String,
@@ -155,6 +172,17 @@ pub fn start() -> Result<(), JsValue> {
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|count| *count <= 10_000)
         .unwrap_or(0);
+    // The browser performance suite can request an isolated nested component tree.
+    // The limit protects the demo route from unbounded recursive component setup.
+    let benchmark_component_depth = window
+        .location()
+        .search()?
+        .trim_start_matches('?')
+        .split('&')
+        .find_map(|parameter| parameter.strip_prefix("bench_depth="))
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|depth| (1..=80).contains(depth))
+        .unwrap_or(0);
     let initial_todos = (0..benchmark_list_size)
         .map(|index| Todo {
             id: index as i64 + 1,
@@ -197,6 +225,7 @@ pub fn start() -> Result<(), JsValue> {
     let mut registry = ComponentRegistry::new();
     register_counter(&mut registry).map_err(display_error)?;
     register_todorow(&mut registry).map_err(display_error)?;
+    register_nestedbenchmarknode(&mut registry).map_err(display_error)?;
 
     // This optional fixture is injected only by the browser E2E tests. It exercises the
     // same public hydration API against server-shaped HTML without affecting the demo page.
@@ -376,6 +405,17 @@ pub fn start() -> Result<(), JsValue> {
     let mounted = renderer
         .mount_reactive(&target, &root_scope, move || {
             let route = route_for_render.get();
+            // This route contains only the recursively nested component tree so its
+            // initialization measurement is not dominated by the normal demo UI.
+            if benchmark_component_depth > 0 {
+                return View::component(
+                    "NestedBenchmarkNode",
+                    [Property::new("depth", benchmark_component_depth)?],
+                    [],
+                    None,
+                )
+                .map_err(DomError::from);
+            }
             match route.split('?').next().unwrap_or("/") {
                 "/" => {}
                 "/about" => {
