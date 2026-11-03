@@ -41,6 +41,8 @@ struct Totals {
     bytes_allocated: u128,
     bytes_deallocated: u128,
     bytes_reallocated: i128,
+    max_allocations_per_lifecycle: u128,
+    max_bytes_allocated_per_lifecycle: u128,
     outstanding_after_setup: i128,
     outstanding_after_dispose: i128,
     max_outstanding_after_setup: i128,
@@ -56,6 +58,12 @@ impl Totals {
         self.bytes_allocated += disposed.bytes_allocated as u128;
         self.bytes_deallocated += disposed.bytes_deallocated as u128;
         self.bytes_reallocated += disposed.bytes_reallocated as i128;
+        self.max_allocations_per_lifecycle = self
+            .max_allocations_per_lifecycle
+            .max(disposed.allocations as u128);
+        self.max_bytes_allocated_per_lifecycle = self
+            .max_bytes_allocated_per_lifecycle
+            .max(disposed.bytes_allocated as u128);
 
         let after_setup = outstanding_requested_bytes(created);
         let after_dispose = outstanding_requested_bytes(disposed);
@@ -94,13 +102,15 @@ fn measure_lifecycle<T>(
 
     let divisor = samples as f64;
     println!(
-        "{{\"type\":\"memory_measurement\",\"name\":\"{}\",\"samples\":{},\"allocations_per_lifecycle\":{:.3},\"deallocations_per_lifecycle\":{:.3},\"reallocations_per_lifecycle\":{:.3},\"bytes_allocated_per_lifecycle\":{:.3},\"bytes_deallocated_per_lifecycle\":{:.3},\"bytes_reallocated_net_per_lifecycle\":{:.3},\"outstanding_requested_bytes_after_setup_mean\":{:.3},\"outstanding_requested_bytes_after_dispose_mean\":{:.3},\"outstanding_requested_bytes_after_setup_max\":{},\"outstanding_requested_bytes_after_dispose_min\":{},\"outstanding_requested_bytes_after_dispose_max\":{}}}",
+        "{{\"type\":\"memory_measurement\",\"name\":\"{}\",\"samples\":{},\"allocations_per_lifecycle\":{:.3},\"max_allocations_per_lifecycle\":{},\"deallocations_per_lifecycle\":{:.3},\"reallocations_per_lifecycle\":{:.3},\"bytes_allocated_per_lifecycle\":{:.3},\"max_bytes_allocated_per_lifecycle\":{},\"bytes_deallocated_per_lifecycle\":{:.3},\"bytes_reallocated_net_per_lifecycle\":{:.3},\"outstanding_requested_bytes_after_setup_mean\":{:.3},\"outstanding_requested_bytes_after_dispose_mean\":{:.3},\"outstanding_requested_bytes_after_setup_max\":{},\"outstanding_requested_bytes_after_dispose_min\":{},\"outstanding_requested_bytes_after_dispose_max\":{}}}",
         name,
         samples,
         totals.allocations as f64 / divisor,
+        totals.max_allocations_per_lifecycle,
         totals.deallocations as f64 / divisor,
         totals.reallocations as f64 / divisor,
         totals.bytes_allocated as f64 / divisor,
+        totals.max_bytes_allocated_per_lifecycle,
         totals.bytes_deallocated as f64 / divisor,
         totals.bytes_reallocated as f64 / divisor,
         totals.outstanding_after_setup as f64 / divisor,
