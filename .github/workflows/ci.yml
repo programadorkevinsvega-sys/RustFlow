@@ -346,7 +346,7 @@ jobs:
 
       - name: Run browser DOM and initialization benchmarks (informational)
         working-directory: examples/browser
-        run: npm run bench:browser
+        run: RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 npm run bench:browser
 
       - name: Upload browser performance measurements
         if: ${{ always() }}
