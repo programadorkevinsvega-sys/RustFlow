@@ -185,7 +185,9 @@ fn build_component_tree(depth: usize, definition: &ComponentDefinition) -> Compo
 
 fn dispose_component_tree((runtime, mut instances): ComponentTree) {
     for instance in instances.iter_mut().rev() {
-        instance.unmount().expect("unmount measured component instance");
+        instance
+            .unmount()
+            .expect("unmount measured component instance");
     }
     drop(instances);
     drop(runtime);
