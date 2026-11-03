@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 from pathlib import Path
 from typing import Any
@@ -52,6 +53,56 @@ def summarize(values: list[float]) -> dict[str, Any]:
 
 def improvement(before: float, after: float) -> float:
     return ((before - after) / before) * 100 if before else 0.0
+
+
+CRITICAL_SAMPLE_MINIMUMS = {
+    "keyed_list_incremental_insert_100": 5,
+    "keyed_list_reverse_100": 10,
+}
+
+
+def validate_critical_samples(
+    report: dict[str, Any],
+    label: str,
+    collection: str | None,
+    name: str,
+    minimum: int,
+    violations: list[str],
+) -> list[float]:
+    """Validate raw sample presence/count for one critical A/B/A pass."""
+    item = scenario(report, collection, name) if collection else report.get(name)
+    if not isinstance(item, dict):
+        violations.append(f"{label}: missing critical scenario {name}")
+        return []
+
+    raw = item.get("samples_raw")
+    if not isinstance(raw, list):
+        violations.append(f"{label}: {name} samples_raw is missing or is not an array")
+        return []
+
+    try:
+        values = [float(value) for value in raw]
+    except (TypeError, ValueError):
+        violations.append(f"{label}: {name} contains a non-numeric raw sample")
+        return []
+
+    if not values:
+        violations.append(f"{label}: {name} has no raw samples")
+        return []
+    if any(not math.isfinite(value) or value <= 0 for value in values):
+        violations.append(f"{label}: {name} contains a non-finite or non-positive sample")
+
+    declared_samples = item.get("samples")
+    if declared_samples != len(values):
+        violations.append(
+            f"{label}: {name} declared samples={declared_samples!r} "
+            f"does not match {len(values)} raw samples"
+        )
+    if len(values) < minimum:
+        violations.append(
+            f"{label}: {name} requires at least {minimum} samples in this pass; got {len(values)}"
+        )
+    return values
 
 
 def validate_nested_component_cycle_report(
@@ -280,43 +331,62 @@ def main() -> int:
     if len(identities) != 1:
         raise ValueError(f"tool/browser identity differs across A/B runs: {identities}")
 
+    violations: list[str] = []
     insert_name = "keyed_list_incremental_insert_100"
-    insert_before = [
-        float(value)
-        for value in scenario(opt_before, "keyed_list_incremental_insertions", insert_name)[
-            "samples_raw"
-        ]
-    ]
-    insert_after = [
-        float(value)
-        for value in scenario(opt_after, "keyed_list_incremental_insertions", insert_name)[
-            "samples_raw"
-        ]
-    ]
-    optimized_insert = insert_before + insert_after
-    control_insert = combine_samples(
-        [control], "keyed_list_incremental_insertions", insert_name
+    reverse_name = "keyed_list_reverse_100"
+
+    insert_minimum = CRITICAL_SAMPLE_MINIMUMS[insert_name]
+    reverse_minimum = CRITICAL_SAMPLE_MINIMUMS[reverse_name]
+
+    insert_before = validate_critical_samples(
+        opt_before, "optimized-before", "keyed_list_incremental_insertions",
+        insert_name, insert_minimum, violations
+    )
+    insert_after = validate_critical_samples(
+        opt_after, "optimized-after", "keyed_list_incremental_insertions",
+        insert_name, insert_minimum, violations
+    )
+    control_insert = validate_critical_samples(
+        control, "unoptimized", "keyed_list_incremental_insertions",
+        insert_name, insert_minimum, violations
     )
 
-    reverse_before = [
-        float(value) for value in opt_before["keyed_list_reverse_100"]["samples_raw"]
-    ]
-    reverse_after = [
-        float(value) for value in opt_after["keyed_list_reverse_100"]["samples_raw"]
-    ]
+    reverse_before = validate_critical_samples(
+        opt_before, "optimized-before", None, reverse_name, reverse_minimum, violations
+    )
+    reverse_after = validate_critical_samples(
+        opt_after, "optimized-after", None, reverse_name, reverse_minimum, violations
+    )
+    control_reverse = validate_critical_samples(
+        control, "unoptimized", None, reverse_name, reverse_minimum, violations
+    )
+
+    if not all((insert_before, insert_after, control_insert, reverse_before, reverse_after, control_reverse)):
+        raise ValueError("critical A/B/A comparison cannot be calculated without raw samples")
+
+    optimized_insert = insert_before + insert_after
     optimized_reverse = reverse_before + reverse_after
-    control_reverse = [
-        float(value) for value in control["keyed_list_reverse_100"]["samples_raw"]
-    ]
 
     comparisons = {
         "keyed_list_incremental_insert_100": {
-            "unoptimized": summarize([float(x) for x in control_insert]),
-            "optimized": summarize([float(x) for x in optimized_insert]),
+            "minimum_samples_per_pass": insert_minimum,
+            "sample_counts_by_pass": {
+                "optimized_before": len(insert_before),
+                "unoptimized": len(control_insert),
+                "optimized_after": len(insert_after),
+            },
+            "unoptimized": summarize(control_insert),
+            "optimized": summarize(optimized_insert),
         },
         "keyed_list_reverse_100": {
-            "unoptimized": summarize([float(x) for x in control_reverse]),
-            "optimized": summarize([float(x) for x in optimized_reverse]),
+            "minimum_samples_per_pass": reverse_minimum,
+            "sample_counts_by_pass": {
+                "optimized_before": len(reverse_before),
+                "unoptimized": len(control_reverse),
+                "optimized_after": len(reverse_after),
+            },
+            "unoptimized": summarize(control_reverse),
+            "optimized": summarize(optimized_reverse),
         },
     }
     violations: list[str] = []
@@ -561,6 +631,7 @@ def main() -> int:
                 "keyed_list_reverse_100",
             ],
             "minimum_median_improvement_percent": 20.0,
+            "minimum_critical_samples_per_pass": CRITICAL_SAMPLE_MINIMUMS,
             "maximum_optimized_a_to_a_median_drift_percent": 15.0,
             "secondary_scenarios": [
                 "keyed_list_initial_mount_100",
