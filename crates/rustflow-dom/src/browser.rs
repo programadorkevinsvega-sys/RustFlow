@@ -9,7 +9,7 @@ use std::{
     rc::Rc,
 };
 
-use js_sys::{Reflect, Set};
+use js_sys::{Map, Reflect, Set};
 use rustflow::{
     components::{ComponentError, ComponentInstance, ComponentRegistry, RenderTarget},
     reactivity::{Effect, Runtime, RuntimeError, Scope, untrack},
@@ -2258,21 +2258,24 @@ impl DomRenderer {
         previous_dynamics: &mut Vec<DynamicRegion>,
         resources: &mut RenderedNodes,
     ) -> Result<Vec<Node>, DomError> {
-        let mut keyed_components = HashMap::<(String, Key), Vec<usize>>::new();
+        let component_indices_by_start = Map::new();
         for (index, region) in previous_components.iter().enumerate() {
-            if let Some(key) = region.descriptor.key() {
-                keyed_components
-                    .entry((region.descriptor.name().to_owned(), key.clone()))
-                    .or_default()
-                    .push(index);
-            }
+            let start: Node = region.mounted.start.clone().unchecked_into();
+            component_indices_by_start.set(
+                start.as_ref(),
+                &JsValue::from_f64(index as f64),
+            );
         }
-        let mut dynamics_by_id = HashMap::<u64, Vec<usize>>::new();
+        let dynamic_indices_by_start = Map::new();
         for (index, region) in previous_dynamics.iter().enumerate() {
-            dynamics_by_id
-                .entry(region.dynamic.id())
-                .or_default()
-                .push(index);
+            let state = region.state.borrow();
+            if let Some(current) = state.as_ref() {
+                let start: Node = current.mounted.start.clone().unchecked_into();
+                dynamic_indices_by_start.set(
+                    start.as_ref(),
+                    &JsValue::from_f64(index as f64),
+                );
+            }
         }
 
         let mut ranges = Vec::with_capacity(previous.len());
@@ -2284,8 +2287,8 @@ impl DomRenderer {
                 cursor,
                 previous_components,
                 previous_dynamics,
-                &keyed_components,
-                &dynamics_by_id,
+                &component_indices_by_start,
+                &dynamic_indices_by_start,
             )
             .ok_or_else(|| {
                 DomError::JavaScript(
@@ -2496,8 +2499,8 @@ fn view_node_count_at(
     cursor: usize,
     components: &[ComponentRegion],
     dynamics: &[DynamicRegion],
-    keyed_components: &HashMap<(String, Key), Vec<usize>>,
-    dynamics_by_id: &HashMap<u64, Vec<usize>>,
+    component_indices_by_start: &Map,
+    dynamic_indices_by_start: &Map,
 ) -> Option<usize> {
     match view {
         View::Text(_) | View::Element(_) => {
@@ -2513,8 +2516,8 @@ fn view_node_count_at(
                     offset,
                     components,
                     dynamics,
-                    keyed_components,
-                    dynamics_by_id,
+                    component_indices_by_start,
+                    dynamic_indices_by_start,
                 )?)?;
             }
             offset.checked_sub(cursor)
@@ -2528,24 +2531,22 @@ fn view_node_count_at(
                     offset,
                     components,
                     dynamics,
+                    component_indices_by_start,
+                    dynamic_indices_by_start,
                 )?)?;
             }
             offset.checked_sub(cursor)
         }
         View::Component(component) => {
-            let region = if let Some(key) = component.key() {
-                let identity = (component.name().to_owned(), key.clone());
-                keyed_components
-                    .get(&identity)?
-                    .iter()
-                    .copied()
-                    .map(|index| &components[index])
-                    .find(|region| region.descriptor == *component)?
-            } else {
-                components
-                    .iter()
-                    .find(|region| region.descriptor == *component)?
-            };
+            let first = existing_nodes.get(cursor)?;
+            let region_index = component_indices_by_start
+                .get(first.as_ref())
+                .as_f64()
+                .map(|index| index as usize)?;
+            let region = components.get(region_index)?;
+            if region.descriptor != *component {
+                return None;
+            }
             range_node_count(
                 &region.mounted.start,
                 &region.mounted.end,
@@ -2553,12 +2554,12 @@ fn view_node_count_at(
                 cursor,
             )
         }
-        View::Dynamic(dynamic) => {
-            let region_index = dynamics_by_id
-                .get(&dynamic.id())?
-                .iter()
-                .copied()
-                .next()?;
+        View::Dynamic(_) => {
+            let first = existing_nodes.get(cursor)?;
+            let region_index = dynamic_indices_by_start
+                .get(first.as_ref())
+                .as_f64()
+                .map(|index| index as usize)?;
             let region = dynamics.get(region_index)?;
             let state = region.state.borrow();
             let current = state.as_ref()?;
