@@ -125,7 +125,7 @@ jobs:
             exit 1
           fi
           chrome_version="$("$chrome_bin" --version)"
-          if ! grep -Eq '156\\.0\\.8078\\.4' <<<"$chrome_version"; then
+          if ! grep -Eq '156\.0\.8078\.4' <<<"$chrome_version"; then
             echo "::error::Expected Chromium 156.0.8078.4, got $chrome_version"
             exit 1
           fi
