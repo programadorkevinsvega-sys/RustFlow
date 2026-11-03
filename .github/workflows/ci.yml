@@ -367,8 +367,10 @@ jobs:
           git cat-file -e "$PHASE_BASE_SHA:$browser_source"
           git show "$PHASE_BASE_SHA:$browser_source" > "$browser_source"
           restore_optimized() {
-            cp "$optimized_source" "$browser_source"
-            npm run build
+            if ! cmp -s "$optimized_source" "$browser_source"; then
+              cp "$optimized_source" "$browser_source"
+              npm run build
+            fi
           }
           trap restore_optimized EXIT
 
