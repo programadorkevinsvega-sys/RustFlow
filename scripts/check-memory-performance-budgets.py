@@ -79,7 +79,9 @@ def main() -> int:
         scenario = {
             "samples": measurement["samples"],
             "allocations_per_lifecycle": measurement["allocations_per_lifecycle"],
+            "max_allocations_per_lifecycle": measurement.get("max_allocations_per_lifecycle"),
             "bytes_allocated_per_lifecycle": measurement["bytes_allocated_per_lifecycle"],
+            "max_bytes_allocated_per_lifecycle": measurement.get("max_bytes_allocated_per_lifecycle"),
             "outstanding_requested_bytes_after_setup_max": measurement[
                 "outstanding_requested_bytes_after_setup_max"
             ],
@@ -101,17 +103,18 @@ def main() -> int:
             errors.append(f"{name}: expected exactly 25 samples; got {measurement['samples']}")
 
         if budget is not None:
+            sample_maxima = [
+                ("max_allocations_per_lifecycle", "max_allocations_per_lifecycle"),
+                ("max_bytes_allocated_per_lifecycle", "max_bytes_allocated_per_lifecycle"),
+            ]
+            for metric, field in sample_maxima:
+                actual = measurement.get(field)
+                if actual is None:
+                    errors.append(f"{name}: missing per-sample maximum field {field}")
+                elif float(actual) > budget[metric]:
+                    errors.append(f"{name}: {field} {actual} exceeds budget {budget[metric]}")
+
             checks = [
-                (
-                    "allocations_per_lifecycle",
-                    float(measurement["allocations_per_lifecycle"]),
-                    budget["max_allocations_per_lifecycle"],
-                ),
-                (
-                    "bytes_allocated_per_lifecycle",
-                    float(measurement["bytes_allocated_per_lifecycle"]),
-                    budget["max_bytes_allocated_per_lifecycle"],
-                ),
                 (
                     "outstanding_requested_bytes_after_setup_max",
                     float(measurement["outstanding_requested_bytes_after_setup_max"]),
