@@ -30,6 +30,16 @@ BUDGETS = {
     },
 }
 
+# Actual ComponentInstance lifecycle scenarios are collected alongside owner-scope
+# baselines. Their allocation ceilings are added only after the first 25-sample
+# artifact has been inspected; until then, disposal-to-zero remains mandatory.
+PENDING_BUDGET_SCENARIOS = {
+    "component_instance.depth_1_states_3",
+    "component_instance.depth_5_states_3",
+    "component_instance.depth_20_states_3",
+    "component_instance.depth_80_states_3",
+}
+
 
 def main() -> int:
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(
@@ -45,11 +55,13 @@ def main() -> int:
         "source": str(path),
         "samples_required": 25,
         "scenario_budgets": {},
+        "pending_budget_scenarios": sorted(PENDING_BUDGET_SCENARIOS),
         "violations": [],
         "policy": "Hard bytes/alloc count ceilings; every measured owner tree must return outstanding requested bytes to zero after dispose.",
     }
 
-    for name, budget in BUDGETS.items():
+    for name in sorted(set(BUDGETS) | PENDING_BUDGET_SCENARIOS):
+        budget = BUDGETS.get(name)
         measurement = measurements.get(name)
         if measurement is None:
             errors.append(f"missing memory scenario: {name}")
@@ -71,32 +83,34 @@ def main() -> int:
                 "outstanding_requested_bytes_after_dispose_max"
             ),
             "budgets": budget,
+            "budget_status": "enforced" if budget is not None else "pending_initial_measurement_review",
         }
         report["scenario_budgets"][name] = scenario
 
         if int(measurement["samples"]) < 25:
             errors.append(f"{name}: only {measurement['samples']} samples; 25 required")
 
-        checks = [
-            (
-                "allocations_per_lifecycle",
-                float(measurement["allocations_per_lifecycle"]),
-                budget["max_allocations_per_lifecycle"],
-            ),
-            (
-                "bytes_allocated_per_lifecycle",
-                float(measurement["bytes_allocated_per_lifecycle"]),
-                budget["max_bytes_allocated_per_lifecycle"],
-            ),
-            (
-                "outstanding_requested_bytes_after_setup_max",
-                float(measurement["outstanding_requested_bytes_after_setup_max"]),
-                budget["max_outstanding_requested_bytes_after_setup"],
-            ),
-        ]
-        for metric, actual, ceiling in checks:
-            if actual > ceiling:
-                errors.append(f"{name}: {metric} {actual} exceeds budget {ceiling}")
+        if budget is not None:
+            checks = [
+                (
+                    "allocations_per_lifecycle",
+                    float(measurement["allocations_per_lifecycle"]),
+                    budget["max_allocations_per_lifecycle"],
+                ),
+                (
+                    "bytes_allocated_per_lifecycle",
+                    float(measurement["bytes_allocated_per_lifecycle"]),
+                    budget["max_bytes_allocated_per_lifecycle"],
+                ),
+                (
+                    "outstanding_requested_bytes_after_setup_max",
+                    float(measurement["outstanding_requested_bytes_after_setup_max"]),
+                    budget["max_outstanding_requested_bytes_after_setup"],
+                ),
+            ]
+            for metric, actual, ceiling in checks:
+                if actual > ceiling:
+                    errors.append(f"{name}: {metric} {actual} exceeds budget {ceiling}")
 
         after_dispose = [
             measurement.get("outstanding_requested_bytes_after_dispose_min"),
@@ -108,7 +122,8 @@ def main() -> int:
         elif any(float(value) != 0.0 for value in after_dispose):
             errors.append(f"{name}: outstanding requested bytes after dispose must be zero; got {after_dispose}")
 
-    unexpected = sorted(set(measurements) - set(BUDGETS))
+    expected_scenarios = set(BUDGETS) | PENDING_BUDGET_SCENARIOS
+    unexpected = sorted(set(measurements) - expected_scenarios)
     if unexpected:
         errors.append(f"unexpected memory scenarios require an explicit budget: {unexpected}")
 
