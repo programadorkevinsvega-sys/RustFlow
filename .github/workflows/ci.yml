@@ -31,6 +31,7 @@ jobs:
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       browser: ${{ steps.filter.outputs.browser }}
+      performance_tools: ${{ steps.filter.outputs.performance_tools }}
       full_ci: ${{ steps.filter.outputs.full_ci }}
     steps:
       - name: Check out repository history for push diff detection
@@ -44,6 +45,28 @@ jobs:
         with:
           filters: .github/filters.yml
           predicate-quantifier: some-with-excludes
+
+  performance-tool-tests:
+    name: Performance tooling tests
+    needs: changes
+    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.performance_tools == 'true' || needs.changes.outputs.full_ci == 'true') }}
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Validate performance tooling Python syntax
+        run: |
+          python3 -m py_compile \
+            scripts/compare-browser-performance.py \
+            scripts/summarize-js-framework-benchmark.py \
+            scripts/patch-js-framework-benchmark.py \
+            scripts/check-memory-performance-budgets.py \
+            scripts/check-native-performance-budgets.py
+
+      - name: Test performance tooling contracts
+        run: python3 -m unittest discover -s scripts/tests -v
 
   wasm:
     name: WebAssembly target check
