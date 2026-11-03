@@ -15,7 +15,7 @@ RustFlow incluye benchmarks para observar el coste de su runtime reactivo, el re
 | Bundle | WASM y assets de producción emitidos por Vite | Tamaño estimado a partir del código fuente |
 | Inicialización | Desde el inicio de init() WASM hasta que termina el montaje inicial | Tiempo hasta que una aplicación real obtiene datos de red |
 | Memoria | stats_alloc en benchmark nativo para alloc/dealloc/realloc y saldo de bytes solicitados de owners de componentes | No es RSS ni memoria física; no mide el allocator WASM live |
-| Componentes anidados | Montaje y desmontaje repetido de árboles reales recursivos en Chromium, profundidades 5, 20 y 80; 10 ciclos de calentamiento y 25 muestras que promedian 10 montajes | No incluye navegación fría ni inicialización WASM |
+| Componentes anidados | Montaje y desmontaje repetido de árboles reales recursivos en Chromium, profundidades 5, 20 y 80; 10 ciclos de calentamiento y 25 muestras que promedian 100 ciclos completos de desmontaje+montaje, medidos en cinco lotes de 20 ciclos | No incluye navegación fría ni inicialización WASM |
 
 ## Ejecutar las mediciones nativas
 
@@ -49,7 +49,7 @@ RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 np
 
 El informe de bundle separa JavaScript, CSS, WASM y otros assets de dist/assets, con tamaños raw, gzip y Brotli. Aplica presupuestos de bytes iniciales para WASM (raw/gzip/Brotli), JavaScript, CSS y assets comprimidos totales; superar cualquiera falla el job de bundle.
 
-La suite carga `?bench_depth=5`, `?bench_depth=20` y `?bench_depth=80` y monta árboles recursivos de componentes RustFlow registrados. Para aislar el coste del árbol, cada profundidad utiliza un único runtime WASM ya inicializado y alterna el montaje/desmontaje del subárbol mediante una señal reactiva. Descarta 10 ciclos completos de calentamiento y recoge 25 muestras; cada muestra promedia 10 operaciones de montaje, mientras el desmontaje se informa por separado. Comprueba la cantidad y secuencia de componentes, la identidad estable del control y que el DOM queda vacío tras cada desmontaje. El cronómetro incluye únicamente el evento reactivo, no las comprobaciones DOM. El límite de deriva A/A permanece en 15%. La inicialización WASM y los montajes iniciales de listas se miden en escenarios independientes.
+La suite carga `?bench_depth=5`, `?bench_depth=20` y `?bench_depth=80` y monta árboles recursivos de componentes RustFlow registrados. Para aislar el coste del árbol, cada profundidad utiliza un único runtime WASM ya inicializado y alterna el montaje/desmontaje del subárbol mediante una señal reactiva. Descarta 10 ciclos completos de calentamiento y recoge 25 muestras. Cada muestra promedia 100 ciclos completos de desmontaje+montaje, medidos en cinco lotes de 20 ciclos para que la resolución del reloj de Chromium no domine operaciones de centésimas de milisegundo. Después de cada lote comprueba la cantidad y secuencia de componentes y la identidad estable del control; el calentamiento verifica además cada transición de desmontaje y montaje. Las comprobaciones DOM quedan fuera del cronómetro. El límite de deriva A/A permanece en 15%. La inicialización WASM y los montajes iniciales de listas se miden en escenarios independientes.
 
 ## Operaciones keyed individuales
 

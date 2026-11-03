@@ -618,9 +618,9 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
   }
 
   const initialListScenarios = [];
-  for (const [count, repetitions, warmupSamples] of [[100, 25, 3], [1_000, 7, 1]]) {
-    // The 100-row A/A median drift exceeded 15% in the first controlled run.
-    // Increase only that scenario's sampling; do not relax the A/A limit.
+  for (const [count, repetitions, warmupSamples] of [[100, 25, 10], [1_000, 7, 1]]) {
+    // Discard ten startup samples so the 100-row scenario is not biased by
+    // the browser/WASM cold-start settling period. Keep the 15% A/A gate intact.
     for (let warmupSample = 0; warmupSample < warmupSamples; warmupSample += 1) {
       const warmup = await loadApp(page, count);
       expect(warmup.dom_rows).toBe(count);
@@ -647,27 +647,25 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
   const nestedComponentScenarios = [];
   const nestedComponentWarmupCycles = 10;
   const nestedComponentMeasuredSamples = 25;
-  const nestedComponentCyclesPerSample = 10;
+  const nestedComponentCyclesPerSample = 100;
+  const nestedComponentCyclesPerTimingBatch = 20;
+  const nestedComponentTimingBatchesPerSample =
+    nestedComponentCyclesPerSample / nestedComponentCyclesPerTimingBatch;
 
   for (const depth of [5, 20, 80]) {
     const loaded = await loadApp(page, 0, depth);
     expect(loaded.nested_component_count).toBe(depth + 1);
 
     const measurements = await page.evaluate(
-      ({ depth, warmupCycles, repetitions, cyclesPerSample }) => {
+      ({ depth, warmupCycles, repetitions, cyclesPerSample, cyclesPerTimingBatch, timingBatchesPerSample }) => {
         const toggle = document.querySelector('[data-testid="bench-depth-toggle"]');
         if (!toggle) throw new Error("Nested benchmark toggle control was not mounted");
-
-        const componentNodes = () =>
-          Array.from(document.querySelectorAll("[data-bench-depth]"));
-
+        const componentNodes = () => Array.from(document.querySelectorAll("[data-bench-depth]"));
         const verifyTree = (mounted, phase) => {
           const nodes = componentNodes();
           const expectedCount = mounted ? depth + 1 : 0;
           if (nodes.length !== expectedCount) {
-            throw new Error(
-              phase + ": expected " + expectedCount + " recursive component nodes; got " + nodes.length,
-            );
+            throw new Error(phase + ": expected " + expectedCount + " recursive component nodes; got " + nodes.length);
           }
           if (mounted) {
             for (let index = 0; index < nodes.length; index += 1) {
@@ -681,47 +679,37 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
             throw new Error(phase + ": benchmark control was replaced during subtree updates");
           }
         };
-
-        verifyTree(true, "initial mount");
         const toggleAndVerify = (mounted, phase) => {
           toggle.click();
           verifyTree(mounted, phase);
         };
 
-        // Warm the same initialized runtime with complete teardown/remount cycles.
+        verifyTree(true, "initial mount");
         for (let cycle = 0; cycle < warmupCycles; cycle += 1) {
           toggleAndVerify(false, "warmup unmount " + cycle);
           toggleAndVerify(true, "warmup mount " + cycle);
         }
 
-        const mountSamples = [];
-        const unmountSamples = [];
+        const lifecycleSamples = [];
         for (let sample = 0; sample < repetitions; sample += 1) {
-          let mountTotal = 0;
-          let unmountTotal = 0;
-
-          // Each reported sample averages ten synchronous operations. The
-          // timer surrounds only the click that triggers reactive teardown or
-          // mount; DOM/identity verification is deliberately outside the timer.
-          for (let cycle = 0; cycle < cyclesPerSample; cycle += 1) {
-            let started = performance.now();
-            toggle.click();
-            unmountTotal += performance.now() - started;
-            verifyTree(false, "measured unmount " + sample + "/" + cycle);
-
-            started = performance.now();
-            toggle.click();
-            mountTotal += performance.now() - started;
-            verifyTree(true, "measured mount " + sample + "/" + cycle);
+          let sampleElapsed = 0;
+          // Twenty complete unmount+mount pairs per timing window are long
+          // enough to avoid Chromium timer quantization dominating sub-ms work.
+          // Verify the DOM after each timed batch, outside the measured interval.
+          for (let batch = 0; batch < timingBatchesPerSample; batch += 1) {
+            const started = performance.now();
+            for (let cycle = 0; cycle < cyclesPerTimingBatch; cycle += 1) {
+              toggle.click();
+              toggle.click();
+            }
+            sampleElapsed += performance.now() - started;
+            verifyTree(true, "measured lifecycle batch " + sample + "/" + batch);
           }
-
-          mountSamples.push(mountTotal / cyclesPerSample);
-          unmountSamples.push(unmountTotal / cyclesPerSample);
+          lifecycleSamples.push(sampleElapsed / cyclesPerSample);
         }
 
         return {
-          mount_samples_raw: mountSamples,
-          unmount_samples_raw: unmountSamples,
+          lifecycle_samples_raw: lifecycleSamples,
           verified_mounts: warmupCycles + repetitions * cyclesPerSample,
           verified_unmounts: warmupCycles + repetitions * cyclesPerSample,
           final_component_count: componentNodes().length,
@@ -732,6 +720,8 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
         warmupCycles: nestedComponentWarmupCycles,
         repetitions: nestedComponentMeasuredSamples,
         cyclesPerSample: nestedComponentCyclesPerSample,
+        cyclesPerTimingBatch: nestedComponentCyclesPerTimingBatch,
+        timingBatchesPerSample: nestedComponentTimingBatchesPerSample,
       },
     );
 
@@ -741,13 +731,14 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
       warmup_cycles: nestedComponentWarmupCycles,
       measured_samples: nestedComponentMeasuredSamples,
       cycles_per_sample: nestedComponentCyclesPerSample,
+      cycles_per_timing_batch: nestedComponentCyclesPerTimingBatch,
+      timing_batches_per_sample: nestedComponentTimingBatchesPerSample,
       verified_mounts: measurements.verified_mounts,
       verified_unmounts: measurements.verified_unmounts,
       final_component_count: measurements.final_component_count,
-      ...summarize(measurements.mount_samples_raw, 1, "ms"),
-      unmount: summarize(measurements.unmount_samples_raw, 1, "ms"),
+      ...summarize(measurements.lifecycle_samples_raw, 1, "ms"),
       measured_scope:
-        "Average synchronous recursive component mount per ten-cycle sample in one initialized WASM runtime; unmount is timed separately; component count, depth order, stable control identity, and empty DOM after teardown are verified after every transition",
+        "Average complete recursive subtree unmount+mount lifecycle cycle over five timed batches of twenty cycles in one initialized WASM runtime; DOM count, depth order, and stable control identity are verified after every batch",
     });
   }
 

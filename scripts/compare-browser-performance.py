@@ -56,15 +56,14 @@ def improvement(before: float, after: float) -> float:
 
 def validate_nested_component_cycle_report(
     label: str, item: dict[str, Any], depth: int
-) -> tuple[list[float], list[float], list[str]]:
-    """Validate batched mount/unmount measurements for one nested depth."""
+) -> tuple[list[float], list[str]]:
+    """Validate batched complete mount/unmount lifecycle measurements."""
     violations: list[str] = []
     samples = [float(value) for value in item.get("samples_raw", [])]
-    unmount_samples = [
-        float(value) for value in item.get("unmount", {}).get("samples_raw", [])
-    ]
     expected_warmup_cycles = 10
-    expected_cycles_per_sample = 10
+    expected_cycles_per_sample = 100
+    expected_cycles_per_timing_batch = 20
+    expected_timing_batches_per_sample = 5
     expected_instances = depth + 1
 
     if item.get("warmup_cycles") != expected_warmup_cycles:
@@ -76,8 +75,20 @@ def validate_nested_component_cycle_report(
     if item.get("cycles_per_sample") != expected_cycles_per_sample:
         violations.append(
             f"{label}: nested component depth {depth} requires "
-            f"{expected_cycles_per_sample} mount/unmount cycles per measured sample; "
+            f"{expected_cycles_per_sample} complete lifecycle cycles per measured sample; "
             f"got {item.get('cycles_per_sample')}"
+        )
+    if item.get("cycles_per_timing_batch") != expected_cycles_per_timing_batch:
+        violations.append(
+            f"{label}: nested component depth {depth} requires "
+            f"{expected_cycles_per_timing_batch} cycles per timing batch; "
+            f"got {item.get('cycles_per_timing_batch')}"
+        )
+    if item.get("timing_batches_per_sample") != expected_timing_batches_per_sample:
+        violations.append(
+            f"{label}: nested component depth {depth} requires "
+            f"{expected_timing_batches_per_sample} timing batches per sample; "
+            f"got {item.get('timing_batches_per_sample')}"
         )
     if item.get("component_instances") != expected_instances:
         violations.append(
@@ -87,22 +98,17 @@ def validate_nested_component_cycle_report(
     if item.get("measured_samples") != len(samples):
         violations.append(
             f"{label}: nested component depth {depth} declared measured_samples "
-            f"does not match {len(samples)} raw mount samples"
-        )
-    if len(unmount_samples) != len(samples):
-        violations.append(
-            f"{label}: nested component depth {depth} must provide one raw unmount "
-            f"sample for every mount sample"
+            f"does not match {len(samples)} raw lifecycle samples"
         )
     expected_verified_cycles = expected_warmup_cycles + len(samples) * expected_cycles_per_sample
     if item.get("verified_mounts") != expected_verified_cycles:
         violations.append(
-            f"{label}: nested component depth {depth} did not verify all expected mounts "
+            f"{label}: nested component depth {depth} did not complete all expected mounts "
             f"({expected_verified_cycles})"
         )
     if item.get("verified_unmounts") != expected_verified_cycles:
         violations.append(
-            f"{label}: nested component depth {depth} did not verify all expected unmounts "
+            f"{label}: nested component depth {depth} did not complete all expected unmounts "
             f"({expected_verified_cycles})"
         )
     if item.get("final_component_count") != expected_instances:
@@ -110,7 +116,7 @@ def validate_nested_component_cycle_report(
             f"{label}: nested component depth {depth} did not finish with "
             f"{expected_instances} mounted component nodes"
         )
-    return samples, unmount_samples, violations
+    return samples, violations
 
 
 def check_a_to_a_median_drift(
@@ -365,7 +371,7 @@ def main() -> int:
     for count in (100, 1_000):
         name = f"keyed_list_initial_mount_{count}"
         min_samples = 25 if count == 100 else 7
-        expected_warmups = 3 if count == 100 else 1
+        expected_warmups = 10 if count == 100 else 1
         before_item = scenario(opt_before, "keyed_list_initial_mounts", name)
         control_item = scenario(control, "keyed_list_initial_mounts", name)
         after_item = scenario(opt_after, "keyed_list_initial_mounts", name)
@@ -444,18 +450,18 @@ def main() -> int:
             for item in report.get("nested_component_depth_mount_cycles", []):
                 if int(item.get("depth", -1)) == depth:
                     return item
-            raise ValueError(f"missing nested component mount-cycle scenario for depth {depth}")
+            raise ValueError(f"missing nested component lifecycle scenario for depth {depth}")
 
         before_item = find_nested(opt_before)
         control_item = find_nested(control)
         after_item = find_nested(opt_after)
-        before_samples, before_unmount, before_errors = validate_nested_component_cycle_report(
+        before_samples, before_errors = validate_nested_component_cycle_report(
             "optimized-before", before_item, depth
         )
-        control_samples, control_unmount, control_errors = validate_nested_component_cycle_report(
+        control_samples, control_errors = validate_nested_component_cycle_report(
             "unoptimized", control_item, depth
         )
-        after_samples, after_unmount, after_errors = validate_nested_component_cycle_report(
+        after_samples, after_errors = validate_nested_component_cycle_report(
             "optimized-after", after_item, depth
         )
         violations.extend(before_errors)
@@ -473,25 +479,24 @@ def main() -> int:
                 if actual_samples < minimum_samples:
                     violations.append(
                         f"{label}: nested component depth {depth} requires at least "
-                        f"{minimum_samples} measured mount samples; got {actual_samples}"
+                        f"{minimum_samples} measured lifecycle samples; got {actual_samples}"
                     )
             continue
 
         optimized_samples = before_samples + after_samples
-        optimized_unmount_samples = before_unmount + after_unmount
         comparison = {
             "component_instances": before_item.get("component_instances"),
             "measurement": (
-                "Average synchronous recursive component mount time over ten mount/unmount "
-                "cycles per sample in one initialized WASM runtime; unmount is reported separately"
+                "Average complete synchronous recursive subtree unmount+mount lifecycle cycle "
+                "over five timed batches of twenty cycles per sample in one initialized WASM runtime"
             ),
             "minimum_samples_per_variant": minimum_samples,
             "warmup_cycles_per_variant": 10,
-            "cycles_per_measured_sample": 10,
+            "cycles_per_measured_sample": 100,
+            "cycles_per_timing_batch": 20,
+            "timing_batches_per_sample": 5,
             "unoptimized": summarize(control_samples),
-            "unoptimized_unmount": summarize(control_unmount),
             "optimized": summarize(optimized_samples),
-            "optimized_unmount": summarize(optimized_unmount_samples),
         }
         gain = improvement(
             comparison["unoptimized"]["median_ms"],
@@ -587,7 +592,7 @@ def main() -> int:
                 "dom_boundary_counters": "instrumented separately from latency samples",
             },
             "initial_mount_sampling": {
-                "100": {"discarded_warmup_samples": 3, "measured_samples": 25},
+                "100": {"discarded_warmup_samples": 10, "measured_samples": 25},
                 "1000": {"discarded_warmup_samples": 1, "measured_samples": 7},
                 "10000": {"discarded_warmup_samples": 1, "measured_samples": 7},
             },
@@ -595,22 +600,28 @@ def main() -> int:
                 "depth_5": {
                     "discarded_warmup_mount_unmount_cycles": 10,
                     "measured_samples": 25,
-                    "mount_unmount_cycles_averaged_per_sample": 10,
+                    "complete_lifecycle_cycles_averaged_per_sample": 100,
+                    "cycles_per_timing_batch": 20,
+                    "timing_batches_per_sample": 5,
                 },
                 "depth_20": {
                     "discarded_warmup_mount_unmount_cycles": 10,
                     "measured_samples": 25,
-                    "mount_unmount_cycles_averaged_per_sample": 10,
+                    "complete_lifecycle_cycles_averaged_per_sample": 100,
+                    "cycles_per_timing_batch": 20,
+                    "timing_batches_per_sample": 5,
                 },
                 "depth_80": {
                     "discarded_warmup_mount_unmount_cycles": 10,
                     "measured_samples": 25,
-                    "mount_unmount_cycles_averaged_per_sample": 10,
+                    "complete_lifecycle_cycles_averaged_per_sample": 100,
+                    "cycles_per_timing_batch": 20,
+                    "timing_batches_per_sample": 5,
                 },
                 "measurement_scope": (
-                    "Synchronous recursive subtree mount and unmount in one initialized WASM runtime; "
-                    "mount and unmount are timed separately; DOM depth/count and cleanup are verified "
-                    "after each transition"
+                    "Synchronous recursive subtree unmount+mount lifecycle in one initialized WASM runtime; "
+                    "each sample averages one hundred complete cycles in five timed batches; "
+                    "DOM depth/count and stable control identity are verified after each batch"
                 ),
             },
             "maximum_secondary_optimized_a_to_a_median_drift_percent": 15.0,
