@@ -282,6 +282,53 @@ class CriticalScenarioSampleContractTests(unittest.TestCase):
 
 
 class ComparatorMainIntegrationTests(unittest.TestCase):
+    def test_main_rejects_undersampled_critical_scenario(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            optimized_before_data = comparison_report(optimized=True)
+            insert_item = optimized_before_data["keyed_list_incremental_insertions"][0]
+            insert_item["samples"] = 4
+            insert_item["samples_raw"] = insert_item["samples_raw"][:4]
+
+            paths = {
+                "optimized-before": root / "optimized-before.json",
+                "unoptimized": root / "unoptimized.json",
+                "optimized-after": root / "optimized-after.json",
+            }
+            paths["optimized-before"].write_text(
+                json.dumps(optimized_before_data), encoding="utf-8"
+            )
+            paths["unoptimized"].write_text(
+                json.dumps(comparison_report(optimized=False)), encoding="utf-8"
+            )
+            paths["optimized-after"].write_text(
+                json.dumps(comparison_report(optimized=True)), encoding="utf-8"
+            )
+            environment = root / "environment.txt"
+            output = root / "browser-ab-comparison.json"
+            environment.write_text("runner=synthetic-test\\n", encoding="utf-8")
+
+            argv = [
+                "compare-browser-performance.py",
+                "--optimized-before", str(paths["optimized-before"]),
+                "--unoptimized", str(paths["unoptimized"]),
+                "--optimized-after", str(paths["optimized-after"]),
+                "--environment", str(environment),
+                "--base-sha", "base-sha",
+                "--head-sha", "head-sha",
+                "--output", str(output),
+            ]
+            with patch("sys.argv", argv):
+                result = COMPARATOR.main()
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["accepted"])
+            self.assertTrue(any(
+                "requires at least 5 samples in this pass; got 4" in item
+                for item in payload["violations"]
+            ))
+
     def test_main_serializes_complete_report_and_accepts_a_valid_ab_a_run(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
