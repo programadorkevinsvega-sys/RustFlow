@@ -106,7 +106,7 @@ Se puede ejecutar desde GitHub Actions mediante `workflow_dispatch` marcando `ex
 
 ## Comparación oficial keyed
 
-La matriz externa completa se ejecuta con el workflow independiente .github/workflows/official-framework-benchmarks.yml, no como parte de los checks obligatorios de cada pull request. La CI del PR conserva Rust 1.85/stable, Clippy, tests e integraciones, WebAssembly, Browser E2E, presupuestos de bundle, benchmarks propios de RustFlow, A/B/A keyed y tests de los scripts Python. Así, Browser E2E and bundle size no queda bloqueado por los benchmarks externos.
+La matriz externa completa se ejecuta con el [workflow Official framework benchmarks](https://github.com/programadorkevinsvega-sys/RustFlow/actions/workflows/official-framework-benchmarks.yml), no como parte de los checks obligatorios de cada pull request. La CI del PR conserva Rust 1.85/stable, Clippy, tests e integraciones, WebAssembly, Browser E2E, presupuestos de bundle, benchmarks propios de RustFlow, A/B/A keyed y tests de los scripts Python. Así, Browser E2E and bundle size no queda bloqueado por los benchmarks externos.
 
 El workflow oficial se lanza manualmente desde GitHub Actions o semanalmente los lunes a las 06:17 UTC. En rustflow_commit puedes indicar un SHA completo de 40 caracteres; vacío significa usar el SHA del evento seleccionado. El workflow construye su propio bundle WASM y prepara su propia copia del submódulo upstream. No consume artefactos producidos por jobs de PR.
 
