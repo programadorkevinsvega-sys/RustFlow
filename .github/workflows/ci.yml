@@ -11,11 +11,6 @@ on:
         type: boolean
         required: false
         default: true
-      official_framework_comparison:
-        description: Run upstream keyed React, Vue, Svelte and RustFlow CPU, memory and bundle comparisons
-        type: boolean
-        required: false
-        default: true
   schedule:
     - cron: "17 6 * * 1"
 
@@ -305,7 +300,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          submodules: true
 
       - name: Install Rust and the browser target
         uses: dtolnay/rust-toolchain@master
@@ -425,110 +419,6 @@ jobs:
             --base-sha "$PHASE_BASE_SHA" \
             --head-sha "$PHASE_HEAD_SHA" \
             --output performance-results/browser-ab-comparison.json
-
-      - name: Run pinned upstream keyed framework comparison
-        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.official_framework_comparison) || (github.event_name == 'pull_request' && github.head_ref == 'feat/phase-8-1-measurement-completion') }}
-        shell: bash
-        timeout-minutes: 60
-        run: |
-          set -euo pipefail
-          upstream="$GITHUB_WORKSPACE/benchmarks/js-framework-benchmark"
-          rustflow_dist="$GITHUB_WORKSPACE/examples/browser/dist"
-          result_dir="$GITHUB_WORKSPACE/examples/browser/performance-results/official"
-          mkdir -p "$result_dir"
-
-          {
-            echo "upstream_repository=https://github.com/krausest/js-framework-benchmark"
-            echo "upstream_commit=fa510a76ffe066af1d30f3e75fa51d3fcbc14009"
-            echo "rustflow_commit=$(git rev-parse HEAD)"
-            echo "runner_os=$(uname -s)"
-            echo "runner_kernel=$(uname -r)"
-            echo "runner_arch=$(uname -m)"
-            echo "node=$(node --version)"
-            echo "npm=$(npm --version)"
-            echo "rustc=$(rustc --version)"
-            echo "cpu:"
-            lscpu
-            echo "memory:"
-            free -h
-          } > "$result_dir/environment.txt"
-
-          mkdir -p "$upstream/frameworks/keyed/rustflow"
-          cp -R "$rustflow_dist/." "$upstream/frameworks/keyed/rustflow/"
-          cp "$GITHUB_WORKSPACE/benchmarks/frameworks/keyed/rustflow/package.json" "$upstream/frameworks/keyed/rustflow/package.json"
-          cp "$GITHUB_WORKSPACE/benchmarks/frameworks/keyed/rustflow/package-lock.json" "$upstream/frameworks/keyed/rustflow/package-lock.json"
-          node --input-type=module <<'NODE'
-          import { readFileSync, writeFileSync } from "node:fs";
-          const path = "benchmarks/js-framework-benchmark/frameworks/keyed/rustflow/index.html";
-          const html = readFileSync(path, "utf8");
-          if (!html.includes("/css/currentStyle.css")) {
-            writeFileSync(path, html.replace("<head>", '<head><link href="/css/currentStyle.css" rel="stylesheet"/>'));
-          }
-          NODE
-
-          cd "$upstream"
-          # The pinned upstream snapshot declares eslint@10 with eslint-plugin-react@7.37.5,
-          # whose peer range stops at eslint@9.7. Its root ESLint tooling is not used by the
-          # benchmark build/run; permit this upstream root install while keeping the nested
-          # webdriver, results, and server npm ci installs in install-local strict.
-          npm ci --legacy-peer-deps
-          python3 "$GITHUB_WORKSPACE/scripts/patch-js-framework-benchmark.py" "$upstream"
-          npm run install-local
-          # The pinned upstream rebuild command checks /ls over HTTP. Start the
-          # server and verify its framework list before invoking that command.
-          PORT=8080 npm start > "$result_dir/upstream-server.log" 2>&1 &
-          server_pid=$!
-          cleanup() {
-            kill "$server_pid" 2>/dev/null || true
-          }
-          trap cleanup EXIT
-          ready=0
-          for attempt in $(seq 1 60); do
-            if curl --silent --fail http://127.0.0.1:8080/ls > "$result_dir/frameworks.json"; then
-              ready=1
-              break
-            fi
-            sleep 1
-          done
-          if [ "$ready" != "1" ]; then
-            cat "$result_dir/upstream-server.log"
-            echo "::error::The pinned benchmark server did not become ready."
-            exit 1
-          fi
-          for framework in react-hooks vue svelte rustflow; do
-            grep -q "\"directory\":\"$framework\"" "$result_dir/frameworks.json"
-          done
-
-          chrome_bin="$(cd "$GITHUB_WORKSPACE/examples/browser" && node --input-type=module -e 'import { chromium } from "@playwright/test"; process.stdout.write(chromium.executablePath())')"
-          if [ ! -x "$chrome_bin" ]; then
-            echo "::error::Playwright Chromium executable is missing: $chrome_bin"
-            exit 1
-          fi
-          chrome_version="$("$chrome_bin" --version)"
-          echo "chromium_version=$chrome_version" >> "$result_dir/environment.txt"
-          if ! grep -Eq '156\.0\.8078\.4' <<<"$chrome_version"; then
-            echo "::error::Expected pinned Chromium 156.0.8078.4, got: $chrome_version"
-            exit 1
-          fi
-          export CHROME_BIN="$chrome_bin"
-
-          # Match the IPv4 address used by the readiness probe; do not rely on
-          # localhost resolving to the same address family in Node and curl.
-          export HOST=127.0.0.1
-          node cli.js rebuild-single --ci -f keyed/react-hooks keyed/vue keyed/svelte
-
-
-          rm -rf webdriver-ts/results webdriver-ts/traces
-          mkdir -p webdriver-ts/results webdriver-ts/traces
-          npm run bench -- --runner playwright --framework keyed/react-hooks keyed/vue keyed/svelte keyed/rustflow --benchmark 01_run1k 02_replace1k 03_update10th1k_x16 04_select1k 05_swap1k 06_remove-one-1k 07_create10k 08_create1k-after1k_x2 09_clear1k_x8 10_update10th10k 11_append1k-after10k 12_clear10k --count 15 --headless --chromeBinary "$chrome_bin"
-          npm run bench -- --runner playwright --framework keyed/react-hooks keyed/vue keyed/svelte keyed/rustflow --benchmark 21_ready-memory 22_run-memory 23_update5-memory 24_run5-memory 25_run-clear-memory --count 5 --headless --chromeBinary "$chrome_bin"
-          npm run bench -- --runner playwright --framework keyed/react-hooks keyed/vue keyed/svelte keyed/rustflow --benchmark 40_sizes --count 1 --headless --chromeBinary "$chrome_bin"
-          cd "$GITHUB_WORKSPACE/examples/browser"
-          BENCHMARK_BASE_URL=http://127.0.0.1:8080 CHROME_BIN="$chrome_bin" node scripts/measure-framework-startup.mjs "$result_dir"
-          cd "$upstream"
-          cp -R webdriver-ts/results/. "$result_dir/"
-          python3 "$GITHUB_WORKSPACE/scripts/summarize-js-framework-benchmark.py" "$result_dir"
-          cd "$GITHUB_WORKSPACE"
 
       - name: Run extended RustFlow keyed-list stress suite
         if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.extended_browser_benchmarks) || (github.event_name == 'pull_request' && github.head_ref == 'feat/phase-8-1-measurement-completion') }}

@@ -106,17 +106,24 @@ Se puede ejecutar desde GitHub Actions mediante `workflow_dispatch` marcando `ex
 
 ## Comparación oficial keyed
 
-El job del PR de Phase 8.1, además de las ejecuciones manuales/semanales, compara las implementaciones keyed del benchmark oficial fijado y la aplicación RustFlow WASM bajo el mismo runner y Chromium. Usa la traza oficial para distinguir trabajo total, JavaScript y paint; conserva muestras crudas por operación, p50/p90/p95 y el índice de media geométrica. Los artefactos se publican como `phase-8-1-browser-performance`. La comparación no se ejecuta en cada PR ordinario. Consulta el contrato técnico de [comparación oficial](../../../../../docs/performance/FRAMEWORK_BENCHMARK_REFERENCE.md) y el [historial de medición](../../../../../docs/PERFORMANCE.md).
+La matriz externa completa se ejecuta con el workflow independiente .github/workflows/official-framework-benchmarks.yml, no como parte de los checks obligatorios de cada pull request. La CI del PR conserva Rust 1.85/stable, Clippy, tests e integraciones, WebAssembly, Browser E2E, presupuestos de bundle, benchmarks propios de RustFlow, A/B/A keyed y tests de los scripts Python. Así, Browser E2E and bundle size no queda bloqueado por los benchmarks externos.
 
-No se publicará una victoria si falta alguna de las nueve operaciones, un framework no llega a producir muestras o el navegador/runner no coincide con los requisitos.
+El workflow oficial se lanza manualmente desde GitHub Actions o semanalmente los lunes a las 06:17 UTC. En rustflow_commit puedes indicar un SHA completo de 40 caracteres; vacío significa usar el SHA del evento seleccionado. El workflow construye su propio bundle WASM y prepara su propia copia del submódulo upstream. No consume artefactos producidos por jobs de PR.
 
+La referencia está fijada a fa510a76ffe066af1d30f3e75fa51d3fcbc14009 y compara React, Vue, Svelte y RustFlow bajo el mismo runner y Chromium 156.0.8078.4. Mantiene los doce escenarios CPU con 15 muestras por escenario, cinco escenarios de memoria con 5 muestras, tres mediciones de tamaño/first paint con una muestra y los calentamientos originales. Los escenarios extendidos 10k conservan cinco acciones de calentamiento.
 
-El informe comparativo también resume memoria (p50/p90/p95), tamaño sin comprimir, Brotli y first paint por implementación. Estas métricas se mantienen separadas del índice geométrico de latencia CPU.
+El artefacto official-framework-comparison-<run_id> contiene JSON originales (raw/), framework-comparison.json, el resumen Markdown, startup-comparison.json, environment.txt, execution-status.txt, trazas y logs disponibles. El registro identifica ambos commits y las versiones de Node, npm, Rust y Chromium, además del sistema operativo y CPU.
 
-### Operaciones comparativas de 10.000 filas
+Una ejecución solo es válida cuando framework-comparison.json informa status: "valid", valid: true y accepted: true. El agregador valida los cuatro frameworks y los recuentos exactos de cada benchmark; el reporte incluye el estado individual de cada escenario y enumera los datos faltantes o inválidos. Los artefactos parciales se conservan para diagnóstico, pero no se publican como comparación aceptada.
 
-El mismo runner de trazas ejecuta además, para React, Vue, Svelte y RustFlow, actualización cada décima fila sobre 10.000, append de 1.000 a 10.000 y clear de 10.000. Los resultados forman un índice extendido de tres operaciones y otro combinado de doce operaciones (nueve upstream más tres extensiones). También se activan los escenarios de memoria tras cinco updates y cinco reemplazos.
+Para comparar distintos commits, comprueba primero que las ejecuciones usan el mismo SHA upstream, versiones de herramientas y Chromium, runner equivalente y todas las muestras. Los resultados históricos de runners diferentes no demuestran una mejora A/B/A. Esa prueba requiere variantes y control dentro del mismo job y runner.
+
+La separación del workflow no declara Phase 8.1 completada. Los criterios de la fase continúan abiertos hasta que toda la evidencia requerida haya sido revisada y aceptada.
+
+### Operaciones, memoria y tamaño
+
+La suite CPU incluye las nueve operaciones upstream y tres extensiones Phase 8.1 (actualización parcial de 10.000 filas, append de 1.000 filas a 10.000 y clear de 10.000). El artefacto conserva muestras crudas y percentiles p50/p90/p95 de total, JavaScript y paint. Los cinco escenarios de memoria y las mediciones de tamaño se presentan por separado del índice geométrico CPU.
 
 ### Arranque y primera interacción
 
-El informe `startup-comparison.json` utiliza el mismo runner y Chromium, con tres calentamientos descartados y 15 navegaciones medidas por framework en orden rotatorio. Incluye response start/end, DOMContentLoaded, load event, first paint/FCP, recursos transferidos y el tiempo hasta la primera acción real que crea 1.000 filas. La marca de inicialización interna WASM se publica para RustFlow cuando está disponible; no se equipara con internals no expuestos de los otros frameworks. El desglose de parseo/compilación sigue pendiente de tracing dedicado.
+startup-comparison.json registra tres calentamientos descartados y 15 navegaciones medidas por framework en orden rotatorio. Incluye response start/end, DOMContentLoaded, load event, first paint/FCP, recursos transferidos y tiempo hasta la primera acción real que crea 1.000 filas. La marca de inicialización interna WASM de RustFlow se reporta solo cuando está disponible; no se equipara con internals no expuestos de otros frameworks. El desglose de parseo/compilación sigue pendiente de tracing dedicado.

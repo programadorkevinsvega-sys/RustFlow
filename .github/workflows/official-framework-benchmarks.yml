@@ -1,0 +1,280 @@
+name: Official framework benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      rustflow_commit:
+        description: "Optional 40-character RustFlow commit SHA to evaluate; defaults to the selected event SHA"
+        type: string
+        required: false
+        default: ""
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: official-framework-benchmarks-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  official-comparison:
+    name: Pinned React, Vue, Svelte and RustFlow comparison
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - name: Check out selected RustFlow commit and pinned upstream submodule
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.rustflow_commit || github.sha }}
+          fetch-depth: 0
+          submodules: true
+
+      - name: Verify and record exact RustFlow commit
+        id: commit
+        shell: bash
+        env:
+          REQUESTED_SHA: ${{ inputs.rustflow_commit }}
+        run: |
+          set -euo pipefail
+          checked_out_sha="$(git rev-parse HEAD)"
+          if [[ -n "${REQUESTED_SHA:-}" ]]; then
+            if [[ ! "$REQUESTED_SHA" =~ ^[[:xdigit:]]{40}$ ]]; then
+              echo "::error::rustflow_commit must be a full 40-character commit SHA."
+              exit 1
+            fi
+            requested_sha="$(git rev-parse "${REQUESTED_SHA}^{commit}")"
+            if [[ "$requested_sha" != "$checked_out_sha" ]]; then
+              echo "::error::Checkout SHA $checked_out_sha does not match requested SHA $requested_sha."
+              exit 1
+            fi
+          fi
+          echo "sha=$checked_out_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Install stable Rust and browser target
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked --version 0.13.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Create initial environment manifest
+        id: environment
+        shell: bash
+        env:
+          RUSTFLOW_COMMIT: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          upstream="$GITHUB_WORKSPACE/benchmarks/js-framework-benchmark"
+          expected="fa510a76ffe066af1d30f3e75fa51d3fcbc14009"
+          actual="$(git -C "$upstream" rev-parse HEAD)"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::Expected upstream $expected, got $actual."
+            exit 1
+          fi
+          result_dir="$GITHUB_WORKSPACE/examples/browser/performance-results/official"
+          mkdir -p "$result_dir"
+          {
+            echo "upstream_repository=https://github.com/krausest/js-framework-benchmark"
+            echo "upstream_commit=$actual"
+            echo "rustflow_commit=$RUSTFLOW_COMMIT"
+            echo "runner_os=$(uname -s)"
+            echo "runner_kernel=$(uname -r)"
+            echo "runner_arch=$(uname -m)"
+            echo "node=$(node --version)"
+            echo "npm=$(npm --version)"
+            echo "rustc=$(rustc --version)"
+            echo "cpu:"
+            lscpu
+            echo "memory:"
+            free -h
+          } > "$result_dir/environment.txt"
+          echo "upstream_sha=$actual" >> "$GITHUB_OUTPUT"
+
+      - name: Install RustFlow browser dependencies
+        working-directory: examples/browser
+        run: npm install --no-package-lock --no-audit --no-fund
+
+      - name: Build selected RustFlow WASM distribution
+        working-directory: examples/browser
+        run: npm run build
+
+      - name: Install pinned Playwright Chromium
+        working-directory: examples/browser
+        timeout-minutes: 15
+        run: npx playwright install --with-deps chromium
+
+      - name: Record and verify Chromium version
+        shell: bash
+        run: |
+          set -euo pipefail
+          chrome_bin="$(cd "$GITHUB_WORKSPACE/examples/browser" && node --input-type=module -e 'import { chromium } from "@playwright/test"; process.stdout.write(chromium.executablePath())')"
+          if [[ ! -x "$chrome_bin" ]]; then
+            echo "::error::Playwright Chromium executable is missing: $chrome_bin"
+            exit 1
+          fi
+          chrome_version="$("$chrome_bin" --version)"
+          if ! grep -Eq '156\\.0\\.8078\\.4' <<<"$chrome_version"; then
+            echo "::error::Expected Chromium 156.0.8078.4, got $chrome_version"
+            exit 1
+          fi
+          echo "CHROME_BIN=$chrome_bin" >> "$GITHUB_ENV"
+          echo "chromium_version=$chrome_version" >> "$GITHUB_WORKSPACE/examples/browser/performance-results/official/environment.txt"
+
+      - name: Run the complete pinned upstream comparison
+        id: run-comparison
+        timeout-minutes: 320
+        shell: bash
+        env:
+          RUSTFLOW_EXPECTED_COMMIT: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          upstream="$GITHUB_WORKSPACE/benchmarks/js-framework-benchmark"
+          rustflow_dist="$GITHUB_WORKSPACE/examples/browser/dist"
+          result_dir="$GITHUB_WORKSPACE/examples/browser/performance-results/official"
+          mkdir -p "$result_dir/raw"
+
+          mkdir -p "$upstream/frameworks/keyed/rustflow"
+          cp -R "$rustflow_dist/." "$upstream/frameworks/keyed/rustflow/"
+          cp "$GITHUB_WORKSPACE/benchmarks/frameworks/keyed/rustflow/package.json" "$upstream/frameworks/keyed/rustflow/package.json"
+          cp "$GITHUB_WORKSPACE/benchmarks/frameworks/keyed/rustflow/package-lock.json" "$upstream/frameworks/keyed/rustflow/package-lock.json"
+
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from "node:fs";
+          const path = "benchmarks/js-framework-benchmark/frameworks/keyed/rustflow/index.html";
+          const html = readFileSync(path, "utf8");
+          if (!html.includes("/css/currentStyle.css")) {
+            writeFileSync(path, html.replace("<head>", '<head><link href="/css/currentStyle.css" rel="stylesheet"/>'));
+          }
+          NODE
+
+          cd "$upstream"
+          # The pinned upstream root has an unused eslint peer-range conflict; the
+          # root ESLint tooling is not used by this benchmark build or runner.
+          npm ci --legacy-peer-deps
+          python3 "$GITHUB_WORKSPACE/scripts/patch-js-framework-benchmark.py" "$upstream"
+          npm run install-local
+
+          PORT=8080 npm start > "$result_dir/upstream-server.log" 2>&1 &
+          server_pid=$!
+          cleanup() { kill "$server_pid" 2>/dev/null || true; }
+          trap cleanup EXIT
+          ready=0
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail http://127.0.0.1:8080/ls > "$result_dir/frameworks.json"; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != "1" ]]; then
+            cat "$result_dir/upstream-server.log"
+            echo "::error::Pinned benchmark server did not become ready."
+            exit 1
+          fi
+          for framework in react-hooks vue svelte rustflow; do
+            grep -q "\"directory\":\"$framework\"" "$result_dir/frameworks.json"
+          done
+
+          export HOST=127.0.0.1
+          chrome_bin="$CHROME_BIN"
+          node cli.js rebuild-single --ci -f keyed/react-hooks keyed/vue keyed/svelte
+          rm -rf webdriver-ts/results webdriver-ts/traces
+          mkdir -p webdriver-ts/results webdriver-ts/traces
+
+          npm run bench -- --runner playwright --framework keyed/react-hooks keyed/vue keyed/svelte keyed/rustflow --benchmark 01_run1k 02_replace1k 03_update10th1k_x16 04_select1k 05_swap1k 06_remove-one-1k 07_create10k 08_create1k-after1k_x2 09_clear1k_x8 10_update10th10k 11_append1k-after10k 12_clear10k --count 15 --headless --chromeBinary "$chrome_bin"
+          cp -a webdriver-ts/results/. "$result_dir/raw/"
+
+          npm run bench -- --runner playwright --framework keyed/react-hooks keyed/vue keyed/svelte keyed/rustflow --benchmark 21_ready-memory 22_run-memory 23_update5-memory 24_run5-memory 25_run-clear-memory --count 5 --headless --chromeBinary "$chrome_bin"
+          cp -a webdriver-ts/results/. "$result_dir/raw/"
+
+          npm run bench -- --runner playwright --framework keyed/react-hooks keyed/vue keyed/svelte keyed/rustflow --benchmark 40_sizes --count 1 --headless --chromeBinary "$chrome_bin"
+          cp -a webdriver-ts/results/. "$result_dir/raw/"
+
+          cd "$GITHUB_WORKSPACE/examples/browser"
+          BENCHMARK_BASE_URL=http://127.0.0.1:8080 CHROME_BIN="$chrome_bin" node scripts/measure-framework-startup.mjs "$result_dir"
+          RUSTFLOW_EXPECTED_COMMIT="$RUSTFLOW_EXPECTED_COMMIT" \
+            python3 "$GITHUB_WORKSPACE/scripts/summarize-js-framework-benchmark.py" "$result_dir"
+          cd "$GITHUB_WORKSPACE"
+
+      - name: Preserve partial upstream benchmark output
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream="$GITHUB_WORKSPACE/benchmarks/js-framework-benchmark"
+          result_dir="$GITHUB_WORKSPACE/examples/browser/performance-results/official"
+          mkdir -p "$result_dir/raw"
+          if [[ -d "$upstream/webdriver-ts/results" ]]; then
+            cp -a "$upstream/webdriver-ts/results/." "$result_dir/raw/"
+          fi
+          if [[ -d "$upstream/webdriver-ts/traces" ]]; then
+            mkdir -p "$result_dir/traces"
+            cp -a "$upstream/webdriver-ts/traces/." "$result_dir/traces/"
+          fi
+
+      - name: Record comparison execution status
+        if: always()
+        shell: bash
+        env:
+          COMPARISON_OUTCOME: ${{ steps.run-comparison.outcome }}
+          CHECKED_OUT_SHA: ${{ steps.commit.outputs.sha }}
+          UPSTREAM_SHA: ${{ steps.environment.outputs.upstream_sha }}
+        run: |
+          set -euo pipefail
+          result_dir="$GITHUB_WORKSPACE/examples/browser/performance-results/official"
+          mkdir -p "$result_dir"
+          if [[ ! -f "$result_dir/environment.txt" ]]; then
+            {
+              echo "rustflow_commit=${CHECKED_OUT_SHA:-unavailable}"
+              echo "upstream_commit=${UPSTREAM_SHA:-unavailable}"
+              echo "node=$(node --version 2>/dev/null || echo unavailable)"
+              echo "npm=$(npm --version 2>/dev/null || echo unavailable)"
+              echo "rustc=$(rustc --version 2>/dev/null || echo unavailable)"
+              echo "chromium_version=unavailable"
+            } > "$result_dir/environment.txt"
+          fi
+          {
+            echo "comparison_step_outcome=${COMPARISON_OUTCOME:-not_started}"
+            echo "job_status=${{ job.status }}"
+            echo "rustflow_commit=${CHECKED_OUT_SHA:-unavailable}"
+            echo "upstream_commit=${UPSTREAM_SHA:-unavailable}"
+            if [[ "${COMPARISON_OUTCOME:-}" == "success" && -f "$result_dir/framework-comparison.json" ]]; then
+              echo "official_comparison_status=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$result_dir/framework-comparison.json")"
+            else
+              echo "official_comparison_status=incomplete"
+            fi
+          } > "$result_dir/execution-status.txt"
+
+      - name: Verify report is explicitly complete and valid
+        if: ${{ always() && steps.run-comparison.outcome == 'success' }}
+        shell: bash
+        run: |
+          python3 - "$GITHUB_WORKSPACE/examples/browser/performance-results/official/framework-comparison.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if report.get("status") != "valid" or report.get("valid") is not True or report.get("accepted") is not True:
+              raise SystemExit("The generated framework comparison is not a valid complete run.")
+          PY
+
+      - name: Upload official results and partial diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-framework-comparison-${{ github.run_id }}
+          path: examples/browser/performance-results/official/
+          if-no-files-found: warn
+          retention-days: 90

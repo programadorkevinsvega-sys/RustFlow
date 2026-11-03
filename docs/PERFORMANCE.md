@@ -96,15 +96,25 @@ El benchmark de memoria usa un allocator instrumentado exclusivamente en el ejec
 
 La memoria live del allocator WASM aún no se mide por componente: el tamaño de `WebAssembly.Memory.buffer`, cuando esté disponible, representa capacidad lineal reservada/crecida y no bytes vivos internos del allocator. No se debe presentar como memoria retenida por un componente.
 
+## CI obligatoria por pull request
+
+La CI obligatoria del PR mantiene los checks Rust 1.85 y stable, formato, Clippy, tests e integraciones, WebAssembly, Browser E2E, los límites deterministas del bundle, benchmarks propios de RustFlow, el A/B/A keyed del mismo runner, los validadores Python, gobernanza y Dependency Review. El check **Browser E2E and bundle size** termina sin ejecutar ni esperar la matriz comparativa de frameworks externos. El A/B/A propio y los presupuestos de bundle no se eliminan ni se relajan.
+
 ## Comparación oficial keyed React/Vue/Svelte/RustFlow
 
-La referencia ejecutable se fija al submódulo `benchmarks/js-framework-benchmark` en `fa510a76ffe066af1d30f3e75fa51d3fcbc14009`. En una ejecución manual o semanal, el job compila los ejemplos keyed upstream desde sus lockfiles y sirve el build WASM de RustFlow como la implementación `keyed/rustflow`. Las cuatro implementaciones se ejecutan secuencialmente en el mismo runner, navegador y servidor local. El ejecutable upstream conserva la medición mediante traza Chromium/CDP y separa total/script/paint; no se sustituye por un cronómetro alrededor del click.
+La comparación externa completa vive en .github/workflows/official-framework-benchmarks.yml, independiente de la CI obligatoria del PR. Se ejecuta únicamente mediante workflow_dispatch o el schedule semanal de los lunes a las 06:17 UTC. El workflow hace checkout del SHA de RustFlow seleccionado en el evento o del SHA completo indicado en el input opcional rustflow_commit; compila por sí mismo el build WASM, prepara el submódulo upstream y no descarga artefactos de otros jobs. El contrato de escenarios y la justificación de las extensiones se mantiene en docs/performance/FRAMEWORK_BENCHMARK_REFERENCE.md.
 
-La suite CPU ejecuta los nueve identificadores upstream y tres escenarios Phase 8.1 de 10k con 15 muestras (la prueba de selección conserva las muestras adicionales definidas upstream), y después ejecuta los benchmarks upstream disponibles de memoria (ready, run y repeated clear) y tamaño. Para Phase 8.1 se habilita también en el PR dedicado; otros PR ordinarios no reciben este coste. Los resultados JSON originales, metadatos, percentiles calculados y el índice geométrico se guardan en el artefacto `phase-8-1-browser-performance/official`. El índice CPU usa la razón RustFlow/framework por operación y su media geométrica; no incorpora métricas de memoria ni bundle.
+La referencia upstream está fijada exactamente al commit fa510a76ffe066af1d30f3e75fa51d3fcbc14009. React, Vue, Svelte y RustFlow se ejecutan secuencialmente en el mismo job, runner y Chromium 156.0.8078.4. Se conservan los doce escenarios CPU (--count 15), los cinco escenarios de memoria (--count 5), las tres mediciones de tamaño/first paint (--count 1) y los calentamientos definidos por el runner y el patcher upstream. Los tres escenarios CPU de 10.000 filas añadidos por Phase 8.1 mantienen cinco acciones de calentamiento; no se reducen muestras ni escenarios para acortar la ejecución.
 
-Ejecutar desde Actions mediante `workflow_dispatch` con `official_framework_comparison=true` o esperar la ejecución semanal. En el mismo runner, la versión del Chromium se exige exactamente como `156.0.8078.4`; si el navegador instalado no coincide, el paso falla en vez de etiquetar la ejecución incorrectamente.
+Para lanzar la comparación: abre GitHub Actions → **Official framework benchmarks** → **Run workflow**. Deja rustflow_commit vacío para evaluar el SHA asociado al evento/rama seleccionada o introduce un SHA completo de 40 caracteres para comparar un commit concreto. La ejecución programada evalúa el SHA de main asociado al evento schedule. El job independiente dispone de un límite fijo de 320 minutos para la comparación y 350 minutos para el job completo, dimensionado para esta matriz larga sin reutilizar el timeout de 60 minutos de la CI del PR.
 
-Limitaciones conocidas: upstream tiene deshabilitados en `benchmarksCommon.ts` los casos de memoria para cinco actualizaciones y cinco reemplazos; el job conserva y reporta los tres casos de memoria disponibles. Los escenarios extendidos de RustFlow para tamaños 100/1.000/5.000/10.000 se mantienen separados de este índice. No se declara superioridad competitiva sin una ejecución aceptada y revisada.
+El artefacto official-framework-comparison-<run_id> conserva los JSON originales bajo raw/, framework-comparison.json, el resumen Markdown, startup-comparison.json, environment.txt, el estado de ejecución, trazas y logs disponibles. environment.txt registra los SHA de RustFlow y upstream, Node, npm, Rust, Chromium, sistema operativo, CPU y memoria del runner. Los artefactos se publican incluso si falla una fase parcial.
+
+Una ejecución solo es comparación oficial válida cuando framework-comparison.json declara status: "valid", valid: true y accepted: true. El agregador exige los cuatro frameworks, los doce escenarios CPU con exactamente 15 muestras por métrica, los cinco escenarios de memoria con exactamente 5 muestras, las tres métricas de tamaño con una muestra y 3 calentamientos más 15 navegaciones medidas de startup por framework. El archivo registra el estado de cada escenario (complete, missing, invalid o duplicate) y los errores de validación. Una ejecución parcial conserva su diagnóstico, pero nunca genera índices comparativos aceptados.
+
+Para comparar commits distintos, revisa el mismo SHA upstream, la versión de Chromium, Node/npm/Rust y la clase de runner, además de los recuentos completos y los artefactos crudos. Los resultados históricos de runners diferentes se conservan como contexto, no como prueba A/B/A ni como evidencia de mejora. La prueba A/B/A válida debe ejecutar ambas variantes y el control en el mismo job y runner.
+
+La infraestructura comparativa y esta separación **no declaran Phase 8.1 completada**. Los criterios y las casillas de ROADMAP.md permanecen abiertos hasta revisar y aceptar toda la evidencia de rendimiento requerida.
 
 ## Suite extendida de listas RustFlow
 
@@ -223,7 +233,7 @@ El tiempo de Runtime::new también se mide como microoperación en la suite de r
 Los puntos pendientes deben permanecer abiertos en ROADMAP.md; crear infraestructura de benchmark no basta para declarar completa Phase 8.1.
 
 
-El workflow del PR #78 ejecuta las nueve operaciones de CPU upstream, los cinco casos de memoria (21, 22, 23, 24 y 25) y las tres mediciones de tamaño (sin comprimir, Brotli y first paint) en el mismo runner. El agregador conserva p50/p90/p95 y muestras originales para CPU total/script/paint, memoria y tamaño; calcula razones por escenario para las métricas secundarias y media geométrica únicamente para las nueve latencias CPU.
+El workflow independiente official-framework-benchmarks.yml ejecuta las doce operaciones CPU upstream/Phase 8.1, los cinco casos de memoria y las tres mediciones de tamaño para las cuatro implementaciones. El agregador conserva p50/p90/p95 y muestras originales para CPU total/script/paint, memoria y tamaño; valida los recuentos exactos y la identidad del SHA antes de aceptar el informe. La media geométrica CPU se calcula por separado para las nueve operaciones upstream, las tres extensiones y el conjunto combinado de doce.
 
 ### Suite comparativa extendida, mismo runner
 
