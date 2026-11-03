@@ -100,3 +100,10 @@ Esta auditoría **no es una comparación de rendimiento**. La suite ejecutable, 
 Además de la suite estándar, RustFlow dispone de un estrés específico de listas de 100, 1.000, 5.000 y 10.000 filas. Incluye altas/bajas aisladas, cambios de fila, actualizaciones de cada décima fila, reordenamientos, append de 1.000, reemplazo total, eliminación de secciones y cleanup de todos los componentes. El protocolo comprueba identidad de nodos y el recuento de owners desmontados.
 
 Se puede ejecutar desde GitHub Actions mediante `workflow_dispatch` marcando `extended_browser_benchmarks`; también se ejecuta semanalmente. Los PR habituales no lanzan este conjunto pesado. No es el benchmark oficial comparativo y sus resultados no se mezclan con el índice de React/Vue/Svelte.
+
+
+## Comparación oficial keyed
+
+El job manual/semanal compara las implementaciones keyed del benchmark oficial fijado y la aplicación RustFlow WASM bajo el mismo runner y Chromium. Usa la traza oficial para distinguir trabajo total, JavaScript y paint; conserva muestras crudas por operación, p50/p90/p95 y el índice de media geométrica. Los artefactos se publican como `phase-8-1-browser-performance`. La comparación no se ejecuta en cada PR ordinario. Consulta el contrato técnico de [comparación oficial](../../../../../docs/performance/FRAMEWORK_BENCHMARK_REFERENCE.md) y el [historial de medición](../../../../../docs/PERFORMANCE.md).
+
+No se publicará una victoria si falta alguna de las nueve operaciones, un framework no llega a producir muestras o el navegador/runner no coincide con los requisitos.

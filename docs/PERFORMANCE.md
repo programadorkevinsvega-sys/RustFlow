@@ -94,6 +94,16 @@ El benchmark de memoria usa un allocator instrumentado exclusivamente en el ejec
 
 La memoria live del allocator WASM aún no se mide por componente: el tamaño de `WebAssembly.Memory.buffer`, cuando esté disponible, representa capacidad lineal reservada/crecida y no bytes vivos internos del allocator. No se debe presentar como memoria retenida por un componente.
 
+## Comparación oficial keyed React/Vue/Svelte/RustFlow
+
+La referencia ejecutable se fija al submódulo `benchmarks/js-framework-benchmark` en `fa510a76ffe066af1d30f3e75fa51d3fcbc14009`. En una ejecución manual o semanal, el job compila los ejemplos keyed upstream desde sus lockfiles y sirve el build WASM de RustFlow como la implementación `keyed/rustflow`. Las cuatro implementaciones se ejecutan secuencialmente en el mismo runner, navegador y servidor local. El ejecutable upstream conserva la medición mediante traza Chromium/CDP y separa total/script/paint; no se sustituye por un cronómetro alrededor del click.
+
+La suite oficial CPU ejecuta los nueve identificadores de la referencia con 15 muestras (la prueba de selección conserva las muestras adicionales definidas upstream), y después ejecuta los benchmarks upstream disponibles de memoria (ready, run y repeated clear) y tamaño. Los resultados JSON originales, metadatos, percentiles calculados y el índice geométrico se guardan en el artefacto `phase-8-1-browser-performance/official`. El índice CPU usa la razón RustFlow/framework por operación y su media geométrica; no incorpora métricas de memoria ni bundle.
+
+Ejecutar desde Actions mediante `workflow_dispatch` con `official_framework_comparison=true` o esperar la ejecución semanal. En el mismo runner, la versión del Chromium se exige exactamente como `156.0.8078.4`; si el navegador instalado no coincide, el paso falla en vez de etiquetar la ejecución incorrectamente.
+
+Limitaciones conocidas: upstream tiene deshabilitados en `benchmarksCommon.ts` los casos de memoria para cinco actualizaciones y cinco reemplazos; el job conserva y reporta los tres casos de memoria disponibles. Los escenarios extendidos de RustFlow para tamaños 100/1.000/5.000/10.000 se mantienen separados de este índice. No se declara superioridad competitiva sin una ejecución aceptada y revisada.
+
 ## Suite extendida de listas RustFlow
 
 La suite de estrés ampliada se ejecuta bajo demanda con:
