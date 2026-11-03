@@ -184,7 +184,7 @@ def main() -> int:
             "Size values use the upstream server response-size hook: uncompressed KiB, Brotli-compressed KiB and first paint.",
             "All four frameworks are measured sequentially in the same CI job and browser job.",
             "The upstream CPU geometric-mean covers the nine original upstream operations; a separate Phase 8.1 extension geometric mean covers the three required 10k scenarios; a combined 12-operation geometric mean is also reported. Memory and size are never blended into CPU indexes.",
-            "The pinned upstream runner does not normally execute Lighthouse startup; memory IDs 23 and 24 are commented out upstream.",
+            "The pinned upstream runner does not include Lighthouse startup in its ordinary benchmark list; a separate same-runner startup/first-interaction pass is published. The deterministic Phase 8.1 patcher re-enables memory IDs 23 and 24.",
             "The upstream README and executable-runner row-count differences are documented in docs/performance/FRAMEWORK_BENCHMARK_REFERENCE.md.",
         ],
     }
