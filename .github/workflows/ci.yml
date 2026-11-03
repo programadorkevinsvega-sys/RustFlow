@@ -298,7 +298,7 @@ jobs:
     needs: changes
     if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.full_ci == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     steps:
       - name: Check out repository
@@ -371,9 +371,9 @@ jobs:
         run: python3 -m py_compile scripts/summarize-js-framework-benchmark.py
 
       - name: Run pinned upstream keyed framework comparison
-        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.official_framework_comparison) }}
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.official_framework_comparison) || (github.event_name == 'pull_request' && github.head_ref == 'feat/phase-8-1-measurement-completion') }}
         shell: bash
-        timeout-minutes: 45
+        timeout-minutes: 60
         run: |
           set -euo pipefail
           upstream="$GITHUB_WORKSPACE/benchmarks/js-framework-benchmark"
