@@ -264,19 +264,37 @@ def main() -> int:
             "unoptimized": len(control_samples),
             "optimized-after": len(after_samples),
         }
-        for label, actual_samples in sample_counts.items():
-            if actual_samples < 7:
+        minimum_samples = 25 if depth == 20 else 7
+        expected_warmups = 3 if depth == 20 else 1
+        for label, item, actual_samples in [
+            ("optimized-before", before_item, sample_counts["optimized-before"]),
+            ("unoptimized", control_item, sample_counts["unoptimized"]),
+            ("optimized-after", after_item, sample_counts["optimized-after"]),
+        ]:
+            if item.get("warmup_samples") != expected_warmups:
                 violations.append(
-                    f"{label}: nested component depth {depth} requires at least 7 samples; "
-                    f"got {actual_samples}"
+                    f"{label}: nested component depth {depth} requires "
+                    f"{expected_warmups} discarded warm-up samples; "
+                    f"got {item.get('warmup_samples')}"
                 )
-        if min(sample_counts.values()) < 7:
+            if item.get("measured_samples") != actual_samples:
+                violations.append(
+                    f"{label}: nested component depth {depth} declared measured_samples "
+                    f"does not match {actual_samples} raw samples"
+                )
+            if actual_samples < minimum_samples:
+                violations.append(
+                    f"{label}: nested component depth {depth} requires at least "
+                    f"{minimum_samples} measured samples; got {actual_samples}"
+                )
+        if min(sample_counts.values()) < minimum_samples:
             continue
 
         optimized_samples = before_samples + after_samples
         comparison = {
             "component_instances": before_item.get("component_instances"),
-            "minimum_samples_per_variant": 7,
+            "minimum_samples_per_variant": minimum_samples,
+            "warmup_samples_per_variant": expected_warmups,
             "unoptimized": summarize(control_samples),
             "optimized": summarize(optimized_samples),
         }
@@ -346,6 +364,11 @@ def main() -> int:
             ],
             "minimum_secondary_samples_per_variant": 7,
             "minimum_initial_mount_warmup_samples_per_variant": 1,
+            "nested_component_sampling": {
+                "depth_5": {"discarded_warmup_samples": 1, "measured_samples": 7},
+                "depth_20": {"discarded_warmup_samples": 3, "measured_samples": 25},
+                "depth_80": {"discarded_warmup_samples": 1, "measured_samples": 7},
+            },
             "maximum_secondary_optimized_a_to_a_median_drift_percent": 15.0,
             "maximum_secondary_median_regression_percent": 25.0,
             "timing_budgets": "absolute timing thresholds remain warning-only; same-runner A/B/A gates the critical improvements, requires stable secondary A/A medians, and rejects secondary median regressions above 25%",
