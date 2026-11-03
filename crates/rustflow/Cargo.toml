@@ -11,6 +11,9 @@ repository.workspace = true
 rustflow-view = { path = "../rustflow-view" }
 rustflow-macros = { path = "../rustflow-macros" }
 
+[dev-dependencies]
+stats_alloc = "0.1.10"
+
 [lib]
 path = "src/lib.rs"
 
@@ -19,4 +22,8 @@ workspace = true
 
 [[bench]]
 name = "reactivity"
+harness = false
+
+[[bench]]
+name = "memory"
 harness = false
