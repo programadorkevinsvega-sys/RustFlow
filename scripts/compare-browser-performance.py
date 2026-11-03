@@ -54,6 +54,65 @@ def improvement(before: float, after: float) -> float:
     return ((before - after) / before) * 100 if before else 0.0
 
 
+def validate_nested_component_cycle_report(
+    label: str, item: dict[str, Any], depth: int
+) -> tuple[list[float], list[float], list[str]]:
+    """Validate batched mount/unmount measurements for one nested depth."""
+    violations: list[str] = []
+    samples = [float(value) for value in item.get("samples_raw", [])]
+    unmount_samples = [
+        float(value) for value in item.get("unmount", {}).get("samples_raw", [])
+    ]
+    expected_warmup_cycles = 10
+    expected_cycles_per_sample = 10
+    expected_instances = depth + 1
+
+    if item.get("warmup_cycles") != expected_warmup_cycles:
+        violations.append(
+            f"{label}: nested component depth {depth} requires "
+            f"{expected_warmup_cycles} discarded warm-up mount/unmount cycles; "
+            f"got {item.get('warmup_cycles')}"
+        )
+    if item.get("cycles_per_sample") != expected_cycles_per_sample:
+        violations.append(
+            f"{label}: nested component depth {depth} requires "
+            f"{expected_cycles_per_sample} mount/unmount cycles per measured sample; "
+            f"got {item.get('cycles_per_sample')}"
+        )
+    if item.get("component_instances") != expected_instances:
+        violations.append(
+            f"{label}: nested component depth {depth} expected "
+            f"{expected_instances} component instances; got {item.get('component_instances')}"
+        )
+    if item.get("measured_samples") != len(samples):
+        violations.append(
+            f"{label}: nested component depth {depth} declared measured_samples "
+            f"does not match {len(samples)} raw mount samples"
+        )
+    if len(unmount_samples) != len(samples):
+        violations.append(
+            f"{label}: nested component depth {depth} must provide one raw unmount "
+            f"sample for every mount sample"
+        )
+    expected_verified_cycles = expected_warmup_cycles + len(samples) * expected_cycles_per_sample
+    if item.get("verified_mounts") != expected_verified_cycles:
+        violations.append(
+            f"{label}: nested component depth {depth} did not verify all expected mounts "
+            f"({expected_verified_cycles})"
+        )
+    if item.get("verified_unmounts") != expected_verified_cycles:
+        violations.append(
+            f"{label}: nested component depth {depth} did not verify all expected unmounts "
+            f"({expected_verified_cycles})"
+        )
+    if item.get("final_component_count") != expected_instances:
+        violations.append(
+            f"{label}: nested component depth {depth} did not finish with "
+            f"{expected_instances} mounted component nodes"
+        )
+    return samples, unmount_samples, violations
+
+
 
 def compare_optimized_isolated_keyed_mutations(
     optimized_before: dict[str, Any],
@@ -359,55 +418,57 @@ def main() -> int:
 
     for depth in (5, 20, 80):
         def find_nested(report: dict[str, Any]) -> dict[str, Any]:
-            for item in report.get("nested_component_depth_initial_mounts", []):
+            for item in report.get("nested_component_depth_mount_cycles", []):
                 if int(item.get("depth", -1)) == depth:
                     return item
-            raise ValueError(f"missing nested component depth {depth}")
+            raise ValueError(f"missing nested component mount-cycle scenario for depth {depth}")
 
         before_item = find_nested(opt_before)
         control_item = find_nested(control)
         after_item = find_nested(opt_after)
-        before_samples = [float(x) for x in before_item.get("samples_raw", [])]
-        control_samples = [float(x) for x in control_item.get("samples_raw", [])]
-        after_samples = [float(x) for x in after_item.get("samples_raw", [])]
+        before_samples, before_unmount, before_errors = validate_nested_component_cycle_report(
+            "optimized-before", before_item, depth
+        )
+        control_samples, control_unmount, control_errors = validate_nested_component_cycle_report(
+            "unoptimized", control_item, depth
+        )
+        after_samples, after_unmount, after_errors = validate_nested_component_cycle_report(
+            "optimized-after", after_item, depth
+        )
+        violations.extend(before_errors)
+        violations.extend(control_errors)
+        violations.extend(after_errors)
+
         sample_counts = {
             "optimized-before": len(before_samples),
             "unoptimized": len(control_samples),
             "optimized-after": len(after_samples),
         }
-        minimum_samples = 25 if depth in (20, 80) else 7
-        expected_warmups = 3 if depth in (20, 80) else 1
-        for label, item, actual_samples in [
-            ("optimized-before", before_item, sample_counts["optimized-before"]),
-            ("unoptimized", control_item, sample_counts["unoptimized"]),
-            ("optimized-after", after_item, sample_counts["optimized-after"]),
-        ]:
-            if item.get("warmup_samples") != expected_warmups:
-                violations.append(
-                    f"{label}: nested component depth {depth} requires "
-                    f"{expected_warmups} discarded warm-up samples; "
-                    f"got {item.get('warmup_samples')}"
-                )
-            if item.get("measured_samples") != actual_samples:
-                violations.append(
-                    f"{label}: nested component depth {depth} declared measured_samples "
-                    f"does not match {actual_samples} raw samples"
-                )
-            if actual_samples < minimum_samples:
-                violations.append(
-                    f"{label}: nested component depth {depth} requires at least "
-                    f"{minimum_samples} measured samples; got {actual_samples}"
-                )
+        minimum_samples = 25
         if min(sample_counts.values()) < minimum_samples:
+            for label, actual_samples in sample_counts.items():
+                if actual_samples < minimum_samples:
+                    violations.append(
+                        f"{label}: nested component depth {depth} requires at least "
+                        f"{minimum_samples} measured mount samples; got {actual_samples}"
+                    )
             continue
 
         optimized_samples = before_samples + after_samples
+        optimized_unmount_samples = before_unmount + after_unmount
         comparison = {
             "component_instances": before_item.get("component_instances"),
+            "measurement": (
+                "Average synchronous recursive component mount time over ten mount/unmount "
+                "cycles per sample in one initialized WASM runtime; unmount is reported separately"
+            ),
             "minimum_samples_per_variant": minimum_samples,
-            "warmup_samples_per_variant": expected_warmups,
+            "warmup_cycles_per_variant": 10,
+            "cycles_per_measured_sample": 10,
             "unoptimized": summarize(control_samples),
+            "unoptimized_unmount": summarize(control_unmount),
             "optimized": summarize(optimized_samples),
+            "optimized_unmount": summarize(optimized_unmount_samples),
         }
         gain = improvement(
             comparison["unoptimized"]["median_ms"],
@@ -479,9 +540,9 @@ def main() -> int:
             "secondary_scenarios": [
                 "keyed_list_initial_mount_100",
                 "keyed_list_initial_mount_1000",
-                "nested_component_depth_5",
-                "nested_component_depth_20",
-                "nested_component_depth_80",
+                "nested_component_depth_mount_cycles_5",
+                "nested_component_depth_mount_cycles_20",
+                "nested_component_depth_mount_cycles_80",
                 "keyed_list_single_insert_100",
                 "keyed_list_single_insert_1000",
                 "keyed_list_single_insert_5000",
@@ -511,9 +572,26 @@ def main() -> int:
                 "10000": {"discarded_warmup_samples": 1, "measured_samples": 7},
             },
             "nested_component_sampling": {
-                "depth_5": {"discarded_warmup_samples": 1, "measured_samples": 7},
-                "depth_20": {"discarded_warmup_samples": 3, "measured_samples": 25},
-                "depth_80": {"discarded_warmup_samples": 3, "measured_samples": 25},
+                "depth_5": {
+                    "discarded_warmup_mount_unmount_cycles": 10,
+                    "measured_samples": 25,
+                    "mount_unmount_cycles_averaged_per_sample": 10,
+                },
+                "depth_20": {
+                    "discarded_warmup_mount_unmount_cycles": 10,
+                    "measured_samples": 25,
+                    "mount_unmount_cycles_averaged_per_sample": 10,
+                },
+                "depth_80": {
+                    "discarded_warmup_mount_unmount_cycles": 10,
+                    "measured_samples": 25,
+                    "mount_unmount_cycles_averaged_per_sample": 10,
+                },
+                "measurement_scope": (
+                    "Synchronous recursive subtree mount and unmount in one initialized WASM runtime; "
+                    "mount and unmount are timed separately; DOM depth/count and cleanup are verified "
+                    "after each transition"
+                ),
             },
             "maximum_secondary_optimized_a_to_a_median_drift_percent": 15.0,
             "maximum_secondary_median_regression_percent": 25.0,

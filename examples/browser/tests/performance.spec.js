@@ -645,37 +645,109 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
   }
 
   const nestedComponentScenarios = [];
-  for (const { depth, warmupRepetitions, repetitions } of [
-    { depth: 5, warmupRepetitions: 10, repetitions: 25 },
-    { depth: 20, warmupRepetitions: 10, repetitions: 25 },
-    { depth: 80, warmupRepetitions: 10, repetitions: 25 },
-  ]) {
-    // The previous same-runner A/B/A showed a downward A-to-A shift at all
-    // three depths, including 20/80 with 25 measured samples. Prime each depth
-    // with ten discarded mounts so the reported samples start after WASM/JIT
-    // and browser page initialization have reached a steady state. Keep the
-    // measured sample count uniform and do not relax the 15% A/A acceptance gate.
-    for (let sample = 0; sample < warmupRepetitions; sample += 1) {
-      const warmup = await loadApp(page, 0, depth);
-      expect(warmup.nested_component_count).toBe(depth + 1);
-    }
-    const measurements = [];
-    for (let sample = 0; sample < repetitions; sample += 1) {
-      const loaded = await loadApp(page, 0, depth);
-      expect(loaded.nested_component_count).toBe(depth + 1);
-      if (loaded.initialization_ms === null) {
-        throw new Error("RustFlow nested component initialization timing mark was not recorded");
-      }
-      measurements.push(loaded.initialization_ms);
-    }
+  const nestedComponentWarmupCycles = 10;
+  const nestedComponentMeasuredSamples = 25;
+  const nestedComponentCyclesPerSample = 10;
+
+  for (const depth of [5, 20, 80]) {
+    const loaded = await loadApp(page, 0, depth);
+    expect(loaded.nested_component_count).toBe(depth + 1);
+
+    const measurements = await page.evaluate(
+      ({ depth, warmupCycles, repetitions, cyclesPerSample }) => {
+        const toggle = document.querySelector('[data-testid="bench-depth-toggle"]');
+        if (!toggle) throw new Error("Nested benchmark toggle control was not mounted");
+
+        const componentNodes = () =>
+          Array.from(document.querySelectorAll("[data-bench-depth]"));
+
+        const verifyTree = (mounted, phase) => {
+          const nodes = componentNodes();
+          const expectedCount = mounted ? depth + 1 : 0;
+          if (nodes.length !== expectedCount) {
+            throw new Error(
+              phase + ": expected " + expectedCount + " recursive component nodes; got " + nodes.length,
+            );
+          }
+          if (mounted) {
+            for (let index = 0; index < nodes.length; index += 1) {
+              const expectedDepth = depth - index;
+              if (Number(nodes[index].getAttribute("data-bench-depth")) !== expectedDepth) {
+                throw new Error(phase + ": recursive component depth sequence is invalid");
+              }
+            }
+          }
+          if (document.querySelector('[data-testid="bench-depth-toggle"]') !== toggle) {
+            throw new Error(phase + ": benchmark control was replaced during subtree updates");
+          }
+        };
+
+        verifyTree(true, "initial mount");
+        const toggleAndVerify = (mounted, phase) => {
+          toggle.click();
+          verifyTree(mounted, phase);
+        };
+
+        // Warm the same initialized runtime with complete teardown/remount cycles.
+        for (let cycle = 0; cycle < warmupCycles; cycle += 1) {
+          toggleAndVerify(false, "warmup unmount " + cycle);
+          toggleAndVerify(true, "warmup mount " + cycle);
+        }
+
+        const mountSamples = [];
+        const unmountSamples = [];
+        for (let sample = 0; sample < repetitions; sample += 1) {
+          let mountTotal = 0;
+          let unmountTotal = 0;
+
+          // Each reported sample averages ten synchronous operations. The
+          // timer surrounds only the click that triggers reactive teardown or
+          // mount; DOM/identity verification is deliberately outside the timer.
+          for (let cycle = 0; cycle < cyclesPerSample; cycle += 1) {
+            let started = performance.now();
+            toggle.click();
+            unmountTotal += performance.now() - started;
+            verifyTree(false, "measured unmount " + sample + "/" + cycle);
+
+            started = performance.now();
+            toggle.click();
+            mountTotal += performance.now() - started;
+            verifyTree(true, "measured mount " + sample + "/" + cycle);
+          }
+
+          mountSamples.push(mountTotal / cyclesPerSample);
+          unmountSamples.push(unmountTotal / cyclesPerSample);
+        }
+
+        return {
+          mount_samples_raw: mountSamples,
+          unmount_samples_raw: unmountSamples,
+          verified_mounts: warmupCycles + repetitions * cyclesPerSample,
+          verified_unmounts: warmupCycles + repetitions * cyclesPerSample,
+          final_component_count: componentNodes().length,
+        };
+      },
+      {
+        depth,
+        warmupCycles: nestedComponentWarmupCycles,
+        repetitions: nestedComponentMeasuredSamples,
+        cyclesPerSample: nestedComponentCyclesPerSample,
+      },
+    );
+
     nestedComponentScenarios.push({
       depth,
       component_instances: depth + 1,
-      warmup_samples: warmupRepetitions,
-      measured_samples: repetitions,
-      ...summarize(measurements, depth + 1, "ms"),
+      warmup_cycles: nestedComponentWarmupCycles,
+      measured_samples: nestedComponentMeasuredSamples,
+      cycles_per_sample: nestedComponentCyclesPerSample,
+      verified_mounts: measurements.verified_mounts,
+      verified_unmounts: measurements.verified_unmounts,
+      final_component_count: measurements.final_component_count,
+      ...summarize(measurements.mount_samples_raw, nestedComponentCyclesPerSample, "ms"),
+      unmount: summarize(measurements.unmount_samples_raw, nestedComponentCyclesPerSample, "ms"),
       measured_scope:
-        "WASM initialization, recursive component setup, component rendering, and real DOM mount",
+        "Average synchronous recursive component mount per ten-cycle sample in one initialized WASM runtime; unmount is timed separately; component count, depth order, stable control identity, and empty DOM after teardown are verified after every transition",
     });
   }
 
@@ -794,7 +866,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     counter_100_synchronous_dom_updates: summarize(counterSamples, 100, "ms"),
     todo_row_attribute_and_checked_property_update: summarize(todoRowUpdateSamples, 1, "ms"),
     keyed_list_initial_mounts: initialListScenarios,
-    nested_component_depth_initial_mounts: nestedComponentScenarios,
+    nested_component_depth_mount_cycles: nestedComponentScenarios,
     keyed_list_incremental_insertions: listScenarios,
     keyed_list_isolated_mutations: isolatedKeyedMutationScenarios,
     extended_scenarios: extendedScenarios,
@@ -860,7 +932,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
   );
   checkTimingBudget("keyed_list_reverse_100", report.keyed_list_reverse_100.p95, 14);
   for (const [depth, budget] of [[5, 16], [20, 16], [80, 16]]) {
-    const scenario = report.nested_component_depth_initial_mounts.find(
+    const scenario = report.nested_component_depth_mount_cycles.find(
       (item) => item.depth === depth,
     );
     checkTimingBudget(

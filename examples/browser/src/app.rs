@@ -419,6 +419,9 @@ pub fn start() -> Result<(), JsValue> {
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|depth| (1..=80).contains(depth))
         .unwrap_or(0);
+    let benchmark_depth_signal = runtime
+        .signal(benchmark_component_depth as i32)
+        .map_err(display_error)?;
     let benchmark_controls_enabled = window
         .location()
         .search()?
@@ -650,22 +653,48 @@ pub fn start() -> Result<(), JsValue> {
 
     let mut renderer = DomRenderer::new(document.clone(), runtime, registry);
     let route_for_render = current_route.clone();
+    let benchmark_depth_for_toggle = benchmark_depth_signal.clone();
+    let benchmark_depth_for_region = benchmark_depth_signal.clone();
     let mounted = renderer
         .mount_reactive(&target, &root_scope, move || {
             let route = route_for_render.get();
             if official_benchmark_mode {
                 return View::component("OfficialBenchmark", [], [], None).map_err(DomError::from);
             }
-            // This route contains only the recursively nested component tree so its
-            // initialization measurement is not dominated by the normal demo UI.
+            // The browser benchmark keeps one WASM runtime alive and toggles only
+            // the recursive component subtree. This isolates component mount/unmount
+            // work from full-page navigation, WASM startup, and browser cache effects.
             if benchmark_component_depth > 0 {
-                return View::component(
-                    "NestedBenchmarkNode",
-                    [Property::new("depth", benchmark_component_depth as i32)?],
-                    [],
-                    None,
-                )
-                .map_err(DomError::from);
+                let depth_for_toggle = benchmark_depth_for_toggle.clone();
+                let depth_for_region = benchmark_depth_for_region.clone();
+                let toggle = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-depth-toggle")?
+                    .with_attribute("hidden", "")?
+                    .with_event("click", move |_payload| {
+                        depth_for_toggle.update(|depth| {
+                            *depth = if *depth == 0 {
+                                benchmark_component_depth as i32
+                            } else {
+                                0
+                            };
+                        });
+                    })?
+                    .build();
+                let nested_tree = View::dynamic(move || {
+                    let depth = depth_for_region.get();
+                    if depth == 0 {
+                        Ok(View::fragment([]))
+                    } else {
+                        View::component(
+                            "NestedBenchmarkNode",
+                            [Property::new("depth", depth)?],
+                            [],
+                            None,
+                        )
+                    }
+                });
+                return Ok(View::fragment([toggle, nested_tree]));
             }
             match route.split('?').next().unwrap_or("/") {
                 "/" => {}

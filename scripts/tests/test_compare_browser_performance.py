@@ -106,7 +106,7 @@ def comparison_report(*, optimized: bool) -> dict[str, object]:
         ],
         "keyed_list_reverse_100": {"samples_raw": [5.0 * scale + index / 100 for index in range(10)]},
         "keyed_list_initial_mounts": [],
-        "nested_component_depth_initial_mounts": [],
+        "nested_component_depth_mount_cycles": [],
         "keyed_list_isolated_mutations": [],
     }
 
@@ -121,15 +121,21 @@ def comparison_report(*, optimized: bool) -> dict[str, object]:
             "samples_raw": [10.0 * scale + index / 100 for index in range(samples)],
         })
 
-    nested = report["nested_component_depth_initial_mounts"]
+    nested = report["nested_component_depth_mount_cycles"]
     assert isinstance(nested, list)
-    for depth, warmups, samples in ((5, 1, 7), (20, 3, 25), (80, 3, 25)):
+    for depth in (5, 20, 80):
+        sample_values = [10.0 * scale + index / 100 for index in range(25)]
         nested.append({
             "depth": depth,
             "component_instances": depth + 1,
-            "warmup_samples": warmups,
-            "measured_samples": samples,
-            "samples_raw": [10.0 * scale + index / 100 for index in range(samples)],
+            "warmup_cycles": 10,
+            "measured_samples": 25,
+            "cycles_per_sample": 10,
+            "verified_mounts": 260,
+            "verified_unmounts": 260,
+            "final_component_count": depth + 1,
+            "samples_raw": sample_values,
+            "unmount": {"samples_raw": [value * 0.6 for value in sample_values]},
         })
 
     isolated = report["keyed_list_isolated_mutations"]
@@ -142,6 +148,62 @@ def comparison_report(*, optimized: bool) -> dict[str, object]:
         # The quadratic base control intentionally does not run 5k isolated pairs.
         isolated = report["keyed_list_isolated_mutations"] = []
     return report
+
+
+class NestedComponentMountCycleContractTests(unittest.TestCase):
+    def test_all_depths_validate_ten_warmups_and_batched_mount_unmount_samples(self) -> None:
+        report = comparison_report(optimized=True)
+        scenarios = report["nested_component_depth_mount_cycles"]
+        assert isinstance(scenarios, list)
+        self.assertEqual(len(scenarios), 3)
+
+        for item in scenarios:
+            depth = int(item["depth"])
+            mount_samples, unmount_samples, violations = (
+                COMPARATOR.validate_nested_component_cycle_report(
+                    "optimized", item, depth
+                )
+            )
+            self.assertEqual(violations, [])
+            self.assertEqual(len(mount_samples), 25)
+            self.assertEqual(len(unmount_samples), 25)
+            self.assertEqual(item["warmup_cycles"], 10)
+            self.assertEqual(item["cycles_per_sample"], 10)
+            self.assertEqual(item["verified_mounts"], 260)
+            self.assertEqual(item["verified_unmounts"], 260)
+            self.assertEqual(item["final_component_count"], depth + 1)
+
+    def test_nested_contract_rejects_bad_warmups_incomplete_unmounts_and_missing_cleanup(self) -> None:
+        report = comparison_report(optimized=True)
+        scenarios = report["nested_component_depth_mount_cycles"]
+        assert isinstance(scenarios, list)
+
+        depth_five = scenarios[0]
+        depth_five["warmup_cycles"] = 3
+        _mount, _unmount, warmup_errors = (
+            COMPARATOR.validate_nested_component_cycle_report(
+                "optimized-before", depth_five, 5
+            )
+        )
+        self.assertTrue(any("requires 10 discarded warm-up" in item for item in warmup_errors))
+
+        depth_twenty = scenarios[1]
+        depth_twenty["unmount"]["samples_raw"] = depth_twenty["unmount"]["samples_raw"][:-1]
+        _mount, _unmount, sample_errors = (
+            COMPARATOR.validate_nested_component_cycle_report(
+                "optimized-before", depth_twenty, 20
+            )
+        )
+        self.assertTrue(any("one raw unmount sample for every mount sample" in item for item in sample_errors))
+
+        depth_eighty = scenarios[2]
+        depth_eighty["verified_unmounts"] = 1
+        _mount, _unmount, cleanup_errors = (
+            COMPARATOR.validate_nested_component_cycle_report(
+                "optimized-before", depth_eighty, 80
+            )
+        )
+        self.assertTrue(any("did not verify all expected unmounts" in item for item in cleanup_errors))
 
 
 class ComparatorMainIntegrationTests(unittest.TestCase):
@@ -186,6 +248,13 @@ class ComparatorMainIntegrationTests(unittest.TestCase):
                 payload["policy"]["isolated_keyed_mutation_sampling"]["base_control_comparison"]
             )
             self.assertEqual(len(payload["secondary_comparisons"]["isolated_keyed_mutations"]), 6)
+            nested = payload["secondary_comparisons"]["nested_component_depths"]
+            self.assertEqual(set(nested), {"5", "20", "80"})
+            for depth in ("5", "20", "80"):
+                self.assertEqual(nested[depth]["warmup_cycles_per_variant"], 10)
+                self.assertEqual(nested[depth]["cycles_per_measured_sample"], 10)
+                self.assertEqual(nested[depth]["optimized"]["samples"], 50)
+                self.assertEqual(nested[depth]["optimized_unmount"]["samples"], 50)
 
 
 
