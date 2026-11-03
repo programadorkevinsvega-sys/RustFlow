@@ -1,6 +1,6 @@
 # RustFlow performance measurements
 
-Estado: Phase 8.1 sigue en progreso. `main` contiene la infraestructura inicial y esta continuación amplía la medición de memoria, profundidad de componentes y presupuestos. El baseline versionado es candidato hasta revisar ejecuciones comparables y los artefactos instrumentados. Los números de un runner son observaciones de ese entorno, no garantías universales.
+Estado: Phase 8.1 sigue en progreso. El CI #893 del PR #78 aceptó la comparación A/B/A interna del reconciliador en el mismo runner (45,30% de mejora en inserción incremental y 54,67% en reverse keyed), validó las métricas de memoria/ComponentInstance y mantuvo el bundle dentro de sus presupuestos. Esto no demuestra todavía superioridad frente a React, Vue y Svelte: la comparación competitiva oficial sigue pendiente. El historial reproducible de esta ejecución está en [docs/performance/runs/2026-11-03-ci-893-phase-8-1.md](performance/runs/2026-11-03-ci-893-phase-8-1.md). Los números de un runner son observaciones de ese entorno, no garantías universales.
 
 ## Alcance medido
 
@@ -75,7 +75,7 @@ El workflow CI guarda artefactos de medición para cada ejecución:
 
 Los metadatos incluyen commit, sistema operativo, arquitectura, toolchain/Node cuando corresponde y parámetros. Para comparar revisiones, descarga los artefactos de ambas ejecuciones y compara el mismo escenario, toolchain, runner, número de muestras y configuración. No mezcles tiempos de diferentes runners o familias de hardware como si fueran una comparación controlada.
 
-Los artefactos CI son evidencia de una ejecución y tienen la retención configurada en el workflow; no son por sí mismos un baseline histórico permanente dentro del repositorio. Una referencia oficial de larga duración debe aprobarse y guardarse junto con su commit, hardware, sistema operativo, toolchain y comandos.
+El resumen, las medianas, los percentiles disponibles, el entorno y las limitaciones de las ejecuciones aceptadas se conservan en `docs/performance/runs/`. Los JSON/JSONL crudos y los informes completos siguen publicándose como artefactos de GitHub Actions con la retención configurada en el workflow; descarga los artefactos vinculados en cada registro para inspeccionar las muestras originales.
 
 ## Memoria: qué significa cada dato
 
@@ -134,6 +134,10 @@ El primer artefacto posterior, [optimized-candidate-2026-11-03.json](https://git
 La ejecución control mostró por qué no debe usarse esta comparación entre jobs: ambos usaron Ubuntu 24.04 y Chromium 156.0.8078.4, pero el modelo de CPU difirió (AMD EPYC 9V45 para el optimizado y AMD EPYC 7763 para el control). El job de browser está configurado para ejecutar un A/B/A dentro del mismo runner: mide optimizado, reconstruye el archivo DOM desde el SHA base de la PR, mide el control y vuelve a medir optimizado. Cuando la ejecución termina correctamente, CPU, Node, Chromium, Rust y condiciones del proceso permanecen iguales. El resultado controlado se guarda como `browser-ab-comparison.json` y exige una mejora mínima de 20% en la mediana de inserción keyed y reverse; los tiempos absolutos siguen siendo warning-only. La configuración del job no equivale a una comparación aceptada: el artefacto debe existir y cumplir todos los criterios. El comparador A/B/A publica mediana/p95 para montajes de 100 y 1.000 filas y profundidades de componentes 5, 20 y 80. Los montajes iniciales de 100/1.000 filas y las profundidades 5 usan un calentamiento no contabilizado y siete muestras medidas por variante; profundidad 20/80 usa tres calentamientos descartados y 25 muestras medidas por variante. El comparador valida los metadatos de calentamiento y que el conteo declarado coincida con las muestras crudas. El montaje de 10.000 filas se conserva como medición de estrés informativa de la versión optimizada, independiente del A/B/A. Todos los escenarios secundarios exigen deriva A/A máxima de 15% antes de interpretar su mediana, y rechazan regresiones medianas superiores al 25%. Así, una medición inestable no se presenta como mejora ni como regresión aceptada.
 
 
+#### Registro detallado del CI #893
+
+El [registro histórico completo](performance/runs/2026-11-03-ci-893-phase-8-1.md) contiene el A/B/A aceptado, percentiles, mutaciones aisladas de 100/1.000/5.000 filas, montaje informativo de 10.000 filas, contadores DOM, memoria, SSR, reactividad, RSS y bundle. El comparador aceptó esta ejecución con `accepted: true` y `violations: []`. La aceptación se limita a los gates internos de RustFlow; no compara todavía los resultados con React, Vue o Svelte.
+
 ### Presupuestos iniciales y política de regresión
 
 El archivo [baseline-2026-11-03.json](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/performance/baseline-2026-11-03.json) conserva la primera referencia candidata con commit, runner, toolchain, Chromium y muestras reales. Se usa una tolerancia inicial de aproximadamente 25% para permitir variación en runners alojados; los umbrales de tiempo generan advertencias, no fallos, hasta acumular ejecuciones equivalentes. Los límites de bytes del bundle son deterministas y sí fallan CI.
@@ -166,14 +170,20 @@ Los techos de bundle dejan margen aproximado de 20–30% sobre el primer artefac
 
 Las mediciones de rendimiento no sustituyen pruebas funcionales. Los benchmarks no provocan fallos de CI por variaciones de latencia.
 
+## Historial de ejecuciones
+
+| Fecha | CI | HEAD del PR | Resultado registrado |
+|---|---|---|---|
+| 2026-11-03 | [#893](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/41589448890) | `e94de965a176c297feef3ec2ef5124dacaa25173` | A/B/A interno aceptado; memoria y bundle dentro de presupuesto; [registro completo](performance/runs/2026-11-03-ci-893-phase-8-1.md) |
+
 ## Limitaciones conocidas
 
 1. El DOM se mide en Chromium; todavía no es una matriz multi-navegador ni cubre Firefox/WebKit.
 2. La profundidad de componentes se mide en Chromium para 5, 20 y 80 niveles; aún no hay comparación multi-navegador.
 3. No hay benchmark concurrente de SSR ni benchmark de solicitudes HTTP completas.
 4. La memoria por owner se mide en un benchmark nativo separado; la memoria live interna del allocator WASM todavía no se mide por componente.
-5. Los artefactos CI requieren descarga para comparación; no se mantiene todavía una serie histórica comprometida en Git.
-6. La optimización keyed está pendiente de la primera salida del A/B/A controlado en el mismo runner, que debe demostrar al menos 20% de mejora mediana en inserción y reverse; las comparaciones entre jobs con CPU diferentes se rechazan.
+5. El resumen histórico se conserva en `docs/performance/runs/`; los archivos crudos de CI siguen sujetos a la retención de artefactos de GitHub Actions.
+6. El A/B/A interno del CI #893 fue aceptado: la mediana mejoró 45,30% en inserción incremental keyed y 54,67% en reverse keyed, con deriva A/A de 0,23% y <0,01%, respectivamente. Sigue pendiente la comparación oficial contra React/Vue/Svelte, el A/B/A de montaje de 10.000 filas y las mutaciones aisladas en listas de 10.000.
 
 El tiempo de Runtime::new también se mide como microoperación en la suite de reactividad, pero no se resta del tiempo SSR: no se hace una descomposición artificial del coste público por render.
 

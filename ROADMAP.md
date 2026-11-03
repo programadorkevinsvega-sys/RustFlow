@@ -495,6 +495,8 @@ The 6.7.2 baseline is verified: all four SQL relation kinds have integration cov
 - [ ] Define measurable performance budgets.
 - [ ] Optimize only from reproducible measurements.
 
+**Registro de progreso (2026-11-03):** el CI #893 del PR #78 aceptó el A/B/A interno del reconciliador en el mismo runner (45,30% de mejora en inserción incremental y 54,67% en reverse keyed); las mutaciones aisladas de 100/1.000/5.000 filas mejoraron entre 53,52% y 95,83% en inserción y entre 54,79% y 95,71% en eliminación. Los presupuestos de memoria de los ciclos de vida medidos y el bundle pasaron. Esto no cierra Phase 8.1: aún falta la suite de comparación equivalente con React/Vue/Svelte, A/B/A para montaje de 10.000 filas, mutaciones aisladas de 10.000 filas y completar la investigación/optimización granular. Véase el [historial detallado del CI #893](docs/performance/runs/2026-11-03-ci-893-phase-8-1.md).
+
 ### 8.2 DX
 - [ ] Improve macro diagnostics.
 - [ ] Add hot reload only with documented state-preservation semantics.
