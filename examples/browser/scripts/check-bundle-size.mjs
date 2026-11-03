@@ -64,6 +64,11 @@ const wasmFiles = assetFiles.filter((path) => path.endsWith(".wasm"));
 const otherFiles = assetFiles.filter(
   (path) => !path.endsWith(".js") && !path.endsWith(".css") && !path.endsWith(".wasm"),
 );
+const javascriptSummary = summarize(jsFiles);
+const cssSummary = summarize(cssFiles);
+const wasmAssetSummary = summarize(wasmFiles);
+const otherSummary = summarize(otherFiles);
+const totalSummary = summarize(assetFiles);
 const wasmBytes = readFileSync(wasmPath);
 const rawWasmBytes = statSync(wasmPath).size;
 const wasmCompressed = compress(wasmBytes);
@@ -106,11 +111,11 @@ const report = {
   },
   vite_production_assets: {
     directory: "dist/assets",
-    javascript: summarize(jsFiles),
-    css: summarize(cssFiles),
-    wasm: summarize(wasmFiles),
-    other: summarize(otherFiles),
-    total: summarize(assetFiles),
+    javascript: javascriptSummary,
+    css: cssSummary,
+    wasm: wasmAssetSummary,
+    other: otherSummary,
+    total: totalSummary,
     files: assetFiles.map((path) => ({
       path: path.replace(resolve(process.cwd(), "dist") + "/", "dist/"),
       bytes: statSync(path).size,
@@ -118,14 +123,14 @@ const report = {
   },
   budgets: {
     ...budgets,
-    javascript_raw_passed: summarize(jsFiles).raw_bytes <= budgets.javascriptRawBytes,
-    javascript_gzip_passed: summarize(jsFiles).gzip_bytes <= budgets.javascriptGzipBytes,
-    javascript_brotli_passed: summarize(jsFiles).brotli_bytes <= budgets.javascriptBrotliBytes,
-    css_raw_passed: summarize(cssFiles).raw_bytes <= budgets.cssRawBytes,
-    css_gzip_passed: summarize(cssFiles).gzip_bytes <= budgets.cssGzipBytes,
-    css_brotli_passed: summarize(cssFiles).brotli_bytes <= budgets.cssBrotliBytes,
-    total_gzip_passed: summarize(assetFiles).gzip_bytes <= budgets.totalGzipBytes,
-    total_brotli_passed: summarize(assetFiles).brotli_bytes <= budgets.totalBrotliBytes,
+    javascript_raw_passed: javascriptSummary.raw_bytes <= budgets.javascriptRawBytes,
+    javascript_gzip_passed: javascriptSummary.gzip_bytes <= budgets.javascriptGzipBytes,
+    javascript_brotli_passed: javascriptSummary.brotli_bytes <= budgets.javascriptBrotliBytes,
+    css_raw_passed: cssSummary.raw_bytes <= budgets.cssRawBytes,
+    css_gzip_passed: cssSummary.gzip_bytes <= budgets.cssGzipBytes,
+    css_brotli_passed: cssSummary.brotli_bytes <= budgets.cssBrotliBytes,
+    total_gzip_passed: totalSummary.gzip_bytes <= budgets.totalGzipBytes,
+    total_brotli_passed: totalSummary.brotli_bytes <= budgets.totalBrotliBytes,
   },
   notes: [
     "Compressed totals are per-file compression sums, not a simulated HTTP transfer with shared cross-file dictionaries.",
