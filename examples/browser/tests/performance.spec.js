@@ -154,6 +154,8 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     initialListScenarios.push({
       name: "keyed_list_initial_mount_" + count,
       ...summarize(measurements, count, "ms"),
+      warmup_samples: 1,
+      measured_samples: repetitions,
       final_dom_rows: count,
       measured_scope: "WASM initialization and initial keyed-list DOM mount",
     });
@@ -241,8 +243,18 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
   expect(removalElapsed.remaining_rows).toBe(0);
 
   if (process.env.RUSTFLOW_BENCH_BROWSER_LARGE_LIST === "1") {
+    // A 10k-row mount has higher startup and host-scheduling variance than the
+    // smaller lists. Warm the exact workload once, then use the same seven
+    // measured samples per A/B/A variant as the other initial-mount scenarios.
+    const warmup = await loadApp(page, 10_000);
+    expect(warmup.dom_rows).toBe(10_000);
+    if (warmup.initialization_ms === null) {
+      throw new Error("RustFlow 10k warm-up initialization timing mark was not recorded");
+    }
+
+    const repetitions = 7;
     const measurements = [];
-    for (let sample = 0; sample < 3; sample += 1) {
+    for (let sample = 0; sample < repetitions; sample += 1) {
       const large = await loadApp(page, 10_000);
       expect(large.dom_rows).toBe(10_000);
       if (large.initialization_ms === null) {
@@ -253,9 +265,11 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     initialListScenarios.push({
       name: "keyed_list_initial_mount_10000",
       ...summarize(measurements, 10_000, "ms"),
+      warmup_samples: 1,
+      measured_samples: repetitions,
       final_dom_rows: 10_000,
       measured_scope: "WASM initialization and initial keyed-list DOM mount",
-      note: "CI stress scenario; timing is warning-only until repeated runner baselines are approved",
+      note: "CI stress scenario; one warm-up is excluded; timing remains informational pending equivalent runner baselines",
     });
   }
 
