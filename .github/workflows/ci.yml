@@ -367,6 +367,8 @@ jobs:
 
       - name: Validate competitive benchmark report generator
         run: python3 -m py_compile scripts/summarize-js-framework-benchmark.py
+      - name: Validate upstream benchmark patch script
+        run: python3 -m py_compile scripts/patch-js-framework-benchmark.py
 
       - name: Controlled same-runner keyed reconciliation A/B/A (Phase 8.1)
         if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/phase-8-1-') }}
@@ -455,6 +457,7 @@ jobs:
 
           cd "$upstream"
           npm ci
+          python3 "$GITHUB_WORKSPACE/scripts/patch-js-framework-benchmark.py" "$upstream"
           npm run install-local
           node cli.js rebuild-single --ci -f keyed/react-hooks keyed/vue keyed/svelte
 
@@ -491,8 +494,8 @@ jobs:
 
           rm -rf webdriver-ts/results webdriver-ts/traces
           mkdir -p webdriver-ts/results webdriver-ts/traces
-          npm run bench -- --runner playwright --framework keyed/react-hooks keyed/vue keyed/svelte keyed/rustflow --benchmark 01_run1k 02_replace1k 03_update10th1k_x16 04_select1k 05_swap1k 06_remove-one-1k 07_create10k 08_create1k-after1k_x2 09_clear1k_x8 --count 15 --headless --chromeBinary "$chrome_bin"
-          npm run bench -- --runner playwright --framework keyed/react-hooks keyed/vue keyed/svelte keyed/rustflow --benchmark 21_ready-memory 22_run-memory 25_run-clear-memory --count 5 --headless --chromeBinary "$chrome_bin"
+          npm run bench -- --runner playwright --framework keyed/react-hooks keyed/vue keyed/svelte keyed/rustflow --benchmark 01_run1k 02_replace1k 03_update10th1k_x16 04_select1k 05_swap1k 06_remove-one-1k 07_create10k 08_create1k-after1k_x2 09_clear1k_x8 10_update10th10k 11_append1k-after10k 12_clear10k --count 15 --headless --chromeBinary "$chrome_bin"
+          npm run bench -- --runner playwright --framework keyed/react-hooks keyed/vue keyed/svelte keyed/rustflow --benchmark 21_ready-memory 22_run-memory 23_update5-memory 24_run5-memory 25_run-clear-memory --count 5 --headless --chromeBinary "$chrome_bin"
           npm run bench -- --runner playwright --framework keyed/react-hooks keyed/vue keyed/svelte keyed/rustflow --benchmark 40_sizes --count 1 --headless --chromeBinary "$chrome_bin"
           cp -R webdriver-ts/results/. "$result_dir/"
           python3 "$GITHUB_WORKSPACE/scripts/summarize-js-framework-benchmark.py" "$result_dir"

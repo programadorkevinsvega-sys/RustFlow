@@ -110,3 +110,7 @@ No se publicará una victoria si falta alguna de las nueve operaciones, un frame
 
 
 El informe comparativo también resume memoria (p50/p90/p95), tamaño sin comprimir, Brotli y first paint por implementación. Estas métricas se mantienen separadas del índice geométrico de latencia CPU.
+
+### Operaciones comparativas de 10.000 filas
+
+El mismo runner de trazas ejecuta además, para React, Vue, Svelte y RustFlow, actualización cada décima fila sobre 10.000, append de 1.000 a 10.000 y clear de 10.000. Los resultados forman un índice extendido y otro combinado con las nueve operaciones upstream. También se activan los escenarios de memoria tras cinco updates y cinco reemplazos.

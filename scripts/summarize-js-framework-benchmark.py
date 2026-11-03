@@ -20,9 +20,16 @@ CPU_OPERATIONS = [
     "08_create1k-after1k_x2",
     "09_clear1k_x8",
 ]
+EXTENDED_CPU_OPERATIONS = [
+    "10_update10th10k",
+    "11_append1k-after10k",
+    "12_clear10k",
+]
 MEMORY_OPERATIONS = [
     "21_ready-memory",
     "22_run-memory",
+    "23_update5-memory",
+    "24_run5-memory",
     "25_run-clear-memory",
 ]
 SIZE_OPERATIONS = [
@@ -153,11 +160,14 @@ def main() -> int:
             }
 
     require_complete(results, CPU_OPERATIONS, "cpu")
+    require_complete(results, EXTENDED_CPU_OPERATIONS, "cpu")
     require_complete(results, MEMORY_OPERATIONS, "memory")
     require_complete(results, SIZE_OPERATIONS, "size")
 
     comparisons = {
-        "cpu": build_comparisons(results, CPU_OPERATIONS, "cpu", "total"),
+        "cpu_upstream_9": build_comparisons(results, CPU_OPERATIONS, "cpu", "total"),
+        "cpu_phase81_extended_3": build_comparisons(results, EXTENDED_CPU_OPERATIONS, "cpu", "total"),
+        "cpu_combined_12": build_comparisons(results, CPU_OPERATIONS + EXTENDED_CPU_OPERATIONS, "cpu", "total"),
         "memory": build_comparisons(results, MEMORY_OPERATIONS, "memory", "metrics"),
         "size": build_comparisons(results, SIZE_OPERATIONS, "size", "metrics"),
     }
@@ -173,7 +183,7 @@ def main() -> int:
             "Memory values use performance.measureUserAgentSpecificMemory after the upstream forced-GC protocol.",
             "Size values use the upstream server response-size hook: uncompressed KiB, Brotli-compressed KiB and first paint.",
             "All four frameworks are measured sequentially in the same CI job and browser job.",
-            "The CPU geometric-mean index uses only the nine official CPU operation ratios; memory and size are never blended into that index.",
+            "The upstream CPU geometric-mean covers the nine original upstream operations; a separate Phase 8.1 extension geometric mean covers the three required 10k scenarios; a combined 12-operation geometric mean is also reported. Memory and size are never blended into CPU indexes.",
             "The pinned upstream runner does not normally execute Lighthouse startup; memory IDs 23 and 24 are commented out upstream.",
             "The upstream README and executable-runner row-count differences are documented in docs/performance/FRAMEWORK_BENCHMARK_REFERENCE.md.",
         ],

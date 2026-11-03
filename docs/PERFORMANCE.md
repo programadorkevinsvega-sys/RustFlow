@@ -222,3 +222,9 @@ Los puntos pendientes deben permanecer abiertos en ROADMAP.md; crear infraestruc
 
 
 El workflow del PR #78 ejecuta las nueve operaciones de CPU upstream, los tres casos de memoria disponibles (21, 22 y 25) y las tres mediciones de tamaño (sin comprimir, Brotli y first paint) en el mismo runner. El agregador conserva p50/p90/p95 y muestras originales para CPU total/script/paint, memoria y tamaño; calcula razones por escenario para las métricas secundarias y media geométrica únicamente para las nueve latencias CPU.
+
+### Suite comparativa extendida, mismo runner
+
+Además de los nueve IDs ejecutables upstream, el workflow aplica un patcher exacto al commit fijado para agregar tres IDs comparativos con la misma traza Playwright/CDP: actualización cada décima fila sobre 10.000, append de 1.000 a 10.000 y limpieza de 10.000. Los cuatro frameworks ejecutan esos mismos casos en el mismo job. El informe publica una media geométrica upstream de 9 operaciones, otra de 3 operaciones extendidas y una combinada de 12; no confunde esta extensión con el leaderboard oficial.
+
+El patcher también reactiva las mediciones upstream de memoria después de cinco updates y cinco reemplazos. Se informan separadas de CPU y del índice geométrico.

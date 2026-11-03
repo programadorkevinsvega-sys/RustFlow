@@ -115,3 +115,17 @@ The source audit and exact pin are complete. PR #78 now contains the following i
 The competitive CPU aggregate is valid only when each of the nine official operation IDs has non-empty samples from React, Vue, Svelte and RustFlow collected by the same CI job and browser. Compute each ratio as `median(RustFlow) / median(framework)` and aggregate the nine ratios with a geometric mean. Do not mix memory, bundle or startup measurements into that CPU index.
 
 Keep Phase 8.1 open until the complete current-HEAD evidence is reviewed, all required checks pass and the result shows the actual state against every framework. Do not declare superiority from the internal RustFlow A/B/A comparison.
+
+## Phase 8.1 comparative extension
+
+The nine original upstream IDs above remain unmodified and are still run as a separate upstream-compatible result set. The Phase 8.1 requirements additionally call for a 10,000-row partial update, appending 1,000 rows to a 10,000-row table and clearing 10,000 rows. The pinned upstream executable does not provide those exact row counts. PR #78 therefore applies a small, deterministic, version-controlled patch to the pinned upstream runner:
+
+| Added ID | Setup | Measured operation |
+|---|---|---|
+| `10_update10th10k` | keyed 10,000-row table | Update every tenth row |
+| `11_append1k-after10k` | keyed 10,000-row table | Append 1,000 rows (11,000 final rows) |
+| `12_clear10k` | keyed 10,000-row table | Clear all 10,000 rows |
+
+All four frameworks run these three operations using the same upstream Playwright/CDP trace pipeline, warmup count and measured-run count in the same GitHub Actions browser job. They are included in a separate three-operation extension geometric mean and in a combined 12-operation CPU geometric mean. The upstream-only nine-operation metric remains available for compatibility with published benchmark data. The patcher aborts unless each exact source anchor appears exactly once, preventing silent application to an unexpected upstream revision.
+
+The same deterministic patch re-enables the pinned upstream memory cases for five partial updates and five full replacements. They are executed on all four frameworks after the standard memory scenarios and remain separate from latency samples.
