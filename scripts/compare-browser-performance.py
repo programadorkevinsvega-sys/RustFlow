@@ -449,10 +449,15 @@ def main() -> int:
                 "timed_scope": "only Add/Remove click; preparation, selectors, verification, and restoration excluded",
                 "dom_boundary_counters": "instrumented separately from latency samples",
             },
+            "initial_mount_sampling": {
+                "100": {"discarded_warmup_samples": 3, "measured_samples": 25},
+                "1000": {"discarded_warmup_samples": 1, "measured_samples": 7},
+                "10000": {"discarded_warmup_samples": 1, "measured_samples": 7},
+            },
             "nested_component_sampling": {
                 "depth_5": {"discarded_warmup_samples": 1, "measured_samples": 7},
                 "depth_20": {"discarded_warmup_samples": 3, "measured_samples": 25},
-                "depth_80": {"discarded_warmup_samples": 1, "measured_samples": 7},
+                "depth_80": {"discarded_warmup_samples": 3, "measured_samples": 25},
             },
             "maximum_secondary_optimized_a_to_a_median_drift_percent": 15.0,
             "maximum_secondary_median_regression_percent": 25.0,
