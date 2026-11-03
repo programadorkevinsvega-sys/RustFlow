@@ -744,8 +744,8 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
       verified_mounts: measurements.verified_mounts,
       verified_unmounts: measurements.verified_unmounts,
       final_component_count: measurements.final_component_count,
-      ...summarize(measurements.mount_samples_raw, nestedComponentCyclesPerSample, "ms"),
-      unmount: summarize(measurements.unmount_samples_raw, nestedComponentCyclesPerSample, "ms"),
+      ...summarize(measurements.mount_samples_raw, 1, "ms"),
+      unmount: summarize(measurements.unmount_samples_raw, 1, "ms"),
       measured_scope:
         "Average synchronous recursive component mount per ten-cycle sample in one initialized WASM runtime; unmount is timed separately; component count, depth order, stable control identity, and empty DOM after teardown are verified after every transition",
     });
