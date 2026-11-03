@@ -2,6 +2,9 @@
 
 Estado: Phase 8.1 sigue en progreso. El CI #893 del PR #78 aceptó la comparación A/B/A interna del reconciliador en el mismo runner (45,30% de mejora en inserción incremental y 54,67% en reverse keyed), validó las métricas de memoria/ComponentInstance y mantuvo el bundle dentro de sus presupuestos. Esto no demuestra todavía superioridad frente a React, Vue y Svelte: la comparación competitiva oficial sigue pendiente. El historial reproducible de esta ejecución está en [docs/performance/runs/2026-11-03-ci-893-phase-8-1.md](performance/runs/2026-11-03-ci-893-phase-8-1.md). Los números de un runner son observaciones de ese entorno, no garantías universales.
 
+
+Referencia de comparación competitiva: [benchmark oficial fijado, versiones y discrepancias del runner](performance/FRAMEWORK_BENCHMARK_REFERENCE.md). La referencia distingue la suite upstream reproducida literalmente de los escenarios extendidos de 10.000 filas; aún no existen resultados competitivos aceptados.
+
 ## Alcance medido
 
 | Área | Escenarios | Naturaleza |
