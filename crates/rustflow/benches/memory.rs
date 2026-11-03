@@ -3,9 +3,13 @@
 //! This bench uses an instrumented process-global allocator only in this standalone
 //! benchmark executable. It does not alter RustFlow library or application allocators.
 
-use rustflow::reactivity::{Runtime, Scope, Signal};
+use rustflow::{
+    components::{ComponentDefinition, ComponentInstance, ComponentRender},
+    reactivity::{Runtime, Scope, Signal},
+};
+use rustflow_view::View;
 use stats_alloc::{INSTRUMENTED_SYSTEM, Region, Stats, StatsAlloc};
-use std::{alloc::System, hint::black_box};
+use std::{alloc::System, hint::black_box, rc::Rc};
 
 #[global_allocator]
 static GLOBAL: &StatsAlloc<System> = &INSTRUMENTED_SYSTEM;
@@ -139,6 +143,59 @@ fn dispose_owner_tree((runtime, owner, state_values): OwnerTree) {
     drop(runtime);
 }
 
+type ComponentTree = (Runtime, Vec<ComponentInstance>);
+
+fn measured_component_definition(state_values_per_component: usize) -> ComponentDefinition {
+    ComponentDefinition::new("MeasuredMemoryComponent", move |context, _properties| {
+        let states = (0..state_values_per_component)
+            .map(|index| {
+                context
+                    .scope()
+                    .signal(format!("component-state-{index}"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let render: ComponentRender = Rc::new(move |_properties, _children| {
+            for state in &states {
+                black_box(state.get());
+            }
+            Ok(View::fragment([]))
+        });
+        Ok(render)
+    })
+    .expect("valid memory benchmark component definition")
+}
+
+fn build_component_tree(depth: usize, state_values_per_component: usize) -> ComponentTree {
+    let runtime = Runtime::new();
+    let mut parent_scope = runtime.root_scope();
+    let definition = measured_component_definition(state_values_per_component);
+    let mut instances = Vec::with_capacity(depth);
+
+    for _ in 0..depth {
+        let instance = ComponentInstance::mount(
+            definition.clone(),
+            runtime.clone(),
+            &parent_scope,
+            std::iter::empty::<rustflow_view::Property>(),
+            std::iter::empty::<View>(),
+        )
+        .expect("mount measured component instance");
+        parent_scope = instance.scope().clone();
+        instances.push(instance);
+    }
+
+    drop(parent_scope);
+    (runtime, instances)
+}
+
+fn dispose_component_tree((runtime, mut instances): ComponentTree) {
+    for instance in instances.iter_mut().rev() {
+        instance.unmount().expect("unmount measured component instance");
+    }
+    drop(instances);
+    drop(runtime);
+}
+
 fn main() {
     let samples = env_usize("RUSTFLOW_MEMORY_SAMPLES", 25, 5, 200);
     println!(
@@ -165,6 +222,23 @@ fn main() {
             samples,
             || build_owner_tree(depth, 3),
             dispose_owner_tree,
+        );
+    }
+
+    measure_lifecycle(
+        "component_instance.depth_1_states_3",
+        samples,
+        || build_component_tree(1, 3),
+        dispose_component_tree,
+    );
+
+    for depth in [5usize, 20, 80] {
+        let name = format!("component_instance.depth_{depth}_states_3");
+        measure_lifecycle(
+            &name,
+            samples,
+            || build_component_tree(depth, 3),
+            dispose_component_tree,
         );
     }
 }
