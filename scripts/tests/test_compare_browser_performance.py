@@ -101,10 +101,14 @@ def comparison_report(*, optimized: bool) -> dict[str, object]:
         "keyed_list_incremental_insertions": [
             {
                 "name": "keyed_list_incremental_insert_100",
+                "samples": 5,
                 "samples_raw": [5.0 * scale + index / 100 for index in range(5)],
             }
         ],
-        "keyed_list_reverse_100": {"samples_raw": [5.0 * scale + index / 100 for index in range(10)]},
+        "keyed_list_reverse_100": {
+            "samples": 10,
+            "samples_raw": [5.0 * scale + index / 100 for index in range(10)],
+        },
         "keyed_list_initial_mounts": [],
         "nested_component_depth_mount_cycles": [],
         "keyed_list_isolated_mutations": [],
@@ -226,6 +230,57 @@ class NestedComponentAATimingGateTests(unittest.TestCase):
         self.assertIn("exceeds 15%", violation)
 
 
+class CriticalScenarioSampleContractTests(unittest.TestCase):
+    def test_critical_scenarios_enforce_minimum_samples_per_pass(self) -> None:
+        report = comparison_report(optimized=True)
+        insert = report["keyed_list_incremental_insertions"][0]
+        insert["samples"] = 4
+        insert["samples_raw"] = insert["samples_raw"][:4]
+        reverse = report["keyed_list_reverse_100"]
+        reverse["samples"] = 9
+        reverse["samples_raw"] = reverse["samples_raw"][:9]
+        violations: list[str] = []
+
+        insert_values = COMPARATOR.validate_critical_samples(
+            report,
+            "optimized-before",
+            "keyed_list_incremental_insertions",
+            "keyed_list_incremental_insert_100",
+            5,
+            violations,
+        )
+        reverse_values = COMPARATOR.validate_critical_samples(
+            report,
+            "optimized-before",
+            None,
+            "keyed_list_reverse_100",
+            10,
+            violations,
+        )
+
+        self.assertEqual(len(insert_values), 4)
+        self.assertEqual(len(reverse_values), 9)
+        self.assertTrue(any("requires at least 5 samples in this pass; got 4" in item for item in violations))
+        self.assertTrue(any("requires at least 10 samples in this pass; got 9" in item for item in violations))
+
+    def test_critical_scenarios_reject_declared_sample_count_mismatch(self) -> None:
+        report = comparison_report(optimized=True)
+        scenario_item = report["keyed_list_incremental_insertions"][0]
+        scenario_item["samples"] = 99
+        violations: list[str] = []
+
+        COMPARATOR.validate_critical_samples(
+            report,
+            "unoptimized",
+            "keyed_list_incremental_insertions",
+            "keyed_list_incremental_insert_100",
+            5,
+            violations,
+        )
+
+        self.assertTrue(any("declared samples=99" in item for item in violations))
+
+
 class ComparatorMainIntegrationTests(unittest.TestCase):
     def test_main_serializes_complete_report_and_accepts_a_valid_ab_a_run(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -264,6 +319,21 @@ class ComparatorMainIntegrationTests(unittest.TestCase):
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertTrue(payload["accepted"])
             self.assertEqual(payload["violations"], [])
+            self.assertEqual(
+                payload["policy"]["minimum_critical_samples_per_pass"],
+                {
+                    "keyed_list_incremental_insert_100": 5,
+                    "keyed_list_reverse_100": 10,
+                },
+            )
+            self.assertEqual(
+                payload["comparisons"]["keyed_list_incremental_insert_100"]["sample_counts_by_pass"],
+                {"optimized_before": 5, "unoptimized": 5, "optimized_after": 5},
+            )
+            self.assertEqual(
+                payload["comparisons"]["keyed_list_reverse_100"]["sample_counts_by_pass"],
+                {"optimized_before": 10, "unoptimized": 10, "optimized_after": 10},
+            )
             self.assertFalse(
                 payload["policy"]["isolated_keyed_mutation_sampling"]["base_control_comparison"]
             )
