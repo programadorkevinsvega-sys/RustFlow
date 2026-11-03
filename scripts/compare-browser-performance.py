@@ -389,7 +389,6 @@ def main() -> int:
             "optimized": summarize(optimized_reverse),
         },
     }
-    violations: list[str] = []
     optimized_pairs = {
         "keyed_list_incremental_insert_100": (insert_before, insert_after),
         "keyed_list_reverse_100": (reverse_before, reverse_after),
