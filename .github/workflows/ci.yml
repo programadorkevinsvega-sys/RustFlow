@@ -218,18 +218,48 @@ jobs:
           "$install_root/bin/rustflow" --help
           "$install_root/bin/rustflow" --version
 
-      - name: Run reactivity benchmark smoke baseline
+      - name: Run native performance baselines (informational)
         if: matrix.toolchain == 'stable'
+        env:
+          RUSTFLOW_BENCH_COMMIT: "${{ github.sha }}"
+          RUSTFLOW_BENCH_ITERATIONS: "10000"
+          RUSTFLOW_BENCH_SAMPLES: "25"
         run: |
-          rustc --version
-          cargo --version
-          uname -a
-          lscpu
+          set -euo pipefail
+          mkdir -p performance-results/native
+          {
+            echo "commit=$(git rev-parse HEAD)"
+            echo "rustc=$(rustc --version)"
+            echo "cargo=$(cargo --version)"
+            echo "os=$(uname -a)"
+            echo "cpu:"
+            lscpu
+          } > performance-results/native/environment.txt
+
           for run in 1 2 3; do
-            echo "Benchmark repetition ${run}/3"
-            cargo bench -p rustflow --bench reactivity
+            echo "Reactivity repetition ${run}/3"
+            /usr/bin/time -v -o "performance-results/native/reactivity-memory-${run}.txt" \
+              cargo bench -p rustflow --bench reactivity \
+              > "performance-results/native/reactivity-${run}.jsonl"
+
+            echo "SSR repetition ${run}/3"
+            /usr/bin/time -v -o "performance-results/native/ssr-memory-${run}.txt" \
+              cargo bench -p rustflow-ssr --bench rendering \
+              > "performance-results/native/ssr-${run}.jsonl"
           done
-          RUSTFLOW_BENCH_ITERATIONS=100 RUSTFLOW_BENCH_BULK_SIZE=50 cargo bench -p rustflow-server --bench persistence
+
+          RUSTFLOW_BENCH_ITERATIONS=100 RUSTFLOW_BENCH_BULK_SIZE=50 \
+            cargo bench -p rustflow-server --bench persistence \
+            > performance-results/native/persistence-smoke.txt 2>&1
+
+      - name: Upload native performance measurements
+        if: ${{ always() && matrix.toolchain == 'stable' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-8-1-native-performance
+          path: performance-results/native/
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Build documentation
         run: cargo doc --workspace --all-features --no-deps
@@ -284,3 +314,16 @@ jobs:
       - name: Run browser end-to-end tests
         working-directory: examples/browser
         run: npm run test:e2e
+
+      - name: Run browser DOM and initialization benchmarks (informational)
+        working-directory: examples/browser
+        run: npm run bench:browser
+
+      - name: Upload browser performance measurements
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-8-1-browser-performance
+          path: examples/browser/performance-results/
+          if-no-files-found: warn
+          retention-days: 30

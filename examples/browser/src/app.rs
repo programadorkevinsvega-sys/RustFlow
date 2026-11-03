@@ -61,6 +61,7 @@ fn TodoRow(
             <input
                 type="checkbox"
                 aria-label={format!("Mark {} complete", title)}
+                data-done={done.to_string()}
                 prop:checked={done}
                 on:change={move |payload: EventPayload| on_toggle.invoke(payload)}
             />
@@ -143,9 +144,29 @@ pub fn start() -> Result<(), JsValue> {
             window.location().search()?
         ))
         .map_err(display_error)?;
-    let todos = runtime.signal(Vec::<Todo>::new()).map_err(display_error)?;
+    // The browser performance suite can seed a large keyed list in one initial render.
+    // This keeps list-mount measurements separate from repeated incremental insertions.
+    let benchmark_list_size = window
+        .location()
+        .search()?
+        .trim_start_matches('?')
+        .split('&')
+        .find_map(|parameter| parameter.strip_prefix("bench_list="))
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|count| *count <= 10_000)
+        .unwrap_or(0);
+    let initial_todos = (0..benchmark_list_size)
+        .map(|index| Todo {
+            id: index as i64 + 1,
+            title: format!("benchmark item {index}"),
+            done: false,
+        })
+        .collect::<Vec<_>>();
+    let todos = runtime.signal(initial_todos).map_err(display_error)?;
     let draft = runtime.signal(String::new()).map_err(display_error)?;
-    let next_id = runtime.signal(1_i64).map_err(display_error)?;
+    let next_id = runtime
+        .signal(benchmark_list_size as i64 + 1)
+        .map_err(display_error)?;
     let show_help = runtime.signal(true).map_err(display_error)?;
     let counter_label = runtime
         .signal(String::from("Initial label"))
