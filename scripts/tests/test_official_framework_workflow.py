@@ -29,7 +29,7 @@ class OfficialFrameworkWorkflowTests(unittest.TestCase):
         self.assertIn("workflow_dispatch:", workflow)
         self.assertIn("schedule:", workflow)
         self.assertNotIn("pull_request:", workflow)
-        self.assertIn("ref: ${{ inputs.rustflow_commit || github.sha }}", workflow)
+        self.assertIn("ref: ${{ github.event.inputs.rustflow_commit || github.sha }}", workflow)
         self.assertIn("RUSTFLOW_EXPECTED_COMMIT", workflow)
         self.assertIn("git rev-parse HEAD", workflow)
         self.assertNotIn("download-artifact", workflow)
