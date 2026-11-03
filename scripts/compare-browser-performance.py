@@ -335,8 +335,8 @@ def main() -> int:
                 f"{-gain:.1f}%, exceeding the {secondary_regression_limit:.0f}% same-runner limit"
             )
 
-    # One insert/remove against an already-mounted list, distinct from
-    # sequential growth and with preparation/restoration outside the timed click.
+    # Isolated mutations run as measured pairs: insertion starts at N,
+    # removal starts at N+1, and each pair returns the fixture to baseline N.
     for operation in ("insert", "remove"):
         for count in (100, 1_000, 5_000):
             name = f"keyed_list_single_{operation}_{count}"
