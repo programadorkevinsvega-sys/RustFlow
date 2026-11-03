@@ -221,7 +221,7 @@ El tiempo de Runtime::new también se mide como microoperación en la suite de r
 Los puntos pendientes deben permanecer abiertos en ROADMAP.md; crear infraestructura de benchmark no basta para declarar completa Phase 8.1.
 
 
-El workflow del PR #78 ejecuta las nueve operaciones de CPU upstream, los tres casos de memoria disponibles (21, 22 y 25) y las tres mediciones de tamaño (sin comprimir, Brotli y first paint) en el mismo runner. El agregador conserva p50/p90/p95 y muestras originales para CPU total/script/paint, memoria y tamaño; calcula razones por escenario para las métricas secundarias y media geométrica únicamente para las nueve latencias CPU.
+El workflow del PR #78 ejecuta las nueve operaciones de CPU upstream, los cinco casos de memoria (21, 22, 23, 24 y 25) y las tres mediciones de tamaño (sin comprimir, Brotli y first paint) en el mismo runner. El agregador conserva p50/p90/p95 y muestras originales para CPU total/script/paint, memoria y tamaño; calcula razones por escenario para las métricas secundarias y media geométrica únicamente para las nueve latencias CPU.
 
 ### Suite comparativa extendida, mismo runner
 

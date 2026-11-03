@@ -70,6 +70,16 @@ def main() -> int:
 
     replace_once(
         common,
+        '  | typeof Benchmark._09\n  | typeof Benchmark._30',
+        '  | typeof Benchmark._09\n'
+        '  | typeof Benchmark._10\n'
+        '  | typeof Benchmark._11\n'
+        '  | typeof Benchmark._12\n'
+        '  | typeof Benchmark._30',
+    )
+
+    replace_once(
+        common,
         '  [Benchmark._09]: 4,\n};',
         '  [Benchmark._09]: 4,\n'
         '  [Benchmark._10]: 4,\n'
