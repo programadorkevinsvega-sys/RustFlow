@@ -5,6 +5,12 @@ description: Ejecuta y entiende las mediciones de reactividad, SSR, DOM, bundle 
 
 RustFlow incluye benchmarks para observar el coste de su runtime reactivo, el renderizado SSR y las actualizaciones del DOM en el navegador. Estas mediciones sirven para comparar revisiones y detectar posibles regresiones; **no son garantías universales de latencia ni sustituyen pruebas funcionales**.
 
+## Última evidencia interna revisada
+
+El CI #944 del PR #78 (HEAD `83a65d33a8873bad29e5f28f087fedb58f1c9fc3`) aceptó el A/B/A keyed interno en el mismo runner: 47,85% de mejora mediana en inserción incremental y 55,15% en reverse keyed, con deriva A/A de 0,13% y 0,82%. Las ocho mediciones de memoria de owners/ComponentInstance tuvieron 25 muestras y terminaron con outstanding cero; los límites de WASM, JavaScript y assets comprimidos también pasaron. El CI #945 posterior a la fusión en `main` pasó todos sus jobs.
+
+Esto compara RustFlow con su reconciliador base, no con React, Vue o Svelte. La suite oficial comparativa está disponible en GitHub Actions, pero todavía no cuenta con una ejecución aceptada. Consulta el [registro técnico completo de CI #944](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/performance/runs/2026-11-03-ci-944-phase-8-1.md) para entorno, p50/p95, muestras, presupuesto y limitaciones. Phase 8.1 sigue abierta.
+
 ## Qué mide cada suite
 
 | Suite | Qué ejecuta | Qué no representa |
