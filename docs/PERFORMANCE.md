@@ -119,6 +119,20 @@ El perfil de código encontró tres costes repetidos en la ruta de reconciliaci�
 
 Esta es una optimización candidata basada en el perfil, no una mejora ya aceptada. Debe demostrar resultados antes/después con el mismo fixture, conteo de operaciones, Chromium y runner equivalente, además de mantener las pruebas E2E que comprueban identidad de nodo, estado local, limpieza y reordenamiento. No se modifica la semántica de las claves ni la identidad de componentes. Los cambios solo se aceptarán después de revisar el artefacto posterior.
 
+### Resultado inicial después de la optimización
+
+El primer artefacto posterior, [optimized-candidate-2026-11-03.json](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/performance/optimized-candidate-2026-11-03.json), proviene de una ejecución de CI donde los 20 E2E de browser pasaron. La comparación de esta ejecución con la referencia anterior registró:
+
+| Escenario | Antes (mediana / p95) | Después (mediana / p95) | Cambio de mediana |
+|---|---:|---:|---:|
+| 100 inserciones keyed incrementales | 631,9 / 662,2 ms | 278,0 / 308,6 ms | −56,0% |
+| Reordenar 100 filas keyed | 13,8 / 16,7 ms | 5,5 / 6,2 ms | −60,1% |
+| Montaje inicial de 100 filas | 19,8 / 21,8 ms | 9,3 / 11,0 ms | −53,0% |
+| Montaje inicial de 1.000 filas | 97,8 / 97,8 ms | 55,5 / 55,5 ms | −43,3% |
+
+Las dos ejecuciones usaron Ubuntu 24.04 GitHub-hosted y Chromium 156.0.8078.4, pero el Node patch version cambió (22.23.4 a 22.23.3) y el artefacto anterior no guardó el modelo de CPU del job browser. Por ello, estas diferencias son una señal fuerte de mejora del candidato, no todavía una comparación controlada y repetida ni un presupuesto de rendimiento aceptado. El job browser ahora conserva uname, CPU, Rust y Node en `performance-results/environment.txt`; hay que acumular otra ejecución comparable para validar la señal.
+
+
 ### Presupuestos iniciales y política de regresión
 
 El archivo [baseline-2026-11-03.json](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/performance/baseline-2026-11-03.json) conserva la primera referencia candidata con commit, runner, toolchain, Chromium y muestras reales. Se usa una tolerancia inicial de aproximadamente 25% para permitir variación en runners alojados; los umbrales de tiempo generan advertencias, no fallos, hasta acumular ejecuciones equivalentes. Los límites de bytes del bundle son deterministas y sí fallan CI.
