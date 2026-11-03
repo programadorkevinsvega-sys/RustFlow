@@ -286,6 +286,60 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     ],
   };
 
+  // Timing budgets are warning-only on hosted runners. The exact values and
+  // baseline provenance are checked into docs/performance/baseline-2026-11-03.json.
+  const timingBudgetWarnings = [];
+  const checkTimingBudget = (name, measured, budget) => {
+    if (measured !== null && measured !== undefined && measured > budget) {
+      timingBudgetWarnings.push({
+        scenario: name,
+        measured_p95_ms: measured,
+        warning_budget_ms: budget,
+      });
+    }
+  };
+  checkTimingBudget("runtime_initialization", report.initialization.p95, 30);
+  checkTimingBudget(
+    "counter_100_updates",
+    report.counter_100_synchronous_dom_updates.p95,
+    10,
+  );
+  checkTimingBudget(
+    "todo_row_update",
+    report.todo_row_attribute_and_checked_property_update.p95,
+    0.3,
+  );
+  checkTimingBudget(
+    "keyed_list_incremental_insert_100",
+    report.keyed_list_incremental_insertions.find(
+      (scenario) => scenario.name === "keyed_list_incremental_insert_100",
+    )?.p95,
+    400,
+  );
+  checkTimingBudget(
+    "keyed_list_initial_mount_1000",
+    report.keyed_list_initial_mounts.find(
+      (scenario) => scenario.name === "keyed_list_initial_mount_1000",
+    )?.p95,
+    70,
+  );
+  checkTimingBudget("keyed_list_reverse_100", report.keyed_list_reverse_100.p95, 14);
+  report.timing_budget_warnings = timingBudgetWarnings;
+  report.timing_budget_policy =
+    "Warning-only on GitHub-hosted runners; compare repeated samples on the same runner class before changing budgets.";
+
+  for (const warning of timingBudgetWarnings) {
+    console.warn(
+      "RustFlow performance warning: " +
+        warning.scenario +
+        " p95 " +
+        warning.measured_p95_ms +
+        " ms exceeds " +
+        warning.warning_budget_ms +
+        " ms",
+    );
+  }
+
   const outputDirectory = resolve(process.cwd(), "performance-results");
   mkdirSync(outputDirectory, { recursive: true });
   writeFileSync(
