@@ -346,12 +346,15 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
 
   const nestedComponentScenarios = [];
   for (const { depth, warmupRepetitions, repetitions } of [
-    { depth: 5, warmupRepetitions: 1, repetitions: 7 },
-    { depth: 20, warmupRepetitions: 3, repetitions: 25 },
-    { depth: 80, warmupRepetitions: 3, repetitions: 25 },
+    { depth: 5, warmupRepetitions: 10, repetitions: 25 },
+    { depth: 20, warmupRepetitions: 10, repetitions: 25 },
+    { depth: 80, warmupRepetitions: 10, repetitions: 25 },
   ]) {
-    // Depth 20 has a short (~5 ms) setup path, so it gets additional discarded
-    // warm-ups and measured repetitions to stabilize its A/A median.
+    // The previous same-runner A/B/A showed a downward A-to-A shift at all
+    // three depths, including 20/80 with 25 measured samples. Prime each depth
+    // with ten discarded mounts so the reported samples start after WASM/JIT
+    // and browser page initialization have reached a steady state. Keep the
+    // measured sample count uniform and do not relax the 15% A/A acceptance gate.
     for (let sample = 0; sample < warmupRepetitions; sample += 1) {
       const warmup = await loadApp(page, 0, depth);
       expect(warmup.nested_component_count).toBe(depth + 1);
