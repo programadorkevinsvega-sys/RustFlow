@@ -1965,24 +1965,38 @@ impl DomRenderer {
         }
 
         for attribute in next.attributes() {
+            // AttributeValue has semantic equality, so unchanged values can be
+            // validated without repeating a Wasm -> JavaScript DOM mutation.
+            let unchanged = previous
+                .attributes()
+                .iter()
+                .find(|old_attribute| old_attribute.name() == attribute.name())
+                .is_some_and(|old_attribute| old_attribute.value() == attribute.value());
+
             match attribute.value() {
                 AttributeValue::Boolean(true) => {
                     validate_attribute(attribute.name(), "")?;
-                    element
-                        .set_attribute(attribute.name(), "")
-                        .map_err(js_error)?;
+                    if !unchanged {
+                        element
+                            .set_attribute(attribute.name(), "")
+                            .map_err(js_error)?;
+                    }
                 }
                 AttributeValue::Boolean(false) => {
                     validate_attribute(attribute.name(), "")?;
-                    element
-                        .remove_attribute(attribute.name())
-                        .map_err(js_error)?;
+                    if !unchanged {
+                        element
+                            .remove_attribute(attribute.name())
+                            .map_err(js_error)?;
+                    }
                 }
                 AttributeValue::Text(value) => {
                     validate_attribute(attribute.name(), value)?;
-                    element
-                        .set_attribute(attribute.name(), value)
-                        .map_err(js_error)?;
+                    if !unchanged {
+                        element
+                            .set_attribute(attribute.name(), value)
+                            .map_err(js_error)?;
+                    }
                 }
             }
         }
