@@ -282,5 +282,120 @@
       },
       "dispose_requirement": "outstanding_requested_bytes_after_dispose_min == 0 and max == 0 for every measured lifecycle"
     }
+  },
+  "memory_component_instance_lifecycle": {
+    "source": {
+      "workflow": "CI",
+      "workflow_run_id": 41569774034,
+      "workflow_run_number": 860,
+      "pull_request": 78,
+      "pull_request_head": "61f6d2f2d97b5594c6e4346a41922152624eb327",
+      "workflow_commit": "d2f83e30c54f594a6ca10c42ef1afe1ba0658ccb",
+      "artifact_id": 13200463952,
+      "artifact_name": "phase-8-1-native-performance",
+      "artifact_file": "owner-memory.jsonl",
+      "note": "ComponentInstance measurements were collected in the same stats_alloc executable as Scope owners. The memory benchmark source is unchanged except for the later outstanding-byte accounting correction; this run had zero reallocations in all eight scenarios, so the corrected outstanding values are identical. Revalidate on the latest PR HEAD before Phase 8.1 acceptance."
+    },
+    "environment": {
+      "os": "Ubuntu 24.04 GitHub-hosted runner",
+      "architecture": "x86_64",
+      "cpu": "AMD EPYC 7763 64-Core Processor (4 vCPU exposed)",
+      "rustc": "1.99.1 (58cf8f9c3 2026-10-13)",
+      "cargo": "1.99.1 (5f94df478 2026-08-27)",
+      "allocator": "stats_alloc 0.1.10 over System"
+    },
+    "methodology": {
+      "samples_per_scenario": 25,
+      "definition": "One ComponentDefinition with three String signals per component; shared definition created outside measured samples.",
+      "lifecycle": "Runtime creation, real ComponentInstance::mount, owner-scoped signal setup, initial render, reverse-order unmount, drop instances and runtime.",
+      "depths": [
+        1,
+        5,
+        20,
+        80
+      ],
+      "outstanding_formula": "bytes_allocated - bytes_deallocated; stats_alloc already accounts for realloc growth/shrink in these counters; bytes_reallocated remains a separate diagnostic.",
+      "note": "Requested allocator bytes are not RSS, resident pages, allocator fragmentation, JavaScript heap or WASM linear-memory capacity."
+    },
+    "measured": {
+      "component_instance.depth_1_states_3": {
+        "samples": 25,
+        "allocations_per_lifecycle": 21,
+        "deallocations_per_lifecycle": 21,
+        "reallocations_per_lifecycle": 0,
+        "bytes_allocated_per_lifecycle": 2330,
+        "bytes_deallocated_per_lifecycle": 2330,
+        "bytes_reallocated_net_per_lifecycle": 0,
+        "outstanding_requested_bytes_after_setup_max": 2279,
+        "outstanding_requested_bytes_after_dispose_mean": 0,
+        "outstanding_requested_bytes_after_dispose_min": 0,
+        "outstanding_requested_bytes_after_dispose_max": 0
+      },
+      "component_instance.depth_5_states_3": {
+        "samples": 25,
+        "allocations_per_lifecycle": 93,
+        "deallocations_per_lifecycle": 93,
+        "reallocations_per_lifecycle": 0,
+        "bytes_allocated_per_lifecycle": 10466,
+        "bytes_deallocated_per_lifecycle": 10466,
+        "bytes_reallocated_net_per_lifecycle": 0,
+        "outstanding_requested_bytes_after_setup_max": 8291,
+        "outstanding_requested_bytes_after_dispose_mean": 0,
+        "outstanding_requested_bytes_after_dispose_min": 0,
+        "outstanding_requested_bytes_after_dispose_max": 0
+      },
+      "component_instance.depth_20_states_3": {
+        "samples": 25,
+        "allocations_per_lifecycle": 352,
+        "deallocations_per_lifecycle": 352,
+        "reallocations_per_lifecycle": 0,
+        "bytes_allocated_per_lifecycle": 43248,
+        "bytes_deallocated_per_lifecycle": 43248,
+        "bytes_reallocated_net_per_lifecycle": 0,
+        "outstanding_requested_bytes_after_setup_max": 32060,
+        "outstanding_requested_bytes_after_dispose_mean": 0,
+        "outstanding_requested_bytes_after_dispose_min": 0,
+        "outstanding_requested_bytes_after_dispose_max": 0
+      },
+      "component_instance.depth_80_states_3": {
+        "samples": 25,
+        "allocations_per_lifecycle": 1376,
+        "deallocations_per_lifecycle": 1376,
+        "reallocations_per_lifecycle": 0,
+        "bytes_allocated_per_lifecycle": 174184,
+        "bytes_deallocated_per_lifecycle": 174184,
+        "bytes_reallocated_net_per_lifecycle": 0,
+        "outstanding_requested_bytes_after_setup_max": 127136,
+        "outstanding_requested_bytes_after_dispose_mean": 0,
+        "outstanding_requested_bytes_after_dispose_min": 0,
+        "outstanding_requested_bytes_after_dispose_max": 0
+      }
+    },
+    "proposed_hard_budgets": {
+      "derivation": "Observed allocation counts plus approximately 25% headroom, rounded upward to a multiple of 8; observed requested-byte totals and setup outstanding maxima plus approximately 25% headroom, rounded upward to the next 256 bytes.",
+      "scenarios": {
+        "component_instance.depth_1_states_3": {
+          "max_allocations_per_lifecycle": 32,
+          "max_bytes_allocated_per_lifecycle": 3072,
+          "max_outstanding_requested_bytes_after_setup": 3072
+        },
+        "component_instance.depth_5_states_3": {
+          "max_allocations_per_lifecycle": 120,
+          "max_bytes_allocated_per_lifecycle": 13312,
+          "max_outstanding_requested_bytes_after_setup": 10496
+        },
+        "component_instance.depth_20_states_3": {
+          "max_allocations_per_lifecycle": 440,
+          "max_bytes_allocated_per_lifecycle": 54272,
+          "max_outstanding_requested_bytes_after_setup": 40192
+        },
+        "component_instance.depth_80_states_3": {
+          "max_allocations_per_lifecycle": 1720,
+          "max_bytes_allocated_per_lifecycle": 217856,
+          "max_outstanding_requested_bytes_after_setup": 158976
+        }
+      },
+      "unmount_requirement": "outstanding_requested_bytes_after_dispose_min == 0 and max == 0 for every sampled ComponentInstance lifecycle"
+    }
   }
 }
