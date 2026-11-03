@@ -25,10 +25,12 @@ fn env_usize(name: &str, default: usize, minimum: usize, maximum: usize) -> usiz
 }
 
 /// Bytes still outstanding according to allocator request counters at this snapshot.
-/// This is not RSS and does not include allocator-internal fragmentation or reservations.
+///
+/// stats_alloc already accounts for realloc growth/shrinkage in bytes_allocated and
+/// bytes_deallocated. bytes_reallocated is a separate signed diagnostic and must not
+/// be added again here. This is not RSS or allocator-resident memory.
 fn outstanding_requested_bytes(stats: Stats) -> i128 {
     stats.bytes_allocated as i128 - stats.bytes_deallocated as i128
-        + stats.bytes_reallocated as i128
 }
 
 #[derive(Default)]
