@@ -31,6 +31,7 @@ FRAMEWORKS = {
 EXPECTED_SAMPLES = {"cpu": 15, "memory": 5, "size": 1}
 STARTUP_WARMUPS = 3
 STARTUP_SAMPLES = 15
+STARTUP_FRAMEWORK_KEYS = {"react": "react-hooks", "vue": "vue", "svelte": "svelte", "rustflow": "rustflow"}
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -183,7 +184,8 @@ def validate_startup(directory: Path, errors: list[str]) -> dict[str, dict[str, 
     if data.get("measured_rounds") != STARTUP_SAMPLES:
         errors.append(f"startup-comparison.json must declare {STARTUP_SAMPLES} measured rounds")
     for framework in FRAMEWORKS:
-        samples = data.get("frameworks", {}).get(framework, {}).get("samples_raw")
+        sample_key = STARTUP_FRAMEWORK_KEYS[framework]
+        samples = data.get("frameworks", {}).get(sample_key, {}).get("samples_raw")
         count = len(samples) if isinstance(samples, list) else 0
         statuses[framework]["actual_measured_samples"] = count
         if count == STARTUP_SAMPLES:
