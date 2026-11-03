@@ -21,6 +21,7 @@ def main() -> int:
     common = root / "webdriver-ts/src/benchmarksCommon.ts"
     playwright = root / "webdriver-ts/src/benchmarksPlaywright.ts"
     playwright_access = root / "webdriver-ts/src/playwrightAccess.ts"
+    puppeteer_access = root / "webdriver-ts/src/puppeteerAccess.ts"
 
     replace_once(
         common,
@@ -211,6 +212,13 @@ def main() -> int:
     )
     replace_once(
         playwright_access,
+        'function browserPath(benchmarkOptions: BenchmarkOptions) {\n  if (benchmarkOptions.chromeBinaryPath) return benchmarkOptions.chromeBinaryPath;',
+        'function browserPath(benchmarkOptions: BenchmarkOptions) {\n'
+        '  if (benchmarkOptions.chromeBinaryPath) return benchmarkOptions.chromeBinaryPath;\n'
+        '  if (process.env.CHROME_BIN) return process.env.CHROME_BIN;',
+    )
+    replace_once(
+        puppeteer_access,
         'function browserPath(benchmarkOptions: BenchmarkOptions) {\n  if (benchmarkOptions.chromeBinaryPath) return benchmarkOptions.chromeBinaryPath;',
         'function browserPath(benchmarkOptions: BenchmarkOptions) {\n'
         '  if (benchmarkOptions.chromeBinaryPath) return benchmarkOptions.chromeBinaryPath;\n'
