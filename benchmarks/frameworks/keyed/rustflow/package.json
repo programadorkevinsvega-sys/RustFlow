@@ -1,0 +1,12 @@
+{
+  "name": "rustflow-keyed-js-framework-benchmark",
+  "private": true,
+  "version": "0.1.0",
+  "js-framework-benchmark": {
+    "frameworkVersion": "0.1.0",
+    "frameworkHomeURL": "https://rustflow.pages.dev/",
+    "language": "Rust/WebAssembly",
+    "repoURL": "https://github.com/programadorkevinsvega-sys/RustFlow",
+    "startLogicEventName": "click"
+  }
+}

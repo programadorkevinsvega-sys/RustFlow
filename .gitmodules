@@ -1,0 +1,4 @@
+[submodule "benchmarks/js-framework-benchmark"]
+	path = benchmarks/js-framework-benchmark
+	url = https://github.com/krausest/js-framework-benchmark.git
+	shallow = true

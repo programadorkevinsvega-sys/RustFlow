@@ -141,6 +141,203 @@ fn todo_component(
     )
 }
 
+
+#[derive(Clone, PartialEq)]
+struct OfficialBenchmarkRowData {
+    id: i64,
+    label: String,
+}
+
+fn official_benchmark_rows(count: usize, first_id: i64) -> Vec<OfficialBenchmarkRowData> {
+    const ADJECTIVES: [&str; 8] = ["pretty", "large", "big", "small", "tall", "short", "long", "clean"];
+    const COLORS: [&str; 6] = ["red", "yellow", "blue", "green", "pink", "brown"];
+    const NOUNS: [&str; 6] = ["table", "chair", "house", "desk", "car", "keyboard"];
+
+    (0..count)
+        .map(|offset| {
+            let id = first_id + offset as i64;
+            let seed = id as usize;
+            OfficialBenchmarkRowData {
+                id,
+                label: format!(
+                    "{} {} {}",
+                    ADJECTIVES[seed % ADJECTIVES.len()],
+                    COLORS[(seed / 3) % COLORS.len()],
+                    NOUNS[(seed / 7) % NOUNS.len()]
+                ),
+            }
+        })
+        .collect()
+}
+
+#[rustflow::component]
+fn OfficialBenchmarkRow(
+    id: i64,
+    label: String,
+    selected: bool,
+    on_select: EventHandler,
+    on_remove: EventHandler,
+) -> impl IntoView {
+    rustflow::view! {
+        <tr class={if selected { "danger" } else { "" }}>
+            <td class="col-md-1">{id}</td>
+            <td class="col-md-4">
+                <a on:click={move |_payload| on_select.invoke(EventPayload::default())}>
+                    {label}
+                </a>
+            </td>
+            <td class="col-md-1">
+                <a on:click={move |_payload| on_remove.invoke(EventPayload::default())}>
+                    <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
+                </a>
+            </td>
+            <td class="col-md-6"></td>
+        </tr>
+    }
+}
+
+fn official_benchmark_button(
+    id: &'static str,
+    label: &'static str,
+    on_click: impl FnMut(EventPayload) + 'static,
+) -> Result<View, rustflow::view::ViewError> {
+    Ok(ViewElement::new("div")?
+        .with_attribute("class", "col-sm-6 smallpad")?
+        .with_children([ViewElement::new("button")?
+            .with_attribute("type", "button")?
+            .with_attribute("class", "btn btn-primary btn-block")?
+            .with_attribute("id", id)?
+            .with_event("click", on_click)?
+            .with_children([View::text(label)])
+            .build()])
+        .build())
+}
+
+#[rustflow::component]
+fn OfficialBenchmark() -> impl IntoView {
+    let rows = signal(Vec::<OfficialBenchmarkRowData>::new());
+    let selected = signal(0_i64);
+    let next_id = signal(1_i64);
+
+    let run_rows = rows.clone();
+    let run_selected = selected.clone();
+    let run_next_id = next_id.clone();
+    let run_button = official_benchmark_button("run", "Create 1,000 rows", move |_payload| {
+        let first_id = run_next_id.get();
+        run_next_id.update(|next| *next += 1_000);
+        run_rows.set(official_benchmark_rows(1_000, first_id));
+        run_selected.set(0);
+    }).expect("valid official benchmark run button");
+
+    let run_lots_rows = rows.clone();
+    let run_lots_selected = selected.clone();
+    let run_lots_next_id = next_id.clone();
+    let run_lots_button = official_benchmark_button("runlots", "Create 10,000 rows", move |_payload| {
+        let first_id = run_lots_next_id.get();
+        run_lots_next_id.update(|next| *next += 10_000);
+        run_lots_rows.set(official_benchmark_rows(10_000, first_id));
+        run_lots_selected.set(0);
+    }).expect("valid official benchmark runlots button");
+
+    let append_rows = rows.clone();
+    let append_next_id = next_id.clone();
+    let append_button = official_benchmark_button("add", "Append 1,000 rows", move |_payload| {
+        let first_id = append_next_id.get();
+        append_next_id.update(|next| *next += 1_000);
+        append_rows.update(|items| items.extend(official_benchmark_rows(1_000, first_id)));
+    }).expect("valid official benchmark append button");
+
+    let update_rows = rows.clone();
+    let update_button = official_benchmark_button("update", "Update every 10th row", move |_payload| {
+        update_rows.update(|items| {
+            for item in items.iter_mut().step_by(10) {
+                item.label.push_str(" !!!");
+            }
+        });
+    }).expect("valid official benchmark update button");
+
+    let clear_rows = rows.clone();
+    let clear_selected = selected.clone();
+    let clear_button = official_benchmark_button("clear", "Clear", move |_payload| {
+        clear_rows.set(Vec::new());
+        clear_selected.set(0);
+    }).expect("valid official benchmark clear button");
+
+    let swap_rows = rows.clone();
+    let swap_button = official_benchmark_button("swaprows", "Swap Rows", move |_payload| {
+        swap_rows.update(|items| {
+            if items.len() > 998 {
+                items.swap(1, 998);
+            }
+        });
+    }).expect("valid official benchmark swap button");
+
+    let rows_for_region = rows.clone();
+    let rows_for_actions = rows.clone();
+    let selected_for_region = selected.clone();
+    let selected_for_actions = selected.clone();
+    let rows_region = View::dynamic(move || {
+        let snapshot = rows_for_region.get();
+        let selected_id = selected_for_region.get();
+        let mut children = Vec::with_capacity(snapshot.len());
+        for item in snapshot {
+            let id = item.id;
+            let select_state = selected_for_actions.clone();
+            let select_handler = EventHandler::new(move |_payload: EventPayload| {
+                select_state.set(id);
+            });
+            let remove_state = rows_for_actions.clone();
+            let remove_handler = EventHandler::new(move |_payload: EventPayload| {
+                remove_state.update(|items| items.retain(|candidate| candidate.id != id));
+            });
+            children.push(KeyedChild::new(
+                id.to_string(),
+                View::component(
+                    "OfficialBenchmarkRow",
+                    [
+                        Property::new("id", item.id)?,
+                        Property::new("label", item.label)?,
+                        Property::new("selected", selected_id == id)?,
+                        Property::new("on_select", PropertyValue::Callback(select_handler))?,
+                        Property::new("on_remove", PropertyValue::Callback(remove_handler))?,
+                    ],
+                    [],
+                    None,
+                )?,
+            ));
+        }
+        View::keyed_list(children)
+    });
+
+    let controls = View::fragment([
+        run_button,
+        run_lots_button,
+        append_button,
+        update_button,
+        clear_button,
+        swap_button,
+    ]);
+
+    rustflow::view! {
+        <div id="main" class="container">
+            <div class="jumbotron">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h1>"RustFlow (keyed)"</h1>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="row">{controls}</div>
+                    </div>
+                </div>
+            </div>
+            <table class="table table-hover table-striped test-data">
+                <tbody>{rows_region}</tbody>
+            </table>
+            <span class="preloadicon glyphicon glyphicon-remove" aria-hidden="true"></span>
+        </div>
+    }
+}
+
 #[wasm_bindgen(start)]
 pub fn start() -> Result<(), JsValue> {
     let window =
@@ -189,6 +386,10 @@ pub fn start() -> Result<(), JsValue> {
         .trim_start_matches('?')
         .split('&')
         .any(|parameter| parameter == "bench_controls=1");
+    let official_benchmark_mode = window
+        .location()
+        .pathname()?
+        .contains("/frameworks/keyed/rustflow/");
     let initial_todos = (0..benchmark_list_size)
         .map(|index| Todo {
             id: index as i64 + 1,
@@ -232,6 +433,8 @@ pub fn start() -> Result<(), JsValue> {
     register_counter(&mut registry).map_err(display_error)?;
     register_todorow(&mut registry).map_err(display_error)?;
     register_nestedbenchmarknode(&mut registry).map_err(display_error)?;
+    register_officialbenchmark(&mut registry).map_err(display_error)?;
+    register_officialbenchmarkrow(&mut registry).map_err(display_error)?;
 
     // This optional fixture is injected only by the browser E2E tests. It exercises the
     // same public hydration API against server-shaped HTML without affecting the demo page.
@@ -411,6 +614,9 @@ pub fn start() -> Result<(), JsValue> {
     let mounted = renderer
         .mount_reactive(&target, &root_scope, move || {
             let route = route_for_render.get();
+            if official_benchmark_mode {
+                return View::component("OfficialBenchmark", [], [], None).map_err(DomError::from);
+            }
             // This route contains only the recursively nested component tree so its
             // initialization measurement is not dominated by the normal demo UI.
             if benchmark_component_depth > 0 {
