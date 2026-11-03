@@ -500,7 +500,7 @@ def main() -> int:
                 "discarded_warmup_pairs": 1,
                 "measured_samples_per_operation": 20,
                 "optimized_passes": ["optimized_before", "optimized_after"],
-                "base_control_comparison": false,
+                "base_control_comparison": False,
                 "base_control_exclusion_reason": "The pre-optimization keyed matcher scans the old list for every new child; replaying the 20-pair 5,000-row scenarios against it is quadratic and exceeds the CI Playwright deadline.",
                 "timed_scope": "one Add click and one paired Remove click are measured separately; input preparation, selectors, and verification are excluded; each pair returns to the steady-state baseline",
                 "dom_boundary_counters": "instrumented separately from latency samples",
