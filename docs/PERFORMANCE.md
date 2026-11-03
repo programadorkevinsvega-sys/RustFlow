@@ -93,16 +93,16 @@ Se conserva el límite histórico existente de 1,5 MiB para el WASM raw de entra
 
 No se incorporan números ficticios ni se elevan resultados de un runner de GitHub a garantías de rendimiento del framework. La primera ejecución de CI de esta rama produce un baseline candidato con commit exacto y configuración. Para aprobar un presupuesto nuevo se deben comparar varias ejecuciones del mismo runner, revisar dispersión y percentiles, decidir una tolerancia y comprobar que la señal supera el ruido normal.
 
-Estado inicial:
+Estado del baseline y del control de regresiones:
 
-| Área | Baseline | Presupuesto aprobado | Límite CI |
+| Área | Evidencia actual | Guardrail | Política CI |
 |---|---|---|---|
-| Reactividad | Se genera JSONL en CI | Pendiente de revisión de varias ejecuciones | Ninguno nuevo |
-| SSR | Se genera JSONL y bytes HTML | Pendiente de revisión de varias ejecuciones | Ninguno nuevo |
-| DOM / runtime | Se genera JSON mediante Chromium | Pendiente de revisión de varias ejecuciones | Ninguno nuevo |
-| Memoria | RSS de proceso en Linux; heap JS opcional | No hay presupuesto por operación/retención | Ninguno nuevo |
-| JavaScript / CSS | Tamaños Vite raw/gzip/Brotli | Pendiente de referencia estable | Informativo |
-| WASM raw de entrada | Medición existente | 1,5 MiB, presupuesto heredado | Límite existente |
+| Reactividad | 3 ejecuciones nativas por job, JSONL por escenario | Mediana candidata +25% | Advertencia; nunca falla por timing del runner |
+| SSR | 3 ejecuciones nativas por job, JSONL y bytes HTML | Mediana candidata +25% | Advertencia; nunca falla por timing del runner |
+| DOM / profundidad | Chromium, 5 muestras para la mayoría de escenarios y 3 por profundidad | Percentiles p95 por escenario | Advertencia; nunca falla por timing del runner |
+| Memoria nativa | Conteos y bytes asignados/liberados por owner tree, más saldo tras dispose | Pendiente del primer artefacto instrumentado | Se recopila; no aprobar techo hasta inspeccionar retención |
+| JS / CSS / WASM | Tamaños raw/gzip/Brotli del build de producción | Límites de bytes definidos abajo | Falla si se supera |
+| RSS y heap JS | RSS de proceso precompilado; heap JS opcional | Informativo, no sustituyen allocator/retención | Sin gate propio |
 
 ### Presupuestos iniciales y política de regresión
 
