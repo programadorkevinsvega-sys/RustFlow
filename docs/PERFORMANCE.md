@@ -228,3 +228,7 @@ El workflow del PR #78 ejecuta las nueve operaciones de CPU upstream, los cinco 
 Además de los nueve IDs ejecutables upstream, el workflow aplica un patcher exacto al commit fijado para agregar tres IDs comparativos con la misma traza Playwright/CDP: actualización cada décima fila sobre 10.000, append de 1.000 a 10.000 y limpieza de 10.000. Los cuatro frameworks ejecutan esos mismos casos en el mismo job. El informe publica una media geométrica upstream de 9 operaciones, otra de 3 operaciones extendidas y una combinada de 12; no confunde esta extensión con el leaderboard oficial.
 
 El patcher también reactiva las mediciones upstream de memoria después de cinco updates y cinco reemplazos. Se informan separadas de CPU y del índice geométrico.
+
+### Arranque comparable de cuatro implementaciones
+
+Después de completar CPU, memoria y size upstream, el mismo runner mide 15 navegaciones frías por framework con tres calentamientos descartados y orden rotatorio. Registra response start/end, DOM interactive/content loaded, load event, first paint/FCP, bytes transferidos/codificados por tipo de recurso y el tiempo desde el click inicial hasta el commit de 1.000 filas (dos frames). RustFlow informa además su marca explícita `rustflow:runtime:init`; no se presenta como fase equivalente de internals React/Vue/Svelte. Parseo/compilación/ejecución no se infieren de Navigation Timing y siguen pendientes de un protocolo de tracing específico.

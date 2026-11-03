@@ -114,3 +114,7 @@ El informe comparativo también resume memoria (p50/p90/p95), tamaño sin compri
 ### Operaciones comparativas de 10.000 filas
 
 El mismo runner de trazas ejecuta además, para React, Vue, Svelte y RustFlow, actualización cada décima fila sobre 10.000, append de 1.000 a 10.000 y clear de 10.000. Los resultados forman un índice extendido de tres operaciones y otro combinado de doce operaciones (nueve upstream más tres extensiones). También se activan los escenarios de memoria tras cinco updates y cinco reemplazos.
+
+### Arranque y primera interacción
+
+El informe `startup-comparison.json` utiliza el mismo runner y Chromium, con tres calentamientos descartados y 15 navegaciones medidas por framework en orden rotatorio. Incluye response start/end, DOMContentLoaded, load event, first paint/FCP, recursos transferidos y el tiempo hasta la primera acción real que crea 1.000 filas. La marca de inicialización interna WASM se publica para RustFlow cuando está disponible; no se equipara con internals no expuestos de los otros frameworks. El desglose de parseo/compilación sigue pendiente de tracing dedicado.

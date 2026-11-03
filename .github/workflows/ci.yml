@@ -369,6 +369,9 @@ jobs:
         run: python3 -m py_compile scripts/summarize-js-framework-benchmark.py
       - name: Validate upstream benchmark patch script
         run: python3 -m py_compile scripts/patch-js-framework-benchmark.py
+      - name: Validate startup benchmark script
+        working-directory: examples/browser
+        run: node --check scripts/measure-framework-startup.mjs
 
       - name: Controlled same-runner keyed reconciliation A/B/A (Phase 8.1)
         if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/phase-8-1-') }}
@@ -497,6 +500,9 @@ jobs:
           npm run bench -- --runner playwright --framework keyed/react-hooks keyed/vue keyed/svelte keyed/rustflow --benchmark 01_run1k 02_replace1k 03_update10th1k_x16 04_select1k 05_swap1k 06_remove-one-1k 07_create10k 08_create1k-after1k_x2 09_clear1k_x8 10_update10th10k 11_append1k-after10k 12_clear10k --count 15 --headless --chromeBinary "$chrome_bin"
           npm run bench -- --runner playwright --framework keyed/react-hooks keyed/vue keyed/svelte keyed/rustflow --benchmark 21_ready-memory 22_run-memory 23_update5-memory 24_run5-memory 25_run-clear-memory --count 5 --headless --chromeBinary "$chrome_bin"
           npm run bench -- --runner playwright --framework keyed/react-hooks keyed/vue keyed/svelte keyed/rustflow --benchmark 40_sizes --count 1 --headless --chromeBinary "$chrome_bin"
+          cd "$GITHUB_WORKSPACE/examples/browser"
+          BENCHMARK_BASE_URL=http://127.0.0.1:8080 CHROME_BIN="$chrome_bin" node scripts/measure-framework-startup.mjs "$result_dir"
+          cd "$upstream"
           cp -R webdriver-ts/results/. "$result_dir/"
           python3 "$GITHUB_WORKSPACE/scripts/summarize-js-framework-benchmark.py" "$result_dir"
           cd "$GITHUB_WORKSPACE"
