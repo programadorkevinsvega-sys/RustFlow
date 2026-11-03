@@ -183,6 +183,12 @@ pub fn start() -> Result<(), JsValue> {
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|depth| (1..=80).contains(depth))
         .unwrap_or(0);
+    let benchmark_controls_enabled = window
+        .location()
+        .search()?
+        .trim_start_matches('?')
+        .split('&')
+        .any(|parameter| parameter == "bench_controls=1");
     let initial_todos = (0..benchmark_list_size)
         .map(|index| Todo {
             id: index as i64 + 1,
@@ -479,6 +485,161 @@ pub fn start() -> Result<(), JsValue> {
                 View::keyed_list(children)
             });
 
+            let benchmark_controls_enabled = benchmark_controls_enabled;
+            let benchmark_controls = if benchmark_controls_enabled {
+                let update_todos = todos.clone();
+                let update_every_tenth = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-update-every-10th")?
+                    .with_event("click", move |_payload| {
+                        update_todos.update(|items| {
+                            for item in items.iter_mut().step_by(10) {
+                                item.title.push_str(" !!!");
+                            }
+                        });
+                    })?
+                    .with_children([View::text("Update every tenth row")])
+                    .build();
+
+                let swap_todos = todos.clone();
+                let swap_rows = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-swap-rows")?
+                    .with_event("click", move |_payload| {
+                        swap_todos.update(|items| {
+                            if items.len() > 998 {
+                                items.swap(1, 998);
+                            }
+                        });
+                    })?
+                    .with_children([View::text("Swap rows 2 and 999")])
+                    .build();
+
+                let move_first_todos = todos.clone();
+                let move_first_to_end = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-move-first-to-end")?
+                    .with_event("click", move |_payload| {
+                        move_first_todos.update(|items| {
+                            if items.len() > 1 {
+                                items.rotate_left(1);
+                            }
+                        });
+                    })?
+                    .with_children([View::text("Move first row to end")])
+                    .build();
+
+                let move_last_todos = todos.clone();
+                let move_last_to_front = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-move-last-to-front")?
+                    .with_event("click", move |_payload| {
+                        move_last_todos.update(|items| {
+                            if items.len() > 1 {
+                                items.rotate_right(1);
+                            }
+                        });
+                    })?
+                    .with_children([View::text("Move last row to front")])
+                    .build();
+
+                let reverse_section_todos = todos.clone();
+                let reverse_first_section = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-reverse-first-section")?
+                    .with_event("click", move |_payload| {
+                        reverse_section_todos.update(|items| {
+                            let count = items.len().min(100);
+                            items[..count].reverse();
+                        });
+                    })?
+                    .with_children([View::text("Reverse first 100 rows")])
+                    .build();
+
+                let append_todos = todos.clone();
+                let append_next_id = next_id.clone();
+                let append_one_thousand = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-append-1000")?
+                    .with_event("click", move |_payload| {
+                        let first_id = append_next_id.get();
+                        append_next_id.update(|next| *next += 1_000);
+                        append_todos.update(|items| {
+                            items.extend((0..1_000).map(|offset| {
+                                let id = first_id + offset;
+                                Todo {
+                                    id,
+                                    title: format!("benchmark item {id}"),
+                                    done: false,
+                                }
+                            }));
+                        });
+                    })?
+                    .with_children([View::text("Append 1,000 rows")])
+                    .build();
+
+                let replace_todos = todos.clone();
+                let replace_next_id = next_id.clone();
+                let replace_one_thousand = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-replace-1000")?
+                    .with_event("click", move |_payload| {
+                        let first_id = replace_next_id.get();
+                        replace_next_id.update(|next| *next += 1_000);
+                        replace_todos.update(|items| {
+                            *items = (0..1_000)
+                                .map(|offset| {
+                                    let id = first_id + offset;
+                                    Todo {
+                                        id,
+                                        title: format!("benchmark item {id}"),
+                                        done: false,
+                                    }
+                                })
+                                .collect();
+                        });
+                    })?
+                    .with_children([View::text("Replace with 1,000 rows")])
+                    .build();
+
+                let remove_section_todos = todos.clone();
+                let remove_first_section = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-remove-first-section")?
+                    .with_event("click", move |_payload| {
+                        remove_section_todos.update(|items| {
+                            let count = items.len().min(100);
+                            items.drain(..count);
+                        });
+                    })?
+                    .with_children([View::text("Remove first 100 rows")])
+                    .build();
+
+                let clear_todos = todos.clone();
+                let clear_all_rows = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-clear-all")?
+                    .with_event("click", move |_payload| {
+                        clear_todos.update(|items| items.clear());
+                    })?
+                    .with_children([View::text("Clear all rows")])
+                    .build();
+
+                View::fragment([
+                    update_every_tenth,
+                    swap_rows,
+                    move_first_to_end,
+                    move_last_to_front,
+                    reverse_first_section,
+                    append_one_thousand,
+                    replace_one_thousand,
+                    remove_first_section,
+                    clear_all_rows,
+                ])
+            } else {
+                View::fragment([])
+            };
+
             let show_for_region = show_for_region.clone();
             let todo_input_ref_for_add = todo_input_ref.clone();
             let dom_ref_for_probe = dom_ref_handle.clone();
@@ -552,6 +713,7 @@ pub fn start() -> Result<(), JsValue> {
                         </button>
                     </section>
                     <ul data-testid="todo-list">{todo_region}</ul>
+                    <section data-testid="benchmark-controls">{benchmark_controls}</section>
                     <p data-testid="todo-unmount-count">"Unmounted rows: " {cleanup_count_for_display}</p>
                     <section aria-label="DOM element reference demo">
                         {dom_ref_region}

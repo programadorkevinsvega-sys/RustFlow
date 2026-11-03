@@ -34,10 +34,11 @@ function summarize(values, operations, unit) {
   };
 }
 
-async function loadApp(page, initialListSize = 0, nestedDepth = 0) {
+async function loadApp(page, initialListSize = 0, nestedDepth = 0, includeBenchmarkControls = false) {
   const parameters = [];
   if (initialListSize > 0) parameters.push(`bench_list=${initialListSize}`);
   if (nestedDepth > 0) parameters.push(`bench_depth=${nestedDepth}`);
+  if (includeBenchmarkControls) parameters.push("bench_controls=1");
   const path = parameters.length > 0 ? `/?${parameters.join("&")}` : "/";
   await page.goto(path);
   if (nestedDepth > 0) {
@@ -269,6 +270,198 @@ async function measureIsolatedKeyedMutations(page, count) {
   ];
 }
 
+async function measureExtendedRustFlowScenarios(page) {
+  const report = [];
+
+  for (const count of [100, 1_000, 5_000, 10_000]) {
+    await loadApp(page, count);
+    const insertion = await measureIsolatedKeyedMutations(page, count);
+    report.push(...insertion);
+
+    const loaded = await loadApp(page, count, 0, true);
+    if (loaded.dom_rows !== count) throw new Error(`Expected ${count} benchmark rows`);
+
+    const updateSamples = await page.evaluate(() => {
+      const list = document.querySelector('[data-testid="todo-list"]');
+      if (!list) throw new Error("Todo list missing for extended update benchmark");
+      const rows = () => Array.from(list.querySelectorAll(":scope > li"));
+      const positions = [0, Math.floor(rows().length / 2), rows().length - 1];
+      const values = [];
+      const identities = positions.map((position) => rows()[position]);
+      for (let sample = 0; sample < 20; sample += 1) {
+        const position = positions[sample % positions.length];
+        const row = rows()[position];
+        const checkbox = row?.querySelector('input[type="checkbox"]');
+        if (!checkbox) throw new Error("Target row checkbox missing");
+        const before = checkbox.checked;
+        const started = performance.now();
+        checkbox.checked = !before;
+        checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+        values.push(performance.now() - started);
+        if (checkbox.getAttribute("data-done") !== String(!before)) {
+          throw new Error("Single-row update did not reach the DOM");
+        }
+        for (let stable = 0; stable < identities.length; stable += 1) {
+          if (positions[stable] !== position && rows()[positions[stable]] !== identities[stable]) {
+            throw new Error("An unaffected row lost DOM identity during single-row update");
+          }
+        }
+      }
+      return values;
+    });
+    report.push({
+      name: `keyed_list_single_row_update_${count}`,
+      ...summarize(updateSamples, 1, "ms"),
+      warmup_samples: 0,
+      measured_samples: updateSamples.length,
+      baseline_dom_rows: count,
+      final_dom_rows: count,
+      measured_scope: "One checkbox change event, with first/middle/last target rotation",
+    });
+
+    const bulkUpdate = await page.evaluate(() => {
+      const button = document.querySelector('[data-testid="bench-update-every-10th"]');
+      const list = document.querySelector('[data-testid="todo-list"]');
+      if (!button || !list) throw new Error("Bulk update benchmark fixture missing");
+      const rows = () => Array.from(list.querySelectorAll(":scope > li"));
+      const unaffectedBefore = [1, 5, 11].map((index) => rows()[index]);
+      const target = rows()[0]?.querySelector("span");
+      if (!target) throw new Error("Bulk update target span missing");
+      const samples = [];
+      for (let sample = 0; sample < 20; sample += 1) {
+        const started = performance.now();
+        button.click();
+        samples.push(performance.now() - started);
+        if (!rows()[0]?.textContent?.includes("!!!".repeat(sample + 1))) {
+          throw new Error("Bulk update did not update the first row's rendered title");
+        }
+        for (const index of [1, 5, 11]) {
+          if (rows()[index] !== unaffectedBefore[[1, 5, 11].indexOf(index)]) {
+            throw new Error("Bulk update replaced an unrelated keyed row");
+          }
+        }
+      }
+      return samples;
+    });
+    report.push({
+      name: `keyed_list_update_every_tenth_${count}`,
+      ...summarize(bulkUpdate, 1, "ms"),
+      warmup_samples: 0,
+      measured_samples: bulkUpdate.length,
+      baseline_dom_rows: count,
+      final_dom_rows: count,
+      measured_scope: "One signal update mutating every tenth row and committing rendered keyed DOM",
+    });
+
+    const reorderButtons = [
+      ["swap_rows", "bench-swap-rows"],
+      ["move_first_to_end", "bench-move-first-to-end"],
+      ["move_last_to_front", "bench-move-last-to-front"],
+      ["reverse_first_section", "bench-reverse-first-section"],
+    ];
+    for (const [name, testId] of reorderButtons) {
+      const values = await page.evaluate(({ testId }) => {
+        const button = document.querySelector(`[data-testid="${testId}"]`);
+        const list = document.querySelector('[data-testid="todo-list"]');
+        if (!button || !list) throw new Error("Reorder control missing");
+        const rows = () => Array.from(list.querySelectorAll(":scope > li"));
+        const before = rows();
+        const samples = [];
+        for (let sample = 0; sample < 20; sample += 1) {
+          const started = performance.now();
+          button.click();
+          samples.push(performance.now() - started);
+          if (rows().length !== before.length) throw new Error("Reorder changed list length");
+          if (new Set(rows()).size !== rows().length) throw new Error("Reorder created duplicate DOM nodes");
+        }
+        if (new Set(before).size !== before.length) throw new Error("Initial keyed nodes were not unique");
+        return samples;
+      }, { testId });
+      report.push({
+        name: `keyed_list_${name}_${count}`,
+        ...summarize(values, 1, "ms"),
+        warmup_samples: 0,
+        measured_samples: values.length,
+        baseline_dom_rows: count,
+        final_dom_rows: count,
+        measured_scope: "One reorder control click with real keyed DOM reconciliation",
+      });
+    }
+
+    const bulkAdd = await page.evaluate(() => {
+      const button = document.querySelector('[data-testid="bench-append-1000"]');
+      const list = document.querySelector('[data-testid="todo-list"]');
+      if (!button || !list) throw new Error("Bulk append controls missing");
+      const before = list.querySelectorAll(":scope > li").length;
+      const started = performance.now();
+      button.click();
+      const elapsed = performance.now() - started;
+      const after = list.querySelectorAll(":scope > li").length;
+      if (after !== before + 1_000) throw new Error("Bulk append did not add exactly 1,000 rows");
+      return { elapsed, before, after };
+    });
+    report.push({
+      name: `keyed_list_append_1000_to_${count}`,
+      unit: "ms",
+      samples: 1,
+      operations_per_sample: 1_000,
+      min: bulkAdd.elapsed,
+      median: bulkAdd.elapsed,
+      p90: bulkAdd.elapsed,
+      p95: bulkAdd.elapsed,
+      p99: null,
+      throughput_ops_per_second_at_median: 1_000 / (bulkAdd.elapsed / 1_000),
+      samples_raw: [bulkAdd.elapsed],
+      warmup_samples: 0,
+      measured_samples: 1,
+      baseline_dom_rows: bulkAdd.before,
+      final_dom_rows: bulkAdd.after,
+      measured_scope: "One reactive batch append of 1,000 rows",
+      note: "Single measurement only; not sufficient as a stable percentile estimate",
+    });
+
+    const cleanup = await page.evaluate(() => {
+      const button = document.querySelector('[data-testid="bench-clear-all"]');
+      const list = document.querySelector('[data-testid="todo-list"]');
+      const counter = document.querySelector('[data-testid="todo-unmount-count"]');
+      if (!button || !list || !counter) throw new Error("Cleanup controls missing");
+      const initial = list.querySelectorAll(":scope > li").length;
+      const startCount = Number(counter.textContent.match(/\d+/)?.[0] ?? 0);
+      const started = performance.now();
+      button.click();
+      const elapsed = performance.now() - started;
+      const remaining = list.querySelectorAll(":scope > li").length;
+      const finalCount = Number(counter.textContent.match(/\d+/)?.[0] ?? 0);
+      if (remaining !== 0 || finalCount - startCount !== initial) {
+        throw new Error("Full cleanup did not unmount every row component");
+      }
+      return { elapsed, initial, remaining, cleanupCount: finalCount - startCount };
+    });
+    report.push({
+      name: `keyed_list_clear_all_after_append_${count}`,
+      unit: "ms",
+      samples: 1,
+      operations_per_sample: cleanup.initial,
+      min: cleanup.elapsed,
+      median: cleanup.elapsed,
+      p90: cleanup.elapsed,
+      p95: cleanup.elapsed,
+      p99: null,
+      throughput_ops_per_second_at_median: cleanup.cleanupCount / (cleanup.elapsed / 1_000),
+      samples_raw: [cleanup.elapsed],
+      warmup_samples: 0,
+      measured_samples: 1,
+      initial_dom_rows: cleanup.initial,
+      final_dom_rows: cleanup.remaining,
+      cleanup_components: cleanup.cleanupCount,
+      measured_scope: "Clear the complete list and verify per-row owner cleanup",
+      note: "Single measurement only; not sufficient as a stable percentile estimate",
+    });
+  }
+
+  return report;
+}
+
 test("RustFlow browser runtime performance measurements", async ({ page, browser, browserErrors }) => {
   test.setTimeout(10 * 60 * 1000);
 
@@ -475,6 +668,11 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     });
   }
 
+  const extendedScenarios =
+    process.env.RUSTFLOW_BENCH_BROWSER_EXTENDED === "1"
+      ? await measureExtendedRustFlowScenarios(page)
+      : [];
+
   const report = {
     schema_version: 1,
     suite: "rustflow-browser-dom",
@@ -492,6 +690,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     nested_component_depth_initial_mounts: nestedComponentScenarios,
     keyed_list_incremental_insertions: listScenarios,
     keyed_list_isolated_mutations: isolatedKeyedMutationScenarios,
+    extended_scenarios: extendedScenarios,
     keyed_list_reverse_100: summarize(reorderSamples, 1, "ms"),
     keyed_list_remove_100: {
       elapsed_ms: removalElapsed.elapsed_ms,
@@ -510,6 +709,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
       "These measurements exercise the shipped RustFlow WASM runtime in Chromium and synchronous interactions with its real DOM.",
       "Incremental insertion measures repeated reactive reconciliation at 100 rows; the opt-in isolated suite measures one insert/remove on pre-existing lists of 100, 1,000, and 5,000 rows.",
       "Timing values are informational and must not fail CI because browser hardware and scheduling vary.",
+      "Extended 100/1,000/5,000/10,000-row scenarios are opt-in via RUSTFLOW_BENCH_BROWSER_EXTENDED=1 and are not part of the upstream-compatible suite or current A/B/A acceptance aggregate.",
       "Nested component depth is exercised at depths 5, 20, and 80 in Chromium; Firefox/WebKit profiling remains follow-up work.",
     ],
   };
