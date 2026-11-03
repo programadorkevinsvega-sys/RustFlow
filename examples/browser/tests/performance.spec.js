@@ -162,10 +162,17 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
   }
 
   const nestedComponentScenarios = [];
-  for (const [depth, repetitions] of [[5, 7], [20, 7], [80, 7]]) {
-    // Warm the same recursive component path once, outside the measured samples.
-    const warmup = await loadApp(page, 0, depth);
-    expect(warmup.nested_component_count).toBe(depth + 1);
+  for (const { depth, warmupRepetitions, repetitions } of [
+    { depth: 5, warmupRepetitions: 1, repetitions: 7 },
+    { depth: 20, warmupRepetitions: 3, repetitions: 25 },
+    { depth: 80, warmupRepetitions: 1, repetitions: 7 },
+  ]) {
+    // Depth 20 has a short (~5 ms) setup path, so it gets additional discarded
+    // warm-ups and measured repetitions to stabilize its A/A median.
+    for (let sample = 0; sample < warmupRepetitions; sample += 1) {
+      const warmup = await loadApp(page, 0, depth);
+      expect(warmup.nested_component_count).toBe(depth + 1);
+    }
     const measurements = [];
     for (let sample = 0; sample < repetitions; sample += 1) {
       const loaded = await loadApp(page, 0, depth);
@@ -178,6 +185,8 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     nestedComponentScenarios.push({
       depth,
       component_instances: depth + 1,
+      warmup_samples: warmupRepetitions,
+      measured_samples: repetitions,
       ...summarize(measurements, depth + 1, "ms"),
       measured_scope:
         "WASM initialization, recursive component setup, component rendering, and real DOM mount",
