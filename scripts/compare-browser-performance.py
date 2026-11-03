@@ -470,8 +470,10 @@ def main() -> int:
             "minimum_secondary_samples_per_variant": 7,
             "minimum_initial_mount_warmup_samples_per_variant": 1,
             "isolated_keyed_mutation_sampling": {
-                "preexisting_rows": [100, 1000, 5000],
-                "discarded_warmup_operations": 1,
+                "steady_state_baseline_rows": [100, 1000, 5000],
+                "operation_start_rows": {"insert": "N", "remove": "N+1"},
+                "operation_end_rows": {"insert": "N+1", "remove": "N"},
+                "discarded_warmup_pairs": 1,
                 "measured_samples_per_operation": 20,
                 "timed_scope": "one Add click and one paired Remove click are measured separately; input preparation, selectors, and verification are excluded; each pair returns to the steady-state baseline",
                 "dom_boundary_counters": "instrumented separately from latency samples",
