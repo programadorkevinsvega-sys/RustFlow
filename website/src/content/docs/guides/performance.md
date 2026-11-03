@@ -80,4 +80,4 @@ El job nativo compara las medianas de tres ejecuciones de reactividad y SSR cont
 - Un saldo de bytes allocator netos no equivale al tamaño RSS o a memoria WASM residente.
 - Los resultados de benchmark no son garantías de producción.
 
-La optimización keyed incluida en la continuación está pendiente de evidencia antes/después. No se afirma una mejora hasta comparar los artefactos equivalentes y validar que la identidad DOM y el estado local se conservan.
+La primera comparación candidata registrada en [optimized-candidate-2026-11-03.json](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/performance/optimized-candidate-2026-11-03.json) muestra que las 100 inserciones bajaron de 631,9 a 278,0 ms de mediana (−56,0%) y el reverse keyed de 100 filas de 13,8 a 5,5 ms (−60,1%); los 20 E2E browser pasaron en esa ejecución. Es un resultado inicial, no todavía un presupuesto aceptado: se debe repetir con el hardware/versions del runner capturados y comparar la variabilidad antes de cerrar la fase.
