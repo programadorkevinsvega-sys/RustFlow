@@ -181,7 +181,11 @@ fn main() {
     );
 
     for fanout in [1usize, 16, 64, 256, 1_024] {
-        let fanout_runtime = Runtime::new();
+        // A fan-out flush executes every subscriber exactly once. The default runtime
+        // cycle guard is 1,000 executions, so a legitimate 1,024-subscriber workload
+        // would be rejected before the scheduler drains its queue. Raise the guard only
+        // for this isolated benchmark runtime; production defaults remain unchanged.
+        let fanout_runtime = Runtime::with_cycle_limit(fanout);
         let fanout_root = fanout_runtime.root_scope();
         let fanout_signal = fanout_root.signal(0usize).expect("create fan-out signal");
         let mut effects = Vec::with_capacity(fanout);
@@ -198,6 +202,10 @@ fn main() {
 
         let fanout_iterations = (iterations / fanout).clamp(1, 10_000);
         let name = format!("load.shared_signal_fanout_{fanout}");
+        println!(
+            "{{\"type\":\"scenario_config\",\"name\":\"{}\",\"effects_per_flush\":{},\"scheduler_cycle_limit\":{}}}",
+            name, fanout, fanout
+        );
         measure(&name, fanout_iterations, samples, |index| {
             fanout_signal.set(index.wrapping_add(1));
         });

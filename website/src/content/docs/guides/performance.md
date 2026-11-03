@@ -9,7 +9,7 @@ RustFlow incluye benchmarks para observar el coste de su runtime reactivo, el re
 
 | Suite | Qué ejecuta | Qué no representa |
 |---|---|---|
-| Reactividad | Señales, efectos, dependencias dinámicas, memos, batching, fan-out y limpieza de owners | Actualizaciones del DOM o tiempos del navegador |
+| Reactividad | Señales, efectos, dependencias dinámicas, memos, batching, fan-out de hasta 1.024 suscriptores y limpieza de owners | Actualizaciones del DOM o tiempos del navegador |
 | SSR | Árboles simples, dinámicos, amplios, profundos y listas, mediante la API pública render_to_string | Una solicitud HTTP completa o concurrencia; el tiempo incluye la creación y eliminación del Runtime por render |
 | Browser / DOM | WASM real en Chromium, inserción incremental de 100 filas, montaje inicial de listas keyed de 100 y 1.000 filas, reordenamiento y eliminación | Una garantía para todos los navegadores |
 | Bundle | WASM y assets de producción emitidos por Vite | Tamaño estimado a partir del código fuente |
@@ -24,7 +24,7 @@ RUSTFLOW_BENCH_ITERATIONS=10000 RUSTFLOW_BENCH_SAMPLES=25 cargo bench -p rustflo
 RUSTFLOW_BENCH_ITERATIONS=1000 RUSTFLOW_BENCH_SAMPLES=25 cargo bench -p rustflow-ssr --bench rendering
 ~~~
 
-Cada benchmark informa mínimo, mediana, p90, p95, throughput y parámetros de muestra en líneas JSONL. p99 solo se calcula con al menos 100 muestras. Los árboles y señales del escenario se preparan fuera de la operación medida cuando el propósito es medir una operación aislada.
+Cada benchmark informa mínimo, mediana, p90, p95, throughput y parámetros de muestra en líneas JSONL. p99 solo se calcula con al menos 100 muestras. El escenario de fan-out configura el límite de ejecuciones por descarga del runtime aislado al número de suscriptores, porque 1.024 ejecuciones legítimas superan el límite predeterminado de 1.000. Este ajuste solo existe en el benchmark; no cambia la protección predeterminada de las aplicaciones. Los árboles y señales del escenario se preparan fuera de la operación medida cuando el propósito es medir una operación aislada.
 
 ## Medir el navegador y el bundle
 

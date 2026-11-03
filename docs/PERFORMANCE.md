@@ -6,12 +6,14 @@ Estado: infraestructura de medición inicial de Phase 8.1. Los números producid
 
 | Área | Escenarios | Naturaleza |
 |---|---|---|
-| Reactividad | Runtime, creación/lectura/escritura/actualización de señales, efectos, dependencias dinámicas, memos, batching, fan-out de 1 a 1.024 suscriptores, 1.000 señales y limpieza de owners | Microbenchmarks Rust |
+| Reactividad | Runtime, creación/lectura/escritura/actualización de señales, efectos, dependencias dinámicas, memos, batching, fan-out de 1 a 1.024 suscriptores, 1.000 señales y limpieza de owners | Microbenchmarks Rust; el escenario fan-out configura su límite de ejecuciones por descarga al número de suscriptores |
 | SSR | Árbol simple, contenido dinámico, árboles anidados, árboles amplios y listas de 100, 1.000 y 10.000 elementos | API pública render_to_string; incluye Runtime::new, scope raíz, render y dispose por llamada |
 | DOM | Actualizaciones del contador, inserciones incrementales de 100 filas, montaje inicial de listas keyed de 100 y 1.000 filas, reordenamiento y eliminación | RustFlow WASM ejecutado en Chromium mediante Playwright |
 | Bundle | WASM de entrada y assets de producción emitidos por Vite; JS, CSS, WASM y otros assets | Artefactos reales de vite build |
 | Inicialización | Marca desde el inicio de init() WASM hasta que termina la inicialización y el montaje inicial | Navegador Chromium |
 | Memoria | RSS máximo del proceso de benchmark en Linux, mediante /usr/bin/time -v; observación JS heap opcional de Chromium | Proceso completo / API específica del navegador |
+
+El escenario de fan-out usa un Runtime aislado con `Runtime::with_cycle_limit(fanout)`: el scheduler debe ejecutar una vez cada suscriptor en una misma descarga y el límite predeterminado de 1.000 rechazaría el caso de 1.024 aunque no exista un ciclo. Este ajuste pertenece solo al microbenchmark; `Runtime::new()` y el límite de seguridad de producción no cambian.
 
 Los benchmarks de reactividad y SSR son mediciones nativas del runtime/modelo de vistas; no representan tiempos del navegador. El benchmark DOM usa el WASM real y elementos DOM reales. Cada render SSR usa la API pública render_to_string, que crea y elimina un Runtime por llamada: por tanto, el tiempo incluye el ciclo de vida del runtime y la generación HTML, no es una medición pura del serializador. El benchmark SSR no es una prueba HTTP completa ni una medición de concurrencia.
 
