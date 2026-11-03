@@ -148,22 +148,34 @@ struct OfficialBenchmarkRowData {
     label: String,
 }
 
+fn official_random(max: usize) -> usize {
+    ((js_sys::Math::random() * 1_000.0).round() as usize) % max
+}
+
 fn official_benchmark_rows(count: usize, first_id: i64) -> Vec<OfficialBenchmarkRowData> {
-    const ADJECTIVES: [&str; 8] = ["pretty", "large", "big", "small", "tall", "short", "long", "clean"];
-    const COLORS: [&str; 6] = ["red", "yellow", "blue", "green", "pink", "brown"];
-    const NOUNS: [&str; 6] = ["table", "chair", "house", "desk", "car", "keyboard"];
+    const ADJECTIVES: [&str; 25] = [
+        "pretty", "large", "big", "small", "tall", "short", "long", "handsome", "plain",
+        "quaint", "clean", "elegant", "easy", "angry", "crazy", "helpful", "mushy", "odd",
+        "unsightly", "adorable", "important", "inexpensive", "cheap", "expensive", "fancy",
+    ];
+    const COLORS: [&str; 11] = [
+        "red", "yellow", "blue", "green", "pink", "brown", "purple", "brown", "white", "black",
+        "orange",
+    ];
+    const NOUNS: [&str; 13] = [
+        "table", "chair", "house", "bbq", "desk", "car", "pony", "cookie", "sandwich", "burger",
+        "pizza", "mouse", "keyboard",
+    ];
 
     (0..count)
         .map(|offset| {
-            let id = first_id + offset as i64;
-            let seed = id as usize;
             OfficialBenchmarkRowData {
-                id,
+                id: first_id + offset as i64,
                 label: format!(
                     "{} {} {}",
-                    ADJECTIVES[seed % ADJECTIVES.len()],
-                    COLORS[(seed / 3) % COLORS.len()],
-                    NOUNS[(seed / 7) % NOUNS.len()]
+                    ADJECTIVES[official_random(ADJECTIVES.len())],
+                    COLORS[official_random(COLORS.len())],
+                    NOUNS[official_random(NOUNS.len())]
                 ),
             }
         })
