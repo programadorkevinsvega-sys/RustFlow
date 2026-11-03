@@ -140,9 +140,9 @@ El archivo [baseline-2026-11-03.json](https://github.com/programadorkevinsvega-s
 | Reactividad | Baselines representativas +25% | Advertencia informativa en la revisión de resultados |
 | SSR | Baselines representativas +25% | Advertencia informativa en la revisión de resultados |
 | Browser init, DOM y listas | Baseline por escenario +25–40% según dispersión observada | Advertencia informativa, nunca gate de timing sensible al host |
-| Owners / memoria | Baseline allocator por escenario a completar con el artefacto de esta rama | No se fija un límite hasta revisar alloc/dealloc y saldo tras dispose |
+| Owners / memoria | 25 ciclos por owner tree a profundidades 1, 5, 20 y 80; outstanding después de dispose = 0 en todas las muestras | Presupuestos de allocaciones/bytes con ~25% de margen; outstanding after-dispose min/max = 0 | Gate determinista; falla por retención o por superar cualquier techo |
 
-Los techos de bundle dejan margen aproximado de 20–30% sobre el primer artefacto medido. No son objetivos de tamaño recomendado; son límites de regresión para esta aplicación de demostración. Los presupuestos de tiempo se revisan con mediana y p90/p95 sobre el mismo runner/toolchain. Los presupuestos de memoria se aprobarán solo después de inspeccionar la primera salida instrumentada y verificar que el saldo tras dispose vuelve al nivel esperado.
+Los techos de bundle dejan margen aproximado de 20–30% sobre el primer artefacto medido. No son objetivos de tamaño recomendado; son límites de regresión para esta aplicación de demostración. Los presupuestos absolutos de tiempo se revisan con mediana y p90/p95 y permanecen warning-only debido al ruido del runner. La memoria nativa tiene límites deterministas por escenario y exige saldo outstanding cero después de dispose; la reconciliación keyed tiene un gate relativo de mejora mínima de 20% en un A/B/A dentro del mismo runner.
 
 Las mediciones de rendimiento no sustituyen pruebas funcionales. Los benchmarks no provocan fallos de CI por variaciones de latencia.
 
@@ -153,7 +153,7 @@ Las mediciones de rendimiento no sustituyen pruebas funcionales. Los benchmarks 
 3. No hay benchmark concurrente de SSR ni benchmark de solicitudes HTTP completas.
 4. La memoria por owner se mide en un benchmark nativo separado; la memoria live interna del allocator WASM todavía no se mide por componente.
 5. Los artefactos CI requieren descarga para comparación; no se mantiene todavía una serie histórica comprometida en Git.
-6. La primera optimización de reconciliación keyed de esta continuación está pendiente de validación antes/después; no se declara aceptada solo por haber cambiado el algoritmo.
+6. La optimización keyed está pendiente de la primera salida del A/B/A controlado en el mismo runner, que debe demostrar al menos 20% de mejora mediana en inserción y reverse; las comparaciones entre jobs con CPU diferentes se rechazan.
 
 El tiempo de Runtime::new también se mide como microoperación en la suite de reactividad, pero no se resta del tiempo SSR: no se hace una descomposición artificial del coste público por render.
 
