@@ -100,9 +100,24 @@ Estado del baseline y del control de regresiones:
 | Reactividad | 3 ejecuciones nativas por job, JSONL por escenario | Mediana candidata +25% | Advertencia; nunca falla por timing del runner |
 | SSR | 3 ejecuciones nativas por job, JSONL y bytes HTML | Mediana candidata +25% | Advertencia; nunca falla por timing del runner |
 | DOM / profundidad | Chromium, 5 muestras para la mayoría de escenarios y 3 por profundidad | Percentiles p95 por escenario | Advertencia; nunca falla por timing del runner |
-| Memoria nativa | Conteos y bytes asignados/liberados por owner tree, más saldo tras dispose | Pendiente del primer artefacto instrumentado | Se recopila; no aprobar techo hasta inspeccionar retención |
+| Memoria nativa | Benchmark dedicado `stats_alloc` añadido; el run anterior quedó detenido por Clippy antes de emitir artefacto | Pendiente de salida validada del HEAD actual | Sin límite hasta revisar saldos tras dispose |
 | JS / CSS / WASM | Tamaños raw/gzip/Brotli del build de producción | Límites de bytes definidos abajo | Falla si se supera |
 | RSS y heap JS | RSS de proceso precompilado; heap JS opcional | Informativo, no sustituyen allocator/retención | Sin gate propio |
+
+### Perfil de listas keyed y optimización candidata
+
+El artefacto preoptimización [continuation-candidate-2026-11-03.json](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/performance/continuation-candidate-2026-11-03.json) conserva una ejecución del benchmark browser sin las optimizaciones de esta continuación. En Chromium registró:
+
+| Escenario | Mediana | p95 / observación |
+|---|---:|---:|
+| Inserción reactiva incremental de 100 filas | 631,9 ms | 662,2 ms |
+| Reordenar 100 filas keyed | 13,8 ms | 16,7 ms |
+| Eliminar 100 filas | 636,9 ms | Una sola muestra; no usar como presupuesto |
+| Montaje inicial 1.000 filas | 97,8 ms | Dos muestras |
+
+El perfil de código encontró tres costes repetidos en la ruta de reconciliación: la planificación buscaba cada clave recorriendo toda la lista anterior; la eliminación de nodos obsoletos comparaba cada nodo previo con todos los siguientes; y la colocación ejecutaba `insert_before` para todos los nodos, incluidos los que ya estaban en su posición. La continuación introduce una tabla hash para resolver claves, un `Set` de identidad de objetos DOM para retención/eliminación y colocación de derecha a izquierda que evita mover hermanos ya colocados.
+
+Esta es una optimización candidata basada en el perfil, no una mejora ya aceptada. Debe demostrar resultados antes/después con el mismo fixture, conteo de operaciones, Chromium y runner equivalente, además de mantener las pruebas E2E que comprueban identidad de nodo, estado local, limpieza y reordenamiento. No se modifica la semántica de las claves ni la identidad de componentes. Los cambios solo se aceptarán después de revisar el artefacto posterior.
 
 ### Presupuestos iniciales y política de regresión
 
@@ -131,7 +146,7 @@ Las mediciones de rendimiento no sustituyen pruebas funcionales. Los benchmarks 
 3. No hay benchmark concurrente de SSR ni benchmark de solicitudes HTTP completas.
 4. La memoria por owner se mide en un benchmark nativo separado; la memoria live interna del allocator WASM todavía no se mide por componente.
 5. Los artefactos CI requieren descarga para comparación; no se mantiene todavía una serie histórica comprometida en Git.
-6. No se ejecutan optimizaciones en esta infraestructura. Solo se justifican después de perfilar un cuello de botella y comparar el mismo caso antes/después.
+6. La primera optimización de reconciliación keyed de esta continuación está pendiente de validación antes/después; no se declara aceptada solo por haber cambiado el algoritmo.
 
 El tiempo de Runtime::new también se mide como microoperación en la suite de reactividad, pero no se resta del tiempo SSR: no se hace una descomposición artificial del coste público por render.
 
