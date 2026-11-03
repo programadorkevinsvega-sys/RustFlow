@@ -100,7 +100,9 @@ async function measureIsolatedKeyedMutations(page, count) {
     const add = Array.from(document.querySelectorAll("#app button")).find((button) =>
       button.textContent.includes("Add todo"),
     );
-    if (!list || !input || !add) throw new Error("Todo controls not mounted");
+    const cleanupCounter = document.querySelector('[data-testid="todo-unmount-count"]');
+    if (!list || !input || !add || !cleanupCounter) throw new Error("Todo controls not mounted");
+    const readCleanupCount = () => Number(cleanupCounter.textContent.match(/\\d+/)?.[0] ?? 0);
 
     const rows = () => Array.from(list.querySelectorAll(":scope > li"));
     const assertRows = (expected, context) => {
@@ -133,6 +135,8 @@ async function measureIsolatedKeyedMutations(page, count) {
     // recorded below rather than implying both operations start at N.
     const positions = [0, Math.floor((initialRows + 1) / 2), initialRows];
     for (let sample = 0; sample < repetitions; sample += 1) {
+      const baselineNodes = rows();
+      const cleanupBefore = readCleanupCount();
       prepare("isolated insert " + sample);
       const insertionStart = performance.now();
       add.click();
@@ -142,12 +146,18 @@ async function measureIsolatedKeyedMutations(page, count) {
       if (afterInsert.length !== initialRows + 1) {
         throw new Error("insert did not yield N+1 rows");
       }
+      for (let index = 0; index < baselineNodes.length; index += 1) {
+        if (afterInsert[index] !== baselineNodes[index]) {
+          throw new Error("single insert changed the identity or order of an existing row");
+        }
+      }
 
       const index = positions[sample % positions.length];
       const target = afterInsert[index];
       if (!target) throw new Error("deletion target missing");
       const targetId = target.getAttribute("data-todo-id");
       const button = removeButton(target);
+      const expectedSurvivors = afterInsert.filter((row) => row !== target);
       targetIndexes.push(index);
 
       const removalStart = performance.now();
@@ -158,6 +168,12 @@ async function measureIsolatedKeyedMutations(page, count) {
       if (afterRemoval.length !== initialRows || target.isConnected ||
           afterRemoval.some((row) => row.getAttribute("data-todo-id") === targetId)) {
         throw new Error("deletion did not remove the selected keyed row or restore the baseline size");
+      }
+      if (afterRemoval.some((row, survivorIndex) => row !== expectedSurvivors[survivorIndex])) {
+        throw new Error("single delete changed the identity or order of a surviving keyed row");
+      }
+      if (readCleanupCount() !== cleanupBefore + 1) {
+        throw new Error("single delete did not run exactly one row component cleanup");
       }
     }
 
@@ -275,8 +291,7 @@ async function measureExtendedRustFlowScenarios(page) {
 
   for (const count of [100, 1_000, 5_000, 10_000]) {
     await loadApp(page, count);
-    const insertion = await measureIsolatedKeyedMutations(page, count);
-    report.push(...insertion);
+    report.push(...(await measureIsolatedKeyedMutations(page, count)));
 
     const loaded = await loadApp(page, count, 0, true);
     if (loaded.dom_rows !== count) throw new Error(`Expected ${count} benchmark rows`);
@@ -287,10 +302,10 @@ async function measureExtendedRustFlowScenarios(page) {
       const rows = () => Array.from(list.querySelectorAll(":scope > li"));
       const positions = [0, Math.floor(rows().length / 2), rows().length - 1];
       const values = [];
-      const identities = positions.map((position) => rows()[position]);
       for (let sample = 0; sample < 20; sample += 1) {
+        const beforeNodes = rows();
         const position = positions[sample % positions.length];
-        const row = rows()[position];
+        const row = beforeNodes[position];
         const checkbox = row?.querySelector('input[type="checkbox"]');
         if (!checkbox) throw new Error("Target row checkbox missing");
         const before = checkbox.checked;
@@ -301,9 +316,11 @@ async function measureExtendedRustFlowScenarios(page) {
         if (checkbox.getAttribute("data-done") !== String(!before)) {
           throw new Error("Single-row update did not reach the DOM");
         }
-        for (let stable = 0; stable < identities.length; stable += 1) {
-          if (positions[stable] !== position && rows()[positions[stable]] !== identities[stable]) {
-            throw new Error("An unaffected row lost DOM identity during single-row update");
+        const afterNodes = rows();
+        if (afterNodes.length !== beforeNodes.length) throw new Error("Single-row update changed list length");
+        for (let index = 0; index < beforeNodes.length; index += 1) {
+          if (index !== position && afterNodes[index] !== beforeNodes[index]) {
+            throw new Error("Single-row update replaced an unaffected keyed row");
           }
         }
       }
@@ -324,20 +341,20 @@ async function measureExtendedRustFlowScenarios(page) {
       const list = document.querySelector('[data-testid="todo-list"]');
       if (!button || !list) throw new Error("Bulk update benchmark fixture missing");
       const rows = () => Array.from(list.querySelectorAll(":scope > li"));
-      const unaffectedBefore = [1, 5, 11].map((index) => rows()[index]);
-      const target = rows()[0]?.querySelector("span");
-      if (!target) throw new Error("Bulk update target span missing");
+      const initialNodes = rows();
       const samples = [];
       for (let sample = 0; sample < 20; sample += 1) {
         const started = performance.now();
         button.click();
         samples.push(performance.now() - started);
-        if (!rows()[0]?.textContent?.includes("!!!".repeat(sample + 1))) {
-          throw new Error("Bulk update did not update the first row's rendered title");
+        const firstTitle = rows()[0]?.querySelector(":scope > span")?.textContent ?? "";
+        if (firstTitle.split(" !!!").length - 1 !== sample + 1) {
+          throw new Error("Bulk update did not update every-tenth-row content on the first row");
         }
-        for (const index of [1, 5, 11]) {
-          if (rows()[index] !== unaffectedBefore[[1, 5, 11].indexOf(index)]) {
-            throw new Error("Bulk update replaced an unrelated keyed row");
+        const afterNodes = rows();
+        for (let index = 0; index < afterNodes.length; index += 1) {
+          if (afterNodes[index] !== initialNodes[index]) {
+            throw new Error("Bulk update replaced a keyed row instead of patching its contents");
           }
         }
       }
@@ -365,16 +382,31 @@ async function measureExtendedRustFlowScenarios(page) {
         const list = document.querySelector('[data-testid="todo-list"]');
         if (!button || !list) throw new Error("Reorder control missing");
         const rows = () => Array.from(list.querySelectorAll(":scope > li"));
-        const before = rows();
+        let expected = rows();
+        const initialSize = expected.length;
         const samples = [];
         for (let sample = 0; sample < 20; sample += 1) {
+          const nextExpected = [...expected];
+          if (testId === "bench-swap-rows" && nextExpected.length > 998) {
+            [nextExpected[1], nextExpected[998]] = [nextExpected[998], nextExpected[1]];
+          } else if (testId === "bench-move-first-to-end" && nextExpected.length > 1) {
+            nextExpected.push(nextExpected.shift());
+          } else if (testId === "bench-move-last-to-front" && nextExpected.length > 1) {
+            nextExpected.unshift(nextExpected.pop());
+          } else if (testId === "bench-reverse-first-section") {
+            const section = nextExpected.slice(0, 100).reverse();
+            nextExpected.splice(0, section.length, ...section);
+          }
           const started = performance.now();
           button.click();
           samples.push(performance.now() - started);
-          if (rows().length !== before.length) throw new Error("Reorder changed list length");
-          if (new Set(rows()).size !== rows().length) throw new Error("Reorder created duplicate DOM nodes");
+          const actual = rows();
+          if (actual.length !== initialSize) throw new Error("Reorder changed list length");
+          if (actual.some((node, index) => node !== nextExpected[index])) {
+            throw new Error("Reorder failed expected keyed DOM node placement or changed node identity");
+          }
+          expected = nextExpected;
         }
-        if (new Set(before).size !== before.length) throw new Error("Initial keyed nodes were not unique");
         return samples;
       }, { testId });
       report.push({
@@ -384,86 +416,161 @@ async function measureExtendedRustFlowScenarios(page) {
         measured_samples: values.length,
         baseline_dom_rows: count,
         final_dom_rows: count,
-        measured_scope: "One reorder control click with real keyed DOM reconciliation",
+        measured_scope: "One reorder control click with real keyed DOM reconciliation and exact node-order verification",
       });
     }
 
-    const bulkAdd = await page.evaluate(() => {
-      const button = document.querySelector('[data-testid="bench-append-1000"]');
-      const list = document.querySelector('[data-testid="todo-list"]');
-      if (!button || !list) throw new Error("Bulk append controls missing");
-      const before = list.querySelectorAll(":scope > li").length;
-      const started = performance.now();
-      button.click();
-      const elapsed = performance.now() - started;
-      const after = list.querySelectorAll(":scope > li").length;
-      if (after !== before + 1_000) throw new Error("Bulk append did not add exactly 1,000 rows");
-      return { elapsed, before, after };
-    });
+    const appendSamples = [];
+    for (let sample = 0; sample < 20; sample += 1) {
+      const loadedForAppend = await loadApp(page, count, 0, true);
+      if (loadedForAppend.dom_rows !== count) throw new Error("Append fixture has wrong initial size");
+      const appendResult = await page.evaluate(() => {
+        const button = document.querySelector('[data-testid="bench-append-1000"]');
+        const cleanupButton = document.querySelector('[data-testid="bench-remove-last-1000"]');
+        const list = document.querySelector('[data-testid="todo-list"]');
+        if (!button || !cleanupButton || !list) throw new Error("Bulk append controls missing");
+        const beforeRows = Array.from(list.querySelectorAll(":scope > li"));
+        const started = performance.now();
+        button.click();
+        const elapsed = performance.now() - started;
+        const afterRows = Array.from(list.querySelectorAll(":scope > li"));
+        if (afterRows.length !== beforeRows.length + 1_000) throw new Error("Bulk append did not add exactly 1,000 rows");
+        for (let index = 0; index < beforeRows.length; index += 1) {
+          if (afterRows[index] !== beforeRows[index]) throw new Error("Bulk append changed an existing keyed row identity");
+        }
+        cleanupButton.click();
+        const restored = list.querySelectorAll(":scope > li").length;
+        if (restored !== beforeRows.length) throw new Error("Paired removal failed to restore the append fixture");
+        return elapsed;
+      });
+      appendSamples.push(appendResult);
+    }
     report.push({
       name: `keyed_list_append_1000_to_${count}`,
-      unit: "ms",
-      samples: 1,
-      operations_per_sample: 1_000,
-      min: bulkAdd.elapsed,
-      median: bulkAdd.elapsed,
-      p90: bulkAdd.elapsed,
-      p95: bulkAdd.elapsed,
-      p99: null,
-      throughput_ops_per_second_at_median: 1_000 / (bulkAdd.elapsed / 1_000),
-      samples_raw: [bulkAdd.elapsed],
+      ...summarize(appendSamples, 1_000, "ms"),
       warmup_samples: 0,
-      measured_samples: 1,
-      baseline_dom_rows: bulkAdd.before,
-      final_dom_rows: bulkAdd.after,
-      measured_scope: "One reactive batch append of 1,000 rows",
-      note: "Single measurement only; not sufficient as a stable percentile estimate",
+      measured_samples: appendSamples.length,
+      baseline_dom_rows: count,
+      operation_end_rows: count + 1_000,
+      final_dom_rows: count,
+      measured_scope: "One batch append of 1,000 rows; paired removal restores baseline outside timed interval",
     });
 
-    const cleanup = await page.evaluate(() => {
-      const button = document.querySelector('[data-testid="bench-clear-all"]');
-      const list = document.querySelector('[data-testid="todo-list"]');
-      const counter = document.querySelector('[data-testid="todo-unmount-count"]');
-      if (!button || !list || !counter) throw new Error("Cleanup controls missing");
-      const initial = list.querySelectorAll(":scope > li").length;
-      const startCount = Number(counter.textContent.match(/\d+/)?.[0] ?? 0);
-      const started = performance.now();
-      button.click();
-      const elapsed = performance.now() - started;
-      const remaining = list.querySelectorAll(":scope > li").length;
-      const finalCount = Number(counter.textContent.match(/\d+/)?.[0] ?? 0);
-      if (remaining !== 0 || finalCount - startCount !== initial) {
-        throw new Error("Full cleanup did not unmount every row component");
-      }
-      return { elapsed, initial, remaining, cleanupCount: finalCount - startCount };
-    });
+    const sectionRemovalSamples = [];
+    for (let sample = 0; sample < 20; sample += 1) {
+      await loadApp(page, count, 0, true);
+      const measurement = await page.evaluate(() => {
+        const button = document.querySelector('[data-testid="bench-remove-first-section"]');
+        const list = document.querySelector('[data-testid="todo-list"]');
+        const counter = document.querySelector('[data-testid="todo-unmount-count"]');
+        if (!button || !list || !counter) throw new Error("Section removal controls missing");
+        const initialRows = Array.from(list.querySelectorAll(":scope > li"));
+        const initialCleanup = Number(counter.textContent.match(/\d+/)?.[0] ?? 0);
+        const removed = Math.min(100, initialRows.length);
+        const started = performance.now();
+        button.click();
+        const elapsed = performance.now() - started;
+        const remaining = Array.from(list.querySelectorAll(":scope > li"));
+        const cleanupDelta = Number(counter.textContent.match(/\d+/)?.[0] ?? 0) - initialCleanup;
+        if (remaining.length !== initialRows.length - removed || cleanupDelta !== removed) {
+          throw new Error("Section removal failed DOM count or component cleanup verification");
+        }
+        if (remaining.some((row, index) => row !== initialRows[index + removed])) {
+          throw new Error("Section removal changed identity/order of surviving keyed rows");
+        }
+        return elapsed;
+      });
+      sectionRemovalSamples.push(measurement);
+    }
     report.push({
-      name: `keyed_list_clear_all_after_append_${count}`,
-      unit: "ms",
-      samples: 1,
-      operations_per_sample: cleanup.initial,
-      min: cleanup.elapsed,
-      median: cleanup.elapsed,
-      p90: cleanup.elapsed,
-      p95: cleanup.elapsed,
-      p99: null,
-      throughput_ops_per_second_at_median: cleanup.cleanupCount / (cleanup.elapsed / 1_000),
-      samples_raw: [cleanup.elapsed],
+      name: `keyed_list_remove_section_100_${count}`,
+      ...summarize(sectionRemovalSamples, 100, "ms"),
       warmup_samples: 0,
-      measured_samples: 1,
-      initial_dom_rows: cleanup.initial,
-      final_dom_rows: cleanup.remaining,
-      cleanup_components: cleanup.cleanupCount,
-      measured_scope: "Clear the complete list and verify per-row owner cleanup",
-      note: "Single measurement only; not sufficient as a stable percentile estimate",
+      measured_samples: sectionRemovalSamples.length,
+      baseline_dom_rows: count,
+      operation_end_rows: count - Math.min(100, count),
+      measured_scope: "Remove first 100 keyed row components and verify surviving identity plus owner cleanup",
+    });
+
+    const fullCleanupSamples = [];
+    for (let sample = 0; sample < 20; sample += 1) {
+      await loadApp(page, count, 0, true);
+      const measurement = await page.evaluate(() => {
+        const button = document.querySelector('[data-testid="bench-clear-all"]');
+        const list = document.querySelector('[data-testid="todo-list"]');
+        const counter = document.querySelector('[data-testid="todo-unmount-count"]');
+        if (!button || !list || !counter) throw new Error("Cleanup controls missing");
+        const initial = list.querySelectorAll(":scope > li").length;
+        const startCount = Number(counter.textContent.match(/\d+/)?.[0] ?? 0);
+        const started = performance.now();
+        button.click();
+        const elapsed = performance.now() - started;
+        const remaining = list.querySelectorAll(":scope > li").length;
+        const cleanupCount = Number(counter.textContent.match(/\d+/)?.[0] ?? 0) - startCount;
+        if (remaining !== 0 || cleanupCount !== initial) {
+          throw new Error("Full cleanup did not unmount every row component");
+        }
+        return { elapsed, initial, cleanupCount };
+      });
+      fullCleanupSamples.push(measurement.elapsed);
+      if (measurement.initial !== count || measurement.cleanupCount !== count) {
+        throw new Error("Full cleanup sample metadata mismatch");
+      }
+    }
+    report.push({
+      name: `keyed_list_clear_all_${count}`,
+      ...summarize(fullCleanupSamples, count, "ms"),
+      warmup_samples: 0,
+      measured_samples: fullCleanupSamples.length,
+      baseline_dom_rows: count,
+      operation_end_rows: 0,
+      measured_scope: "Clear all keyed rows and verify every row component owner cleanup",
+    });
+  }
+
+  if (true) {
+    const replaceSamples = [];
+    for (let sample = 0; sample < 20; sample += 1) {
+      await loadApp(page, 1_000, 0, true);
+      const measurement = await page.evaluate(() => {
+        const button = document.querySelector('[data-testid="bench-replace-1000"]');
+        const list = document.querySelector('[data-testid="todo-list"]');
+        const counter = document.querySelector('[data-testid="todo-unmount-count"]');
+        if (!button || !list || !counter) throw new Error("Replace controls missing");
+        const oldRows = Array.from(list.querySelectorAll(":scope > li"));
+        const initialCleanup = Number(counter.textContent.match(/\d+/)?.[0] ?? 0);
+        const started = performance.now();
+        button.click();
+        const elapsed = performance.now() - started;
+        const newRows = Array.from(list.querySelectorAll(":scope > li"));
+        const cleanupDelta = Number(counter.textContent.match(/\d+/)?.[0] ?? 0) - initialCleanup;
+        if (newRows.length !== 1_000 || cleanupDelta !== 1_000) {
+          throw new Error("Replace-all did not produce 1,000 new rows and clean up the old row components");
+        }
+        if (newRows.some((row, index) => row === oldRows[index])) {
+          throw new Error("Replace-all unexpectedly preserved old row nodes");
+        }
+        return elapsed;
+      });
+      replaceSamples.push(measurement);
+    }
+    report.push({
+      name: "keyed_list_replace_all_1000",
+      ...summarize(replaceSamples, 1_000, "ms"),
+      warmup_samples: 0,
+      measured_samples: replaceSamples.length,
+      baseline_dom_rows: 1_000,
+      operation_end_rows: 1_000,
+      measured_scope: "Replace all 1,000 rows with fresh keyed identities and verify old component cleanup",
     });
   }
 
   return report;
 }
 
+
 test("RustFlow browser runtime performance measurements", async ({ page, browser, browserErrors }) => {
-  test.setTimeout(10 * 60 * 1000);
+  test.setTimeout(process.env.RUSTFLOW_BENCH_BROWSER_EXTENDED === "1" ? 25 * 60 * 1000 : 10 * 60 * 1000);
 
   const initializationSamples = [];
   const memorySamples = [];

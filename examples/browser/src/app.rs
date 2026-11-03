@@ -578,6 +578,19 @@ pub fn start() -> Result<(), JsValue> {
                     .with_children([View::text("Append 1,000 rows")])
                     .build();
 
+                let remove_last_todos = todos.clone();
+                let remove_last_one_thousand = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-remove-last-1000")?
+                    .with_event("click", move |_payload| {
+                        remove_last_todos.update(|items| {
+                            let start = items.len().saturating_sub(1_000);
+                            items.truncate(start);
+                        });
+                    })?
+                    .with_children([View::text("Remove last 1,000 rows")])
+                    .build();
+
                 let replace_todos = todos.clone();
                 let replace_next_id = next_id.clone();
                 let replace_one_thousand = ViewElement::new("button")?
@@ -713,7 +726,7 @@ pub fn start() -> Result<(), JsValue> {
                         </button>
                     </section>
                     <ul data-testid="todo-list">{todo_region}</ul>
-                    <section data-testid="benchmark-controls">{benchmark_controls}</section>
+                    {benchmark_controls}
                     <p data-testid="todo-unmount-count">"Unmounted rows: " {cleanup_count_for_display}</p>
                     <section aria-label="DOM element reference demo">
                         {dom_ref_region}
