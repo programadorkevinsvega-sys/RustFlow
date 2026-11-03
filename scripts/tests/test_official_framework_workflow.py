@@ -65,6 +65,7 @@ class OfficialFrameworkWorkflowTests(unittest.TestCase):
         self.assertIn("framework-comparison.json", workflow)
         self.assertIn("environment.txt", workflow)
         self.assertIn("upload-artifact@v4", workflow)
+        self.assertIn("156\\.0\\.8078\\.4", workflow)
 
     def test_both_documents_describe_the_separation(self) -> None:
         docs = [
