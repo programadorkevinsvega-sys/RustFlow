@@ -352,14 +352,41 @@ def main() -> int:
             for label, item in items:
                 raw = [float(x) for x in item.get("samples_raw", [])]
                 sample_sets[label] = raw
-                if item.get("preexisting_rows") != count or item.get("final_dom_rows") != count:
-                    violations.append(f"{label}: {name} must begin/end with exactly {count} rows")
+                expected_start_rows = count if operation == "insert" else count + 1
+                expected_end_rows = count + 1 if operation == "insert" else count
+                if item.get("baseline_dom_rows") != count or item.get("final_dom_rows") != count:
+                    violations.append(
+                        f"{label}: {name} must restore the steady-state baseline of {count} rows"
+                    )
+                if item.get("operation_start_rows") != expected_start_rows:
+                    violations.append(
+                        f"{label}: {name} expected operation_start_rows={expected_start_rows}; "
+                        f"got {item.get('operation_start_rows')}"
+                    )
+                if item.get("operation_end_rows") != expected_end_rows:
+                    violations.append(
+                        f"{label}: {name} expected operation_end_rows={expected_end_rows}; "
+                        f"got {item.get('operation_end_rows')}"
+                    )
+                expected_pair = "single_remove" if operation == "insert" else "single_insert"
+                if item.get("paired_operation") != expected_pair:
+                    violations.append(
+                        f"{label}: {name} must declare paired_operation={expected_pair}"
+                    )
                 if item.get("warmup_samples") != 1:
-                    violations.append(f"{label}: {name} requires one discarded warm-up operation")
+                    violations.append(f"{label}: {name} requires one discarded warm-up pair")
                 if item.get("measured_samples") != len(raw):
                     violations.append(f"{label}: {name} measured_samples does not match raw samples")
                 if len(raw) < 20:
                     violations.append(f"{label}: {name} requires 20 samples; got {len(raw)}")
+                if operation == "remove":
+                    expected_positions = {0, (count + 1) // 2, count}
+                    actual_positions = set(item.get("deletion_target_indexes", []))
+                    if actual_positions != expected_positions:
+                        violations.append(
+                            f"{label}: {name} must cover first, middle and last positions; "
+                            f"got {sorted(actual_positions)}"
+                        )
             if any(len(sample_sets[label]) < 20 for label, _ in items):
                 continue
 
@@ -446,7 +473,7 @@ def main() -> int:
                 "preexisting_rows": [100, 1000, 5000],
                 "discarded_warmup_operations": 1,
                 "measured_samples_per_operation": 20,
-                "timed_scope": "only Add/Remove click; preparation, selectors, verification, and restoration excluded",
+                "timed_scope": "one Add click and one paired Remove click are measured separately; input preparation, selectors, and verification are excluded; each pair returns to the steady-state baseline",
                 "dom_boundary_counters": "instrumented separately from latency samples",
             },
             "initial_mount_sampling": {
