@@ -188,11 +188,20 @@ def validate_startup(directory: Path, errors: list[str]) -> dict[str, dict[str, 
         samples = data.get("frameworks", {}).get(sample_key, {}).get("samples_raw")
         count = len(samples) if isinstance(samples, list) else 0
         statuses[framework]["actual_measured_samples"] = count
-        if count == STARTUP_SAMPLES:
-            statuses[framework]["status"] = "complete"
-        else:
+        if count != STARTUP_SAMPLES:
             statuses[framework]["status"] = "invalid"
             errors.append(f"startup {framework}: expected exactly {STARTUP_SAMPLES} samples, got {count}")
+            continue
+        invalid_rows = [
+            index for index, sample in enumerate(samples)
+            if not isinstance(sample, dict) or sample.get("final_dom_rows") != 1000
+        ]
+        if invalid_rows:
+            statuses[framework]["status"] = "invalid"
+            statuses[framework]["invalid_dom_row_samples"] = invalid_rows
+            errors.append(f"startup {framework}: samples did not verify 1,000 DOM rows at indexes {invalid_rows}")
+        else:
+            statuses[framework]["status"] = "complete"
     return statuses
 
 
@@ -243,7 +252,9 @@ def main() -> int:
         **{op: "size" for op in SIZE_OPERATIONS},
     }
 
-    for path in sorted(directory.rglob("*.json")):
+    raw_directory = directory / "raw"
+    result_root = raw_directory if raw_directory.is_dir() else directory
+    for path in sorted(result_root.rglob("*.json")):
         if path.name in {"frameworks.json", "framework-comparison.json", "startup-comparison.json"}:
             continue
         try:
