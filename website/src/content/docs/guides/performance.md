@@ -113,4 +113,4 @@ El informe comparativo también resume memoria (p50/p90/p95), tamaño sin compri
 
 ### Operaciones comparativas de 10.000 filas
 
-El mismo runner de trazas ejecuta además, para React, Vue, Svelte y RustFlow, actualización cada décima fila sobre 10.000, append de 1.000 a 10.000 y clear de 10.000. Los resultados forman un índice extendido y otro combinado con las nueve operaciones upstream. También se activan los escenarios de memoria tras cinco updates y cinco reemplazos.
+El mismo runner de trazas ejecuta además, para React, Vue, Svelte y RustFlow, actualización cada décima fila sobre 10.000, append de 1.000 a 10.000 y clear de 10.000. Los resultados forman un índice extendido de tres operaciones y otro combinado de doce operaciones (nueve upstream más tres extensiones). También se activan los escenarios de memoria tras cinco updates y cinco reemplazos.

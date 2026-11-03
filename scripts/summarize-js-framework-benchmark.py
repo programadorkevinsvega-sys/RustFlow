@@ -197,9 +197,9 @@ def main() -> int:
         "",
         f"Upstream pin: `{UPSTREAM_COMMIT}`",
         "",
-        "## CPU trace results",
+        "## CPU — upstream-compatible nine operations",
         "",
-        "| Operation | React p50 (ms) | Vue p50 (ms) | Svelte p50 (ms) | RustFlow p50 (ms) |",
+        "| Operation | React p50 ms | Vue p50 ms | Svelte p50 ms | RustFlow p50 ms |",
         "|---|---:|---:|---:|---:|",
     ]
     for operation in CPU_OPERATIONS:
@@ -207,13 +207,37 @@ def main() -> int:
         for framework in ("react", "vue", "svelte", "rustflow"):
             row.append(f'{results[framework]["cpu"][operation]["metrics"]["total"]["p50"]:.3f}')
         lines.append("| " + " | ".join(row) + " |")
-    lines += ["", "## Memory", "", "| Scenario | React p50 (MiB) | Vue p50 (MiB) | Svelte p50 (MiB) | RustFlow p50 (MiB) |", "|---|---:|---:|---:|---:|"]
+    lines += [
+        "",
+        "## CPU — Phase 8.1 extension, three 10k operations",
+        "",
+        "| Operation | React p50 ms | Vue p50 ms | Svelte p50 ms | RustFlow p50 ms |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for operation in EXTENDED_CPU_OPERATIONS:
+        row = [operation]
+        for framework in ("react", "vue", "svelte", "rustflow"):
+            row.append(f'{results[framework]["cpu"][operation]["metrics"]["total"]["p50"]:.3f}')
+        lines.append("| " + " | ".join(row) + " |")
+    lines += [
+        "",
+        "## Memory",
+        "",
+        "| Scenario | React p50 MiB | Vue p50 MiB | Svelte p50 MiB | RustFlow p50 MiB |",
+        "|---|---:|---:|---:|---:|",
+    ]
     for operation in MEMORY_OPERATIONS:
         row = [operation]
         for framework in ("react", "vue", "svelte", "rustflow"):
             row.append(f'{results[framework]["memory"][operation]["metrics"]["p50"]:.3f}')
         lines.append("| " + " | ".join(row) + " |")
-    lines += ["", "## Bundle and first paint", "", "| Metric | React p50 | Vue p50 | Svelte p50 | RustFlow p50 |", "|---|---:|---:|---:|---:|"]
+    lines += [
+        "",
+        "## Bundle and first paint",
+        "",
+        "| Metric | React p50 | Vue p50 | Svelte p50 | RustFlow p50 |",
+        "|---|---:|---:|---:|---:|",
+    ]
     for operation in SIZE_OPERATIONS:
         row = [operation]
         for framework in ("react", "vue", "svelte", "rustflow"):
@@ -221,15 +245,18 @@ def main() -> int:
             row.append(f'{item["metrics"]["p50"]:.3f} {item["unit"]}')
         lines.append("| " + " | ".join(row) + " |")
     lines += ["", "## Geometric mean CPU ratios", ""]
-    for framework, summary in comparisons["cpu"].items():
-        gm = float(summary["geometric_mean_ratio_rustflow_over_competitor"])
-        lines.append(
-            f'- RustFlow / {framework}: **{gm:.4f}** '
-            f'({"faster in aggregate" if gm < 1 else "not faster in aggregate"}).'
-        )
+    for index_name in ("cpu_upstream_9", "cpu_phase81_extended_3", "cpu_combined_12"):
+        lines.append(f"### {index_name}")
+        for framework, summary in comparisons[index_name].items():
+            gm = float(summary["geometric_mean_ratio_rustflow_over_competitor"])
+            lines.append(
+                f'- RustFlow / {framework}: **{gm:.4f}** '
+                f'({"faster in aggregate" if gm < 1 else "not faster in aggregate"}).'
+            )
+        lines.append("")
     lines += [
-        "",
-        "The CPU geometric mean contains only the nine upstream CPU operation ratios. Memory, bundle size and first paint are reported separately.",
+        "The combined CPU geometric mean covers the nine upstream-compatible operations plus the three Phase 8.1 10k extensions. Memory, bundle size and first paint are reported separately.",
+        "The JSON artifact additionally contains p50/p90/p95 and raw samples for total/script/paint, memory and size.",
         "This report does not assert broad superiority outside this pinned runner/browser environment.",
         "",
     ]
