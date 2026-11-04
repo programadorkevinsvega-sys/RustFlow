@@ -20,6 +20,7 @@ def report(value: float) -> dict[str, object]:
         "browser": {"engine": "Chromium", "version": "156.0.8078.4"},
         "sequential_sibling_reconciliation": {
             "size": 5_000,
+            "operation": "move one keyed anchor from first to last across unkeyed siblings",
             "warmup_samples": 2,
             "measured_samples": 12,
             "samples": 12,
