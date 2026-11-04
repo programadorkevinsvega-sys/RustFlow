@@ -386,6 +386,8 @@ jobs:
         run: python3 -m py_compile scripts/summarize-js-framework-benchmark.py
       - name: Validate browser A/B/A comparison script
         run: python3 -m py_compile scripts/compare-browser-performance.py
+      - name: Validate sequential sibling A/B/A comparison script
+        run: python3 -m py_compile scripts/compare-sequence-reconciliation.py
       - name: Test performance benchmark aggregators and A/B/A comparisons
         run: python3 -m unittest discover -s scripts/tests -v
       - name: Validate upstream benchmark patch script
@@ -395,7 +397,7 @@ jobs:
         run: node --check scripts/measure-framework-startup.mjs
 
       - name: Controlled same-runner keyed reconciliation A/B/A (Phase 8.1)
-        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/phase-8-1-') }}
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feat/phase-8-1-performance' }}
         working-directory: examples/browser
         env:
           PHASE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -442,6 +444,68 @@ jobs:
             --base-sha "$PHASE_BASE_SHA" \
             --head-sha "$PHASE_HEAD_SHA" \
             --output performance-results/browser-ab-comparison.json
+
+      - name: Controlled same-runner sequential sibling A/B/A (Phase 8.1)
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feat/phase-8-1-advanced-runtime-optimizations' }}
+        working-directory: examples/browser
+        env:
+          PHASE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PHASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_repo_path="crates/rustflow-dom/src/browser.rs"
+          dom_lib_repo_path="crates/rustflow-dom/src/lib.rs"
+          browser_source="../../$browser_repo_path"
+          dom_lib_source="../../$dom_lib_repo_path"
+          optimized_browser_source="$RUNNER_TEMP/rustflow-browser-optimized.rs"
+          optimized_dom_lib_source="$RUNNER_TEMP/rustflow-dom-lib-optimized.rs"
+          cp "$browser_source" "$optimized_browser_source"
+          cp "$dom_lib_source" "$optimized_dom_lib_source"
+
+          git cat-file -e "$PHASE_BASE_SHA:$browser_repo_path"
+          git cat-file -e "$PHASE_BASE_SHA:$dom_lib_repo_path"
+          restore_optimized() {
+            local changed=0
+            if ! cmp -s "$optimized_browser_source" "$browser_source"; then
+              cp "$optimized_browser_source" "$browser_source"
+              changed=1
+            fi
+            if ! cmp -s "$optimized_dom_lib_source" "$dom_lib_source"; then
+              cp "$optimized_dom_lib_source" "$dom_lib_source"
+              changed=1
+            fi
+            if [ "$changed" -eq 1 ]; then
+              npm run build
+            fi
+          }
+          trap restore_optimized EXIT
+
+          echo "Measure optimized sequential sibling reconciliation before the base control ($PHASE_HEAD_SHA)."
+          RUSTFLOW_BENCH_BROWSER_SEQUENCE=1 npm run bench:browser
+          cp performance-results/browser.json performance-results/browser-sequence-optimized-before.json
+
+          echo "Building the base sequential sibling reconciler ($PHASE_BASE_SHA) on the same runner."
+          git show "$PHASE_BASE_SHA:$browser_repo_path" > "$browser_source"
+          git show "$PHASE_BASE_SHA:$dom_lib_repo_path" > "$dom_lib_source"
+          npm run build
+          RUSTFLOW_BENCH_BROWSER_SEQUENCE=1 npm run bench:browser
+          cp performance-results/browser.json performance-results/browser-sequence-unoptimized.json
+
+          echo "Restoring the optimized reconciler and repeating the same workload."
+          cp "$optimized_browser_source" "$browser_source"
+          cp "$optimized_dom_lib_source" "$dom_lib_source"
+          npm run build
+          RUSTFLOW_BENCH_BROWSER_SEQUENCE=1 npm run bench:browser
+          cp performance-results/browser.json performance-results/browser-sequence-optimized-after.json
+
+          python3 ../../scripts/compare-sequence-reconciliation.py \
+            --optimized-before performance-results/browser-sequence-optimized-before.json \
+            --unoptimized performance-results/browser-sequence-unoptimized.json \
+            --optimized-after performance-results/browser-sequence-optimized-after.json \
+            --base-sha "$PHASE_BASE_SHA" \
+            --head-sha "$PHASE_HEAD_SHA" \
+            --output performance-results/browser-sequence-ab-comparison.json
 
       - name: Run extended RustFlow keyed-list stress suite
         if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.extended_browser_benchmarks) || (github.event_name == 'pull_request' && github.head_ref == 'feat/phase-8-1-measurement-completion') }}
