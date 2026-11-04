@@ -325,11 +325,16 @@ async function measureSequentialSiblingReconciliation(page, count) {
           throw new Error(phase + ": unkeyed sibling order changed at index " + index);
         }
       }
+      const currentNodes = new Map(
+        nodes.map((node) => [
+          node.id === "bench-sequence-anchor"
+            ? "anchor"
+            : node.getAttribute("data-sequence-index"),
+          node,
+        ]),
+      );
       for (const [key, original] of originalNodes) {
-        const current = key === "anchor"
-          ? nodes.find((node) => node.id === "bench-sequence-anchor")
-          : nodes.find((node) => node.getAttribute("data-sequence-index") === key);
-        if (current !== original) {
+        if (currentNodes.get(key) !== original) {
           throw new Error(phase + ": DOM identity changed for child " + key);
         }
       }
