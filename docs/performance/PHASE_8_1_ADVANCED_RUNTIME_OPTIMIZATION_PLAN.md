@@ -29,6 +29,24 @@ Estos resultados comparan RustFlow con su propia implementación base. **No demu
 5. Aplicar optimizaciones incrementales y comprobar cada grupo mediante benchmarks reproducibles y pruebas de regresión.
 6. Mantener diferenciadas las métricas de latencia, memoria del navegador, memoria lineal WASM, asignaciones del allocator, RSS, inicialización y bundle.
 
+## Registro de implementación en esta rama
+
+**Primera optimización aplicada (commit `4fcd7c4f1a2ff335b72c07219196819e99079974`):**
+
+- Se reemplazó el matching secuencial de hijos por índices `HashMap<Key, VecDeque<usize>>` y una cola de candidatos no keyed.
+- Se conserva el comportamiento anterior: primera coincidencia keyed disponible, preferencia por índice para hijos no keyed y fallback al primer hijo no keyed libre.
+- Se añadieron seis pruebas nativas, incluyendo 10.000 hermanos no keyed y casos mixtos/duplicados.
+- Complejidad esperada del matching: O(n + m) para n hijos anteriores y m hijos nuevos, con coste hash esperado O(1) por lookup; antes el fallback recorría repetidamente el vector anterior y podía ser O(n·m).
+
+**Segunda optimización aplicada en esta rama (pendiente de CI):**
+
+- Se elimina la validación recursiva redundante por cada nodo del plan de reconciliación.
+- El árbol de entrada sigue validándose en `Renderer::update`; los subárboles producidos por componentes y dinámicos se validan en su punto de entrada.
+- El commit ya no vuelve a recorrer el mismo árbol completo para repetir validaciones que se ejecutaron antes de preparar el plan.
+- La validación de propiedades, atributos, refs y la construcción segura de nodos no se desactiva; solo se evita repetir el recorrido para cada descendiente.
+
+Los dos cambios requieren la ejecución de los checks Rust/WASM/Browser E2E del HEAD actual y la revisión de artefactos antes de aceptarse como mejoras cuantificadas. Todavía no se atribuye una ganancia de latencia medida a ninguno de ellos.
+
 ## 3. Orden de implementación
 
 ### Etapa A — reproducibilidad y evidencia competitiva
