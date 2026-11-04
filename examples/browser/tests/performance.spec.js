@@ -50,7 +50,7 @@ async function loadApp(page, initialListSize = 0, nestedDepth = 0, includeBenchm
     const entry = performance.getEntriesByName("rustflow:runtime:init")[0];
     const memory = performance.memory
       ? {
-          source: "Chromium performance.memory",
+          source: "Browser performance.memory",
           used_js_heap_bytes: performance.memory.usedJSHeapSize,
           total_js_heap_bytes: performance.memory.totalJSHeapSize,
         }
@@ -663,7 +663,8 @@ async function measureExtendedRustFlowScenarios(page) {
 
 
 test("RustFlow browser runtime performance measurements", async ({ page, browser, browserErrors }) => {
-  test.setTimeout(process.env.RUSTFLOW_BENCH_BROWSER_EXTENDED === "1" ? 25 * 60 * 1000 : 10 * 60 * 1000);
+  test.setTimeout(process.env.RUSTFLOW_BENCH_BROWSER_EXTENDED === "1" ? 50 * 60 * 1000 : 10 * 60 * 1000);
+  const browserEngine = browser.browserType().name();
 
   const initializationSamples = [];
   const memorySamples = [];
@@ -947,7 +948,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     commit: process.env.GITHUB_SHA || "unspecified",
     node_version: process.version,
     browser: {
-      engine: "Chromium",
+      engine: browserEngine,
       version: browser.version(),
     },
     initialization: summarize(initializationSamples, 1, "ms"),
@@ -971,15 +972,15 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     memory: {
       observations: memorySamples,
       note:
-        "performance.memory is a Chromium-specific JS heap observation when exposed; it is not process RSS, retained Rust memory, allocation count, or a cross-browser guarantee.",
+        "performance.memory is an engine-specific JS heap observation when exposed; it is not process RSS, retained Rust memory, allocation count, or a cross-browser guarantee.",
     },
     limitations: [
-      "These measurements exercise the shipped RustFlow WASM runtime in Chromium and synchronous interactions with its real DOM.",
+      `These measurements exercise the shipped RustFlow WASM runtime in ${browserEngine} and synchronous interactions with its real DOM.`,
       "Incremental insertion measures repeated reactive reconciliation at 100 rows; the opt-in isolated suite measures one insert/remove on pre-existing lists of 100, 1,000, and 5,000 rows.",
       "Timing values are informational and must not fail CI because browser hardware and scheduling vary.",
       "Extended 100/1,000/5,000/10,000-row scenarios are opt-in via RUSTFLOW_BENCH_BROWSER_EXTENDED=1 and are not part of the upstream-compatible suite or current A/B/A acceptance aggregate.",
       "The mixed sequential-sibling A/B/A workload is opt-in via RUSTFLOW_BENCH_BROWSER_SEQUENCE=1 and moves a keyed anchor across 5,000 unkeyed siblings; it is distinct from KeyedList workloads.",
-      "Nested component depth is exercised at depths 5, 20, and 80 in Chromium; Firefox/WebKit profiling remains follow-up work.",
+      `Nested component depth is exercised at depths 5, 20, and 80 in ${browserEngine}; each engine has an independent report and no cross-engine timing threshold.`,
     ],
   };
 
@@ -995,45 +996,49 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
       });
     }
   };
-  checkTimingBudget("runtime_initialization", report.initialization.p95, 30);
-  checkTimingBudget(
-    "counter_100_updates",
-    report.counter_100_synchronous_dom_updates.p95,
-    10,
-  );
-  checkTimingBudget(
-    "todo_row_update",
-    report.todo_row_attribute_and_checked_property_update.p95,
-    0.3,
-  );
-  checkTimingBudget(
-    "keyed_list_incremental_insert_100",
-    report.keyed_list_incremental_insertions.find(
-      (scenario) => scenario.name === "keyed_list_incremental_insert_100",
-    )?.p95,
-    400,
-  );
-  checkTimingBudget(
-    "keyed_list_initial_mount_1000",
-    report.keyed_list_initial_mounts.find(
-      (scenario) => scenario.name === "keyed_list_initial_mount_1000",
-    )?.p95,
-    70,
-  );
-  checkTimingBudget("keyed_list_reverse_100", report.keyed_list_reverse_100.p95, 14);
-  for (const [depth, budget] of [[5, 16], [20, 16], [80, 16]]) {
-    const scenario = report.nested_component_depth_mount_cycles.find(
-      (item) => item.depth === depth,
+  if (browserEngine === "chromium") {
+    checkTimingBudget("runtime_initialization", report.initialization.p95, 30);
+    checkTimingBudget(
+      "counter_100_updates",
+      report.counter_100_synchronous_dom_updates.p95,
+      10,
     );
     checkTimingBudget(
-      "nested_component_depth_" + depth,
-      scenario?.p95,
-      budget,
+      "todo_row_update",
+      report.todo_row_attribute_and_checked_property_update.p95,
+      0.3,
     );
+    checkTimingBudget(
+      "keyed_list_incremental_insert_100",
+      report.keyed_list_incremental_insertions.find(
+        (scenario) => scenario.name === "keyed_list_incremental_insert_100",
+      )?.p95,
+      400,
+    );
+    checkTimingBudget(
+      "keyed_list_initial_mount_1000",
+      report.keyed_list_initial_mounts.find(
+        (scenario) => scenario.name === "keyed_list_initial_mount_1000",
+      )?.p95,
+      70,
+    );
+    checkTimingBudget("keyed_list_reverse_100", report.keyed_list_reverse_100.p95, 14);
+    for (const [depth, budget] of [[5, 16], [20, 16], [80, 16]]) {
+      const scenario = report.nested_component_depth_mount_cycles.find(
+        (item) => item.depth === depth,
+      );
+      checkTimingBudget(
+        "nested_component_depth_" + depth,
+        scenario?.p95,
+        budget,
+      );
+    }
+  
   }
   report.timing_budget_warnings = timingBudgetWarnings;
-  report.timing_budget_policy =
-    "Warning-only on GitHub-hosted runners; compare repeated samples on the same runner class before changing budgets.";
+  report.timing_budget_policy = browserEngine === "chromium"
+    ? "Warning-only on GitHub-hosted Chromium runners; compare repeated samples on the same runner class before changing budgets."
+    : "No Chromium-derived timing budgets are applied to this engine; preserve this engine-specific profile for independent analysis.";
 
   for (const warning of timingBudgetWarnings) {
     console.warn(
