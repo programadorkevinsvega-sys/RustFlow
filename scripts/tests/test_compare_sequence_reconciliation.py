@@ -64,9 +64,9 @@ class SequentialSiblingComparisonTests(unittest.TestCase):
         incomplete = report(5.0)
         scenario = incomplete["sequential_sibling_reconciliation"]
         assert isinstance(scenario, dict)
-        scenario["samples_raw"] = scenario["samples_raw"][:-1]
-        scenario["samples"] = 11
-        scenario["measured_samples"] = 11
+        scenario["samples_raw"] = scenario["samples_raw"][:-3]
+        scenario["samples"] = 9
+        scenario["measured_samples"] = 9
         result = self.compare(incomplete, report(50.0), report(5.0))
         self.assertFalse(result["accepted"])
         self.assertTrue(any("at least 10 measured samples" in item for item in result["violations"]))

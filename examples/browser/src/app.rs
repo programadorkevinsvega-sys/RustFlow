@@ -682,7 +682,7 @@ pub fn start() -> Result<(), JsValue> {
                     let anchor = ViewElement::new("span")?
                         .with_attribute("id", "bench-sequence-anchor")?
                         .with_attribute("data-sequence-anchor", "true")?
-                        .with_children([View::text("anchor")])?
+                        .with_children([View::text("anchor")])
                         .with_key("sequence-anchor")
                         .build();
 
@@ -693,7 +693,7 @@ pub fn start() -> Result<(), JsValue> {
                         children.push(
                             ViewElement::new("span")?
                                 .with_attribute("data-sequence-index", index.to_string())?
-                                .with_children([View::text(index.to_string())])?
+                                .with_children([View::text(index.to_string())])
                                 .build(),
                         );
                     }
@@ -713,7 +713,7 @@ pub fn start() -> Result<(), JsValue> {
                     .build();
                 let sequence_container = ViewElement::new("div")?
                     .with_attribute("id", "bench-sequence")?
-                    .with_children([sequence_region])?
+                    .with_children([sequence_region])
                     .build();
                 return Ok(View::fragment([toggle, sequence_container]));
             }
