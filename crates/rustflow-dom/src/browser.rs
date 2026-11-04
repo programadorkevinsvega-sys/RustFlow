@@ -1707,7 +1707,9 @@ impl DomRenderer {
         context: &mut DiffContext<'_>,
         owner_scope: &Scope,
     ) -> Result<ReconciliationPlan, DomError> {
-        self.validate_view(next)?;
+        // The complete input subtree is validated by Renderer::update before
+        // planning. Component and dynamic outputs are validated once at the
+        // boundary where those independently generated subtrees enter the plan.
         let action = match (previous, next) {
             (View::Text(_), View::Text(_)) => ReconciliationAction::Text,
             (View::Element(old), View::Element(new))
@@ -2377,8 +2379,10 @@ impl DomRenderer {
         let Some(parent) = mounted.start.parent_node() else {
             return self.replace_range(mounted, &plan.next);
         };
-        self.validate_view(&plan.next)?;
-        self.validate_node_refs_for_view(&plan.next, Some(mounted))?;
+        // An attached update reaches this point only after the external view
+        // and its node refs were validated by Renderer::update, or after a
+        // component/dynamic subtree was validated at its planning boundary.
+        // Revalidating the whole tree here would repeat the same recursive walk.
         let start: Node = mounted.start.clone().unchecked_into();
         let end: Node = mounted.end.clone().unchecked_into();
         let existing_nodes = nodes_between(&start, &end);
@@ -2583,8 +2587,6 @@ fn view_node_count_at(
         }
     }
 }
-
-
 
 fn cleanup_stale_component_regions(regions: &mut Vec<ComponentRegion>) -> Result<(), DomError> {
     let mut retained = Vec::new();
