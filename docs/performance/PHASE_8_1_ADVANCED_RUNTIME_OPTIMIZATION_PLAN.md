@@ -38,6 +38,12 @@ Estos resultados comparan RustFlow con su propia implementación base. **No demu
 - Se añadieron siete pruebas nativas: 10.000 hermanos no keyed, casos mixtos/duplicados y equivalencia exhaustiva frente al algoritmo anterior en 69.905 pares de secuencias de hasta cuatro hijos.
 - Complejidad esperada del matching: O(n + m) para n hijos anteriores y m hijos nuevos, con coste hash esperado O(1) por lookup; antes el fallback recorría repetidamente el vector anterior y podía ser O(n·m).
 
+**Tercera optimización aplicada en esta rama (pendiente de CI):**
+
+- `commit_sequence` ya no crea objetos JavaScript `Map` cuando el montaje no contiene componentes ni regiones dinámicas.
+- Los índices por identidad DOM se construyen solo si el vector correspondiente de regiones no está vacío; las búsquedas siguen siendo obligatorias para los nodos de componente/dinámicos presentes.
+- Esto evita dos asignaciones de objetos JS y sus inserciones por cada secuencia simple reconciliada (por ejemplo, cada elemento de una lista DOM ordinaria). La ganancia debe comprobarse con el benchmark de listas y el perfil WASM/JS; todavía no se publica como mejora cuantificada.
+
 **Segunda optimización aplicada en esta rama (pendiente de CI):**
 
 - Se elimina la validación recursiva redundante por cada nodo del plan de reconciliación.
