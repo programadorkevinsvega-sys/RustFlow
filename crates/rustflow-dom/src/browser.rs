@@ -2277,19 +2277,29 @@ impl DomRenderer {
         previous_dynamics: &mut Vec<DynamicRegion>,
         resources: &mut RenderedNodes,
     ) -> Result<Vec<Node>, DomError> {
-        let component_indices_by_start = Map::new();
-        for (index, region) in previous_components.iter().enumerate() {
-            let start: Node = region.mounted.start.clone().unchecked_into();
-            component_indices_by_start.set(start.as_ref(), &JsValue::from_f64(index as f64));
-        }
-        let dynamic_indices_by_start = Map::new();
-        for (index, region) in previous_dynamics.iter().enumerate() {
-            let state = region.state.borrow();
-            if let Some(current) = state.as_ref() {
-                let start: Node = current.mounted.start.clone().unchecked_into();
-                dynamic_indices_by_start.set(start.as_ref(), &JsValue::from_f64(index as f64));
+        let component_indices_by_start = if previous_components.is_empty() {
+            None
+        } else {
+            let indices = Map::new();
+            for (index, region) in previous_components.iter().enumerate() {
+                let start: Node = region.mounted.start.clone().unchecked_into();
+                indices.set(start.as_ref(), &JsValue::from_f64(index as f64));
             }
-        }
+            Some(indices)
+        };
+        let dynamic_indices_by_start = if previous_dynamics.is_empty() {
+            None
+        } else {
+            let indices = Map::new();
+            for (index, region) in previous_dynamics.iter().enumerate() {
+                let state = region.state.borrow();
+                if let Some(current) = state.as_ref() {
+                    let start: Node = current.mounted.start.clone().unchecked_into();
+                    indices.set(start.as_ref(), &JsValue::from_f64(index as f64));
+                }
+            }
+            Some(indices)
+        };
 
         let mut ranges = Vec::with_capacity(previous.len());
         let mut cursor = 0usize;
@@ -2300,8 +2310,8 @@ impl DomRenderer {
                 cursor,
                 previous_components,
                 previous_dynamics,
-                &component_indices_by_start,
-                &dynamic_indices_by_start,
+                component_indices_by_start.as_ref(),
+                dynamic_indices_by_start.as_ref(),
             )
             .ok_or_else(|| {
                 DomError::JavaScript(
@@ -2514,8 +2524,8 @@ fn view_node_count_at(
     cursor: usize,
     components: &[ComponentRegion],
     dynamics: &[DynamicRegion],
-    component_indices_by_start: &Map,
-    dynamic_indices_by_start: &Map,
+    component_indices_by_start: Option<&Map>,
+    dynamic_indices_by_start: Option<&Map>,
 ) -> Option<usize> {
     match view {
         View::Text(_) | View::Element(_) => {
@@ -2554,7 +2564,7 @@ fn view_node_count_at(
         }
         View::Component(component) => {
             let first = existing_nodes.get(cursor)?;
-            let region_index = component_indices_by_start
+            let region_index = component_indices_by_start?
                 .get(first.as_ref())
                 .as_f64()
                 .map(|index| index as usize)?;
@@ -2571,7 +2581,7 @@ fn view_node_count_at(
         }
         View::Dynamic(_) => {
             let first = existing_nodes.get(cursor)?;
-            let region_index = dynamic_indices_by_start
+            let region_index = dynamic_indices_by_start?
                 .get(first.as_ref())
                 .as_f64()
                 .map(|index| index as usize)?;
