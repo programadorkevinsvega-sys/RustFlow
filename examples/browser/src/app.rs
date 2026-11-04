@@ -440,9 +440,7 @@ pub fn start() -> Result<(), JsValue> {
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|count| (1..=10_000).contains(count))
         .unwrap_or(0);
-    let benchmark_sequence_flip = runtime
-        .signal(false)
-        .map_err(display_error)?;
+    let benchmark_sequence_flip = runtime.signal(false).map_err(display_error)?;
     let official_benchmark_mode = window
         .location()
         .pathname()?

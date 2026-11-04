@@ -35,6 +35,8 @@ def validate_report(report: dict[str, Any], label: str) -> tuple[list[float], li
         violations.append(
             f"{label}: expected {EXPECTED_SIZE} unkeyed siblings, got {item.get('size')!r}"
         )
+    if item.get("operation") != "move one keyed anchor from first to last across unkeyed siblings":
+        violations.append(f"{label}: benchmark operation does not match the required mixed sibling workload")
     if item.get("warmup_samples") != 2:
         violations.append(
             f"{label}: requires exactly 2 discarded warm-up samples; "
