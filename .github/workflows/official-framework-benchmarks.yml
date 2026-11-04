@@ -1,6 +1,9 @@
 name: Official framework benchmarks
 
 on:
+  push:
+    branches:
+      - feat/phase-8-1-advanced-runtime-optimizations
   workflow_dispatch:
     inputs:
       rustflow_commit:

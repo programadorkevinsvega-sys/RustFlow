@@ -6,7 +6,7 @@ export default defineConfig({
   expect: { timeout: 5_000 },
   use: {
     baseURL: "http://127.0.0.1:4173",
-    browserName: "chromium",
+    browserName: process.env.RUSTFLOW_BROWSER ?? "chromium",
     headless: true,
     trace: "retain-on-failure",
   },
