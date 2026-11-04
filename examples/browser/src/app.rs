@@ -676,6 +676,49 @@ pub fn start() -> Result<(), JsValue> {
             if official_benchmark_mode {
                 return View::component("OfficialBenchmark", [], [], None).map_err(DomError::from);
             }
+            if benchmark_sequence_size > 0 {
+                let flip_for_region = benchmark_sequence_flip.clone();
+                let sequence_region = View::dynamic(move || {
+                    let flipped = flip_for_region.get();
+                    let mut children = Vec::with_capacity(benchmark_sequence_size + 1);
+                    let anchor = ViewElement::new("span")?
+                        .with_attribute("id", "bench-sequence-anchor")?
+                        .with_attribute("data-sequence-anchor", "true")?
+                        .with_children([View::text("anchor")])?
+                        .with_key("sequence-anchor")
+                        .build();
+
+                    if !flipped {
+                        children.push(anchor.clone());
+                    }
+                    for index in 0..benchmark_sequence_size {
+                        children.push(
+                            ViewElement::new("span")?
+                                .with_attribute("data-sequence-index", index.to_string())?
+                                .with_children([View::text(index.to_string())])?
+                                .build(),
+                        );
+                    }
+                    if flipped {
+                        children.push(anchor);
+                    }
+                    Ok(View::fragment(children))
+                });
+                let flip_for_button = benchmark_sequence_flip.clone();
+                let toggle = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-sequence-toggle")?
+                    .with_attribute("hidden", "")?
+                    .with_event("click", move |_payload| {
+                        flip_for_button.update(|value| *value = !*value);
+                    })?
+                    .build();
+                let sequence_container = ViewElement::new("div")?
+                    .with_attribute("id", "bench-sequence")?
+                    .with_children([sequence_region])?
+                    .build();
+                return Ok(View::fragment([toggle, sequence_container]));
+            }
             // The browser benchmark keeps one WASM runtime alive and toggles only
             // the recursive component subtree. This isolates component mount/unmount
             // work from full-page navigation, WASM startup, and browser cache effects.
