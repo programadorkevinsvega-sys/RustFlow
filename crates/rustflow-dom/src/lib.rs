@@ -5,6 +5,7 @@
 //! be tested without a browser.
 
 mod policy;
+mod sequence;
 
 pub use policy::{DomPolicyError, validate_attribute, validate_element, validate_property};
 
