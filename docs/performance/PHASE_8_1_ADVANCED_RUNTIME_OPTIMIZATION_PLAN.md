@@ -35,7 +35,7 @@ Estos resultados comparan RustFlow con su propia implementación base. **No demu
 
 - Se reemplazó el matching secuencial de hijos por índices `HashMap<Key, VecDeque<usize>>` y una cola de candidatos no keyed.
 - Se conserva el comportamiento anterior: primera coincidencia keyed disponible, preferencia por índice para hijos no keyed y fallback al primer hijo no keyed libre.
-- Se añadieron seis pruebas nativas, incluyendo 10.000 hermanos no keyed y casos mixtos/duplicados.
+- Se añadieron siete pruebas nativas: 10.000 hermanos no keyed, casos mixtos/duplicados y equivalencia exhaustiva frente al algoritmo anterior en 69.905 pares de secuencias de hasta cuatro hijos.
 - Complejidad esperada del matching: O(n + m) para n hijos anteriores y m hijos nuevos, con coste hash esperado O(1) por lookup; antes el fallback recorría repetidamente el vector anterior y podía ser O(n·m).
 
 **Segunda optimización aplicada en esta rama (pendiente de CI):**
