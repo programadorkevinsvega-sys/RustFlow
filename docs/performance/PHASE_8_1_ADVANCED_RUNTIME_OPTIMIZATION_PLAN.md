@@ -47,6 +47,28 @@ Estos resultados comparan RustFlow con su propia implementación base. **No demu
 - El nuevo gate compara 12 muestras por variante, valida 2 warmups, versiones de Chromium/Node, orden y contenido de los 5.000 hermanos y la misma referencia DOM para el ancla keyed; no exige identidad estable de los nodos no keyed, que siguen el contrato posicional. Exige 20 % de mejora tanto antes como después y deriva A/A máxima del 15 %. Las tres variantes usan el mismo fixture y solo alternan `browser.rs` y el módulo DOM entre HEAD y base.
 - La prueba no puede aprobar si faltan muestras, no se conserva identidad, los metadatos difieren, la mejora es insuficiente o la deriva es excesiva.
 
+### Evidencia A/B/A aceptada — secuencias mixtas (4 de noviembre de 2026)
+
+<badge>Aceptada</badge> **Run CI:** [#41761877066](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/41761877066) · **Job:** Browser E2E and bundle size · **SHA medido:** `e10323f425f48075dcc7ec2583586e1c8f4f22e9` · **Base:** `7c82040ff7b1813c626ff1a3bc3cb00879abbba1`.
+
+El job midió, en el mismo runner y Chromium, mover un único ancla keyed desde el primer lugar hasta el final de 5.000 hermanos no keyed. Ejecutó 12 muestras por variante y 2 warmups; comprobó el orden/contenido de los 5.000 hermanos y la identidad DOM del ancla keyed. Los nodos no keyed mantienen identidad posicional, no keyed estable.
+
+| Variante | Muestras | Mediana |
+|---|---:|---:|
+| Optimizado antes | 12 | 20,0 ms |
+| Base | 12 | 30,7 ms |
+| Optimizado después | 12 | 20,6 ms |
+
+- Mejora optimizado antes vs. base: **34,85 %**.
+- Mejora optimizado después vs. base: **32,90 %**.
+- Deriva A/A optimizado: **3,00 %**.
+- Entorno reportado: Chromium `156.0.8078.4`, Node.js `v22.23.4`.
+- Gate: mejora mínima del 20 % en ambas pasadas y deriva A/A máxima del 15 %. Resultado: `accepted: true`, cero violaciones.
+
+**Artefacto crudo:** [phase-8-1-browser-performance](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/41761877066/artifacts/13291261632) (artifact ID `13291261632`, incluye los informes y las muestras raw).
+
+Esta aceptación solo demuestra la mejora en este workload de secuencias mixtas y en este entorno. **No es** la comparación competitiva oficial contra React, Vue y Svelte ni evidencia para las extensiones de 10.000 filas. El SHA medido antecede al ajuste de `cfg` de `sequence` en `46e76b3`; ese ajuste solo cambia dónde se compila el módulo (WASM y tests native), no el algoritmo WASM medido.
+
 **Tercera optimización aplicada en esta rama (pendiente de CI):**
 
 - `commit_sequence` ya no crea objetos JavaScript `Map` cuando el montaje no contiene componentes ni regiones dinámicas.
