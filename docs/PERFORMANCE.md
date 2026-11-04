@@ -1,6 +1,6 @@
 # RustFlow performance measurements
 
-Estado: Phase 8.1 sigue en progreso. El CI #893 del PR #78 aceptó la comparación A/B/A interna del reconciliador en el mismo runner (45,30% de mejora en inserción incremental y 54,67% en reverse keyed), validó las métricas de memoria/ComponentInstance y mantuvo el bundle dentro de sus presupuestos. Esto no demuestra todavía superioridad frente a React, Vue y Svelte: la comparación competitiva oficial sigue pendiente. El historial reproducible de esta ejecución está en [docs/performance/runs/2026-11-03-ci-893-phase-8-1.md](performance/runs/2026-11-03-ci-893-phase-8-1.md). Los números de un runner son observaciones de ese entorno, no garantías universales.
+Estado: Phase 8.1 sigue en progreso. El CI #944 del PR #78 aceptó la evidencia interna del reconciliador keyed en el mismo runner (47,85% de mejora mediana en inserción incremental y 55,15% en reverse keyed), los límites de memoria de ocho escenarios de owner/ComponentInstance con outstanding cero, y todos los presupuestos deterministas de bundle. El CI posterior a la fusión, #945 sobre `main`, también pasó. Esto no demuestra superioridad frente a React, Vue y Svelte: el workflow competitivo ya está en `main`, pero todavía no tiene una ejecución ni artefactos revisados. El [historial reproducible de CI #944](performance/runs/2026-11-03-ci-944-phase-8-1.md) conserva métricas, entorno, límites y reservas. Los números de un runner son observaciones de ese entorno, no garantías universales.
 
 
 Referencia de comparación competitiva: [benchmark oficial fijado, versiones y discrepancias del runner](performance/FRAMEWORK_BENCHMARK_REFERENCE.md). La referencia distingue la suite upstream reproducida literalmente de los escenarios extendidos de 10.000 filas; aún no existen resultados competitivos aceptados.
@@ -177,9 +177,13 @@ El primer artefacto posterior, [optimized-candidate-2026-11-03.json](https://git
 La ejecución control mostró por qué no debe usarse esta comparación entre jobs: ambos usaron Ubuntu 24.04 y Chromium 156.0.8078.4, pero el modelo de CPU difirió (AMD EPYC 9V45 para el optimizado y AMD EPYC 7763 para el control). El job de browser está configurado para ejecutar un A/B/A dentro del mismo runner: mide optimizado, reconstruye el archivo DOM desde el SHA base de la PR, mide el control y vuelve a medir optimizado. Cuando la ejecución termina correctamente, CPU, Node, Chromium, Rust y condiciones del proceso permanecen iguales. El resultado controlado se guarda como `browser-ab-comparison.json` y exige una mejora mínima de 20% en la mediana de inserción keyed y reverse; los tiempos absolutos siguen siendo warning-only. La configuración del job no equivale a una comparación aceptada: el artefacto debe existir y cumplir todos los criterios. El comparador A/B/A publica mediana/p95 para montajes de 100 y 1.000 filas y profundidades de componentes 5, 20 y 80. Los montajes iniciales de listas mantienen su propio contrato de calentamiento y muestras. Para componentes anidados, cada variante ejecuta 10 ciclos mount/unmount descartados y 25 muestras; cada muestra promedia 10 montajes síncronos en el mismo runtime WASM inicializado, con desmontajes cronometrados por separado. El comparador valida `warmup_cycles`, `cycles_per_sample`, `measured_samples`, las series de montaje/desmontaje, el número de instancias, el resultado del cleanup y el conteo final del DOM. El montaje de 10.000 filas se conserva como medición de estrés informativa de la versión optimizada, independiente del A/B/A. Las seis series de mutaciones aisladas de 100/1.000/5.000 filas también se ejecutan en ambas pasadas optimizadas (20 muestras por operación y escala) y su deriva A/A debe mantenerse en 15% o menos; el control base las omite deliberadamente porque su búsqueda keyed cuadrática hace que el escenario de 5.000 filas exceda el tiempo disponible. Todos los escenarios secundarios comparables exigen deriva A/A máxima de 15% antes de interpretar su mediana y rechazan regresiones medianas superiores al 25%. Así, una medición inestable no se presenta como mejora ni como regresión aceptada.
 
 
-#### Registro detallado del CI #893
+#### Registro detallado del CI #944
 
-El [registro histórico completo](performance/runs/2026-11-03-ci-893-phase-8-1.md) contiene el A/B/A aceptado, percentiles, mutaciones aisladas de 100/1.000/5.000 filas, montaje informativo de 10.000 filas, contadores DOM, memoria, SSR, reactividad, RSS y bundle. El comparador aceptó esta ejecución con `accepted: true` y `violations: []`. La aceptación se limita a los gates internos de RustFlow; no compara todavía los resultados con React, Vue o Svelte.
+El [registro completo de CI #944](performance/runs/2026-11-03-ci-944-phase-8-1.md) contiene p50/p95, conteos de muestras, entorno, artefactos y presupuestos verificados de reactividad, SSR, RSS, memoria de ComponentOwner/ComponentInstance, A/B/A keyed, listas de 10.000 filas y bundle. El comparador aceptó el A/B/A interno con `accepted: true` y `violations: []`. El contrato actualizado exige cinco muestras por pasada para inserción incremental y diez para reverse, además de comprobar el campo `samples` contra la cantidad de `samples_raw`.
+
+#### Registro histórico del CI #893
+
+El [registro histórico completo de CI #893](performance/runs/2026-11-03-ci-893-phase-8-1.md) conserva las mediciones de la ejecución previa. No debe confundirse con el resultado más reciente #944.
 
 ### Presupuestos iniciales y política de regresión
 
@@ -217,7 +221,8 @@ Las mediciones de rendimiento no sustituyen pruebas funcionales. Los benchmarks 
 
 | Fecha | CI | HEAD del PR | Resultado registrado |
 |---|---|---|---|
-| 2026-11-03 | [#893](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/41589448890) | `e94de965a176c297feef3ec2ef5124dacaa25173` | A/B/A interno aceptado; memoria y bundle dentro de presupuesto; [registro completo](performance/runs/2026-11-03-ci-893-phase-8-1.md) |
+| 2026-11-03 | [#944](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/41725240749) | `83a65d33a8873bad29e5f28f087fedb58f1c9fc3` | A/B/A interno aceptado (47,85% inserción; 55,15% reverse); ocho escenarios de memoria y bundle aprobados; [registro completo](performance/runs/2026-11-03-ci-944-phase-8-1.md) |
+| 2026-11-03 | [#893](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/41589448890) | `e94de965a176c297feef3ec2ef5124dacaa25173` | Ejecución histórica; A/B/A interno aceptado; [registro completo](performance/runs/2026-11-03-ci-893-phase-8-1.md) |
 
 ## Limitaciones conocidas
 
@@ -226,7 +231,7 @@ Las mediciones de rendimiento no sustituyen pruebas funcionales. Los benchmarks 
 3. No hay benchmark concurrente de SSR ni benchmark de solicitudes HTTP completas.
 4. La memoria por owner se mide en un benchmark nativo separado; la memoria live interna del allocator WASM todavía no se mide por componente.
 5. El resumen histórico se conserva en `docs/performance/runs/`; los archivos crudos de CI siguen sujetos a la retención de artefactos de GitHub Actions.
-6. El A/B/A interno del CI #893 fue aceptado: la mediana mejoró 45,30% en inserción incremental keyed y 54,67% en reverse keyed, con deriva A/A de 0,23% y <0,01%, respectivamente. Sigue pendiente la comparación oficial contra React/Vue/Svelte, el A/B/A de montaje de 10.000 filas y las mutaciones aisladas en listas de 10.000.
+6. El CI #944 aceptó el A/B/A interno: 47,85% de mejora mediana en inserción incremental keyed y 55,15% en reverse keyed, con deriva A/A de 0,13% y 0,82%. El comparador ahora exige como mínimo 5 muestras por pasada para inserción y 10 para reverse, y comprueba que el número declarado coincida con las muestras crudas. Sigue pendiente la comparación oficial contra React/Vue/Svelte y el A/B/A de montaje/mutaciones aisladas en listas de 10.000 filas.
 
 El tiempo de Runtime::new también se mide como microoperación en la suite de reactividad, pero no se resta del tiempo SSR: no se hace una descomposición artificial del coste público por render.
 
