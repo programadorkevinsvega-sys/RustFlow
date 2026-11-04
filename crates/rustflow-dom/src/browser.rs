@@ -24,7 +24,10 @@ use web_sys::{
     HtmlSelectElement, HtmlTextAreaElement, Node,
 };
 
-use crate::policy::{DomPolicyError, validate_attribute, validate_element, validate_property};
+use crate::{
+    policy::{DomPolicyError, validate_attribute, validate_element, validate_property},
+    sequence::match_sequence,
+};
 
 /// A typed reference to a mounted browser element. It is empty during SSR and
 /// view construction, becomes available after mount/hydration, and is cleared
@@ -1858,27 +1861,14 @@ impl DomRenderer {
         context: &mut DiffContext<'_>,
         owner_scope: &Scope,
     ) -> Result<Vec<PlannedChild>, DomError> {
-        let mut used = vec![false; previous.len()];
+        // Build the keyed and unkeyed match indexes once. The original nested
+        // scan searched the previous siblings for every next child, which made
+        // large unkeyed sibling sequences quadratic.
+        let matches = match_sequence(previous, next);
         let mut planned = Vec::with_capacity(next.len());
-        for (next_index, next_view) in next.iter().enumerate() {
-            let next_key = view_key(next_view);
-            let matched = if let Some(key) = next_key {
-                previous.iter().enumerate().find_map(|(index, candidate)| {
-                    (!used[index] && view_key(candidate) == Some(key)).then_some(index)
-                })
-            } else if next_index < previous.len()
-                && !used[next_index]
-                && view_key(&previous[next_index]).is_none()
-            {
-                Some(next_index)
-            } else {
-                previous.iter().enumerate().find_map(|(index, candidate)| {
-                    (!used[index] && view_key(candidate).is_none()).then_some(index)
-                })
-            };
 
-            let child_plan = if let Some(previous_index) = matched {
-                used[previous_index] = true;
+        for (next_view, previous_index) in next.iter().zip(matches) {
+            let child_plan = if let Some(previous_index) = previous_index {
                 self.plan_diff_with_context(
                     &previous[previous_index],
                     next_view,
@@ -1889,7 +1879,7 @@ impl DomRenderer {
                 self.replacement_plan(next_view, next_view, owner_scope)?
             };
             planned.push(PlannedChild {
-                previous_index: matched,
+                previous_index,
                 plan: Box::new(child_plan),
             });
         }
@@ -2594,13 +2584,7 @@ fn view_node_count_at(
     }
 }
 
-fn view_key(view: &View) -> Option<&Key> {
-    match view {
-        View::Element(element) => element.key(),
-        View::Component(component) => component.key(),
-        _ => None,
-    }
-}
+
 
 fn cleanup_stale_component_regions(regions: &mut Vec<ComponentRegion>) -> Result<(), DomError> {
     let mut retained = Vec::new();
