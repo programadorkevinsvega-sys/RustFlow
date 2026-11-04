@@ -147,4 +147,66 @@ mod tests {
             .enumerate()
             .all(|(index, matched)| matched == Some(index)));
     }
+    fn sequence_from_pattern(mut pattern: usize, len: usize) -> Vec<View> {
+        (0..len)
+            .map(|_| {
+                let item = pattern % 4;
+                pattern /= 4;
+                match item {
+                    0 => View::text("unkeyed"),
+                    1 | 3 => keyed_element("duplicate"),
+                    _ => keyed_element("other"),
+                }
+            })
+            .collect()
+    }
+
+    fn previous_matching_contract(previous: &[View], next: &[View]) -> Vec<Option<usize>> {
+        let mut used = vec![false; previous.len()];
+        next.iter()
+            .enumerate()
+            .map(|(next_index, next_view)| {
+                let matched = if let Some(key) = super::view_key(next_view) {
+                    previous.iter().enumerate().find_map(|(index, candidate)| {
+                        (!used[index] && super::view_key(candidate) == Some(key))
+                            .then_some(index)
+                    })
+                } else if next_index < previous.len()
+                    && !used[next_index]
+                    && super::view_key(&previous[next_index]).is_none()
+                {
+                    Some(next_index)
+                } else {
+                    previous.iter().enumerate().find_map(|(index, candidate)| {
+                        (!used[index] && super::view_key(candidate).is_none())
+                            .then_some(index)
+                    })
+                };
+
+                if let Some(index) = matched {
+                    used[index] = true;
+                }
+                matched
+            })
+            .collect()
+    }
+
+    #[test]
+    fn indexed_matching_is_equivalent_to_the_previous_contract_for_mixed_sequences() {
+        for len in 0..=4 {
+            let pattern_count = 4usize.pow(len as u32);
+            for previous_pattern in 0..pattern_count {
+                let previous = sequence_from_pattern(previous_pattern, len);
+                for next_pattern in 0..pattern_count {
+                    let next = sequence_from_pattern(next_pattern, len);
+                    assert_eq!(
+                        match_sequence(&previous, &next),
+                        previous_matching_contract(&previous, &next),
+                        "matching changed for length {len}, previous pattern {previous_pattern}, next pattern {next_pattern}"
+                    );
+                }
+            }
+        }
+    }
+
 }
