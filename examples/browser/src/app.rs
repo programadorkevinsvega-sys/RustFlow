@@ -428,6 +428,21 @@ pub fn start() -> Result<(), JsValue> {
         .trim_start_matches('?')
         .split('&')
         .any(|parameter| parameter == "bench_controls=1");
+
+    // Stress the sequential sibling matcher with one keyed anchor shifted across
+    // thousands of unkeyed siblings. This is separate from KeyedList's own index.
+    let benchmark_sequence_size = window
+        .location()
+        .search()?
+        .trim_start_matches('?')
+        .split('&')
+        .find_map(|parameter| parameter.strip_prefix("bench_sequence="))
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|count| (1..=10_000).contains(count))
+        .unwrap_or(0);
+    let benchmark_sequence_flip = runtime
+        .signal(false)
+        .map_err(display_error)?;
     let official_benchmark_mode = window
         .location()
         .pathname()?
