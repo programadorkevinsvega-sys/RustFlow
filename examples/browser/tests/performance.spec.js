@@ -286,6 +286,103 @@ async function measureIsolatedKeyedMutations(page, count) {
   ];
 }
 
+async function measureSequentialSiblingReconciliation(page, count) {
+  await page.goto(`/?bench_sequence=${count}`);
+  await page.locator("#bench-sequence").waitFor({ state: "attached" });
+  await page.locator("#bench-sequence-anchor").waitFor({ state: "attached" });
+
+  const result = await page.evaluate(({ count, warmupSamples, repetitions }) => {
+    const container = document.querySelector("#bench-sequence");
+    const toggle = document.querySelector('[data-testid="bench-sequence-toggle"]');
+    if (!container || !toggle) {
+      throw new Error("Sequential sibling benchmark fixture was not mounted");
+    }
+
+    const childSpans = () => Array.from(container.querySelectorAll(":scope > span"));
+    const originalNodes = new Map(
+      childSpans().map((node) => [
+        node.id === "bench-sequence-anchor"
+          ? "anchor"
+          : node.getAttribute("data-sequence-index"),
+        node,
+      ]),
+    );
+
+    const verify = (anchorAtEnd, phase) => {
+      const nodes = childSpans();
+      if (nodes.length !== count + 1) {
+        throw new Error(
+          phase + ": expected " + (count + 1) + " sequence children; got " + nodes.length,
+        );
+      }
+      const expectedAnchorIndex = anchorAtEnd ? count : 0;
+      if (nodes[expectedAnchorIndex]?.id !== "bench-sequence-anchor") {
+        throw new Error(phase + ": keyed anchor is not at the expected position");
+      }
+      for (let index = 0; index < count; index += 1) {
+        const node = nodes[anchorAtEnd ? index : index + 1];
+        if (node?.getAttribute("data-sequence-index") !== String(index)) {
+          throw new Error(phase + ": unkeyed sibling order changed at index " + index);
+        }
+      }
+      for (const [key, original] of originalNodes) {
+        const current = key === "anchor"
+          ? nodes.find((node) => node.id === "bench-sequence-anchor")
+          : nodes.find((node) => node.getAttribute("data-sequence-index") === key);
+        if (current !== original) {
+          throw new Error(phase + ": DOM identity changed for child " + key);
+        }
+      }
+    };
+
+    verify(false, "initial sequence");
+    for (let sample = 0; sample < warmupSamples; sample += 1) {
+      toggle.click();
+      verify(true, "warmup move " + sample);
+      toggle.click();
+      verify(false, "warmup reset " + sample);
+    }
+
+    const samples = [];
+    for (let sample = 0; sample < repetitions; sample += 1) {
+      const started = performance.now();
+      toggle.click();
+      samples.push(performance.now() - started);
+      verify(true, "measured move " + sample);
+      // Restore the anchor to index zero outside the timed interval so every
+      // measured operation exercises the same keyed-to-unkeyed fallback path.
+      toggle.click();
+      verify(false, "measured reset " + sample);
+    }
+
+    return {
+      samples_raw: samples,
+      warmup_samples: warmupSamples,
+      measured_samples: samples.length,
+      final_dom_children: childSpans().length,
+      identity_preserved: true,
+      final_anchor_position: "first",
+    };
+  }, { count, warmupSamples: 2, repetitions: 12 });
+
+  if (result.final_dom_children !== count + 1 || !result.identity_preserved) {
+    throw new Error("Sequential sibling benchmark did not preserve the original DOM");
+  }
+
+  return {
+    size: count,
+    operation: "move one keyed anchor from first to last across unkeyed siblings",
+    ...summarize(result.samples_raw, 1, "ms"),
+    warmup_samples: result.warmup_samples,
+    measured_samples: result.measured_samples,
+    final_dom_children: result.final_dom_children,
+    identity_preserved: result.identity_preserved,
+    final_anchor_position: result.final_anchor_position,
+    measured_scope:
+      "One dynamic fragment reconciliation moving a keyed anchor from index zero to the end of 5,000 unkeyed sibling elements; the reset move is excluded from timing and all DOM identities are checked",
+  };
+}
+
 async function measureExtendedRustFlowScenarios(page) {
   const report = [];
 
@@ -842,6 +939,10 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     process.env.RUSTFLOW_BENCH_BROWSER_EXTENDED === "1"
       ? await measureExtendedRustFlowScenarios(page)
       : [];
+  const sequentialSiblingReconciliation =
+    process.env.RUSTFLOW_BENCH_BROWSER_SEQUENCE === "1"
+      ? await measureSequentialSiblingReconciliation(page, 5_000)
+      : null;
 
   const report = {
     schema_version: 1,
@@ -861,6 +962,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     keyed_list_incremental_insertions: listScenarios,
     keyed_list_isolated_mutations: isolatedKeyedMutationScenarios,
     extended_scenarios: extendedScenarios,
+    sequential_sibling_reconciliation: sequentialSiblingReconciliation,
     keyed_list_reverse_100: summarize(reorderSamples, 1, "ms"),
     keyed_list_remove_100: {
       elapsed_ms: removalElapsed.elapsed_ms,
@@ -880,6 +982,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
       "Incremental insertion measures repeated reactive reconciliation at 100 rows; the opt-in isolated suite measures one insert/remove on pre-existing lists of 100, 1,000, and 5,000 rows.",
       "Timing values are informational and must not fail CI because browser hardware and scheduling vary.",
       "Extended 100/1,000/5,000/10,000-row scenarios are opt-in via RUSTFLOW_BENCH_BROWSER_EXTENDED=1 and are not part of the upstream-compatible suite or current A/B/A acceptance aggregate.",
+      "The mixed sequential-sibling A/B/A workload is opt-in via RUSTFLOW_BENCH_BROWSER_SEQUENCE=1 and moves a keyed anchor across 5,000 unkeyed siblings; it is distinct from KeyedList workloads.",
       "Nested component depth is exercised at depths 5, 20, and 80 in Chromium; Firefox/WebKit profiling remains follow-up work.",
     ],
   };

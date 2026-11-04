@@ -20,7 +20,10 @@ pub(crate) fn match_sequence(previous: &[View], next: &[View]) -> Vec<Option<usi
 
     for (index, view) in previous.iter().enumerate() {
         match view_key(view) {
-            Some(key) => keyed_indices.entry(key.clone()).or_default().push_back(index),
+            Some(key) => keyed_indices
+                .entry(key.clone())
+                .or_default()
+                .push_back(index),
             None => unkeyed_indices.push_back(index),
         }
     }
@@ -30,9 +33,7 @@ pub(crate) fn match_sequence(previous: &[View], next: &[View]) -> Vec<Option<usi
 
     for (next_index, next_view) in next.iter().enumerate() {
         let matched = match view_key(next_view) {
-            Some(key) => keyed_indices
-                .get_mut(key)
-                .and_then(VecDeque::pop_front),
+            Some(key) => keyed_indices.get_mut(key).and_then(VecDeque::pop_front),
             None => {
                 // Preserve the positional preference of the original reconciler.
                 let positional = (next_index < previous.len()
@@ -142,10 +143,12 @@ mod tests {
 
         let matches = match_sequence(&previous, &next);
         assert_eq!(matches.len(), 10_000);
-        assert!(matches
-            .into_iter()
-            .enumerate()
-            .all(|(index, matched)| matched == Some(index)));
+        assert!(
+            matches
+                .into_iter()
+                .enumerate()
+                .all(|(index, matched)| matched == Some(index))
+        );
     }
     fn sequence_from_pattern(mut pattern: usize, len: usize) -> Vec<View> {
         (0..len)
@@ -168,8 +171,7 @@ mod tests {
             .map(|(next_index, next_view)| {
                 let matched = if let Some(key) = super::view_key(next_view) {
                     previous.iter().enumerate().find_map(|(index, candidate)| {
-                        (!used[index] && super::view_key(candidate) == Some(key))
-                            .then_some(index)
+                        (!used[index] && super::view_key(candidate) == Some(key)).then_some(index)
                     })
                 } else if next_index < previous.len()
                     && !used[next_index]
@@ -178,8 +180,7 @@ mod tests {
                     Some(next_index)
                 } else {
                     previous.iter().enumerate().find_map(|(index, candidate)| {
-                        (!used[index] && super::view_key(candidate).is_none())
-                            .then_some(index)
+                        (!used[index] && super::view_key(candidate).is_none()).then_some(index)
                     })
                 };
 
@@ -208,5 +209,4 @@ mod tests {
             }
         }
     }
-
 }
