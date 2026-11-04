@@ -26,7 +26,7 @@ def report(value: float) -> dict[str, object]:
             "samples": 12,
             "samples_raw": samples,
             "final_dom_children": 5_001,
-            "identity_preserved": True,
+            "keyed_anchor_identity_preserved": True,
             "final_anchor_position": "first",
         },
     }
@@ -59,6 +59,19 @@ class SequentialSiblingComparisonTests(unittest.TestCase):
         result = self.compare(report(5.0), report(50.0), report(8.0))
         self.assertFalse(result["accepted"])
         self.assertTrue(any("A-to-A median drift" in item for item in result["violations"]))
+
+    def test_rejects_lost_keyed_anchor_identity(self) -> None:
+        before = report(5.0)
+        scenario = before["sequential_sibling_reconciliation"]
+        assert isinstance(scenario, dict)
+        scenario["keyed_anchor_identity_preserved"] = False
+
+        result = self.compare(before, report(50.0), report(5.0))
+
+        self.assertFalse(result["accepted"])
+        self.assertTrue(
+            any("keyed anchor DOM identity" in item for item in result["violations"])
+        )
 
     def test_rejects_incomplete_samples(self) -> None:
         incomplete = report(5.0)

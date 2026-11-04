@@ -47,8 +47,8 @@ def validate_report(report: dict[str, Any], label: str) -> tuple[list[float], li
             f"{label}: expected {EXPECTED_SIZE + 1} final DOM children; "
             f"got {item.get('final_dom_children')!r}"
         )
-    if item.get("identity_preserved") is not True:
-        violations.append(f"{label}: DOM identity verification did not pass")
+    if item.get("keyed_anchor_identity_preserved") is not True:
+        violations.append(f"{label}: keyed anchor DOM identity verification did not pass")
     if item.get("final_anchor_position") != "first":
         violations.append(f"{label}: fixture did not return the keyed anchor to index zero")
 
