@@ -266,37 +266,55 @@ struct PlannedChild {
 struct DiffContext<'a> {
     component_regions: &'a [ComponentRegion],
     dynamic_regions: &'a [DynamicRegion],
-    keyed_components: HashMap<(String, Key), Vec<usize>>,
-    dynamics_by_id: HashMap<u64, Vec<usize>>,
+    keyed_components: HashMap<(String, Key), usize>,
+    duplicate_keyed_components: HashMap<(String, Key), Vec<usize>>,
+    dynamics_by_id: HashMap<u64, usize>,
+    duplicate_dynamics_by_id: HashMap<u64, Vec<usize>>,
     used_components: Vec<bool>,
     used_dynamics: Vec<bool>,
 }
 
 impl<'a> DiffContext<'a> {
     fn new(component_regions: &'a [ComponentRegion], dynamic_regions: &'a [DynamicRegion]) -> Self {
-        let mut keyed_components = HashMap::<(String, Key), Vec<usize>>::new();
+        let mut keyed_components = HashMap::<(String, Key), usize>::with_capacity(
+            component_regions.len(),
+        );
+        let mut duplicate_keyed_components = HashMap::<(String, Key), Vec<usize>>::new();
         for (index, region) in component_regions.iter().enumerate() {
             if let Some(key) = region.descriptor.key() {
-                keyed_components
-                    .entry((region.descriptor.name().to_owned(), key.clone()))
-                    .or_default()
-                    .push(index);
+                let identity = (region.descriptor.name().to_owned(), key.clone());
+                if let Some(first_index) = keyed_components.get(&identity).copied() {
+                    duplicate_keyed_components
+                        .entry(identity)
+                        .or_insert_with(|| vec![first_index])
+                        .push(index);
+                } else {
+                    keyed_components.insert(identity, index);
+                }
             }
         }
 
-        let mut dynamics_by_id = HashMap::<u64, Vec<usize>>::new();
+        let mut dynamics_by_id = HashMap::<u64, usize>::with_capacity(dynamic_regions.len());
+        let mut duplicate_dynamics_by_id = HashMap::<u64, Vec<usize>>::new();
         for (index, region) in dynamic_regions.iter().enumerate() {
-            dynamics_by_id
-                .entry(region.dynamic.id())
-                .or_default()
-                .push(index);
+            let id = region.dynamic.id();
+            if let Some(first_index) = dynamics_by_id.get(&id).copied() {
+                duplicate_dynamics_by_id
+                    .entry(id)
+                    .or_insert_with(|| vec![first_index])
+                    .push(index);
+            } else {
+                dynamics_by_id.insert(id, index);
+            }
         }
 
         Self {
             component_regions,
             dynamic_regions,
             keyed_components,
+            duplicate_keyed_components,
             dynamics_by_id,
+            duplicate_dynamics_by_id,
             used_components: vec![false; component_regions.len()],
             used_dynamics: vec![false; dynamic_regions.len()],
         }
@@ -305,12 +323,17 @@ impl<'a> DiffContext<'a> {
     fn take_component(&mut self, descriptor: &ComponentNode) -> Option<usize> {
         if let Some(key) = descriptor.key() {
             let identity = (descriptor.name().to_owned(), key.clone());
-            let index = self.keyed_components.get(&identity).and_then(|indices| {
+            let index = if let Some(indices) = self.duplicate_keyed_components.get(&identity) {
                 indices.iter().copied().find(|index| {
                     !self.used_components[*index]
                         && self.component_regions[*index].descriptor == *descriptor
                 })
-            })?;
+            } else {
+                self.keyed_components.get(&identity).copied().filter(|index| {
+                    !self.used_components[*index]
+                        && self.component_regions[*index].descriptor == *descriptor
+                })
+            }?;
             self.used_components[index] = true;
             return Some(index);
         }
@@ -327,12 +350,18 @@ impl<'a> DiffContext<'a> {
     }
 
     fn take_dynamic(&mut self, dynamic: &DynamicChild) -> Option<usize> {
-        let index = self.dynamics_by_id.get(&dynamic.id()).and_then(|indices| {
+        let id = dynamic.id();
+        let index = if let Some(indices) = self.duplicate_dynamics_by_id.get(&id) {
             indices
                 .iter()
                 .copied()
                 .find(|index| !self.used_dynamics[*index])
-        })?;
+        } else {
+            self.dynamics_by_id
+                .get(&id)
+                .copied()
+                .filter(|index| !self.used_dynamics[*index])
+        }?;
         self.used_dynamics[index] = true;
         Some(index)
     }
