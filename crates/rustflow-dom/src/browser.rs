@@ -1896,16 +1896,11 @@ impl DomRenderer {
         owner_scope: &Scope,
     ) -> Result<Vec<PlannedChild>, DomError> {
         let old_children = previous.children();
-        // KeyedList rejects duplicate keys at construction, so a key-to-index
-        // lookup is sufficient and avoids a full scan of the old list per child.
-        let previous_by_key = old_children
-            .iter()
-            .enumerate()
-            .map(|(index, child)| (child.key().clone(), index))
-            .collect::<HashMap<_, _>>();
+        // The previous snapshot already owns its validated key index. Reuse it
+        // instead of allocating and hashing the same old keys on every diff.
         let mut planned = Vec::with_capacity(next.children().len());
         for child in next.children() {
-            let matched = previous_by_key.get(child.key()).copied();
+            let matched = previous.index_of_key(child.key());
             let child_plan = if let Some(previous_index) = matched {
                 self.plan_diff_with_context(
                     old_children[previous_index].view(),

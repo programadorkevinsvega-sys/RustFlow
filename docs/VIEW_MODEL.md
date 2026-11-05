@@ -11,6 +11,8 @@ El modelo de vista es tipado e independiente del destino. Describe qué interfaz
 - **Dynamic:** evaluación diferida de un hijo. El adaptador reactivo la evalúa dentro de un efecto asociado al scope propietario.
 - **KeyedList:** lista de hijos con claves estables únicas dentro de cada snapshot.
 
+Cada snapshot `KeyedList` valida la unicidad y conserva un índice `Key -> posición`. `index_of_key(&Key)` permite consultar la posición sin recorrer los hijos; el renderer reutiliza el índice del snapshot anterior al reconciliar, en lugar de reconstruirlo en cada actualización.
+
 La clave identifica al hijo lógico, no su posición. Al mover una fila con la misma clave, el runtime DOM puede conservar su nodo y estado; al eliminarla o sustituirla por otra clave, se limpia la instancia anterior.
 
 ## Sintaxis declarativa: view!
