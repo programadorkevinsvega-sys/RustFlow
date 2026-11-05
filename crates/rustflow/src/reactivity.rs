@@ -1302,10 +1302,7 @@ fn run_effect(runtime: &RuntimeRef, effect_id: EffectId) {
     drop(owner_guard);
 }
 
-fn batch_runtime<R>(
-    runtime: &RuntimeRef,
-    callback: impl FnOnce() -> R,
-) -> Result<R, RuntimeError> {
+fn batch_runtime<R>(runtime: &RuntimeRef, callback: impl FnOnce() -> R) -> Result<R, RuntimeError> {
     check_runtime_context(runtime)?;
     {
         let mut inner = runtime.borrow_mut();
@@ -2064,7 +2061,11 @@ mod tests {
 
         assert_eq!(first.get(), 3);
         assert_eq!(second.get(), 2);
-        assert_eq!(runs.get(), 2, "the dependent effect should run once per batch");
+        assert_eq!(
+            runs.get(),
+            2,
+            "the dependent effect should run once per batch"
+        );
     }
 
     #[test]
