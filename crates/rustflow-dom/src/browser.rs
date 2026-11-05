@@ -254,7 +254,7 @@ enum ReconciliationAction {
 
 struct PlannedChild {
     previous_index: Option<usize>,
-    plan: Box<ReconciliationPlan>,
+    plan: ReconciliationPlan,
 }
 
 struct DiffContext<'a> {
@@ -1882,7 +1882,7 @@ impl DomRenderer {
             };
             planned.push(PlannedChild {
                 previous_index,
-                plan: Box::new(child_plan),
+                plan: child_plan,
             });
         }
         Ok(planned)
@@ -1913,7 +1913,7 @@ impl DomRenderer {
             };
             planned.push(PlannedChild {
                 previous_index: matched,
-                plan: Box::new(child_plan),
+                plan: child_plan,
             });
         }
         Ok(planned)
@@ -2341,7 +2341,7 @@ impl DomRenderer {
                 &[]
             };
             result.extend(self.commit_plan(
-                *child.plan,
+                child.plan,
                 existing,
                 parent,
                 before,
@@ -2403,7 +2403,7 @@ impl DomRenderer {
         let previous_view = plan.previous.clone();
         let planned_root = vec![PlannedChild {
             previous_index: Some(0),
-            plan: Box::new(plan),
+            plan,
         }];
         let roots = match self.commit_sequence(
             planned_root,

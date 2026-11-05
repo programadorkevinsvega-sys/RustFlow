@@ -86,6 +86,14 @@ Los dos cambios requieren la ejecución de los checks Rust/WASM/Browser E2E del 
 
 ## 3. Orden de implementación
 
+### Reconciliación keyed — conservar índice y evitar boxes por hijo
+
+- `KeyedList` ahora conserva el índice `Key -> posición` calculado al validar claves; `plan_keyed_children` consulta directamente el índice del snapshot anterior.
+- `PlannedChild` almacena `ReconciliationPlan` inline dentro de su `Vec`; la indirección del vector basta para mantener un tamaño finito del tipo. Se mantienen los `Box` en los límites recursivos de componentes y regiones dinámicas.
+- El cambio evita reconstruir el mapa anterior por diff y elimina una asignación heap por fila planificada. Las claves siguen siendo únicas, estables y validadas.
+
+La medición debe confirmar tiempo de swap/append/delete, asignaciones y uso de memoria; no declarar ganancia antes de los artefactos del mismo runner.
+
 ### Build release — LTO entre crates (pendiente de medir)
 
 Se habilitó `lto = "fat"` y `codegen-units = 1` en el perfil release del workspace. La intención es permitir eliminación/inlining entre `rustflow-browser`, `rustflow`, `rustflow-view` y `rustflow-dom`, reduciendo código duplicado sin quitar validaciones ni cambiar APIs.
