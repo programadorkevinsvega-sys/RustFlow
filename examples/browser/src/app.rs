@@ -403,6 +403,8 @@ fn OfficialBenchmark() -> impl IntoView {
 
     let rows_for_region = row_order.clone();
     let states_for_region = row_states.clone();
+    // Cached row views must not strongly retain the map that owns them.
+    let weak_states_for_rows = Rc::downgrade(&states_for_region);
     let selected_for_region = selected_id.clone();
     let rows_region = View::dynamic(move || {
         let ids = rows_for_region.get();
@@ -421,8 +423,11 @@ fn OfficialBenchmark() -> impl IntoView {
             } else {
                 let row_value = row_state.value.clone();
                 let selected_for_row = selected_for_region.clone();
-                let select_states = states_for_region.clone();
+                let select_states = weak_states_for_rows.clone();
                 let select_handler = EventHandler::new(move |_payload: EventPayload| {
+                    let Some(select_states) = select_states.upgrade() else {
+                        return;
+                    };
                     let previous_id = selected_for_row.get();
                     let (previous_state, current_state) = {
                         let cached = select_states.borrow();
@@ -447,9 +452,12 @@ fn OfficialBenchmark() -> impl IntoView {
                 });
 
                 let remove_order = rows_for_region.clone();
-                let remove_states = states_for_region.clone();
+                let remove_states = weak_states_for_rows.clone();
                 let remove_selected = selected_for_region.clone();
                 let remove_handler = EventHandler::new(move |_payload: EventPayload| {
+                    let Some(remove_states) = remove_states.upgrade() else {
+                        return;
+                    };
                     let removed = { remove_states.borrow_mut().remove(&id) };
                     if let Some(row_state) = removed {
                         row_state.owner.dispose().unwrap_or_else(|error| {
