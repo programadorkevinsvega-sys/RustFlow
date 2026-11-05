@@ -275,9 +275,8 @@ struct DiffContext<'a> {
 
 impl<'a> DiffContext<'a> {
     fn new(component_regions: &'a [ComponentRegion], dynamic_regions: &'a [DynamicRegion]) -> Self {
-        let mut keyed_components = HashMap::<(String, Key), usize>::with_capacity(
-            component_regions.len(),
-        );
+        let mut keyed_components =
+            HashMap::<(String, Key), usize>::with_capacity(component_regions.len());
         let mut duplicate_keyed_components = HashMap::<(String, Key), Vec<usize>>::new();
         for (index, region) in component_regions.iter().enumerate() {
             if let Some(key) = region.descriptor.key() {
@@ -328,10 +327,13 @@ impl<'a> DiffContext<'a> {
                         && self.component_regions[*index].descriptor == *descriptor
                 })
             } else {
-                self.keyed_components.get(&identity).copied().filter(|index| {
-                    !self.used_components[*index]
-                        && self.component_regions[*index].descriptor == *descriptor
-                })
+                self.keyed_components
+                    .get(&identity)
+                    .copied()
+                    .filter(|index| {
+                        !self.used_components[*index]
+                            && self.component_regions[*index].descriptor == *descriptor
+                    })
             }?;
             self.used_components[index] = true;
             return Some(index);
