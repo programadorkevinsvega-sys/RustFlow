@@ -704,16 +704,24 @@ impl<T: Clone + 'static> Signal<T> {
 
         {
             let mut inner = runtime.borrow_mut();
-            let subscribers = inner
-                .signals
+            // The signal's BTreeSet provides deterministic subscriber order.
+            // Borrow disjoint runtime fields to enqueue in place instead of
+            // allocating a temporary Vec for every signal write.
+            let RuntimeInner {
+                signals,
+                effects,
+                pending,
+                queue,
+                ..
+            } = &mut *inner;
+            let subscribers = &signals
                 .get(&self.id)
                 .ok_or(RuntimeError::InvalidSignal)?
-                .subscribers
-                .iter()
-                .copied()
-                .collect::<Vec<_>>();
+                .subscribers;
             for effect_id in subscribers {
-                enqueue(&mut inner, effect_id);
+                if effects.contains_key(effect_id) && pending.insert(*effect_id) {
+                    queue.push_back(*effect_id);
+                }
             }
         }
         flush_runtime(&runtime)?;
@@ -2007,6 +2015,33 @@ mod tests {
 
         assert_eq!(*order.borrow(), vec!['a', 'b']);
     }
+    #[test]
+    fn signal_fanout_enqueues_subscribers_in_creation_order() {
+        let runtime = Runtime::new();
+        let signal = runtime.signal_eq(0_i32).unwrap();
+        let observed_order = Rc::new(RefCell::new(Vec::new()));
+        let mut effects = Vec::with_capacity(64);
+
+        for index in 0..64 {
+            let observed = signal.clone();
+            let order = observed_order.clone();
+            effects.push(
+                runtime
+                    .effect(move || {
+                        let _ = observed.get();
+                        order.borrow_mut().push(index);
+                    })
+                    .unwrap(),
+            );
+        }
+
+        observed_order.borrow_mut().clear();
+        signal.set(1);
+
+        assert_eq!(*observed_order.borrow(), (0..64).collect::<Vec<_>>());
+        drop(effects);
+    }
+
     #[test]
     fn signal_update_is_one_equality_aware_write() {
         let runtime = Runtime::new();
