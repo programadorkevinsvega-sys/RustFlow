@@ -86,6 +86,12 @@ Los dos cambios requieren la ejecución de los checks Rust/WASM/Browser E2E del 
 
 ## 3. Orden de implementación
 
+### DiffContext — índice directo para identidades únicas
+
+`DiffContext` ahora conserva un índice directo para componentes keyed y regiones dinámicas que aparecen una sola vez. Solo crea un vector secundario cuando detecta una identidad repetida dentro del mismo contexto. Se mantienen los arrays de uso para no reutilizar dos veces una misma región.
+
+Esto elimina la asignación de un `Vec<usize>` por cada identidad única —el caso habitual en filas con IDs estables—. Las rutas de identidad duplicada continúan soportadas; las pruebas de listas, movimientos y cleanup deben permanecer verdes.
+
 ### Reutilización de subárbol keyed sin cambios
 
 Cuando un hijo conserva el mismo descriptor de componente (mismo nombre/clave y props/hijos iguales), el plan marca directamente su región montada como reutilizada. Cuando conserva el mismo `DynamicChild` (misma identidad de evaluator), el renderer mueve su rango DOM y conserva su scope, estado y efecto. No vuelve a ejecutar el preview ni el evaluator solo por un cambio de posición en la lista.
