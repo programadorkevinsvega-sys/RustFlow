@@ -2123,7 +2123,7 @@ impl DomRenderer {
                 let current_children = direct_children(&parent_node);
                 self.commit_sequence(
                     children_plan,
-                    previous.children(),
+                    previous.children().iter(),
                     &current_children,
                     &parent_node,
                     None,
@@ -2143,7 +2143,7 @@ impl DomRenderer {
                 };
                 self.commit_sequence(
                     children_plan,
-                    previous.children(),
+                    previous.children().iter(),
                     existing_nodes,
                     parent,
                     before,
@@ -2160,14 +2160,9 @@ impl DomRenderer {
                         "keyed reconciliation plan contains an incompatible view".into(),
                     ));
                 };
-                let previous_views = previous
-                    .children()
-                    .iter()
-                    .map(|child| child.view().clone())
-                    .collect::<Vec<_>>();
                 self.commit_sequence(
                     children_plan,
-                    &previous_views,
+                    previous.children().iter().map(|child| child.view()),
                     existing_nodes,
                     parent,
                     before,
@@ -2261,10 +2256,10 @@ impl DomRenderer {
         }
     }
 
-    fn commit_sequence(
+    fn commit_sequence<'a>(
         &self,
         planned: Vec<PlannedChild>,
-        previous: &[View],
+        previous: impl ExactSizeIterator<Item = &'a View>,
         existing_nodes: &[Node],
         parent: &Node,
         before: Option<&Node>,
@@ -2407,7 +2402,7 @@ impl DomRenderer {
         }];
         let roots = match self.commit_sequence(
             planned_root,
-            std::slice::from_ref(&previous_view),
+            std::iter::once(&previous_view),
             &existing_nodes,
             &parent,
             Some(&end),
