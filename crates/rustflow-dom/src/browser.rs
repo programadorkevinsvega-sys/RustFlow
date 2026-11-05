@@ -245,7 +245,6 @@ enum ReconciliationAction {
     Component {
         region_index: usize,
         next_view: View,
-        preview_required: bool,
         child_plan: Box<ReconciliationPlan>,
     },
     ReuseDynamic {
@@ -1796,7 +1795,6 @@ impl DomRenderer {
                     ReconciliationAction::Component {
                         region_index,
                         next_view,
-                        preview_required,
                         child_plan: Box::new(child_plan),
                     }
                 }
@@ -2224,7 +2222,6 @@ impl DomRenderer {
             ReconciliationAction::Component {
                 region_index,
                 next_view,
-                preview_required,
                 child_plan,
             } => {
                 let View::Component(next) = &plan.next else {
@@ -2249,14 +2246,12 @@ impl DomRenderer {
                 // marked reused and can process their own reactive updates. Only
                 // accept new component inputs when the preview phase actually ran.
                 renderer.update_with_plan(&mut region.mounted, *child_plan)?;
-                if preview_required {
-                    region.instance.commit_preview_update(
-                        next.properties().to_vec(),
-                        next.children().to_vec(),
-                        next_view.clone(),
-                    )?;
-                    region.view = next_view;
-                }
+                region.instance.commit_preview_update(
+                    next.properties().to_vec(),
+                    next.children().to_vec(),
+                    next_view.clone(),
+                )?;
+                region.view = next_view;
                 region.descriptor = next.clone();
                 region.reused = true;
                 Ok(mounted_range_nodes(&region.mounted))
