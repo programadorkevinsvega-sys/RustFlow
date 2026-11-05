@@ -118,6 +118,8 @@ El ejemplo es un patrón sintáctico: los nombres de señales, el callback <code
 
 Las claves identifican los elementos lógicos de una lista. Usa una clave estable, como el ID de una tarea o producto, no el índice visual de la fila si los elementos se pueden mover.
 
+Cada snapshot de `KeyedList` mantiene un índice de claves validado. El renderer reutiliza ese índice para localizar filas anteriores por clave durante el diff, sin volver a recorrer y reindexar todos los hijos previos en cada actualización. La API `KeyedList::index_of_key(&Key)` permite consultar la posición de una clave dentro del snapshot actual.
+
 En el ejemplo de navegador, la lista de tareas permite agregar, completar, eliminar y reordenar tareas. Las pruebas E2E comprueban que una fila compatible conserva identidad DOM y estado local cuando cambia de posición. Cuando una fila se elimina o cambia a una clave incompatible, se desmonta y ejecuta la limpieza asociada.
 
 Este patrón es adecuado para filas de tabla, tareas, artículos, tarjetas de producto o controles repetidos que mantienen estado propio.

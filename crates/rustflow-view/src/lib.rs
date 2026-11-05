@@ -7,7 +7,7 @@
 use std::{
     any::{Any, TypeId},
     cell::RefCell,
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fmt,
     marker::PhantomData,
     rc::Rc,
@@ -1010,22 +1010,33 @@ impl KeyedChild {
 #[derive(Debug, Clone, PartialEq)]
 pub struct KeyedList {
     children: Vec<KeyedChild>,
+    key_indexes: HashMap<Key, usize>,
 }
 impl KeyedList {
-    /// Create a keyed list while preserving order and checking key uniqueness.
+    /// Create a keyed list while preserving order and building its key index.
+    ///
+    /// Duplicate keys are rejected. The index is retained with the list so
+    /// renderers can match later snapshots without rebuilding the old index.
     pub fn new(children: impl IntoIterator<Item = KeyedChild>) -> Result<Self, ViewError> {
         let children = children.into_iter().collect::<Vec<_>>();
-        let mut keys = HashSet::new();
-        for child in &children {
-            if !keys.insert(child.key.clone()) {
+        let mut key_indexes = HashMap::with_capacity(children.len());
+        for (index, child) in children.iter().enumerate() {
+            if key_indexes.insert(child.key.clone(), index).is_some() {
                 return Err(ViewError::DuplicateKey(child.key.clone()));
             }
         }
-        Ok(Self { children })
+        Ok(Self {
+            children,
+            key_indexes,
+        })
     }
     /// Return keyed items in declaration order.
     pub fn children(&self) -> &[KeyedChild] {
         &self.children
+    }
+    /// Return the position associated with a key in this list snapshot.
+    pub fn index_of_key(&self, key: &Key) -> Option<usize> {
+        self.key_indexes.get(key).copied()
     }
 }
 
@@ -1226,6 +1237,9 @@ mod tests {
         .expect("unique keys");
         assert_eq!(list.children()[0].key(), &Key::from("first"));
         assert_eq!(list.children()[1].view(), &View::text("b"));
+        assert_eq!(list.index_of_key(&Key::from("first")), Some(0));
+        assert_eq!(list.index_of_key(&Key::from("second")), Some(1));
+        assert_eq!(list.index_of_key(&Key::from("missing")), None);
         let duplicate = KeyedList::new([
             KeyedChild::new("same", View::text("a")),
             KeyedChild::new("same", View::text("b")),
