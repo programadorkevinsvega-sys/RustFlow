@@ -401,10 +401,6 @@ fn OfficialBenchmark() -> impl IntoView {
     let selected_for_region = selected_id.clone();
     let rows_region = View::dynamic(move || {
         let ids = rows_for_region.get();
-        let active_ids = ids
-            .iter()
-            .copied()
-            .collect::<std::collections::HashSet<_>>();
         let states = states_for_region.borrow();
         let mut cached_views = views_for_region.borrow_mut();
         let mut children = Vec::with_capacity(ids.len());
@@ -491,7 +487,9 @@ fn OfficialBenchmark() -> impl IntoView {
             children.push(KeyedChild::new(id.to_string(), child_view));
         }
 
-        cached_views.retain(|id, _| active_ids.contains(id));
+        // Reuse the row-state index to prune cached views without allocating
+        // a second set containing the same 10k active identities.
+        cached_views.retain(|id, _| states.contains_key(id));
         drop(states);
         drop(cached_views);
 
