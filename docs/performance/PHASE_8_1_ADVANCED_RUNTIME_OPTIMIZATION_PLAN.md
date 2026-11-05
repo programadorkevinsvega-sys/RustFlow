@@ -86,6 +86,12 @@ Los dos cambios requieren la ejecución de los checks Rust/WASM/Browser E2E del 
 
 ## 3. Orden de implementación
 
+### Reutilización de subárbol keyed sin cambios
+
+Cuando un hijo conserva el mismo descriptor de componente (mismo nombre/clave y props/hijos iguales), el plan marca directamente su región montada como reutilizada. Cuando conserva el mismo `DynamicChild` (misma identidad de evaluator), el renderer mueve su rango DOM y conserva su scope, estado y efecto. No vuelve a ejecutar el preview ni el evaluator solo por un cambio de posición en la lista.
+
+Si cambian props/hijos o cambia la identidad del evaluator, se conserva el camino completo de validación, evaluación y diff. Las regiones reactivas descendientes continúan reaccionando mediante sus propios efectos. E2E y los benchmarks keyed deben confirmar identidad, contenido, orden, listeners y cleanup antes de aceptar la optimización.
+
 ### Commit keyed — iterar vistas anteriores por referencia
 
 `commit_sequence` ahora recibe un iterador de tamaño exacto de referencias `&View`. En la rama keyed ya no clona cada `child.view()` ni crea un `Vec<View>` temporal para calcular rangos DOM; element, fragment y root también pasan iteradores directos. Se conserva el conteo de nodos, el orden, las verificaciones de rangos y la colocación DOM de derecha a izquierda.
