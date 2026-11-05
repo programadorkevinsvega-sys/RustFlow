@@ -1214,12 +1214,6 @@ fn track_read(runtime: &RuntimeRef, signal_id: SignalId) -> Result<(), RuntimeEr
     Ok(())
 }
 
-fn enqueue(inner: &mut RuntimeInner, effect_id: EffectId) {
-    if inner.effects.contains_key(&effect_id) && inner.pending.insert(effect_id) {
-        inner.queue.push_back(effect_id);
-    }
-}
-
 fn detach_dependencies(inner: &mut RuntimeInner, effect_id: EffectId) {
     let dependencies = inner
         .effects
