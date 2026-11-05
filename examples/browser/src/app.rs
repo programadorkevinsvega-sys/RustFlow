@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, string::ToString};
+use std::{cell::RefCell, rc::Rc, string::ToString};
 
 use rustflow::components::ComponentRegistry;
 use rustflow::prelude::*;
@@ -149,17 +149,67 @@ struct OfficialBenchmarkRowState {
     view: RefCell<Option<View>>,
 }
 
+/// Benchmark IDs are allocated monotonically. A base ID plus a sparse vector
+/// avoids a generic hash table for row-state lookup while preserving holes
+/// left by row removals.
+struct OfficialBenchmarkRowStore {
+    first_id: i64,
+    rows: Vec<Option<OfficialBenchmarkRowState>>,
+}
+
+impl OfficialBenchmarkRowStore {
+    fn new(first_id: i64) -> Self {
+        Self {
+            first_id,
+            rows: Vec::new(),
+        }
+    }
+
+    fn insert(&mut self, id: i64, state: OfficialBenchmarkRowState) {
+        let index = usize::try_from(id - self.first_id)
+            .expect("benchmark row IDs must be at or after the store's first ID");
+        if self.rows.len() <= index {
+            self.rows.resize_with(index + 1, || None);
+        }
+        self.rows[index] = Some(state);
+    }
+
+    fn extend(&mut self, states: Vec<(i64, OfficialBenchmarkRowState)>) {
+        for (id, state) in states {
+            self.insert(id, state);
+        }
+    }
+
+    fn get(&self, id: i64) -> Option<&OfficialBenchmarkRowState> {
+        let index = usize::try_from(id.checked_sub(self.first_id)?).ok()?;
+        self.rows.get(index)?.as_ref()
+    }
+
+    fn remove(&mut self, id: i64) -> Option<OfficialBenchmarkRowState> {
+        let index = usize::try_from(id.checked_sub(self.first_id)?).ok()?;
+        self.rows.get_mut(index)?.take()
+    }
+
+    fn dispose(self) {
+        for state in self.rows.into_iter().flatten() {
+            state.owner.dispose().unwrap_or_else(|error| {
+                panic!("failed to dispose benchmark row scope: {error}")
+            });
+        }
+    }
+}
+
 fn create_official_benchmark_row_states(
     order: &Signal<Vec<i64>>,
     rows: Vec<OfficialBenchmarkRowData>,
-) -> Result<HashMap<i64, OfficialBenchmarkRowState>, rustflow::reactivity::RuntimeError> {
-    let mut states = HashMap::<i64, OfficialBenchmarkRowState>::with_capacity(rows.len());
+) -> Result<Vec<(i64, OfficialBenchmarkRowState)>, rustflow::reactivity::RuntimeError> {
+    let mut states = Vec::<(i64, OfficialBenchmarkRowState)>::with_capacity(rows.len());
     for row in rows {
         let id = row.id;
         let owner = match order.child_scope() {
             Ok(owner) => owner,
             Err(error) => {
-                for state in states.into_values() {
+                for (_, state) in states {
                     let _ = state.owner.dispose();
                 }
                 return Err(error);
@@ -169,31 +219,22 @@ fn create_official_benchmark_row_states(
             Ok(value) => value,
             Err(error) => {
                 let _ = owner.dispose();
-                for state in states.into_values() {
+                for (_, state) in states {
                     let _ = state.owner.dispose();
                 }
                 return Err(error);
             }
         };
-        states.insert(
+        states.push((
             id,
             OfficialBenchmarkRowState {
                 owner,
                 value,
                 view: RefCell::new(None),
             },
-        );
+        ));
     }
     Ok(states)
-}
-
-fn dispose_official_benchmark_row_states(states: HashMap<i64, OfficialBenchmarkRowState>) {
-    for state in states.into_values() {
-        state
-            .owner
-            .dispose()
-            .unwrap_or_else(|error| panic!("failed to dispose benchmark row scope: {error}"));
-    }
 }
 
 fn official_random(max: usize) -> usize {
@@ -301,9 +342,7 @@ fn OfficialBenchmark() -> impl IntoView {
     let row_order = signal(Vec::<i64>::new());
     let selected_id = signal(0_i64);
     let next_id = signal(1_i64);
-    let row_states = Rc::new(RefCell::new(
-        HashMap::<i64, OfficialBenchmarkRowState>::new(),
-    ));
+    let row_states = Rc::new(RefCell::new(OfficialBenchmarkRowStore::new(1)));
 
     let run_rows = row_order.clone();
     let run_states = row_states.clone();
@@ -316,8 +355,10 @@ fn OfficialBenchmark() -> impl IntoView {
         let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
         let next_states = create_official_benchmark_row_states(&run_rows, rows)
             .unwrap_or_else(|error| panic!("failed to create benchmark row scopes: {error}"));
-        let previous = std::mem::replace(&mut *run_states.borrow_mut(), next_states);
-        dispose_official_benchmark_row_states(previous);
+        let mut replacement = OfficialBenchmarkRowStore::new(first_id);
+        replacement.extend(next_states);
+        let previous = std::mem::replace(&mut *run_states.borrow_mut(), replacement);
+        previous.dispose();
         run_selected.set(0);
         run_rows.set(ids);
     })
@@ -335,8 +376,10 @@ fn OfficialBenchmark() -> impl IntoView {
             let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
             let next_states = create_official_benchmark_row_states(&run_lots_rows, rows)
                 .unwrap_or_else(|error| panic!("failed to create benchmark row scopes: {error}"));
-            let previous = std::mem::replace(&mut *run_lots_states.borrow_mut(), next_states);
-            dispose_official_benchmark_row_states(previous);
+            let mut replacement = OfficialBenchmarkRowStore::new(first_id);
+            replacement.extend(next_states);
+            let previous = std::mem::replace(&mut *run_lots_states.borrow_mut(), replacement);
+            previous.dispose();
             run_lots_selected.set(0);
             run_lots_rows.set(ids);
         })
@@ -366,7 +409,7 @@ fn OfficialBenchmark() -> impl IntoView {
                 let cached = update_states.borrow();
                 ids.iter()
                     .step_by(10)
-                    .filter_map(|id| cached.get(id).map(|row| row.value.clone()))
+                    .filter_map(|id| cached.get(*id).map(|row| row.value.clone()))
                     .collect::<Vec<_>>()
             };
 
@@ -383,9 +426,13 @@ fn OfficialBenchmark() -> impl IntoView {
     let clear_rows = row_order.clone();
     let clear_states = row_states.clone();
     let clear_selected = selected_id.clone();
+    let clear_next_id = next_id.clone();
     let clear_button = official_benchmark_button("clear", "Clear", move |_payload| {
-        let previous = std::mem::take(&mut *clear_states.borrow_mut());
-        dispose_official_benchmark_row_states(previous);
+        let previous = std::mem::replace(
+            &mut *clear_states.borrow_mut(),
+            OfficialBenchmarkRowStore::new(clear_next_id.get()),
+        );
+        previous.dispose();
         clear_rows.set(Vec::new());
         clear_selected.set(0);
     })
@@ -414,7 +461,7 @@ fn OfficialBenchmark() -> impl IntoView {
         for id in &ids {
             let id = *id;
             let row_state = states
-                .get(&id)
+                .get(id)
                 .unwrap_or_else(|| panic!("missing benchmark row state for id {id}"));
 
             let cached_view = row_state.view.borrow().clone();
@@ -431,8 +478,8 @@ fn OfficialBenchmark() -> impl IntoView {
                     let previous_id = selected_for_row.get();
                     let (previous_state, current_state) = {
                         let cached = select_states.borrow();
-                        let previous = cached.get(&previous_id).map(|row| row.value.clone());
-                        let current = cached.get(&id).map(|row| row.value.clone());
+                        let previous = cached.get(previous_id).map(|row| row.value.clone());
+                        let current = cached.get(id).map(|row| row.value.clone());
                         (previous, current)
                     };
 
@@ -458,7 +505,7 @@ fn OfficialBenchmark() -> impl IntoView {
                     let Some(remove_states) = remove_states.upgrade() else {
                         return;
                     };
-                    let removed = { remove_states.borrow_mut().remove(&id) };
+                    let removed = { remove_states.borrow_mut().remove(id) };
                     if let Some(row_state) = removed {
                         row_state.owner.dispose().unwrap_or_else(|error| {
                             panic!("failed to dispose removed row: {error}")
