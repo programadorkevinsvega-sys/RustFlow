@@ -86,6 +86,12 @@ Los dos cambios requieren la ejecución de los checks Rust/WASM/Browser E2E del 
 
 ## 3. Orden de implementación
 
+### Build release — LTO entre crates (pendiente de medir)
+
+Se habilitó `lto = "fat"` y `codegen-units = 1` en el perfil release del workspace. La intención es permitir eliminación/inlining entre `rustflow-browser`, `rustflow`, `rustflow-view` y `rustflow-dom`, reduciendo código duplicado sin quitar validaciones ni cambiar APIs.
+
+La aceptación requiere medir el WASM raw/gzip/Brotli y volver a comparar P50/P95. Un bundle menor no prueba por sí mismo una mejora de latencia; tampoco se ampliará el presupuesto ni se aceptará una regresión de rendimiento para satisfacer el tamaño.
+
 ### Optimización aplicada — estado granular por fila (pendiente de evidencia)
 
 En el fixture keyed del benchmark oficial se separó el estado estructural del estado de cada fila:
