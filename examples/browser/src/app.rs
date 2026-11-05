@@ -165,23 +165,8 @@ impl OfficialBenchmarkRowStore {
         }
     }
 
-    fn insert(&mut self, id: i64, state: OfficialBenchmarkRowState) {
-        let index = usize::try_from(id - self.first_id)
-            .expect("benchmark row IDs must be at or after the store's first ID");
-        if self.rows.len() <= index {
-            self.rows.resize_with(index + 1, || None);
-        }
-        self.rows[index] = Some(state);
-    }
-
-    fn append(&mut self, states: Self) {
-        self.rows.reserve(states.rows.len());
-        let first_id = states.first_id;
-        for (offset, state) in states.rows.into_iter().enumerate() {
-            if let Some(state) = state {
-                self.insert(first_id + offset as i64, state);
-            }
-        }
+    fn append(&mut self, rows: Vec<Option<OfficialBenchmarkRowState>>) {
+        self.rows.extend(rows);
     }
 
     fn get(&self, id: i64) -> Option<&OfficialBenchmarkRowState> {
@@ -195,28 +180,20 @@ impl OfficialBenchmarkRowStore {
     }
 
     fn dispose(self) {
-        for state in self.rows.into_iter().flatten() {
-            state.owner.dispose().unwrap_or_else(|error| {
-                panic!("failed to dispose benchmark row scope: {error}")
-            });
-        }
+        dispose_official_benchmark_row_states(self.rows);
     }
 }
 
 fn create_official_benchmark_row_states(
     order: &Signal<Vec<i64>>,
     rows: Vec<OfficialBenchmarkRowData>,
-) -> Result<OfficialBenchmarkRowStore, rustflow::reactivity::RuntimeError> {
-    let first_id = rows.first().map_or(0, |row| row.id);
-    let mut states = OfficialBenchmarkRowStore::new(first_id);
-    states.rows.reserve(rows.len());
-
+) -> Result<Vec<Option<OfficialBenchmarkRowState>>, rustflow::reactivity::RuntimeError> {
+    let mut states = Vec::<Option<OfficialBenchmarkRowState>>::with_capacity(rows.len());
     for row in rows {
-        let id = row.id;
         let owner = match order.child_scope() {
             Ok(owner) => owner,
             Err(error) => {
-                states.dispose();
+                dispose_official_benchmark_row_states(states);
                 return Err(error);
             }
         };
@@ -224,20 +201,26 @@ fn create_official_benchmark_row_states(
             Ok(value) => value,
             Err(error) => {
                 let _ = owner.dispose();
-                states.dispose();
+                dispose_official_benchmark_row_states(states);
                 return Err(error);
             }
         };
-        states.insert(
-            id,
-            OfficialBenchmarkRowState {
-                owner,
-                value,
-                view: RefCell::new(None),
-            },
-        );
+        states.push(Some(OfficialBenchmarkRowState {
+            owner,
+            value,
+            view: RefCell::new(None),
+        }));
     }
     Ok(states)
+}
+
+fn dispose_official_benchmark_row_states(states: Vec<Option<OfficialBenchmarkRowState>>) {
+    for state in states.into_iter().flatten() {
+        state
+            .owner
+            .dispose()
+            .unwrap_or_else(|error| panic!("failed to dispose benchmark row scope: {error}"));
+    }
 }
 
 fn official_random(max: usize) -> usize {
@@ -358,7 +341,11 @@ fn OfficialBenchmark() -> impl IntoView {
         let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
         let next_states = create_official_benchmark_row_states(&run_rows, rows)
             .unwrap_or_else(|error| panic!("failed to create benchmark row scopes: {error}"));
-        let previous = std::mem::replace(&mut *run_states.borrow_mut(), next_states);
+        let replacement = OfficialBenchmarkRowStore {
+            first_id,
+            rows: next_states,
+        };
+        let previous = std::mem::replace(&mut *run_states.borrow_mut(), replacement);
         previous.dispose();
         run_selected.set(0);
         run_rows.set(ids);
@@ -377,7 +364,11 @@ fn OfficialBenchmark() -> impl IntoView {
             let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
             let next_states = create_official_benchmark_row_states(&run_lots_rows, rows)
                 .unwrap_or_else(|error| panic!("failed to create benchmark row scopes: {error}"));
-            let previous = std::mem::replace(&mut *run_lots_states.borrow_mut(), next_states);
+            let replacement = OfficialBenchmarkRowStore {
+                first_id,
+                rows: next_states,
+            };
+            let previous = std::mem::replace(&mut *run_lots_states.borrow_mut(), replacement);
             previous.dispose();
             run_lots_selected.set(0);
             run_lots_rows.set(ids);
