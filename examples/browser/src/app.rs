@@ -163,7 +163,7 @@ fn create_official_benchmark_row_states(
     order: &Signal<Vec<i64>>,
     rows: Vec<OfficialBenchmarkRowData>,
 ) -> Result<HashMap<i64, OfficialBenchmarkRowState>, rustflow::reactivity::RuntimeError> {
-    let mut states = HashMap::with_capacity(rows.len());
+    let mut states = HashMap::<i64, OfficialBenchmarkRowState>::with_capacity(rows.len());
     for row in rows {
         let id = row.id;
         let owner = match order.child_scope() {
@@ -417,12 +417,13 @@ fn OfficialBenchmark() -> impl IntoView {
         let mut children = Vec::with_capacity(ids.len());
 
         for id in &ids {
+            let id = *id;
             let row_state = states
-                .get(id)
+                .get(&id)
                 .unwrap_or_else(|| panic!("missing benchmark row state for id {id}"))
                 .clone();
 
-            let child_view = if let Some(view) = cached_views.get(id) {
+            let child_view = if let Some(view) = cached_views.get(&id) {
                 view.clone()
             } else {
                 let row_value = row_state.value.clone();
@@ -491,7 +492,7 @@ fn OfficialBenchmark() -> impl IntoView {
                     )
                 });
 
-                cached_views.insert(*id, row_view.clone());
+                cached_views.insert(id, row_view.clone());
                 row_view
             };
 
