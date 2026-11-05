@@ -93,6 +93,30 @@ fn example() -> Result<(), RuntimeError> {
 
 El batch agrupa las invalidaciones hasta que termina el bloque exterior. El ejemplo de bajo nivel sirve para entender el scheduler, escribir pruebas y construir integraciones que necesiten ciclo de vida explícito; no es la forma de montar una interfaz web completa.
 
+### Estado granular por fila
+
+Para listas grandes, evita que cada cambio de un campo invalide una única señal que contiene el vector completo. Una opción es mantener una señal estructural para el orden y una señal por fila, dentro de un scope que se pueda disponer al retirar esa fila:
+
+~~~rust
+let row_order = signal(Vec::<i64>::new());
+let row_scope = row_order.child_scope()
+    .expect("the parent row signal must still be alive");
+let row_title = row_scope.signal(String::from("First row"))
+    .expect("the row scope must still be alive");
+
+let order_for_update = row_order.clone();
+let title_for_update = row_title.clone();
+let update_row = EventHandler::new(move |_payload: EventPayload| {
+    order_for_update
+        .batch(|| title_for_update.set(String::from("Updated row")))
+        .expect("the reactive runtime must remain valid");
+});
+~~~
+
+Combina este patrón con una región dinámica por fila y una clave estable en el `KeyedList`. La región principal debe depender del orden/estructura; la región de cada fila debe leer solo su propia señal. Así, una actualización de valor puede volver a evaluar únicamente la fila afectada, mientras que insertar, eliminar o mover filas actualiza la estructura.
+
+`Signal::child_scope` y `Signal::batch` son APIs experimentales añadidas en la rama del PR #81; el PR aún no se ha fusionado en `main`. El patrón no ofrece granularidad automáticamente a una señal `Signal<Vec<T>>` existente: la aplicación debe separar el estado estructural del estado por item y disponer cada scope al eliminarlo.
+
 ## 4. Limpieza y scopes
 
 <code>on_cleanup(callback)</code> registra trabajo que debe ejecutarse al disponer el scope propietario. En un componente, úsalo para liberar recursos que tú mismo creaste, por ejemplo una suscripción gestionada por la aplicación. Los efectos tienen limpieza de scope y se vuelven a evaluar según las dependencias.
@@ -140,6 +164,8 @@ El lookup de contexto no es reactivo. Para propagar un valor cambiante, usa <cod
 | API | Estado y alcance |
 |---|---|
 | <code>signal(value)</code>, <code>use_state(initial)</code> | Disponibles durante el setup de un componente con owner activo; devuelven <code>Signal&lt;T&gt;</code>. |
+| <code>Signal::child_scope()</code> | Experimental en el PR #81, todavía no fusionado; crea un scope hijo bajo el owner de la señal. |
+| <code>Signal::batch(callback)</code> | Experimental en el PR #81, todavía no fusionado; agrupa writes de señales del mismo runtime. |
 | <code>Signal::get/set/update</code> | Disponible; las operaciones ergonómicas pueden hacer panic ante un handle inválido. |
 | <code>use_effect(callback)</code> | Disponible con seguimiento de dependencias y propiedad del scope. |
 | <code>on_cleanup(callback)</code> | Disponible para limpieza del scope propietario. |

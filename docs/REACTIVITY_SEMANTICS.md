@@ -39,7 +39,7 @@ The prototype prioritizes deterministic, testable semantics over optimization.
 
 1. Effects are invalidated by writes and queued for a scheduler flush. A pending-set prevents duplicate queue entries.
 2. Effects execute in FIFO order based on when they first become pending in a flush. If an effect is invalidated while already pending, its queue position does not change.
-3. Writes outside an explicit batch request a flush at the next runtime-controlled flush boundary. The initial prototype exposes an explicit batch operation; writes nested inside a batch do not flush until the outermost batch exits. Nested batches are supported and coalesce into that outermost boundary.
+3. Writes outside an explicit batch request a flush at the next runtime-controlled flush boundary. The prototype exposes `Runtime::batch` and `Signal::batch`; the latter uses the runtime that owns the receiving signal and can group writes to other signals in that same runtime. Writes nested inside a batch do not flush until the outermost batch exits. Nested batches are supported and coalesce into that outermost boundary.
 4. At a batch boundary, each affected effect runs at most once for the pending work it observed at the start of its run. If its execution causes further writes, those writes may enqueue it again for a subsequent scheduler turn in the same overall flush. This continues until the queue is empty or the cycle guard trips.
 5. The scheduler MUST NOT recursively enter an effect or grow the call stack proportional to reactive update depth. Scheduler turns are drained iteratively.
 6. Self-writes are allowed but are subject to cycle detection. The prototype uses a finite per-flush execution limit; exceeding it stops the flush and reports a cycle diagnostic containing at least the limit and that the graph did not quiesce. The initial implementation should choose and test a conservative fixed default (proposed: 1,000 effect executions per flush). This is a safety guard, not a claim that all valid graphs converge.
@@ -48,7 +48,7 @@ The prototype prioritizes deterministic, testable semantics over optimization.
 
 ## 5. Ownership scopes and deterministic disposal
 
-1. Every effect belongs to an owner scope. The runtime provides a root scope and a way to create child scopes explicitly.
+1. Every effect belongs to an owner scope. The runtime provides a root scope and explicit child scopes through `Scope::child` or `Signal::child_scope` (the latter creates a child under the scope that owns that signal).
 2. Child scopes are disposed before their parent scope's effects; effects and child scopes are disposed in reverse creation order. Cleanup callbacks run in LIFO order within their scope. The implementation must make the full order explicit in API docs and tests.
 3. Disposing a scope is idempotent. It marks the scope disposed, prevents new owned work from being scheduled, cancels pending effects, detaches subscriptions, disposes child scopes, and runs registered cleanup callbacks exactly once.
 4. A disposed effect never runs again. Creating an effect under a disposed scope fails deterministically. Disposing a parent disposes all descendants.
