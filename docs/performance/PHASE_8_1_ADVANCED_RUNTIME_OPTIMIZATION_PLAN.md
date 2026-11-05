@@ -1,6 +1,6 @@
 # Phase 8.1 — plan de optimización avanzada del runtime
 
-**Estado:** plan de trabajo inicial; no constituye evidencia de rendimiento ni declara completada Phase 8.1.  
+**Estado:** optimizaciones incrementales aplicadas en la rama; la nueva reactividad granular está pendiente de CI y de evidencia comparativa. No declara completada Phase 8.1.  
 **Rama:** `feat/phase-8-1-advanced-runtime-optimizations`  
 **Base:** `main`, después de integrar los PR #78 y #80.  
 **Referencia upstream:** `krausest/js-framework-benchmark` en `fa510a76ffe066af1d30f3e75fa51d3fcbc14009`.
@@ -85,6 +85,23 @@ Esta aceptación solo demuestra la mejora en este workload de secuencias mixtas 
 Los dos cambios requieren la ejecución de los checks Rust/WASM/Browser E2E del HEAD actual y la revisión de artefactos antes de aceptarse como mejoras cuantificadas. Todavía no se atribuye una ganancia de latencia medida a ninguno de ellos.
 
 ## 3. Orden de implementación
+
+### Optimización aplicada — estado granular por fila (pendiente de evidencia)
+
+En el fixture keyed del benchmark oficial se separó el estado estructural del estado de cada fila:
+
+- `row_order: Signal<Vec<i64>>` contiene únicamente el orden e identidades visibles.
+- Cada fila tiene un child scope y una señal `Signal<Todo>` propios, creados a partir de `Signal::child_scope()`.
+- El parent dynamic lee el orden; cada fila usa una vista dinámica cacheada que lee solo su señal. Cambios de título/selección no invalidan el parent ni reconstruyen los otros descriptores de fila.
+- La actualización de cada décima fila y la selección agrupan los writes con `Signal::batch()`, de forma que el scheduler vacía una vez y cada región afectada se ejecuta como máximo una vez por flush pendiente.
+- El cache de vista vive junto al estado/scope de la fila; los callbacks mantienen referencias débiles al mapa de filas para evitar un ciclo de retención. Al retirar una fila se dispone su owner y se elimina su identidad/entrada de la lista.
+- La implementación conserva claves estables, contenido/orden del DOM y el modelo de eliminación explícita de owners. El patrón no cambia la semántica general de `Signal<Vec<T>>::update`; es una arquitectura granular usada por el benchmark y disponible para aplicaciones que modelen items independientes.
+
+**Cadena de implementación:** `0c8639a` (estado granular y batch por señal), `2e0b0e4` / `bff34fd` (correcciones de tipos/estado), `a3533da` (reutilización del índice de estados), `d546da6` (cache de vista junto al estado) y `723facd` (Weak para evitar ciclos). La rama actual continúa este trabajo.
+
+**Incidencias de validación observadas antes del último ajuste:** CI #41946501068 sobre `ee119999` compiló el bundle, pero el WASM raw fue 624.953 bytes (límite activo 614.400) y el total gzip 226.089 bytes (límite 225.280). WebKit pasó 20/21 E2E; falló la navegación hash `#hydration-details`, sin causalidad demostrada con el cambio de filas. Después se eliminaron el conjunto de IDs redundante y el segundo mapa de vistas, y se cambió la captura del mapa a `Weak`. Esos ajustes aún requieren un CI completo sobre el HEAD final.
+
+**No existe todavía una mejora comparativa aceptada para estas operaciones.** Hasta disponer de artefactos oficiales válidos, las mediciones anteriores siguen siendo la línea de base; no se declara superioridad frente a React, Vue o Svelte.
 
 ### Etapa A — reproducibilidad y evidencia competitiva
 
@@ -175,4 +192,4 @@ No afirmar una victoria agregada si hay escenarios ausentes, muestras inválidas
 
 ## 6. Estado del documento
 
-Este archivo es el bootstrap del nuevo trabajo y registra el alcance pendiente. No implica que ya se haya ejecutado el benchmark competitivo, perfilado el runtime, aplicado optimizaciones adicionales ni conseguido superioridad. Mantener los checks sin marcar hasta que exista evidencia reproducible en este PR.
+Este archivo registra tanto las optimizaciones de la rama como la evidencia todavía pendiente. La implementación granular por fila no está aceptada hasta que el HEAD final pase CI y produzca muestras comparativas reproducibles. No declarar superioridad ni cerrar Phase 8.1 antes de revisar los artefactos oficiales y las regresiones.

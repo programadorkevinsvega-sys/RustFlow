@@ -74,6 +74,29 @@ Qué sucede:
 - Los scopes poseen efectos, scopes descendientes y callbacks de limpieza. Al disponer un scope se desconectan las dependencias, se cancela trabajo pendiente y se ejecutan los callbacks de limpieza en orden LIFO.
 - Los handles usados después de disponer su runtime/scope producen diagnósticos; los accesos ergonómicos pueden entrar en panic con un mensaje de diagnóstico. Prefiere las variantes <code>try_*</code> cuando debas gestionar el error explícitamente.
 
+## Scopes descendientes y batching desde señales
+
+Una señal también permite crear un scope de item sin depender del contexto owner activo:
+
+~~~rust
+let order = runtime.signal(Vec::<i64>::new())?;
+let row_scope = order.child_scope()?;
+let row_value = row_scope.signal(String::from("initial"))?;
+
+order.batch(|| {
+    row_value.set(String::from("updated"));
+})?;
+
+row_scope.dispose()?;
+~~~
+
+- `Signal::child_scope()` crea un scope hijo del owner que posee la señal receptora. Es útil para asignar un ciclo de vida explícito a una fila, elemento u otro recurso dinámico.
+- El scope debe disponerse al eliminar ese item. Si se dispone el owner antecesor, sus scopes descendientes también se disponen.
+- `Signal::batch(callback)` agrupa escrituras de cualquier señal del mismo runtime, no solo las de la señal usada para iniciar el batch. Los batches anidados se vacían en el límite exterior.
+- Los batches restauran el bookkeeping ante un panic y propagan los errores del scheduler, incluido el diagnóstico de ciclo. La señal debe seguir siendo válida al iniciar el batch.
+
+Estas APIs están disponibles en la rama del PR #81 y siguen siendo experimentales hasta que el PR se integre. No convierten automáticamente un `Signal<Vec<T>>` en estado granular: para listas grandes, el orden estructural y el estado de cada fila deben modelarse por separado, con claves estables y regiones reactivas por item.
+
 ## 6. Memo, refs y contextos tipados
 
 - <code>Scope::memo</code> y <code>use_memo</code> crean un memo eager. Ejecuta el cálculo una vez al crearlo y vuelve a ejecutarlo al vaciarse el scheduler cuando cambian sus dependencias activas. Las dependencias se detectan por lecturas de señales y cambian dinámicamente entre ejecuciones.
