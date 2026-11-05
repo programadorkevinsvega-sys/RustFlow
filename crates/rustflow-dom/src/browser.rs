@@ -239,11 +239,17 @@ enum ReconciliationAction {
     Element(Vec<PlannedChild>),
     Fragment(Vec<PlannedChild>),
     Keyed(Vec<PlannedChild>),
+    ReuseComponent {
+        region_index: usize,
+    },
     Component {
         region_index: usize,
         next_view: View,
         preview_required: bool,
         child_plan: Box<ReconciliationPlan>,
+    },
+    ReuseDynamic {
+        region_index: usize,
     },
     Dynamic {
         region_index: usize,
@@ -1735,64 +1741,70 @@ impl DomRenderer {
                     return self.replacement_plan(previous, next, owner_scope);
                 };
                 let region = &context.component_regions[region_index];
-                // Component render callbacks are pure by contract. If the descriptor
-                // inputs are identical, re-running preview_update only rebuilds the
-                // same view tree and allocates temporary props/children. Reuse the
-                // last accepted view while still planning its descendants so nested
-                // component/dynamic regions are marked reused and their DOM remains
-                // eligible for reconciliation.
                 let preview_required =
                     old.properties() != new.properties() || old.children() != new.children();
-                let next_view = if preview_required {
-                    region
-                        .instance
-                        .preview_update(&new.properties().to_vec(), &new.children().to_vec())?
+                if !preview_required {
+                    // The descriptor is unchanged. Its reactive descendants own
+                    // their updates, so a parent list move can retain this whole
+                    // mounted range without previewing or diffing the subtree.
+                    ReconciliationAction::ReuseComponent { region_index }
                 } else {
-                    region.view.clone()
-                };
-                self.validate_view(&next_view)?;
-                self.validate_node_refs_for_view(&next_view, Some(&region.mounted))?;
-                let mut nested_context =
-                    DiffContext::new(&region.mounted.component_regions, &region.mounted.dynamics);
-                let child_plan = self.plan_diff_with_context(
-                    &region.view,
-                    &next_view,
-                    &mut nested_context,
-                    region.instance.scope(),
-                )?;
-                ReconciliationAction::Component {
-                    region_index,
-                    next_view,
-                    preview_required,
-                    child_plan: Box::new(child_plan),
+                    let next_view = region
+                        .instance
+                        .preview_update(&new.properties().to_vec(), &new.children().to_vec())?;
+                    self.validate_view(&next_view)?;
+                    self.validate_node_refs_for_view(&next_view, Some(&region.mounted))?;
+                    let mut nested_context = DiffContext::new(
+                        &region.mounted.component_regions,
+                        &region.mounted.dynamics,
+                    );
+                    let child_plan = self.plan_diff_with_context(
+                        &region.view,
+                        &next_view,
+                        &mut nested_context,
+                        region.instance.scope(),
+                    )?;
+                    ReconciliationAction::Component {
+                        region_index,
+                        next_view,
+                        preview_required,
+                        child_plan: Box::new(child_plan),
+                    }
                 }
             }
             (View::Dynamic(old), View::Dynamic(next_dynamic)) => {
                 let Some(region_index) = context.take_dynamic(old) else {
                     return self.replacement_plan(previous, next, owner_scope);
                 };
-                let region = &context.dynamic_regions[region_index];
-                let next_view = untrack(|| next_dynamic.evaluate())?;
-                let state = region.state.borrow();
-                let current = state.as_ref().ok_or_else(|| {
-                    DomError::JavaScript("dynamic region has already been disposed".into())
-                })?;
-                self.validate_view(&next_view)?;
-                self.validate_node_refs_for_view(&next_view, Some(&current.mounted))?;
-                let mut nested_context = DiffContext::new(
-                    &current.mounted.component_regions,
-                    &current.mounted.dynamics,
-                );
-                let child_plan = self.plan_diff_with_context(
-                    &current.view,
-                    &next_view,
-                    &mut nested_context,
-                    &region.scope,
-                )?;
-                ReconciliationAction::Dynamic {
-                    region_index,
-                    next_view,
-                    child_plan: Box::new(child_plan),
+                if old == next_dynamic {
+                    // A cloned DynamicChild has the same evaluator identity and
+                    // owns a live effect. Parent structural changes need only move
+                    // its mounted range; its own effect handles signal updates.
+                    ReconciliationAction::ReuseDynamic { region_index }
+                } else {
+                    let region = &context.dynamic_regions[region_index];
+                    let next_view = untrack(|| next_dynamic.evaluate())?;
+                    let state = region.state.borrow();
+                    let current = state.as_ref().ok_or_else(|| {
+                        DomError::JavaScript("dynamic region has already been disposed".into())
+                    })?;
+                    self.validate_view(&next_view)?;
+                    self.validate_node_refs_for_view(&next_view, Some(&current.mounted))?;
+                    let mut nested_context = DiffContext::new(
+                        &current.mounted.component_regions,
+                        &current.mounted.dynamics,
+                    );
+                    let child_plan = self.plan_diff_with_context(
+                        &current.view,
+                        &next_view,
+                        &mut nested_context,
+                        &region.scope,
+                    )?;
+                    ReconciliationAction::Dynamic {
+                        region_index,
+                        next_view,
+                        child_plan: Box::new(child_plan),
+                    }
                 }
             }
             _ => return self.replacement_plan(previous, next, owner_scope),
@@ -2171,6 +2183,15 @@ impl DomRenderer {
                     resources,
                 )
             }
+            ReconciliationAction::ReuseComponent { region_index } => {
+                let region = previous_components.get_mut(region_index).ok_or_else(|| {
+                    DomError::JavaScript(
+                        "component diff plan references a missing mounted region".into(),
+                    )
+                })?;
+                region.reused = true;
+                Ok(mounted_range_nodes(&region.mounted))
+            }
             ReconciliationAction::Component {
                 region_index,
                 next_view,
@@ -2210,6 +2231,19 @@ impl DomRenderer {
                 region.descriptor = next.clone();
                 region.reused = true;
                 Ok(mounted_range_nodes(&region.mounted))
+            }
+            ReconciliationAction::ReuseDynamic { region_index } => {
+                let region = previous_dynamics.get_mut(region_index).ok_or_else(|| {
+                    DomError::JavaScript(
+                        "dynamic diff plan references a missing mounted region".into(),
+                    )
+                })?;
+                region.reused = true;
+                let state = region.state.borrow();
+                let current = state.as_ref().ok_or_else(|| {
+                    DomError::JavaScript("dynamic region has already been disposed".into())
+                })?;
+                Ok(mounted_range_nodes(&current.mounted))
             }
             ReconciliationAction::Dynamic {
                 region_index,
