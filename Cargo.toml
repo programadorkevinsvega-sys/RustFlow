@@ -32,3 +32,10 @@ unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 all = "warn"
+
+# Optimize production artifacts across the workspace crates. Thin call boundaries
+# disappear where profitable, while the fixed single codegen unit makes the
+# resulting WASM size and performance deterministic for the pinned release build.
+[profile.release]
+lto = "fat"
+codegen-units = 1
