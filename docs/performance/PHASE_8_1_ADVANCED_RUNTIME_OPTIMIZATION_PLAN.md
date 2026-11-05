@@ -86,6 +86,12 @@ Los dos cambios requieren la ejecución de los checks Rust/WASM/Browser E2E del 
 
 ## 3. Orden de implementación
 
+### Commit keyed — iterar vistas anteriores por referencia
+
+`commit_sequence` ahora recibe un iterador de tamaño exacto de referencias `&View`. En la rama keyed ya no clona cada `child.view()` ni crea un `Vec<View>` temporal para calcular rangos DOM; element, fragment y root también pasan iteradores directos. Se conserva el conteo de nodos, el orden, las verificaciones de rangos y la colocación DOM de derecha a izquierda.
+
+La aceptación requiere E2E y comparación de swap/append/delete; la reducción de clonaciones es una hipótesis estructural hasta medirla.
+
 ### Reconciliación keyed — conservar índice y evitar boxes por hijo
 
 - `KeyedList` ahora conserva el índice `Key -> posición` calculado al validar claves; `plan_keyed_children` consulta directamente el índice del snapshot anterior.
