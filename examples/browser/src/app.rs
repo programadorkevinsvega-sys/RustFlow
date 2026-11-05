@@ -174,9 +174,13 @@ impl OfficialBenchmarkRowStore {
         self.rows[index] = Some(state);
     }
 
-    fn extend(&mut self, states: Vec<(i64, OfficialBenchmarkRowState)>) {
-        for (id, state) in states {
-            self.insert(id, state);
+    fn append(&mut self, states: Self) {
+        self.rows.reserve(states.rows.len());
+        let first_id = states.first_id;
+        for (offset, state) in states.rows.into_iter().enumerate() {
+            if let Some(state) = state {
+                self.insert(first_id + offset as i64, state);
+            }
         }
     }
 
@@ -202,16 +206,17 @@ impl OfficialBenchmarkRowStore {
 fn create_official_benchmark_row_states(
     order: &Signal<Vec<i64>>,
     rows: Vec<OfficialBenchmarkRowData>,
-) -> Result<Vec<(i64, OfficialBenchmarkRowState)>, rustflow::reactivity::RuntimeError> {
-    let mut states = Vec::<(i64, OfficialBenchmarkRowState)>::with_capacity(rows.len());
+) -> Result<OfficialBenchmarkRowStore, rustflow::reactivity::RuntimeError> {
+    let first_id = rows.first().map_or(0, |row| row.id);
+    let mut states = OfficialBenchmarkRowStore::new(first_id);
+    states.rows.reserve(rows.len());
+
     for row in rows {
         let id = row.id;
         let owner = match order.child_scope() {
             Ok(owner) => owner,
             Err(error) => {
-                for (_, state) in states {
-                    let _ = state.owner.dispose();
-                }
+                states.dispose();
                 return Err(error);
             }
         };
@@ -219,20 +224,18 @@ fn create_official_benchmark_row_states(
             Ok(value) => value,
             Err(error) => {
                 let _ = owner.dispose();
-                for (_, state) in states {
-                    let _ = state.owner.dispose();
-                }
+                states.dispose();
                 return Err(error);
             }
         };
-        states.push((
+        states.insert(
             id,
             OfficialBenchmarkRowState {
                 owner,
                 value,
                 view: RefCell::new(None),
             },
-        ));
+        );
     }
     Ok(states)
 }
@@ -355,9 +358,7 @@ fn OfficialBenchmark() -> impl IntoView {
         let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
         let next_states = create_official_benchmark_row_states(&run_rows, rows)
             .unwrap_or_else(|error| panic!("failed to create benchmark row scopes: {error}"));
-        let mut replacement = OfficialBenchmarkRowStore::new(first_id);
-        replacement.extend(next_states);
-        let previous = std::mem::replace(&mut *run_states.borrow_mut(), replacement);
+        let previous = std::mem::replace(&mut *run_states.borrow_mut(), next_states);
         previous.dispose();
         run_selected.set(0);
         run_rows.set(ids);
@@ -376,9 +377,7 @@ fn OfficialBenchmark() -> impl IntoView {
             let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
             let next_states = create_official_benchmark_row_states(&run_lots_rows, rows)
                 .unwrap_or_else(|error| panic!("failed to create benchmark row scopes: {error}"));
-            let mut replacement = OfficialBenchmarkRowStore::new(first_id);
-            replacement.extend(next_states);
-            let previous = std::mem::replace(&mut *run_lots_states.borrow_mut(), replacement);
+            let previous = std::mem::replace(&mut *run_lots_states.borrow_mut(), next_states);
             previous.dispose();
             run_lots_selected.set(0);
             run_lots_rows.set(ids);
@@ -395,7 +394,7 @@ fn OfficialBenchmark() -> impl IntoView {
         let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
         let new_states = create_official_benchmark_row_states(&append_rows, rows)
             .unwrap_or_else(|error| panic!("failed to create appended row scopes: {error}"));
-        append_states.borrow_mut().extend(new_states);
+        append_states.borrow_mut().append(new_states);
         append_rows.update(|current| current.extend(ids));
     })
     .expect("valid official benchmark append button");
