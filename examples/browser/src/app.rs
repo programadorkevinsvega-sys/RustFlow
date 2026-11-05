@@ -146,12 +146,7 @@ fn todo_component(
     )
 }
 
-#[derive(Clone, PartialEq)]
-struct OfficialBenchmarkRowData {
-    id: i64,
-    label: String,
-    selected: bool,
-}
+type OfficialBenchmarkRowData = Todo;
 
 #[derive(Clone)]
 struct OfficialBenchmarkRowState {
@@ -243,15 +238,15 @@ fn official_benchmark_rows(count: usize, first_id: i64) -> Vec<OfficialBenchmark
     ];
 
     (0..count)
-        .map(|offset| OfficialBenchmarkRowData {
+        .map(|offset| Todo {
             id: first_id + offset as i64,
-            label: format!(
+            title: format!(
                 "{} {} {}",
                 ADJECTIVES[official_random(ADJECTIVES.len())],
                 COLORS[official_random(COLORS.len())],
                 NOUNS[official_random(NOUNS.len())]
             ),
-            selected: false,
+            done: false,
         })
         .collect()
 }
@@ -377,7 +372,7 @@ fn OfficialBenchmark() -> impl IntoView {
             update_rows
                 .batch(|| {
                     for state in &target_states {
-                        state.update(|row| row.label.push_str(" !!!"));
+                        state.update(|row| row.title.push_str(" !!!"));
                     }
                 })
                 .unwrap_or_else(|error| panic!("failed to batch row updates: {error}"));
@@ -442,11 +437,11 @@ fn OfficialBenchmark() -> impl IntoView {
                         .batch(|| {
                             if previous_id != id {
                                 if let Some(previous) = previous_state {
-                                    previous.update(|row| row.selected = false);
+                                    previous.update(|row| row.done = false);
                                 }
                             }
                             if let Some(current) = current_state {
-                                current.update(|row| row.selected = true);
+                                current.update(|row| row.done = true);
                             }
                             selected_for_row.set(id);
                         })
@@ -476,8 +471,8 @@ fn OfficialBenchmark() -> impl IntoView {
                         "OfficialBenchmarkRow",
                         [
                             Property::new("id", row.id)?,
-                            Property::new("label", row.label)?,
-                            Property::new("selected", row.selected)?,
+                            Property::new("label", row.title)?,
+                            Property::new("selected", row.done)?,
                             Property::new(
                                 "on_select",
                                 PropertyValue::Callback(select_handler.clone()),
