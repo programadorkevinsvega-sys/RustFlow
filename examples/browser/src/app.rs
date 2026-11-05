@@ -1,9 +1,4 @@
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    rc::Rc,
-    string::ToString,
-};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, string::ToString};
 
 use rustflow::components::ComponentRegistry;
 use rustflow::prelude::*;
@@ -185,9 +180,7 @@ fn create_official_benchmark_row_states(
     Ok(states)
 }
 
-fn dispose_official_benchmark_row_states(
-    states: HashMap<i64, OfficialBenchmarkRowState>,
-) {
+fn dispose_official_benchmark_row_states(states: HashMap<i64, OfficialBenchmarkRowState>) {
     for state in states.into_values() {
         state
             .owner
@@ -301,7 +294,9 @@ fn OfficialBenchmark() -> impl IntoView {
     let row_order = signal(Vec::<i64>::new());
     let selected_id = signal(0_i64);
     let next_id = signal(1_i64);
-    let row_states = Rc::new(RefCell::new(HashMap::<i64, OfficialBenchmarkRowState>::new()));
+    let row_states = Rc::new(RefCell::new(
+        HashMap::<i64, OfficialBenchmarkRowState>::new(),
+    ));
     let row_views = Rc::new(RefCell::new(HashMap::<i64, View>::new()));
 
     let run_rows = row_order.clone();
@@ -406,7 +401,10 @@ fn OfficialBenchmark() -> impl IntoView {
     let selected_for_region = selected_id.clone();
     let rows_region = View::dynamic(move || {
         let ids = rows_for_region.get();
-        let active_ids = ids.iter().copied().collect::<std::collections::HashSet<_>>();
+        let active_ids = ids
+            .iter()
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
         let states = states_for_region.borrow();
         let mut cached_views = views_for_region.borrow_mut();
         let mut children = Vec::with_capacity(ids.len());
@@ -454,10 +452,9 @@ fn OfficialBenchmark() -> impl IntoView {
                 let remove_handler = EventHandler::new(move |_payload: EventPayload| {
                     let removed = { remove_states.borrow_mut().remove(&id) };
                     if let Some(row_state) = removed {
-                        row_state
-                            .owner
-                            .dispose()
-                            .unwrap_or_else(|error| panic!("failed to dispose removed row: {error}"));
+                        row_state.owner.dispose().unwrap_or_else(|error| {
+                            panic!("failed to dispose removed row: {error}")
+                        });
                     }
                     remove_order.update(|items| items.retain(|candidate| *candidate != id));
                     if remove_selected.get() == id {
