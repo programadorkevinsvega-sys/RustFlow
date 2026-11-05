@@ -143,10 +143,10 @@ fn todo_component(
 
 type OfficialBenchmarkRowData = Todo;
 
-#[derive(Clone)]
 struct OfficialBenchmarkRowState {
     owner: rustflow::reactivity::Scope,
     value: Signal<OfficialBenchmarkRowData>,
+    view: RefCell<Option<View>>,
 }
 
 fn create_official_benchmark_row_states(
@@ -175,7 +175,14 @@ fn create_official_benchmark_row_states(
                 return Err(error);
             }
         };
-        states.insert(id, OfficialBenchmarkRowState { owner, value });
+        states.insert(
+            id,
+            OfficialBenchmarkRowState {
+                owner,
+                value,
+                view: RefCell::new(None),
+            },
+        );
     }
     Ok(states)
 }
@@ -297,7 +304,6 @@ fn OfficialBenchmark() -> impl IntoView {
     let row_states = Rc::new(RefCell::new(
         HashMap::<i64, OfficialBenchmarkRowState>::new(),
     ));
-    let row_views = Rc::new(RefCell::new(HashMap::<i64, View>::new()));
 
     let run_rows = row_order.clone();
     let run_states = row_states.clone();
@@ -397,23 +403,21 @@ fn OfficialBenchmark() -> impl IntoView {
 
     let rows_for_region = row_order.clone();
     let states_for_region = row_states.clone();
-    let views_for_region = row_views.clone();
     let selected_for_region = selected_id.clone();
     let rows_region = View::dynamic(move || {
         let ids = rows_for_region.get();
         let states = states_for_region.borrow();
-        let mut cached_views = views_for_region.borrow_mut();
         let mut children = Vec::with_capacity(ids.len());
 
         for id in &ids {
             let id = *id;
             let row_state = states
                 .get(&id)
-                .unwrap_or_else(|| panic!("missing benchmark row state for id {id}"))
-                .clone();
+                .unwrap_or_else(|| panic!("missing benchmark row state for id {id}"));
 
-            let child_view = if let Some(view) = cached_views.get(&id) {
-                view.clone()
+            let cached_view = row_state.view.borrow().clone();
+            let child_view = if let Some(view) = cached_view {
+                view
             } else {
                 let row_value = row_state.value.clone();
                 let selected_for_row = selected_for_region.clone();
@@ -480,19 +484,14 @@ fn OfficialBenchmark() -> impl IntoView {
                     )
                 });
 
-                cached_views.insert(id, row_view.clone());
+                *row_state.view.borrow_mut() = Some(row_view.clone());
                 row_view
             };
 
             children.push(KeyedChild::new(id.to_string(), child_view));
         }
 
-        // Reuse the row-state index to prune cached views without allocating
-        // a second set containing the same 10k active identities.
-        cached_views.retain(|id, _| states.contains_key(id));
         drop(states);
-        drop(cached_views);
-
         View::keyed_list(children)
     });
 
