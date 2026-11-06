@@ -52,7 +52,7 @@ class OfficialFrameworkWorkflowTests(unittest.TestCase):
         self.assertIn("--count 1", workflow)
         self.assertGreaterEqual(patcher.count("warmupCount: 5"), 3)
         self.assertIn('"cpu": 15', aggregator)
-        self.assertIn('"04_select1k": 25', aggregator)
+        self.assertIn('operation: (25 if operation == "04_select1k" else EXPECTED_SAMPLES["cpu"])', aggregator)
         self.assertIn("additionalNumberOfRuns=10", aggregator)
         self.assertIn("test:startup-routes", workflow)
         self.assertIn('"memory": 5', aggregator)
