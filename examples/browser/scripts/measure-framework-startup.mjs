@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { chromium } from "@playwright/test";
-import { DEFAULT_STARTUP_FRAMEWORKS, fetchFrameworkEntryUrls } from "./framework-startup-helpers.mjs";
+import { buildFrameworkOrder, DEFAULT_STARTUP_FRAMEWORKS, fetchFrameworkEntryUrls } from "./framework-startup-helpers.mjs";
 
 const BASE_URL = process.env.BENCHMARK_BASE_URL ?? "http://127.0.0.1:8080";
 const CHROME_BIN = process.env.CHROME_BIN;
