@@ -1,7 +1,7 @@
 # Competitive framework benchmark reference
 
-**Status:** upstream audit/source pin and executable workflow merged; the official comparison has not yet been run or accepted.  
-**Audit date:** 2026-11-03  
+**Status:** upstream audit/source pin complete; official run #22 executed on PR #81 but was rejected as incomplete; corrected re-run required.  
+**Audit date:** 2026-11-06  
 **Repository:** [krausest/js-framework-benchmark](https://github.com/krausest/js-framework-benchmark)  
 **Pinned source commit:** [`fa510a76ffe066af1d30f3e75fa51d3fcbc14009`](https://github.com/krausest/js-framework-benchmark/commit/fa510a76ffe066af1d30f3e75fa51d3fcbc14009)  
 **Pinned commit timestamp:** 2026-11-02T19:06:47Z  
@@ -104,7 +104,7 @@ The source audit and exact pin are complete. PR #78 now contains the following i
 - The Phase 8.1 browser workflow checks out the submodule, builds the selected upstream frameworks, serves the RustFlow WASM build beside them, verifies the actual Chromium version is `156.0.8078.4`, and invokes the upstream Playwright runner. The CPU aggregate is generated from the upstream raw total/script/paint trace results.
 - For the dedicated PR #78, the sequence is standard RustFlow browser measurements, same-runner A/B/A, official four-framework comparison, then the RustFlow-only extended list stress suite. The extended stress workload therefore does not precede and contaminate the A/B/A or cross-framework samples.
 
-**Execution evidence is still pending.** A wired workflow, a compiled fixture or a test source file is not accepted measurement evidence. The latest HEAD must pass the WASM build, browser E2E, A/B/A comparator, full extended suite and official four-framework runner, and must publish complete raw artifacts before this phase can be accepted.
+**First execution reviewed — incomplete:** official workflow [#22](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/41960093893), PR #81 HEAD 657eaa6c68d7abecd017568eceabec72749e1eeb, completed upstream CPU, memory and size runs but failed startup and the fail-closed sample validator. Upstream 04_select1k intentionally produced 25 samples (--count 15 + additionalNumberOfRuns: 10); the original aggregator incorrectly expected 15. Startup timed out on Vue because its /ls metadata declares customURL: "/dist", so the actual keyed page is /frameworks/keyed/vue/dist/index.html. The partial artifact is preserved and documented at [run #22 diagnostic history](runs/2026-11-05-official-framework-benchmark-22-diagnostic.md). It is not accepted competitive evidence. The correction adds per-operation sample contracts and metadata-driven entry routes with regression tests; a new full four-framework run must still publish status: "valid", valid: true and accepted: true before Phase 8.1 can be accepted.
 
 ### Known coverage gaps in the pinned upstream runner
 
