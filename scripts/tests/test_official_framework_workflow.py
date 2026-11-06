@@ -54,7 +54,7 @@ class OfficialFrameworkWorkflowTests(unittest.TestCase):
         self.assertIn('"cpu": 15', aggregator)
         self.assertIn('"04_select1k": 25', aggregator)
         self.assertIn("additionalNumberOfRuns=10", aggregator)
-        self.assertIn("node --test scripts/tests/*.test.mjs", workflow)
+        self.assertIn("test:startup-routes", workflow)
         self.assertIn('"memory": 5', aggregator)
         self.assertIn('"size": 1', aggregator)
         self.assertIn(r"156\.0\.8078\.4", aggregator)
