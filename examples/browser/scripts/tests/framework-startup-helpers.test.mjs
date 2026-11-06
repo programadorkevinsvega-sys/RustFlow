@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildFrameworkEntryUrl, fetchFrameworkEntryUrls, resolveFrameworkEntryUrls } from "../framework-startup-helpers.mjs";
+import { buildFrameworkEntryUrl, buildFrameworkOrder, fetchFrameworkEntryUrls, resolveFrameworkEntryUrls } from "../framework-startup-helpers.mjs";
 const baseUrl = "http://127.0.0.1:8080";
 test("resolves standard keyed entry page", () => {
   assert.equal(buildFrameworkEntryUrl(baseUrl, { type: "keyed", directory: "react-hooks" }), "http://127.0.0.1:8080/frameworks/keyed/react-hooks/index.html");
@@ -24,4 +24,19 @@ test("fetches upstream metadata from /ls", async () => {
 });
 test("fails closed on HTTP errors", async () => {
   await assert.rejects(fetchFrameworkEntryUrls(baseUrl, ["vue"], async () => ({ ok: false, status: 503 })), /HTTP 503/);
+});
+
+test("builds deterministic rotated framework order for every warmup and measured round", () => {
+  const frameworks = ["react-hooks", "vue", "svelte", "rustflow"];
+  const order = buildFrameworkOrder(frameworks, 5);
+  assert.deepEqual(order, [
+    ["react-hooks", "vue", "svelte", "rustflow"],
+    ["vue", "svelte", "rustflow", "react-hooks"],
+    ["svelte", "rustflow", "react-hooks", "vue"],
+    ["rustflow", "react-hooks", "vue", "svelte"],
+    ["react-hooks", "vue", "svelte", "rustflow"],
+  ]);
+  assert.equal(order.length, 5);
+  assert.throws(() => buildFrameworkOrder([], 1), /At least one framework/);
+  assert.throws(() => buildFrameworkOrder(frameworks, -1), /non-negative integer/);
 });
