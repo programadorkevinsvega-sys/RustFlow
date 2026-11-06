@@ -27,3 +27,12 @@ export async function fetchFrameworkEntryUrls(baseUrl, frameworkDirectories = DE
   if (!response.ok) throw new Error("Unable to read upstream framework metadata: HTTP " + response.status);
   return resolveFrameworkEntryUrls(baseUrl, await response.json(), frameworkDirectories);
 }
+
+export function buildFrameworkOrder(frameworks, rounds) {
+  if (!Array.isArray(frameworks) || frameworks.length === 0) throw new Error("At least one framework is required");
+  if (!Number.isInteger(rounds) || rounds < 0) throw new Error("Round count must be a non-negative integer");
+  return Array.from({ length: rounds }, (_, index) => {
+    const rotation = index % frameworks.length;
+    return frameworks.map((_, offset) => frameworks[(offset + rotation) % frameworks.length]);
+  });
+}
