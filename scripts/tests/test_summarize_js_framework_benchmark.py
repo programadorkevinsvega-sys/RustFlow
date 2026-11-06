@@ -47,7 +47,7 @@ def write_complete_results(directory: Path) -> None:
                 "benchmark": operation,
                 "type": "cpu",
                 "values": {
-                    metric: {"values": [scale * factor * (1 + sample / 1000) for sample in range(15)]}
+                    metric: {"values": [scale * factor * (1 + sample / 1000) for sample in range(AGGREGATOR.expected_sample_count(operation, "cpu"))]}
                     for metric, factor in (("total", 1.0), ("script", 0.6), ("paint", 0.4))
                 },
             }
@@ -97,14 +97,53 @@ class BenchmarkAggregatorTests(unittest.TestCase):
             for framework in ("react", "vue", "svelte", "rustflow"):
                 for operation in AGGREGATOR.CPU_OPERATIONS + AGGREGATOR.EXTENDED_CPU_OPERATIONS:
                     self.assertEqual(report["benchmark_status"][framework][operation]["status"], "complete")
+                    expected = AGGREGATOR.expected_sample_count(operation, "cpu")
+                    self.assertEqual(report["benchmark_status"][framework][operation]["expected_samples"], expected)
                     self.assertEqual(report["benchmark_status"][framework][operation]["actual_samples"],
-                                     {"total": 15, "script": 15, "paint": 15})
+                                     {"total": expected, "script": expected, "paint": expected})
                 for operation in AGGREGATOR.MEMORY_OPERATIONS:
                     self.assertEqual(report["benchmark_status"][framework][operation]["actual_samples"], {"DEFAULT": 5})
                 for operation in AGGREGATOR.SIZE_OPERATIONS:
                     self.assertEqual(report["benchmark_status"][framework][operation]["actual_samples"], {"DEFAULT": 1})
                 self.assertEqual(report["startup_status"][framework]["status"], "complete")
             self.assertIn("Status: **VALID**", (directory / "framework-comparison.md").read_text(encoding="utf-8"))
+
+    def test_upstream_select_requires_and_preserves_all_25_samples(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            write_complete_results(directory)
+            self.assertEqual(AGGREGATOR.expected_sample_count("04_select1k", "cpu"), 25)
+            self.assertEqual(AGGREGATOR.expected_sample_count("01_run1k", "cpu"), 15)
+            self.assertEqual(AGGREGATOR.expected_sample_count("12_clear10k", "cpu"), 15)
+            self.assertEqual(self.run_aggregator(directory), 0)
+            report = json.loads((directory / "framework-comparison.json").read_text(encoding="utf-8"))
+            for framework in ("react", "vue", "svelte", "rustflow"):
+                item = report["benchmark_status"][framework]["04_select1k"]
+                self.assertEqual(item["status"], "complete")
+                self.assertEqual(item["expected_samples"], 25)
+                self.assertEqual(item["actual_samples"], {"total": 25, "script": 25, "paint": 25})
+                self.assertEqual(report["frameworks"][framework]["cpu"]["04_select1k"]["metrics"]["total"]["samples"], 25)
+
+    def test_select_with_24_samples_is_rejected_without_truncation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            write_complete_results(directory)
+            path = directory / "react-04_select1k.json"
+            body = json.loads(path.read_text(encoding="utf-8"))
+            body["values"]["total"]["values"].pop()
+            path.write_text(json.dumps(body), encoding="utf-8")
+            self.assertEqual(self.run_aggregator(directory), 1)
+            report = json.loads((directory / "framework-comparison.json").read_text(encoding="utf-8"))
+            item = report["benchmark_status"]["react"]["04_select1k"]
+            self.assertEqual(item["status"], "invalid")
+            self.assertEqual(item["expected_samples"], 25)
+            self.assertEqual(item["actual_samples"]["total"], 24)
+            self.assertTrue(any("expected exactly 25 samples, got 24" in error for error in report["validation_errors"]))
+
+    def test_all_other_cpu_operations_keep_the_15_sample_contract(self) -> None:
+        for operation in AGGREGATOR.CPU_OPERATIONS + AGGREGATOR.EXTENDED_CPU_OPERATIONS:
+            expected = 25 if operation == "04_select1k" else 15
+            self.assertEqual(AGGREGATOR.expected_sample_count(operation, "cpu"), expected)
 
     def test_incomplete_results_emit_diagnostics_but_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
