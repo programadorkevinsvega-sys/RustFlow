@@ -114,6 +114,7 @@ const browser = await chromium.launch({
   executablePath: CHROME_BIN,
 });
 const results = {};
+const order = buildFrameworkOrder(FRAMEWORKS, WARMUPS + SAMPLES);
 try {
   for (const framework of FRAMEWORKS) {
     results[framework] = [];
@@ -121,11 +122,8 @@ try {
 
   // Three discarded warmups per implementation; rotate the order in every
   // measured round so no framework always benefits from the first position.
-  const order = [];
   for (let index = 0; index < WARMUPS + SAMPLES; index += 1) {
-    const rotation = index % FRAMEWORKS.length;
-    const round = FRAMEWORKS.map((_, offset) => FRAMEWORKS[(offset + rotation) % FRAMEWORKS.length]);
-    order.push(round);
+    const round = order[index];
     for (const framework of round) {
       const measured = await oneSample(browser, framework, frameworkEntryUrls[framework]);
       if (measured.final_dom_rows !== 1_000) {
