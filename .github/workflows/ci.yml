@@ -345,6 +345,10 @@ jobs:
         working-directory: examples/browser
         run: npm install --no-package-lock --no-audit --no-fund
 
+      - name: Test upstream startup route resolution
+        working-directory: examples/browser
+        run: npm run test:startup-routes
+
       - name: Record browser performance environment
         working-directory: examples/browser
         shell: bash
@@ -386,6 +390,8 @@ jobs:
         run: python3 -m py_compile scripts/summarize-js-framework-benchmark.py
       - name: Validate browser A/B/A comparison script
         run: python3 -m py_compile scripts/compare-browser-performance.py
+      - name: Validate sequential sibling A/B/A comparison script
+        run: python3 -m py_compile scripts/compare-sequence-reconciliation.py
       - name: Test performance benchmark aggregators and A/B/A comparisons
         run: python3 -m unittest discover -s scripts/tests -v
       - name: Validate upstream benchmark patch script
@@ -395,7 +401,7 @@ jobs:
         run: node --check scripts/measure-framework-startup.mjs
 
       - name: Controlled same-runner keyed reconciliation A/B/A (Phase 8.1)
-        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/phase-8-1-') }}
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feat/phase-8-1-performance' }}
         working-directory: examples/browser
         env:
           PHASE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -443,10 +449,72 @@ jobs:
             --head-sha "$PHASE_HEAD_SHA" \
             --output performance-results/browser-ab-comparison.json
 
-      - name: Run extended RustFlow keyed-list stress suite
-        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.extended_browser_benchmarks) || (github.event_name == 'pull_request' && github.head_ref == 'feat/phase-8-1-measurement-completion') }}
+      - name: Controlled same-runner sequential sibling A/B/A (Phase 8.1)
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feat/phase-8-1-advanced-runtime-optimizations' }}
         working-directory: examples/browser
-        timeout-minutes: 30
+        env:
+          PHASE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PHASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_repo_path="crates/rustflow-dom/src/browser.rs"
+          dom_lib_repo_path="crates/rustflow-dom/src/lib.rs"
+          browser_source="../../$browser_repo_path"
+          dom_lib_source="../../$dom_lib_repo_path"
+          optimized_browser_source="$RUNNER_TEMP/rustflow-browser-optimized.rs"
+          optimized_dom_lib_source="$RUNNER_TEMP/rustflow-dom-lib-optimized.rs"
+          cp "$browser_source" "$optimized_browser_source"
+          cp "$dom_lib_source" "$optimized_dom_lib_source"
+
+          git cat-file -e "$PHASE_BASE_SHA:$browser_repo_path"
+          git cat-file -e "$PHASE_BASE_SHA:$dom_lib_repo_path"
+          restore_optimized() {
+            local changed=0
+            if ! cmp -s "$optimized_browser_source" "$browser_source"; then
+              cp "$optimized_browser_source" "$browser_source"
+              changed=1
+            fi
+            if ! cmp -s "$optimized_dom_lib_source" "$dom_lib_source"; then
+              cp "$optimized_dom_lib_source" "$dom_lib_source"
+              changed=1
+            fi
+            if [ "$changed" -eq 1 ]; then
+              npm run build
+            fi
+          }
+          trap restore_optimized EXIT
+
+          echo "Measure optimized sequential sibling reconciliation before the base control ($PHASE_HEAD_SHA)."
+          RUSTFLOW_BENCH_BROWSER_SEQUENCE=1 npm run bench:browser
+          cp performance-results/browser.json performance-results/browser-sequence-optimized-before.json
+
+          echo "Building the base sequential sibling reconciler ($PHASE_BASE_SHA) on the same runner."
+          git show "$PHASE_BASE_SHA:$browser_repo_path" > "$browser_source"
+          git show "$PHASE_BASE_SHA:$dom_lib_repo_path" > "$dom_lib_source"
+          npm run build
+          RUSTFLOW_BENCH_BROWSER_SEQUENCE=1 npm run bench:browser
+          cp performance-results/browser.json performance-results/browser-sequence-unoptimized.json
+
+          echo "Restoring the optimized reconciler and repeating the same workload."
+          cp "$optimized_browser_source" "$browser_source"
+          cp "$optimized_dom_lib_source" "$dom_lib_source"
+          npm run build
+          RUSTFLOW_BENCH_BROWSER_SEQUENCE=1 npm run bench:browser
+          cp performance-results/browser.json performance-results/browser-sequence-optimized-after.json
+
+          python3 ../../scripts/compare-sequence-reconciliation.py \
+            --optimized-before performance-results/browser-sequence-optimized-before.json \
+            --unoptimized performance-results/browser-sequence-unoptimized.json \
+            --optimized-after performance-results/browser-sequence-optimized-after.json \
+            --base-sha "$PHASE_BASE_SHA" \
+            --head-sha "$PHASE_HEAD_SHA" \
+            --output performance-results/browser-sequence-ab-comparison.json
+
+      - name: Run extended RustFlow keyed-list stress suite
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.extended_browser_benchmarks) || (github.event_name == 'pull_request' && (github.head_ref == 'feat/phase-8-1-measurement-completion' || github.head_ref == 'feat/phase-8-1-advanced-runtime-optimizations')) }}
+        working-directory: examples/browser
+        timeout-minutes: 60
         env:
           RUSTFLOW_BENCH_BROWSER_EXTENDED: "1"
         run: RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
@@ -459,3 +527,99 @@ jobs:
           path: examples/browser/performance-results/
           if-no-files-found: warn
           retention-days: 30
+
+  cross-browser-profile:
+    name: Cross-browser stress profile (${{ matrix.browser }})
+    needs: changes
+    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.full_ci == 'true') && (github.event_name != 'pull_request' || github.head_ref == 'feat/phase-8-1-advanced-runtime-optimizations' || github.head_ref == 'feat/phase-8-1-measurement-completion') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, webkit]
+    env:
+      RUSTFLOW_BROWSER: ${{ matrix.browser }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust and the browser target
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked --version 0.13.1
+
+      - name: Install browser example dependencies
+        working-directory: examples/browser
+        run: npm install --no-package-lock --no-audit --no-fund
+
+      - name: Record cross-browser performance environment
+        working-directory: examples/browser
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p performance-results
+          {
+            echo "rustflow_commit=$(git rev-parse HEAD)"
+            echo "pull_request_head=${{ github.event.pull_request.head.sha || github.sha }}"
+            echo "browser_engine=$RUSTFLOW_BROWSER"
+            echo "runner_os=$(uname -s)"
+            echo "runner_kernel=$(uname -r)"
+            echo "runner_arch=$(uname -m)"
+            echo "node=$(node --version)"
+            echo "npm=$(npm --version)"
+            echo "rustc=$(rustc --version)"
+            lscpu
+          } > "performance-results/environment-$RUSTFLOW_BROWSER.txt"
+
+      - name: Build production WASM and browser bundle
+        working-directory: examples/browser
+        run: npm run build
+
+      - name: Install ${{ matrix.browser }} for Playwright
+        working-directory: examples/browser
+        timeout-minutes: 15
+        run: npx playwright install --with-deps "$RUSTFLOW_BROWSER"
+
+      - name: Run browser end-to-end tests on ${{ matrix.browser }}
+        working-directory: examples/browser
+        run: npm run test:e2e
+
+      - name: Run extended keyed-list and 10,000-row profile on ${{ matrix.browser }}
+        working-directory: examples/browser
+        timeout-minutes: 55
+        env:
+          RUSTFLOW_BENCH_BROWSER_EXTENDED: "1"
+          RUSTFLOW_BENCH_BROWSER_LARGE_LIST: "1"
+          RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS: "1"
+        run: npm run bench:browser
+
+      - name: Preserve engine-specific performance report
+        if: ${{ always() }}
+        working-directory: examples/browser
+        run: |
+          if [[ -f performance-results/browser.json ]]; then
+            cp performance-results/browser.json "performance-results/browser-$RUSTFLOW_BROWSER.json"
+          fi
+
+      - name: Upload ${{ matrix.browser }} performance profile
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-8-1-cross-browser-${{ matrix.browser }}
+          path: examples/browser/performance-results/
+          if-no-files-found: warn
+          retention-days: 90

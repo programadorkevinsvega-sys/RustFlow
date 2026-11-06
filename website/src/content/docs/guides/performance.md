@@ -9,7 +9,7 @@ RustFlow incluye benchmarks para observar el coste de su runtime reactivo, el re
 
 El CI #944 del PR #78 (HEAD `83a65d33a8873bad29e5f28f087fedb58f1c9fc3`) aceptó el A/B/A keyed interno en el mismo runner: 47,85% de mejora mediana en inserción incremental y 55,15% en reverse keyed, con deriva A/A de 0,13% y 0,82%. Las ocho mediciones de memoria de owners/ComponentInstance tuvieron 25 muestras y terminaron con outstanding cero; los límites de WASM, JavaScript y assets comprimidos también pasaron. El CI #945 posterior a la fusión en `main` pasó todos sus jobs.
 
-Esto compara RustFlow con su reconciliador base, no con React, Vue o Svelte. La suite oficial comparativa está disponible en GitHub Actions, pero todavía no cuenta con una ejecución aceptada. Consulta el [registro técnico completo de CI #944](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/performance/runs/2026-11-03-ci-944-phase-8-1.md) para entorno, p50/p95, muestras, presupuesto y limitaciones. Phase 8.1 sigue abierta.
+Esto compara RustFlow con su reconciliador base, no con React, Vue o Svelte. La primera ejecución oficial revisada del PR #81 (#22) produjo artefactos diagnósticos, pero no fue aceptada: el ID 04_select1k contiene 25 muestras upstream y el medidor de startup no respetó customURL de Vue. El [historial diagnóstico del benchmark #22](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/performance/runs/2026-11-05-official-framework-benchmark-22-diagnostic.md) conserva p50 por operación para los cuatro frameworks, percentiles de RustFlow, memoria, bundle y causas del rechazo. Phase 8.1 sigue abierta.
 
 ## Qué mide cada suite
 
@@ -116,7 +116,7 @@ La matriz externa completa se ejecuta con el [workflow Official framework benchm
 
 El workflow oficial se lanza manualmente desde GitHub Actions o semanalmente los lunes a las 06:17 UTC. En rustflow_commit puedes indicar un SHA completo de 40 caracteres; vacío significa usar el SHA del evento seleccionado. El workflow construye su propio bundle WASM y prepara su propia copia del submódulo upstream. No consume artefactos producidos por jobs de PR.
 
-La referencia está fijada a fa510a76ffe066af1d30f3e75fa51d3fcbc14009 y compara React, Vue, Svelte y RustFlow bajo el mismo runner y Chromium 156.0.8078.4. Mantiene los doce escenarios CPU con 15 muestras por escenario, cinco escenarios de memoria con 5 muestras, tres mediciones de tamaño/first paint con una muestra y los calentamientos originales. Los escenarios extendidos 10k conservan cinco acciones de calentamiento.
+La referencia está fijada a fa510a76ffe066af1d30f3e75fa51d3fcbc14009 y compara React, Vue, Svelte y RustFlow bajo el mismo runner y Chromium 156.0.8078.4. Los doce escenarios CPU usan 15 muestras excepto 04_select1k, que requiere 25 porque el runner suma diez ejecuciones adicionales a --count 15. No se descartan esas muestras. Los cinco escenarios de memoria usan 5 muestras; las tres mediciones de tamaño/first paint usan una. Se conservan los calentamientos originales y cinco acciones para cada extensión 10k.
 
 El artefacto official-framework-comparison-<run_id> contiene JSON originales (raw/), framework-comparison.json, el resumen Markdown, startup-comparison.json, environment.txt, execution-status.txt, trazas y logs disponibles. El registro identifica ambos commits y las versiones de Node, npm, Rust y Chromium, además del sistema operativo y CPU.
 

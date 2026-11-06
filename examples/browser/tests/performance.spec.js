@@ -50,7 +50,7 @@ async function loadApp(page, initialListSize = 0, nestedDepth = 0, includeBenchm
     const entry = performance.getEntriesByName("rustflow:runtime:init")[0];
     const memory = performance.memory
       ? {
-          source: "Chromium performance.memory",
+          source: "Browser performance.memory",
           used_js_heap_bytes: performance.memory.usedJSHeapSize,
           total_js_heap_bytes: performance.memory.totalJSHeapSize,
         }
@@ -284,6 +284,99 @@ async function measureIsolatedKeyedMutations(page, count) {
       dom_operation_counts: domCounts.removal,
     },
   ];
+}
+
+async function measureSequentialSiblingReconciliation(page, count) {
+  await page.goto(`/?bench_sequence=${count}`);
+  await page.locator("#bench-sequence").waitFor({ state: "attached" });
+  await page.locator("#bench-sequence-anchor").waitFor({ state: "attached" });
+
+  const result = await page.evaluate(({ count, warmupSamples, repetitions }) => {
+    const container = document.querySelector("#bench-sequence");
+    const toggle = document.querySelector('[data-testid="bench-sequence-toggle"]');
+    if (!container || !toggle) {
+      throw new Error("Sequential sibling benchmark fixture was not mounted");
+    }
+
+    const childSpans = () => Array.from(container.querySelectorAll(":scope > span"));
+    const originalAnchor = childSpans().find(
+      (node) => node.id === "bench-sequence-anchor",
+    );
+    if (!originalAnchor) throw new Error("Initial keyed anchor is missing");
+
+    const verify = (anchorAtEnd, phase) => {
+      const nodes = childSpans();
+      if (nodes.length !== count + 1) {
+        throw new Error(
+          phase + ": expected " + (count + 1) + " sequence children; got " + nodes.length,
+        );
+      }
+      const expectedAnchorIndex = anchorAtEnd ? count : 0;
+      if (nodes[expectedAnchorIndex]?.id !== "bench-sequence-anchor") {
+        throw new Error(phase + ": keyed anchor is not at the expected position");
+      }
+      for (let index = 0; index < count; index += 1) {
+        const node = nodes[anchorAtEnd ? index : index + 1];
+        if (node?.getAttribute("data-sequence-index") !== String(index)) {
+          throw new Error(phase + ": unkeyed sibling order changed at index " + index);
+        }
+      }
+      // Unkeyed siblings intentionally follow positional identity. The stable
+      // identity contract being measured here belongs to the keyed anchor.
+      if (nodes[expectedAnchorIndex] !== originalAnchor) {
+        throw new Error(phase + ": keyed anchor DOM identity changed");
+      }
+    };
+
+    verify(false, "initial sequence");
+    for (let sample = 0; sample < warmupSamples; sample += 1) {
+      toggle.click();
+      verify(true, "warmup move " + sample);
+      toggle.click();
+      verify(false, "warmup reset " + sample);
+    }
+
+    const samples = [];
+    for (let sample = 0; sample < repetitions; sample += 1) {
+      const started = performance.now();
+      toggle.click();
+      samples.push(performance.now() - started);
+      verify(true, "measured move " + sample);
+      // Restore the anchor to index zero outside the timed interval so every
+      // measured operation exercises the same keyed-to-unkeyed fallback path.
+      toggle.click();
+      verify(false, "measured reset " + sample);
+    }
+
+    return {
+      samples_raw: samples,
+      warmup_samples: warmupSamples,
+      measured_samples: samples.length,
+      final_dom_children: childSpans().length,
+      keyed_anchor_identity_preserved: true,
+      final_anchor_position: "first",
+    };
+  }, { count, warmupSamples: 2, repetitions: 12 });
+
+  if (
+    result.final_dom_children !== count + 1 ||
+    !result.keyed_anchor_identity_preserved
+  ) {
+    throw new Error("Sequential sibling benchmark did not preserve the original DOM");
+  }
+
+  return {
+    size: count,
+    operation: "move one keyed anchor from first to last across unkeyed siblings",
+    ...summarize(result.samples_raw, 1, "ms"),
+    warmup_samples: result.warmup_samples,
+    measured_samples: result.measured_samples,
+    final_dom_children: result.final_dom_children,
+    keyed_anchor_identity_preserved: result.keyed_anchor_identity_preserved,
+    final_anchor_position: result.final_anchor_position,
+    measured_scope:
+      "One dynamic fragment reconciliation moving a keyed anchor from index zero to the end of 5,000 unkeyed sibling elements; the reset move is excluded from timing and all DOM identities are checked",
+  };
 }
 
 async function measureExtendedRustFlowScenarios(page) {
@@ -570,7 +663,8 @@ async function measureExtendedRustFlowScenarios(page) {
 
 
 test("RustFlow browser runtime performance measurements", async ({ page, browser, browserErrors }) => {
-  test.setTimeout(process.env.RUSTFLOW_BENCH_BROWSER_EXTENDED === "1" ? 25 * 60 * 1000 : 10 * 60 * 1000);
+  test.setTimeout(process.env.RUSTFLOW_BENCH_BROWSER_EXTENDED === "1" ? 50 * 60 * 1000 : 10 * 60 * 1000);
+  const browserEngine = browser.browserType().name();
 
   const initializationSamples = [];
   const memorySamples = [];
@@ -842,6 +936,10 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     process.env.RUSTFLOW_BENCH_BROWSER_EXTENDED === "1"
       ? await measureExtendedRustFlowScenarios(page)
       : [];
+  const sequentialSiblingReconciliation =
+    process.env.RUSTFLOW_BENCH_BROWSER_SEQUENCE === "1"
+      ? await measureSequentialSiblingReconciliation(page, 5_000)
+      : null;
 
   const report = {
     schema_version: 1,
@@ -850,7 +948,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     commit: process.env.GITHUB_SHA || "unspecified",
     node_version: process.version,
     browser: {
-      engine: "Chromium",
+      engine: browserEngine,
       version: browser.version(),
     },
     initialization: summarize(initializationSamples, 1, "ms"),
@@ -861,6 +959,7 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     keyed_list_incremental_insertions: listScenarios,
     keyed_list_isolated_mutations: isolatedKeyedMutationScenarios,
     extended_scenarios: extendedScenarios,
+    sequential_sibling_reconciliation: sequentialSiblingReconciliation,
     keyed_list_reverse_100: summarize(reorderSamples, 1, "ms"),
     keyed_list_remove_100: {
       elapsed_ms: removalElapsed.elapsed_ms,
@@ -873,14 +972,15 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
     memory: {
       observations: memorySamples,
       note:
-        "performance.memory is a Chromium-specific JS heap observation when exposed; it is not process RSS, retained Rust memory, allocation count, or a cross-browser guarantee.",
+        "performance.memory is an engine-specific JS heap observation when exposed; it is not process RSS, retained Rust memory, allocation count, or a cross-browser guarantee.",
     },
     limitations: [
-      "These measurements exercise the shipped RustFlow WASM runtime in Chromium and synchronous interactions with its real DOM.",
+      `These measurements exercise the shipped RustFlow WASM runtime in ${browserEngine} and synchronous interactions with its real DOM.`,
       "Incremental insertion measures repeated reactive reconciliation at 100 rows; the opt-in isolated suite measures one insert/remove on pre-existing lists of 100, 1,000, and 5,000 rows.",
       "Timing values are informational and must not fail CI because browser hardware and scheduling vary.",
       "Extended 100/1,000/5,000/10,000-row scenarios are opt-in via RUSTFLOW_BENCH_BROWSER_EXTENDED=1 and are not part of the upstream-compatible suite or current A/B/A acceptance aggregate.",
-      "Nested component depth is exercised at depths 5, 20, and 80 in Chromium; Firefox/WebKit profiling remains follow-up work.",
+      "The mixed sequential-sibling A/B/A workload is opt-in via RUSTFLOW_BENCH_BROWSER_SEQUENCE=1 and moves a keyed anchor across 5,000 unkeyed siblings; it is distinct from KeyedList workloads.",
+      `Nested component depth is exercised at depths 5, 20, and 80 in ${browserEngine}; each engine has an independent report and no cross-engine timing threshold.`,
     ],
   };
 
@@ -896,45 +996,49 @@ test("RustFlow browser runtime performance measurements", async ({ page, browser
       });
     }
   };
-  checkTimingBudget("runtime_initialization", report.initialization.p95, 30);
-  checkTimingBudget(
-    "counter_100_updates",
-    report.counter_100_synchronous_dom_updates.p95,
-    10,
-  );
-  checkTimingBudget(
-    "todo_row_update",
-    report.todo_row_attribute_and_checked_property_update.p95,
-    0.3,
-  );
-  checkTimingBudget(
-    "keyed_list_incremental_insert_100",
-    report.keyed_list_incremental_insertions.find(
-      (scenario) => scenario.name === "keyed_list_incremental_insert_100",
-    )?.p95,
-    400,
-  );
-  checkTimingBudget(
-    "keyed_list_initial_mount_1000",
-    report.keyed_list_initial_mounts.find(
-      (scenario) => scenario.name === "keyed_list_initial_mount_1000",
-    )?.p95,
-    70,
-  );
-  checkTimingBudget("keyed_list_reverse_100", report.keyed_list_reverse_100.p95, 14);
-  for (const [depth, budget] of [[5, 16], [20, 16], [80, 16]]) {
-    const scenario = report.nested_component_depth_mount_cycles.find(
-      (item) => item.depth === depth,
+  if (browserEngine === "chromium") {
+    checkTimingBudget("runtime_initialization", report.initialization.p95, 30);
+    checkTimingBudget(
+      "counter_100_updates",
+      report.counter_100_synchronous_dom_updates.p95,
+      10,
     );
     checkTimingBudget(
-      "nested_component_depth_" + depth,
-      scenario?.p95,
-      budget,
+      "todo_row_update",
+      report.todo_row_attribute_and_checked_property_update.p95,
+      0.3,
     );
+    checkTimingBudget(
+      "keyed_list_incremental_insert_100",
+      report.keyed_list_incremental_insertions.find(
+        (scenario) => scenario.name === "keyed_list_incremental_insert_100",
+      )?.p95,
+      400,
+    );
+    checkTimingBudget(
+      "keyed_list_initial_mount_1000",
+      report.keyed_list_initial_mounts.find(
+        (scenario) => scenario.name === "keyed_list_initial_mount_1000",
+      )?.p95,
+      70,
+    );
+    checkTimingBudget("keyed_list_reverse_100", report.keyed_list_reverse_100.p95, 14);
+    for (const [depth, budget] of [[5, 16], [20, 16], [80, 16]]) {
+      const scenario = report.nested_component_depth_mount_cycles.find(
+        (item) => item.depth === depth,
+      );
+      checkTimingBudget(
+        "nested_component_depth_" + depth,
+        scenario?.p95,
+        budget,
+      );
+    }
+  
   }
   report.timing_budget_warnings = timingBudgetWarnings;
-  report.timing_budget_policy =
-    "Warning-only on GitHub-hosted runners; compare repeated samples on the same runner class before changing budgets.";
+  report.timing_budget_policy = browserEngine === "chromium"
+    ? "Warning-only on GitHub-hosted Chromium runners; compare repeated samples on the same runner class before changing budgets."
+    : "No Chromium-derived timing budgets are applied to this engine; preserve this engine-specific profile for independent analysis.";
 
   for (const warning of timingBudgetWarnings) {
     console.warn(

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, string::ToString};
+use std::{cell::RefCell, rc::Rc, string::ToString};
 
 use rustflow::components::ComponentRegistry;
 use rustflow::prelude::*;
@@ -141,10 +141,86 @@ fn todo_component(
     )
 }
 
-#[derive(Clone, PartialEq)]
-struct OfficialBenchmarkRowData {
-    id: i64,
-    label: String,
+type OfficialBenchmarkRowData = Todo;
+
+struct OfficialBenchmarkRowState {
+    owner: rustflow::reactivity::Scope,
+    value: Signal<OfficialBenchmarkRowData>,
+    view: RefCell<Option<View>>,
+}
+
+/// Benchmark IDs are allocated monotonically. A base ID plus a sparse vector
+/// avoids a generic hash table for row-state lookup while preserving holes
+/// left by row removals.
+struct OfficialBenchmarkRowStore {
+    first_id: i64,
+    rows: Vec<Option<OfficialBenchmarkRowState>>,
+}
+
+impl OfficialBenchmarkRowStore {
+    fn new(first_id: i64) -> Self {
+        Self {
+            first_id,
+            rows: Vec::new(),
+        }
+    }
+
+    fn append(&mut self, rows: Vec<Option<OfficialBenchmarkRowState>>) {
+        self.rows.extend(rows);
+    }
+
+    fn get(&self, id: i64) -> Option<&OfficialBenchmarkRowState> {
+        let index = usize::try_from(id.checked_sub(self.first_id)?).ok()?;
+        self.rows.get(index)?.as_ref()
+    }
+
+    fn remove(&mut self, id: i64) -> Option<OfficialBenchmarkRowState> {
+        let index = usize::try_from(id.checked_sub(self.first_id)?).ok()?;
+        self.rows.get_mut(index)?.take()
+    }
+
+    fn dispose(self) {
+        dispose_official_benchmark_row_states(self.rows);
+    }
+}
+
+fn create_official_benchmark_row_states(
+    order: &Signal<Vec<i64>>,
+    rows: Vec<OfficialBenchmarkRowData>,
+) -> Result<Vec<Option<OfficialBenchmarkRowState>>, rustflow::reactivity::RuntimeError> {
+    let mut states = Vec::<Option<OfficialBenchmarkRowState>>::with_capacity(rows.len());
+    for row in rows {
+        let owner = match order.child_scope() {
+            Ok(owner) => owner,
+            Err(error) => {
+                dispose_official_benchmark_row_states(states);
+                return Err(error);
+            }
+        };
+        let value = match owner.signal(row) {
+            Ok(value) => value,
+            Err(error) => {
+                let _ = owner.dispose();
+                dispose_official_benchmark_row_states(states);
+                return Err(error);
+            }
+        };
+        states.push(Some(OfficialBenchmarkRowState {
+            owner,
+            value,
+            view: RefCell::new(None),
+        }));
+    }
+    Ok(states)
+}
+
+fn dispose_official_benchmark_row_states(states: Vec<Option<OfficialBenchmarkRowState>>) {
+    for state in states.into_iter().flatten() {
+        state
+            .owner
+            .dispose()
+            .unwrap_or_else(|error| panic!("failed to dispose benchmark row scope: {error}"));
+    }
 }
 
 fn official_random(max: usize) -> usize {
@@ -189,14 +265,15 @@ fn official_benchmark_rows(count: usize, first_id: i64) -> Vec<OfficialBenchmark
     ];
 
     (0..count)
-        .map(|offset| OfficialBenchmarkRowData {
+        .map(|offset| Todo {
             id: first_id + offset as i64,
-            label: format!(
+            title: format!(
                 "{} {} {}",
                 ADJECTIVES[official_random(ADJECTIVES.len())],
                 COLORS[official_random(COLORS.len())],
                 NOUNS[official_random(NOUNS.len())]
             ),
+            done: false,
         })
         .collect()
 }
@@ -246,62 +323,112 @@ fn official_benchmark_button(
 
 #[rustflow::component]
 fn OfficialBenchmark() -> impl IntoView {
-    let rows = signal(Vec::<OfficialBenchmarkRowData>::new());
-    let selected = signal(0_i64);
+    // The order signal changes only for structural operations. Every row has its
+    // own owner scope and signal, so a value update does not rebuild the full list.
+    let row_order = signal(Vec::<i64>::new());
+    let selected_id = signal(0_i64);
     let next_id = signal(1_i64);
+    let row_states = Rc::new(RefCell::new(OfficialBenchmarkRowStore::new(1)));
 
-    let run_rows = rows.clone();
-    let run_selected = selected.clone();
+    let run_rows = row_order.clone();
+    let run_states = row_states.clone();
+    let run_selected = selected_id.clone();
     let run_next_id = next_id.clone();
     let run_button = official_benchmark_button("run", "Create 1,000 rows", move |_payload| {
         let first_id = run_next_id.get();
         run_next_id.update(|next| *next += 1_000);
-        run_rows.set(official_benchmark_rows(1_000, first_id));
+        let rows = official_benchmark_rows(1_000, first_id);
+        let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+        let next_states = create_official_benchmark_row_states(&run_rows, rows)
+            .unwrap_or_else(|error| panic!("failed to create benchmark row scopes: {error}"));
+        let replacement = OfficialBenchmarkRowStore {
+            first_id,
+            rows: next_states,
+        };
+        let previous = std::mem::replace(&mut *run_states.borrow_mut(), replacement);
+        previous.dispose();
         run_selected.set(0);
+        run_rows.set(ids);
     })
     .expect("valid official benchmark run button");
 
-    let run_lots_rows = rows.clone();
-    let run_lots_selected = selected.clone();
+    let run_lots_rows = row_order.clone();
+    let run_lots_states = row_states.clone();
+    let run_lots_selected = selected_id.clone();
     let run_lots_next_id = next_id.clone();
     let run_lots_button =
         official_benchmark_button("runlots", "Create 10,000 rows", move |_payload| {
             let first_id = run_lots_next_id.get();
             run_lots_next_id.update(|next| *next += 10_000);
-            run_lots_rows.set(official_benchmark_rows(10_000, first_id));
+            let rows = official_benchmark_rows(10_000, first_id);
+            let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+            let next_states = create_official_benchmark_row_states(&run_lots_rows, rows)
+                .unwrap_or_else(|error| panic!("failed to create benchmark row scopes: {error}"));
+            let replacement = OfficialBenchmarkRowStore {
+                first_id,
+                rows: next_states,
+            };
+            let previous = std::mem::replace(&mut *run_lots_states.borrow_mut(), replacement);
+            previous.dispose();
             run_lots_selected.set(0);
+            run_lots_rows.set(ids);
         })
         .expect("valid official benchmark runlots button");
 
-    let append_rows = rows.clone();
+    let append_rows = row_order.clone();
+    let append_states = row_states.clone();
     let append_next_id = next_id.clone();
     let append_button = official_benchmark_button("add", "Append 1,000 rows", move |_payload| {
         let first_id = append_next_id.get();
         append_next_id.update(|next| *next += 1_000);
-        append_rows.update(|items| items.extend(official_benchmark_rows(1_000, first_id)));
+        let rows = official_benchmark_rows(1_000, first_id);
+        let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+        let new_states = create_official_benchmark_row_states(&append_rows, rows)
+            .unwrap_or_else(|error| panic!("failed to create appended row scopes: {error}"));
+        append_states.borrow_mut().append(new_states);
+        append_rows.update(|current| current.extend(ids));
     })
     .expect("valid official benchmark append button");
 
-    let update_rows = rows.clone();
+    let update_rows = row_order.clone();
+    let update_states = row_states.clone();
     let update_button =
         official_benchmark_button("update", "Update every 10th row", move |_payload| {
-            update_rows.update(|items| {
-                for item in items.iter_mut().step_by(10) {
-                    item.label.push_str(" !!!");
-                }
-            });
+            let ids = update_rows.get();
+            let target_states = {
+                let cached = update_states.borrow();
+                ids.iter()
+                    .step_by(10)
+                    .filter_map(|id| cached.get(*id).map(|row| row.value.clone()))
+                    .collect::<Vec<_>>()
+            };
+
+            update_rows
+                .batch(|| {
+                    for state in &target_states {
+                        state.update(|row| row.title.push_str(" !!!"));
+                    }
+                })
+                .unwrap_or_else(|error| panic!("failed to batch row updates: {error}"));
         })
         .expect("valid official benchmark update button");
 
-    let clear_rows = rows.clone();
-    let clear_selected = selected.clone();
+    let clear_rows = row_order.clone();
+    let clear_states = row_states.clone();
+    let clear_selected = selected_id.clone();
+    let clear_next_id = next_id.clone();
     let clear_button = official_benchmark_button("clear", "Clear", move |_payload| {
+        let previous = std::mem::replace(
+            &mut *clear_states.borrow_mut(),
+            OfficialBenchmarkRowStore::new(clear_next_id.get()),
+        );
+        previous.dispose();
         clear_rows.set(Vec::new());
         clear_selected.set(0);
     })
     .expect("valid official benchmark clear button");
 
-    let swap_rows = rows.clone();
+    let swap_rows = row_order.clone();
     let swap_button = official_benchmark_button("swaprows", "Swap Rows", move |_payload| {
         swap_rows.update(|items| {
             if items.len() > 998 {
@@ -311,40 +438,105 @@ fn OfficialBenchmark() -> impl IntoView {
     })
     .expect("valid official benchmark swap button");
 
-    let rows_for_region = rows.clone();
-    let rows_for_actions = rows.clone();
-    let selected_for_region = selected.clone();
-    let selected_for_actions = selected.clone();
+    let rows_for_region = row_order.clone();
+    let states_for_region = row_states.clone();
+    // Cached row views must not strongly retain the map that owns them.
+    let weak_states_for_rows = Rc::downgrade(&states_for_region);
+    let selected_for_region = selected_id.clone();
     let rows_region = View::dynamic(move || {
-        let snapshot = rows_for_region.get();
-        let selected_id = selected_for_region.get();
-        let mut children = Vec::with_capacity(snapshot.len());
-        for item in snapshot {
-            let id = item.id;
-            let select_state = selected_for_actions.clone();
-            let select_handler = EventHandler::new(move |_payload: EventPayload| {
-                select_state.set(id);
-            });
-            let remove_state = rows_for_actions.clone();
-            let remove_handler = EventHandler::new(move |_payload: EventPayload| {
-                remove_state.update(|items| items.retain(|candidate| candidate.id != id));
-            });
-            children.push(KeyedChild::new(
-                id.to_string(),
-                View::component(
-                    "OfficialBenchmarkRow",
-                    [
-                        Property::new("id", item.id)?,
-                        Property::new("label", item.label)?,
-                        Property::new("selected", selected_id == id)?,
-                        Property::new("on_select", PropertyValue::Callback(select_handler))?,
-                        Property::new("on_remove", PropertyValue::Callback(remove_handler))?,
-                    ],
-                    [],
-                    None,
-                )?,
-            ));
+        let ids = rows_for_region.get();
+        let states = states_for_region.borrow();
+        let mut children = Vec::with_capacity(ids.len());
+
+        for id in &ids {
+            let id = *id;
+            let row_state = states
+                .get(id)
+                .unwrap_or_else(|| panic!("missing benchmark row state for id {id}"));
+
+            let cached_view = row_state.view.borrow().clone();
+            let child_view = if let Some(view) = cached_view {
+                view
+            } else {
+                let row_value = row_state.value.clone();
+                let selected_for_row = selected_for_region.clone();
+                let select_states = weak_states_for_rows.clone();
+                let select_handler = EventHandler::new(move |_payload: EventPayload| {
+                    let Some(select_states) = select_states.upgrade() else {
+                        return;
+                    };
+                    let previous_id = selected_for_row.get();
+                    let (previous_state, current_state) = {
+                        let cached = select_states.borrow();
+                        let previous = cached.get(previous_id).map(|row| row.value.clone());
+                        let current = cached.get(id).map(|row| row.value.clone());
+                        (previous, current)
+                    };
+
+                    selected_for_row
+                        .batch(|| {
+                            if previous_id != id {
+                                if let Some(previous) = previous_state {
+                                    previous.update(|row| row.done = false);
+                                }
+                            }
+                            if let Some(current) = current_state {
+                                current.update(|row| row.done = true);
+                            }
+                            selected_for_row.set(id);
+                        })
+                        .unwrap_or_else(|error| panic!("failed to batch row selection: {error}"));
+                });
+
+                let remove_order = rows_for_region.clone();
+                let remove_states = weak_states_for_rows.clone();
+                let remove_selected = selected_for_region.clone();
+                let remove_handler = EventHandler::new(move |_payload: EventPayload| {
+                    let Some(remove_states) = remove_states.upgrade() else {
+                        return;
+                    };
+                    let removed = { remove_states.borrow_mut().remove(id) };
+                    if let Some(row_state) = removed {
+                        row_state.owner.dispose().unwrap_or_else(|error| {
+                            panic!("failed to dispose removed row: {error}")
+                        });
+                    }
+                    remove_order.update(|items| items.retain(|candidate| *candidate != id));
+                    if remove_selected.get() == id {
+                        remove_selected.set(0);
+                    }
+                });
+
+                let row_view = View::dynamic(move || {
+                    let row = row_value.get();
+                    View::component(
+                        "OfficialBenchmarkRow",
+                        [
+                            Property::new("id", row.id)?,
+                            Property::new("label", row.title)?,
+                            Property::new("selected", row.done)?,
+                            Property::new(
+                                "on_select",
+                                PropertyValue::Callback(select_handler.clone()),
+                            )?,
+                            Property::new(
+                                "on_remove",
+                                PropertyValue::Callback(remove_handler.clone()),
+                            )?,
+                        ],
+                        [],
+                        None,
+                    )
+                });
+
+                *row_state.view.borrow_mut() = Some(row_view.clone());
+                row_view
+            };
+
+            children.push(KeyedChild::new(id.to_string(), child_view));
         }
+
+        drop(states);
         View::keyed_list(children)
     });
 
@@ -428,6 +620,19 @@ pub fn start() -> Result<(), JsValue> {
         .trim_start_matches('?')
         .split('&')
         .any(|parameter| parameter == "bench_controls=1");
+
+    // Stress the sequential sibling matcher with one keyed anchor shifted across
+    // thousands of unkeyed siblings. This is separate from KeyedList's own index.
+    let benchmark_sequence_size = window
+        .location()
+        .search()?
+        .trim_start_matches('?')
+        .split('&')
+        .find_map(|parameter| parameter.strip_prefix("bench_sequence="))
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|count| (1..=10_000).contains(count))
+        .unwrap_or(0);
+    let benchmark_sequence_flip = runtime.signal(false).map_err(display_error)?;
     let official_benchmark_mode = window
         .location()
         .pathname()?
@@ -660,6 +865,49 @@ pub fn start() -> Result<(), JsValue> {
             let route = route_for_render.get();
             if official_benchmark_mode {
                 return View::component("OfficialBenchmark", [], [], None).map_err(DomError::from);
+            }
+            if benchmark_sequence_size > 0 {
+                let flip_for_region = benchmark_sequence_flip.clone();
+                let sequence_region = View::dynamic(move || {
+                    let flipped = flip_for_region.get();
+                    let mut children = Vec::with_capacity(benchmark_sequence_size + 1);
+                    let anchor = ViewElement::new("span")?
+                        .with_attribute("id", "bench-sequence-anchor")?
+                        .with_attribute("data-sequence-anchor", "true")?
+                        .with_children([View::text("anchor")])
+                        .with_key("sequence-anchor")
+                        .build();
+
+                    if !flipped {
+                        children.push(anchor.clone());
+                    }
+                    for index in 0..benchmark_sequence_size {
+                        children.push(
+                            ViewElement::new("span")?
+                                .with_attribute("data-sequence-index", index.to_string())?
+                                .with_children([View::text(index.to_string())])
+                                .build(),
+                        );
+                    }
+                    if flipped {
+                        children.push(anchor);
+                    }
+                    Ok(View::fragment(children))
+                });
+                let flip_for_button = benchmark_sequence_flip.clone();
+                let toggle = ViewElement::new("button")?
+                    .with_attribute("type", "button")?
+                    .with_attribute("data-testid", "bench-sequence-toggle")?
+                    .with_attribute("hidden", "")?
+                    .with_event("click", move |_payload| {
+                        flip_for_button.update(|value| *value = !*value);
+                    })?
+                    .build();
+                let sequence_container = ViewElement::new("div")?
+                    .with_attribute("id", "bench-sequence")?
+                    .with_children([sequence_region])
+                    .build();
+                return Ok(View::fragment([toggle, sequence_container]));
             }
             // The browser benchmark keeps one WASM runtime alive and toggles only
             // the recursive component subtree. This isolates component mount/unmount

@@ -1,6 +1,9 @@
 name: Official framework benchmarks
 
 on:
+  push:
+    branches:
+      - feat/phase-8-1-advanced-runtime-optimizations
   workflow_dispatch:
     inputs:
       rustflow_commit:
@@ -105,6 +108,10 @@ jobs:
       - name: Install RustFlow browser dependencies
         working-directory: examples/browser
         run: npm install --no-package-lock --no-audit --no-fund
+
+      - name: Test upstream startup route resolution
+        working-directory: examples/browser
+        run: npm run test:startup-routes
 
       - name: Build selected RustFlow WASM distribution
         working-directory: examples/browser
