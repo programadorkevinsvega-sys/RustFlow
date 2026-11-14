@@ -269,7 +269,8 @@ fn find_stateful_call(stream: &TokenStream) -> Option<Span> {
                     | "try_use_context"
                     | "try_provide_context"
                     | "on_cleanup"
-            ) && matches!(tokens.get(index + 1), Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis)
+            )
+            && matches!(tokens.get(index + 1), Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis)
         {
             return Some(ident.span());
         }
