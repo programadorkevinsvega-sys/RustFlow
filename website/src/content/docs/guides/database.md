@@ -3,7 +3,7 @@ title: Base de datos, SeaORM, SQLx y migraciones
 description: Configura SeaORM sobre pools SQLx tipados compartidos, consultas parametrizadas, transacciones y migraciones; MongoDB conserva su adaptador documental separado.
 ---
 
-La capa de base de datos de RustFlow continúa siendo experimental y pre-1.0. Phase 6.7.1 seleccionó **Data Mapper con SeaORM 1.1.20** y añadió el derive de validación <code>rustflow::ModelDiagnostics</code>. Phase 6.7.2 incorporó SeaORM en <code>rustflow-server</code> sobre un único pool SQLx tipado por backend, compartido por SQLx y SeaORM. Phase 6.7.4 añadió la capa de carga relacional avanzada y quedó integrada mediante PR #62, squash merge <code>f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7</code>. Phase 6.7.6 cerró el gate global de calidad/compatibilidad mediante PR #66, fusionada en `main` el 2026-11-01 como <code>6046ae7ca60843d145476177e698162b57939c68</code>; CI verificó Rust stable/1.85, integraciones SQL/MongoDB, migraciones PostgreSQL, benchmark smoke, WASM, Browser E2E/bundle, documentación, governance, dependency review y Cloudflare Pages. Esto completa la fase de implementación, pero no convierte las APIs ORM/ODM en APIs estables ni en una garantía de producción.
+La capa de base de datos de RustFlow continúa siendo experimental y pre-1.0. La línea aceptada históricamente en Phase 6.7 usó Data Mapper con SeaORM 1.1.20 sobre un pool SQLx tipado por backend; sus resultados de PR #59, #62 y #66 se refieren exclusivamente a esos commits. Esta rama propone SQLx 0.9.0 mediante una revisión upstream fijada por SHA y SeaORM 2.0.4, con SQLite 3.54.1 y MSRV Rust 1.94. La migración y el contrato de los cuatro motores están pendientes de validación en GitHub Actions; no uses la evidencia histórica de Rust 1.85 para inferir que esta línea pasó.
 
 SeaORM se construye a partir de un clone del mismo pool SQLx; no se crea una segunda pool para la misma URL. La integración relacional cubre SQLite, PostgreSQL, MySQL y MariaDB. MongoDB conserva su adaptador documental independiente, con BSON, colecciones e índices. El ODM tipado de Phase 6.7.3 se implementó como una capa Data Mapper separada sobre el mismo cliente. PR #60 pasó los gates requeridos en su HEAD final `659f1750d611e57315263216167d43375da23574` y se fusionó en `main` el 2026-10-31 mediante squash (`7ffb89b5ca36017a428cf3f828b68f590f8d404b`); consulta la [guía ODM MongoDB](/guides/mongodb-odm/).
 
@@ -44,7 +44,7 @@ impl ActiveModelBehavior for ActiveModel {}
 
 El ejemplo representa el contrato de declaración de entidad. Para operaciones persistentes, pasa <code>database.orm()</code> o la transacción explícita a la API SeaORM. No agregues conexiones globales ni relaciones con carga perezosa oculta.
 
-El SQL ORM cubre SQLite, PostgreSQL, MySQL y MariaDB. MongoDB sigue siendo el adaptador documental BSON separado y no comparte derives, relaciones SQL ni query builder relacional.
+El SQL ORM está configurado para SQLite, PostgreSQL, MySQL y MariaDB; la compatibilidad de esta actualización requiere confirmación en CI. MongoDB sigue siendo el adaptador documental BSON separado y no comparte derives, relaciones SQL ni query builder relacional.
 
 ## Tipos numéricos y portabilidad
 
@@ -52,25 +52,25 @@ No todos los tipos numéricos de Rust tienen un codec común en los cuatro motor
 
 Para modelos compartidos entre los cuatro motores, usa `i64` cuando el dominio cabe en el rango firmado. No conviertas `u64` a `i64` mediante un cast sin comprobar el rango. El uso de `u64` queda limitado a modelos específicos de MySQL/MariaDB; una representación portable para todo el rango unsigned requiere un codec explícito y todavía no forma parte del contrato común.
 
-La matriz de pruebas ampliada round-tripea los límites mínimo y máximo de `i8`, `i16`, `i32` e `i64` en SQLite, PostgreSQL, MySQL y MariaDB, y comprueba que los inserts fuera de rango sean rechazados por los tipos o restricciones de cada dialecto. `u8`, `u16` y `u32` se prueban en SQLite y MySQL/MariaDB, incluidos los límites inferior y superior; PostgreSQL no tiene mapeo para esos primitivos unsigned en SeaORM 1.1.20, por lo que no se anuncia como soportado. Para `u64`, solo se prueba el rango completo `BIGINT UNSIGNED` de MySQL/MariaDB, incluidos los valores negativos y superiores a `u64::MAX`.
+La matriz de pruebas ampliada históricamente round-tripeó los límites mínimo y máximo de `i8`, `i16`, `i32` e `i64` en los cuatro motores, y comprobó los inserts unsigned en SQLite/MySQL/MariaDB. SeaORM 2.0.4 tampoco aporta paridad completa de unsigned en PostgreSQL: `u8`/`u16` no tienen decoder PostgreSQL y `u32` solo se decodifica mediante un rango firmado; `u64` de rango completo se mantiene específico de MySQL/MariaDB. La actualización debe volver a pasar los contratos antes de afirmar compatibilidad.
 
-Hay otra diferencia importante con los decimales: SeaORM 1.1.20/SeaQuery enlaza y recupera `Decimal` y `BigDecimal` en SQLite mediante `f64`. Por eso el esquema de prueba usa columnas `REAL` y limita el round-trip SQLite a `12.5`, que sí es exactamente representable en binario. Otros valores decimales pueden redondearse o expandirse al reconstruirse desde `f64`. No uses esos tipos en SQLite para dinero ni para cálculos que exijan precisión decimal arbitraria. Para ello usa enteros escalados o un codec de texto canónico diseñado expresamente. PostgreSQL usa `NUMERIC` y MySQL/MariaDB usan `DECIMAL`; las pruebas de integración verifican allí un `BigDecimal` de alta precisión.
+En SeaORM 2.0.4, SeaQuery 1.0 enlaza Decimal/BigDecimal de SQLite como texto, pero SeaORM todavía los decodifica a través de `f64`. La precisión arbitraria no está garantizada; conserva la fixture conservadora `12.5`, no uses esos tipos en SQLite para dinero ni para cálculos exactos, y espera a que CI confirme la compatibilidad del codec. Para semántica decimal exacta usa enteros escalados o un codec de texto canónico diseñado expresamente.
 
 ## 1. Configurar el pool
 
-La capa SQL usa SQLx 0.8.6 con un pool tipado por backend y SeaORM 1.1.20 sobre el mismo pool. MySQL y MariaDB comparten el driver `mysql`, así que `DatabaseBackend::MySql` identifica la familia del driver, no el producto servidor. MongoDB conserva un adaptador independiente de SQL. Consulta la [matriz técnica de compatibilidad](/guides/database/#matriz-de-versiones-verificadas) y el [contrato detallado de versiones](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/DATABASE_SUPPORT_MATRIX.md).
+La línea propuesta usa SQLx 0.9.0 desde una revisión upstream fijada por SHA y SeaORM 2.0.4 sobre el mismo pool tipado por backend. El parche upstream es temporal hasta que un release SQLx publicado acepte la versión corregida de SQLite. MySQL y MariaDB comparten el driver `mysql`, así que `DatabaseBackend::MySql` identifica la familia del driver, no el producto servidor. Consulta la [matriz de compatibilidad (validación pendiente)](/guides/database/#matriz-de-versiones) y el [contrato detallado de versiones](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/DATABASE_SUPPORT_MATRIX.md).
 
-## Matriz de versiones verificadas
+## Matriz de versiones
 
-Estas son las versiones objetivo exactas que CI valida; no implican compatibilidad idéntica con todas las versiones de cada familia. La matriz se prueba en Rust 1.85 (MSRV del workspace) y Rust estable.
+Estas son las versiones objetivo configuradas para esta rama; la actualización SQLx/SeaORM y la matriz completa están pendientes de pasar CI sobre el commit final. No implican compatibilidad idéntica con todas las versiones de cada familia. CI está configurado para Rust 1.94 y stable; los resultados históricos de Rust 1.85 no verifican esta combinación.
 
 | Motor/servidor | Driver bloqueado | URI de conexión | Contrato comprobado en CI |
 |---|---|---|---|
-| SQLite 3.46.0 (incluido en el build) | SQLx 0.8.6; `sqlx-sqlite` / `libsqlite3-sys` 0.30.1 | `sqlite:` | Migraciones repetibles y reversibles, CRUD, transacciones y scaffold generado |
-| PostgreSQL 16.15 | SQLx 0.8.6 | `postgres://`, `postgresql://` | Versión de servidor exacta, pool y rollback de transacción |
-| MySQL 8.4.13 LTS | SQLx 0.8.6, driver `mysql` | `mysql://` | Versión exacta, CRUD, binding, transacciones, unicidad y migraciones |
-| MariaDB 11.4.13 LTS | SQLx 0.8.6, mismo driver `mysql` | `mysql://` | Identidad y versión exactas de MariaDB, además del contrato SQL |
-| MongoDB 7.0.45 | Driver oficial `mongodb` 3.6.0 (MSRV 1.85) | `mongodb://` | CRUD BSON, ObjectId, índices únicos, bootstrap, errores y timeouts acotados |
+| SQLite 3.54.1 (objetivo incluido en el build) | SQLx 0.9.0 desde revisión upstream fijada; `libsqlite3-sys` 0.39.1 | `sqlite:` | Se mantienen configurados migraciones, CRUD, transacciones y scaffold; verificación pendiente |
+| PostgreSQL 16.15 | SQLx 0.9.0 desde la revisión upstream fijada | `postgres://`, `postgresql://` | Pool, codec, transacción y contrato ORM; verificación pendiente |
+| MySQL 8.4.13 LTS | SQLx 0.9.0 desde la revisión upstream fijada, driver `mysql` | `mysql://` | CRUD, binding, transacciones, unicidad y migraciones; verificación pendiente |
+| MariaDB 11.4.13 LTS | SQLx 0.9.0 desde la revisión upstream fijada, mismo driver `mysql` | `mysql://` | Identidad del servidor y contrato SQL; verificación pendiente |
+| MongoDB 7.0.45 | Driver oficial `mongodb` 3.9.1 | `mongodb://` | Se conserva el contrato ODM separado; la actualización SQL no lo reemplaza |
 
 El scaffold del CLI continúa siendo SQLite-first. Cambiar `RUSTFLOW_DATABASE_URL` a otro motor SQL no traduce sus placeholders, tipos ni migraciones. MongoDB usa las variables `RUSTFLOW_MONGODB_URI` / `RUSTFLOW_MONGODB_DATABASE` y una API separada; no se inicializa automáticamente por la plantilla. `mongodb+srv://` no está habilitado en esta configuración porque el feature del resolver DNS está desactivado tras la revisión de seguridad de dependencias.
 
@@ -131,7 +131,7 @@ Los modelos son entidades SeaORM de la aplicación; DatabasePool no convierte st
 use rustflow_server::{
     DatabasePool,
     sea_orm::{
-        ActiveValue::Set, ColumnTrait, QueryFilter, QueryOrder, QuerySelect,
+        ActiveValue::Set, ColumnTrait, ExprTrait, QueryFilter, QueryOrder, QuerySelect,
     },
 };
 
@@ -561,8 +561,8 @@ Estas mediciones son smoke baselines comparativas, no una promesa de rendimiento
 Phase 6.7.2 integra SeaORM 1.1.20 sobre el mismo pool SQLx tipado. Las pruebas de límites numéricos signed/unsigned por dialecto, conteos de consultas en carga anidada, mutaciones de relaciones y terminación real del backend PostgreSQL mientras `COMMIT` está activo pasaron en el SHA final de PR #59, que fue fusionada en `main` el 2026-10-31.
 
 Limitaciones que deben respetarse:
-- PostgreSQL no ofrece mapeo unsigned para `u8/u16/u32/u64` en SeaORM 1.1.20. `u8/u16/u32` se prueban en SQLite y MySQL/MariaDB; `u64` no tiene codec directo para SQLite y solo se prueba en MySQL/MariaDB mediante `BIGINT UNSIGNED`.
-- El codec Decimal/BigDecimal de SeaORM 1.1.20 para SQLite pasa por f64. No promete precisión decimal arbitraria; el fixture usa 12.5 porque es exactamente representable. Usa enteros escalados o un codec textual canónico cuando el dominio requiera precisión exacta.
+- PostgreSQL no ofrece un codec unsigned portable de rango completo en SeaORM 2.0.4: `u8/u16` no se decodifican y `u32` solo convierte dentro del rango firmado. `u64` completo sigue limitado a MySQL/MariaDB.
+- El binder SQLite de SeaQuery 1.0 convierte Decimal/BigDecimal a texto, pero SeaORM 2.0.4 los decodifica por f64. No promete precisión decimal arbitraria; conserva el fixture 12.5 porque es exactamente representable. Usa enteros escalados o un codec textual canónico cuando se requiera precisión exacta.
 - MySQL y MariaDB comparten el backend/protocolo SQLx MySQL; las pruebas validan por separado la identidad y versión del servidor.
 - Upsert y RETURNING siguen siendo operaciones dependientes del motor; no se promete paridad cuando MySQL/MariaDB y PostgreSQL/SQLite difieren.
 - MongoDB conserva su adaptador documental independiente. Su ODM pertenece a Phase 6.7.3. Sesiones y autorización también tienen contratos separados; InMemorySessionStore continúa siendo volátil y local al proceso.

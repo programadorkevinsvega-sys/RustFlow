@@ -621,9 +621,9 @@ async fn create_schema(database: &DatabasePool) {
         .await
         .expect("create signed integer width contract table");
 
-    // SeaORM 1.1.x has no PostgreSQL mapping for unsigned primitive columns.
-    // Exercise SQLite's checked integer representation and MySQL/MariaDB's
-    // native unsigned integer widths instead of claiming PostgreSQL parity.
+    // RustFlow does not claim PostgreSQL unsigned primitive support. Exercise
+    // SQLite's checked integer representation and MySQL/MariaDB's native
+    // unsigned widths without inferring cross-engine parity.
     if database.backend() != DatabaseBackend::Postgres {
         let (unsigned_id_type, u8_type, u16_type, u32_type) = match database.backend() {
             DatabaseBackend::Sqlite => (
@@ -664,9 +664,8 @@ async fn exercise_type_codecs(database: &DatabasePool) {
     let time = Time::from_hms_micro_opt(12, 34, 56, 123_456).expect("valid fixture time");
     let timestamp = DateTime::new(date, time);
     let uuid = Uuid::from_u128(0x1234_5678_1234_5678_1234_5678_1234_5678);
-    // SeaORM 1.1.20's SQLite codec binds and decodes Decimal/BigDecimal through f64.
-    // Use 12.5, which is exactly representable in binary, for SQLite. Exercise
-    // arbitrary precision only on PostgreSQL and the MySQL protocol backends.
+    // Keep SQLite's decimal fixture exactly representable; arbitrary-precision
+    // decimal behavior is asserted only on PostgreSQL and MySQL-protocol backends.
     let (decimal, big_decimal_text) = if database.backend() == DatabaseBackend::Sqlite {
         (Decimal::new(125, 1), "12.5")
     } else {

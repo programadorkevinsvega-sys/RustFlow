@@ -390,6 +390,15 @@ fn creates_a_project_and_generates_all_five_file_types_without_overwrite() {
         assert!(project.join(path).is_file(), "missing {path}");
     }
 
+    let generated_manifest = fs::read_to_string(project.join("Cargo.toml")).unwrap();
+    assert!(generated_manifest.contains("rust-version = \"1.94\""));
+    assert!(generated_manifest.contains("[patch.crates-io]"));
+    assert!(
+        generated_manifest
+            .contains("sqlx-sqlite = { git = \"https://github.com/transact-rs/sqlx\"")
+    );
+    assert!(generated_manifest.contains("987b8c5a74b6da8b71da6b5549925a7f6e59aac9"));
+
     let env_example = fs::read_to_string(project.join(".env.example")).unwrap();
     assert!(env_example.contains("RUSTFLOW_ENV=development"));
     assert!(env_example.contains("RUSTFLOW_HOST=127.0.0.1"));
@@ -1192,6 +1201,13 @@ fn generated_crud_template_builds_and_runs_the_real_orm_application() {
     assert!(generated_category.contains("has_many"));
     let generated_manifest = fs::read_to_string(project.join("Cargo.toml")).unwrap();
     assert!(generated_manifest.contains("serde = { version = \"1\", features = [\"derive\"] }"));
+    assert!(generated_manifest.contains("sea-orm = { version = \"=2.0.4\""));
+    assert!(generated_manifest.contains("[patch.crates-io]"));
+    assert!(
+        generated_manifest
+            .contains("sqlx-sqlite = { git = \"https://github.com/transact-rs/sqlx\"")
+    );
+    assert!(generated_manifest.contains("987b8c5a74b6da8b71da6b5549925a7f6e59aac9"));
 
     localize_framework_dependencies(&project);
     let target_dir = cargo_target_dir(&temp);

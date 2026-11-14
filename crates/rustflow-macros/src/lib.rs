@@ -254,8 +254,8 @@ fn is_setup_statement(statement: &TokenStream) -> bool {
 fn find_stateful_call(stream: &TokenStream) -> Option<Span> {
     let tokens = stream.clone().into_iter().collect::<Vec<_>>();
     for (index, token) in tokens.iter().enumerate() {
-        if let TokenTree::Ident(ident) = token {
-            if matches!(
+        if let TokenTree::Ident(ident) = token
+            && matches!(
                 ident.to_string().as_str(),
                 "signal"
                     | "use_state"
@@ -269,15 +269,15 @@ fn find_stateful_call(stream: &TokenStream) -> Option<Span> {
                     | "try_use_context"
                     | "try_provide_context"
                     | "on_cleanup"
-            ) && matches!(tokens.get(index + 1), Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis)
-            {
-                return Some(ident.span());
-            }
+            )
+            && matches!(tokens.get(index + 1), Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis)
+        {
+            return Some(ident.span());
         }
-        if let TokenTree::Group(group) = token {
-            if let Some(span) = find_stateful_call(&group.stream()) {
-                return Some(span);
-            }
+        if let TokenTree::Group(group) = token
+            && let Some(span) = find_stateful_call(&group.stream())
+        {
+            return Some(span);
         }
     }
     None

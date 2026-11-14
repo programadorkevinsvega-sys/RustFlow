@@ -10,7 +10,9 @@ use rustflow_server::{
     MongoDatabase,
     mongodb_driver::bson::oid::ObjectId,
     orm::load_many,
-    sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect},
+    sea_orm::{
+        ActiveValue::Set, ColumnTrait, EntityTrait, ExprTrait, QueryFilter, QueryOrder, QuerySelect,
+    },
 };
 use serde::{Deserialize, Serialize};
 

@@ -4,6 +4,8 @@
 - Phase: 6.7.1 — Model contract and architecture.
 - Related: ADR 0016 (SQLx pools and migrations), ADR 0017 (MySQL/MariaDB driver), ADR 0018 (MongoDB document adapter), ADR 0019 (database support matrix), [ORM model contract](../ORM_MODEL_CONTRACT.md).
 
+> Historical dependency baseline: the accepted ORM implementation selected SeaORM 1.1.20 with SQLx 0.8.6. ADR 0024 proposes SeaORM 2.0.4 with SQLx 0.9.0 and records the required migration checks; the new line is pending CI verification.
+
 ## Context
 
 RustFlow's Phase 6.6 support contract is verified for bundled SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS and MongoDB 7.0.45. The workspace MSRV is Rust 1.85; CI verifies that toolchain and stable. At the Phase 6.7.1 decision point, the existing SQL adapter was pinned to SQLx 0.8.6 and exposed an AnyPool, explicit transaction wrappers, parameterized SQL and SQLx migrations. Phase 6.7.2 subsequently replaced that runtime boundary with one backend-specific typed SQLx pool shared with SeaORM; the current `DatabasePool` owns `SqlitePool`, `PgPool` or `MySqlPool` rather than `AnyPool`. MongoDB uses the official MongoDB Rust driver 3.6.0 and a separate BSON/collection/index adapter.

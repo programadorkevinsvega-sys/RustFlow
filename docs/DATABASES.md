@@ -1,6 +1,6 @@
 # SQL ORM and MongoDB ODM, pools, transactions, and migrations (Phase 6.7)
 
-The database API remains experimental and pre-1.0. Phase 6.7.1 selected SeaORM 1.1.20 and defined the Data Mapper/model contract. Phase 6.7.2 was merged through PR #59 on 2026-10-31 (merge commit `8d387943d5f6ccb4d3f33ba3708311442e238c5f`): SeaORM runs in `rustflow-server` over one backend-specific SQLx pool shared by SQLx and SeaORM. `EntityRepository` exposes CRUD/bulk operations, typed SeaORM query composition, explicit relation loaders, parameterized raw SQL and mixed ORM/SQL transactions. SQLite, PostgreSQL, MySQL and MariaDB integration contracts, expanded boundary/relationship/COMMIT-fault tests, and all eight required checks passed on the final PR head. MongoDB remains a separate document adapter with its own typed ODM, introduced in Phase 6.7.3. Phase 6.7.4 was accepted through PR #62 and merged into `main` as `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`: the advanced API adds per-relation filters/order, has-many DTO projection, named bounded-depth relation graphs and explicit attach/detach/one-to-one replacement helpers. It preserves explicit batch loading and the one-pool Data Mapper boundary; it does not add lazy loading, per-parent top-N, implicit cascades or helper-managed commits. Phase 6.7.6 completed the global quality/compatibility gate through PR #66, merged into `main` on 2026-11-01 as `6046ae7ca60843d145476177e698162b57939c68`. Its exact PR HEAD passed Rust stable/1.85, SQL and MongoDB integrations, the isolated PostgreSQL migration contract, persistence benchmark smoke, WebAssembly, Browser E2E/bundle, documentation, governance, dependency review and Cloudflare Pages. The ORM/ODM APIs remain experimental and pre-1.0.
+The database API remains experimental and pre-1.0. Historical Phase 6.7 implementation and verification used SeaORM 1.1.20 and SQLx 0.8.6. [ADR 0024](adr/0024-sqlite-security-and-sql-stack-upgrade.md) proposes SQLx 0.9.0 from a pinned upstream commit, SeaORM 2.0.4, bundled SQLite 3.54.1, and Rust 1.94 to resolve the SQLite advisory. The dependency/API migration and all database contracts are pending final GitHub CI verification; do not infer success from the historical PRs described here. The previously accepted contract uses one backend-specific SQLx pool shared by SQLx and SeaORM. `EntityRepository` exposes CRUD/bulk operations, typed queries, explicit relation loaders, parameterized raw SQL, and mixed ORM/SQL transactions. MongoDB remains a separate document adapter with its own typed ODM.
 
 ## Phase 6.7.6 quality and compatibility evidence
 
@@ -13,7 +13,7 @@ The accepted Phase 6.7.6 contract adds the following repeatable CI evidence:
 - **Persistence benchmark:** `cargo bench -p rustflow-server --bench persistence` provides smoke/comparison baselines for SQL ORM CRUD, bulk insert, query execution, batch relation loading and MongoDB ODM CRUD/bulk. It is not a statistical benchmark or production performance guarantee.
 - **Generated application:** the CRUD example adds a `Product`–`Category` relation, explicit `load_one`, typed name/category filters and bounded pagination. HTTP integration covers these paths against SQLite, PostgreSQL, MySQL and MariaDB.
 
-The final PR #66 HEAD was `b049d96491e2b23bfe794ac3c0ed9abb68f7e493`; all required checks passed before squash merge. The remaining `RUSTSEC-2023-0071` exception is documented and unresolved; this acceptance does not represent it as fixed. The generated app remains educational and does not provide durable sessions or production authentication/deployment.
+The final PR #66 HEAD was `b049d96491e2b23bfe794ac3c0ed9abb68f7e493`; all required checks passed before squash merge. At that historical acceptance, the `RUSTSEC-2023-0071` exception was unresolved. ADR 0024 removes the obsolete ignore after updating the lockfile away from RSA; `cargo audit` must pass on the final migration commit before the advisory status is considered verified. The generated app remains educational and does not provide durable sessions or production authentication/deployment.
 
 ## Supported engines
 
@@ -24,7 +24,7 @@ The adapter uses one backend-specific SQLx pool per configured database: `Sqlite
 - MySQL: `mysql://user:password@host:3306/database`.
 - MariaDB: the same `mysql://` URL and SQLx MySQL driver; `mariadb://` is not accepted by SQLx's MySQL driver URL parser.
 
-MySQL and MariaDB are represented by `DatabaseBackend::MySql` because a `mysql://` URL selects the driver and does not identify the responding server product. The current pinned CI contract is PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS, SQLite 3.46.0 bundled by the locked SQLx / `libsqlite3-sys` dependencies, and MongoDB 7.0.45. The full tested version/MSRV matrix and evidence boundaries live in [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md). These exact targets do not imply compatibility with every version or vendor-specific feature. MongoDB is implemented through a separate document adapter and does not use SQLx pools or SQL migrations. SQL syntax, placeholders, migrations, and value support remain engine-specific. Bind user values rather than interpolating request data into SQL.
+MySQL and MariaDB are represented by `DatabaseBackend::MySql` because a `mysql://` URL selects the driver and does not identify the responding server product. This branch configures PostgreSQL 16.15, MySQL 8.4.13 LTS, MariaDB 11.4.13 LTS, SQLite 3.54.1 bundled by `libsqlite3-sys 0.39.1`, and MongoDB 7.0.45; migration verification is pending. The configured version/MSRV matrix and historical evidence boundaries live in [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md). These exact targets do not imply compatibility with every version or vendor-specific feature. MongoDB is implemented through a separate document adapter and does not use SQLx pools or SQL migrations. SQL syntax, placeholders, migrations, and value support remain engine-specific. Bind user values rather than interpolating request data into SQL.
 
 ## Configuration and connection pool
 
@@ -83,7 +83,7 @@ Define entities with SeaORM's `DeriveEntityModel`/`DeriveRelation` derives and R
 
 ~~~rust
 use rustflow_server::{
-    sea_orm::{ActiveValue::Set, ColumnTrait, QueryFilter, QueryOrder},
+    sea_orm::{ActiveValue::Set, ColumnTrait, ExprTrait, QueryFilter, QueryOrder},
     DatabasePool,
 };
 
@@ -165,7 +165,7 @@ The RustFlow loaders accept an entity or a typed SeaORM Select through EntityOrS
 
 ~~~rust
 use rustflow_server::orm::{load_many, RelationLoadOptions};
-use rustflow_server::sea_orm::{ColumnTrait, QueryFilter, QueryOrder};
+use rustflow_server::sea_orm::{ColumnTrait, ExprTrait, QueryFilter, QueryOrder};
 
 let posts_by_user = load_many(
     &users,
@@ -307,7 +307,7 @@ SQLite/PostgreSQL use ON CONFLICT syntax. The MySQL-family builder maps to ON DU
 
 ## Numeric codecs and decimal precision
 
-SeaORM 1.1.20 with SeaQuery uses an SQLite-specific f64 path for both Decimal and BigDecimal: values are bound as floating point and read back through f64. The SQLite fixture therefore uses REAL columns and tests 12.5 only, because it is exactly representable in binary f64. Other decimal-looking values may be rounded or expanded when reconstructed from f64. This is not arbitrary-precision decimal storage; do not use SQLite Decimal/BigDecimal for money or other precision-sensitive values. Use scaled integers or a separately designed canonical-text codec when exact decimal semantics are required on SQLite. PostgreSQL uses NUMERIC, while MySQL and MariaDB use DECIMAL; their integration contracts exercise a high-precision BigDecimal round-trip.
+The configured SeaORM 2.0.4 / SeaQuery 1.0 SQLite binder represents Decimal and BigDecimal as text, while SeaORM's SQLite decoder still reads them through `f64`. Exact arbitrary precision is therefore not guaranteed. Keep the fixture value `12.5` only, and do not use SQLite Decimal/BigDecimal for money or other precision-sensitive values. Use scaled integers or a separately designed canonical-text codec when exact decimal semantics are required. The PostgreSQL NUMERIC and MySQL/MariaDB DECIMAL contracts passed on the historical SeaORM 1.1.20 line; the updated codec behavior still requires CI verification.
 
 For portable parameterized SQL through the SeaORM connection, use `query_raw` and `execute_raw`. Use `?` placeholders with SQLite/MySQL/MariaDB and numbered `$1`, `$2`, ... placeholders with PostgreSQL. Values must be passed as SeaORM `Value`s, not interpolated into SQL.
 
@@ -381,7 +381,7 @@ Some MySQL-family DDL statements implicitly commit. Do not assume a failed migra
 
 ## Running MySQL/MariaDB integration tests
 
-The CI workflow provisions disposable MySQL 8.0 and MariaDB 11.4 services and runs separate contracts under Rust 1.85 and stable. To run these tests locally, create dedicated disposable test databases and set both URLs:
+The CI workflow is configured with disposable MySQL 8.4.13 and MariaDB 11.4.13 services and Rust 1.94/stable lanes; the new SQLx/SeaORM line remains pending final CI verification. To run these tests locally, create dedicated disposable test databases and set both URLs:
 
 ```sh
 export RUSTFLOW_TEST_MYSQL_URL='mysql://user:password@127.0.0.1:3306/rustflow_test'
@@ -395,7 +395,7 @@ When running locally outside CI, a test skips if its corresponding URL is absent
 
 MongoDB is document-oriented and uses its own adapter, independent of SQLx, typed SQLx pools, SQL transactions, and SQL migrations. Phase 6.6.2 provides the low-level official-driver adapter and native collection escape hatch. Phase 6.7.3 adds an experimental typed ODM facade over the same `MongoDatabase` client and official driver; it does not introduce another client/pool or reuse SeaORM entities, SQL relationships, or migrations.
 
-The official MongoDB Rust driver is pinned to =3.6.0 because that release retains the repository's Rust 1.85 MSRV. The DNS SRV resolver feature is intentionally disabled because its Hickory 0.25 dependency triggered a high-severity dependency-review advisory; only standard mongodb:// URIs are supported by this initial adapter. Re-evaluate the pin and optional features during dependency/security reviews. The initial CI server contract is MongoDB 7.0.45.
+The official MongoDB Rust driver is currently pinned to 3.9.1. The DNS SRV resolver feature remains intentionally disabled because its Hickory 0.25 dependency triggered a high-severity dependency-review advisory; only standard mongodb:// URIs are supported by this adapter. Re-evaluate the optional feature during dependency/security reviews. The CI server contract is MongoDB 7.0.45.
 
 ### Configuration
 
@@ -525,11 +525,11 @@ Phase 6.7.6 was delivered in PR #66. Its validation branch added four-engine poo
 
 ## Testing
 
-The ORM contract target executes the same entity/query/relation/type contract on SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 and MariaDB 11.4.13. It covers generated keys, CRUD and bulk writes, nested filters, ordering and offset pagination, joins, projections, grouping/aggregates/HAVING, subqueries, one-to-one/one-to-many/many-to-many batch loading, NULL/JSON/bytes/UUID/date/time/timestamp/numeric codecs, FK/unique/CHECK constraints, and mixed ORM/raw writes inside committed and rolled-back transactions. The expanded branch contract round-trips signed `i8/i16/i32/i64` boundaries on all four engines, tests supported unsigned widths and overflow behavior on SQLite/MySQL/MariaDB, asserts one query per nested loader hop, exercises junction attach/update/detach/cascade, and injects a PostgreSQL backend termination while COMMIT is in flight. The expanded Phase 6.7.2 cases passed on the final PR head before PR #59 was merged. The independent Phase 6.7.3 MongoDB integration suite passed on final PR #60 head `659f1750d611e57315263216167d43375da23574`, including replica-set commit/abort, standalone transaction rejection, nested-document/projection, CRUD/bulk/query/index/ID tests and all required CI checks. PR #60 was merged into `main` as `7ffb89b5ca36017a428cf3f828b68f590f8d404b`. The support-specific `database_engines` target independently verifies MySQL and MariaDB service identity and migration behavior.
+The historical Phase 6.7 ORM contract ran against SQLite 3.46.0, PostgreSQL 16.15, MySQL 8.4.13 and MariaDB 11.4.13. It covered generated keys, CRUD and bulk writes, nested filters, ordering and offset pagination, joins, projections, grouping/aggregates/HAVING, subqueries, relation loading, scalar codecs, constraints, and mixed ORM/raw writes inside committed and rolled-back transactions. The expanded branch contract also tested integer boundaries, relation mutations, nested loader query counts and PostgreSQL backend termination during COMMIT. These results passed on the original PR heads before merge; they do not verify the SQLx 0.9.0 / SeaORM 2.0.4 migration or configured SQLite 3.54.1. The independent Phase 6.7.3 MongoDB integration suite passed on final PR #60 head `659f1750d611e57315263216167d43375da23574` and was merged into `main` as `7ffb89b5ca36017a428cf3f828b68f590f8d404b`.
 
 The Phase 6.7.4 ORM integration additions execute on SQLite, PostgreSQL, MySQL and MariaDB and cover filtered/ordered relation loads, DTO projection grouping, multi-branch and nested relation graphs, absent related rows, reparenting, one-to-one replacement, detach and rollback. Mock-backed tests assert one query for the projected loader and one batched query per nested graph hop; query counts do not grow per parent.
 
-The Rust CI matrix runs the workspace and database services under Rust 1.85 and stable, and includes Clippy, tests, Rustdoc and an explicit RustSec cargo audit. Dependency Review remains a separate workflow. The only audit exception is RUSTSEC-2023-0071 for the inherited rsa 0.9.10 dependency of sqlx-mysql 0.8.6; it has no patched release and is documented in ADR 0020 and .cargo/audit.toml. A green audit does not mean that exception is fixed.
+The historical Rust CI matrix ran the workspace and database services under Rust 1.85 and stable. ADR 0024 configures Rust 1.94 and stable, Clippy, tests, Rustdoc and `cargo audit --deny warnings`; this updated matrix is pending CI. At the historical Phase 6.7 acceptance, the audit ignored RUSTSEC-2023-0071 for `rsa 0.9.10` in SQLx 0.8.6; the new lock target removes RSA and `.cargo/audit.toml` no longer ignores that advisory. The SQLite advisory is not considered resolved until the final upgrade commit passes `cargo audit`.
 
 Run:
 
@@ -542,7 +542,7 @@ cargo audit --deny warnings
 cargo bench -p rustflow-server --bench persistence
 ~~~
 
-The API remains experimental and pre-1.0. PostgreSQL unsigned primitive mapping is unavailable in the selected SeaORM 1.1.20 foundation; unsigned `u8/u16/u32` coverage is therefore limited to SQLite and MySQL/MariaDB, while `u64` is MySQL/MariaDB-only. Dialect-specific upsert/RETURNING behavior and the ODM's explicit session-operation subset remain documented limitations. Phase 6.7.5's generated CRUD integration and the global Phase 6.7.6 maturity gate are both accepted and merged; PR #66 closed the global gate in `main` as `6046ae7ca60843d145476177e698162b57939c68`. The independent MongoDB ODM is merged in `main` through PR #60 and remains experimental/pre-1.0. The session contract remains separate; durable multi-instance session storage needs its own adapter and a security/consistency review.
+The API remains experimental and pre-1.0. SeaORM 2.0.4 does not provide portable full-range PostgreSQL unsigned support: `u8/u16` decoding is unsupported and `u32` conversion is signed-range limited; full-range `u64` remains MySQL/MariaDB-specific. The existing CI fixtures must be rerun against the new dependency versions. Dialect-specific upsert/RETURNING behavior and the ODM's explicit session-operation subset remain documented limitations. The historical Phase 6.7.5/6.7.6 implementation and MongoDB ODM remain merged in `main`; durable multi-instance session storage needs its own adapter and a security/consistency review.
 ## Phase 6.7.6 quality, compatibility and benchmark validation
 
 The final quality gate adds repeatable tests for behavior that a green CRUD path does not establish:

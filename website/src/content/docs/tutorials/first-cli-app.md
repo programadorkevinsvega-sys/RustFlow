@@ -7,7 +7,7 @@ Este recorrido usa el binario de `crates/rustflow-cli`. El CLI y las APIs RustFl
 
 ## 1. Requisitos e instalación
 
-Clona el repositorio, entra en su raíz y compila/instala el CLI. Necesitas Rust 1.85 o stable, Cargo y Git.
+Clona el repositorio, entra en su raíz y compila/instala el CLI. Para esta revisión necesitas Rust 1.94 o stable, Cargo y Git; la migración de dependencias todavía debe validarse en CI.
 
 ~~~sh
 git clone https://github.com/programadorkevinsvega-sys/RustFlow.git
