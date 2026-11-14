@@ -299,7 +299,7 @@ jobs:
 
       - name: Upload native performance measurements
         if: ${{ always() && matrix.toolchain == 'stable' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: phase-8-1-native-performance
           path: performance-results/native/
@@ -453,7 +453,7 @@ jobs:
 
       - name: Upload browser performance measurements
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: phase-8-1-browser-performance
           path: examples/browser/performance-results/
