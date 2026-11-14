@@ -4,6 +4,8 @@
 - Phase: 6.6.3 — Public support contract.
 - Related: ADR 0016 (SQLx pools and migrations), ADR 0017 (MySQL/MariaDB driver), ADR 0018 (MongoDB document adapter), `docs/DATABASE_SUPPORT_MATRIX.md`.
 
+> This ADR records the accepted Phase 6.6 matrix and its Rust 1.85/SQLx 0.8.6 evidence. ADR 0024 proposes SQLite 3.54.1, SQLx 0.9.0, SeaORM 2.0.4, and Rust 1.94; that updated matrix is not verified until its final GitHub CI run passes.
+
 ## Context
 
 RustFlow added relational drivers and a separate MongoDB document adapter across Phases 6.5 and 6.6.1/6.6.2. Those implementations used explicit test targets, but public documentation still used mixed historical versions and stale status statements. A package dependency or a workflow declaration alone is not evidence that an engine/version is verified. The public contract must name the actual CI engine versions, the Rust version floor of the complete workspace, the exact driver versions, and the specific tests that ran.

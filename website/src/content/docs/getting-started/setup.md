@@ -7,7 +7,7 @@ Esta guía te ayuda a comprobar el código real de RustFlow: ejecutar tests del 
 
 ## 1. Requisitos
 
-Para el workspace necesitas Git, Rust 1.85 o Rust stable y Cargo:
+Para esta revisión del workspace necesitas Git, Rust 1.94 o Rust stable y Cargo. La migración de dependencias que eleva el MSRV todavía requiere validación en CI; los resultados históricos de Rust 1.85 no verifican esta revisión:
 
 ~~~sh
 rustc --version

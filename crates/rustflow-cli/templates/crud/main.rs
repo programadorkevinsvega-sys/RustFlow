@@ -11,7 +11,7 @@ use rustflow_server::{
 };
 use rustflow_server::sea_orm::{
     ActiveValue::{NotSet, Set},
-    ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+    ColumnTrait, EntityTrait, ExprTrait, QueryFilter, QueryOrder, QuerySelect,
 };
 use serde::Deserialize;
 

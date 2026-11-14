@@ -4,6 +4,8 @@
 - Phase: 6.5 — Database and migrations.
 - Related: ADR 0013 (configuration), ADR 0014 (input validation/CSRF), ADR 0015 (sessions/access control).
 
+> Historical dependency baseline: this ADR records the original SQLx 0.8.6 implementation. ADR 0024 proposes the current SQLx 0.9.0 pinned revision, SQLite remediation, and Rust 1.94 MSRV; its verification is pending.
+
 ## Context
 
 RustFlow already has an experimental HTTP server, typed request validation, CSRF middleware and server-side session/access-control primitives. The CLI emits structural model and migration templates, but there is no SQL persistence layer. The database boundary must reuse maintained infrastructure without turning RustFlow into an ORM or leaking database dependencies into the WebAssembly runtime.

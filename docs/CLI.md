@@ -27,6 +27,8 @@ La plantilla `server` (predeterminada) contiene una ruta HTTP, una página const
 
 Las dependencias Git del proyecto se fijan al commit usado por el CLI. La primera compilación requiere acceso a ese repositorio salvo que el checkout esté disponible en la caché de Cargo. No se promete compatibilidad de API más allá de esa revisión.
 
+Los proyectos generados requieren Rust 1.94 o posterior y actualmente incluyen un `[patch.crates-io]` que fija SQLx al SHA upstream descrito en [ADR 0024](adr/0024-sqlite-security-and-sql-stack-upgrade.md). Cargo aplica patches desde el manifiesto raíz de cada aplicación; por eso el CLI genera esta tabla tanto para `server` como para `crud`. Elimina el pin solo cuando un release SQLx publicado acepte `libsqlite3-sys 0.39.x`, y vuelve a verificar la matriz antes de actualizarlo.
+
 ## Plantilla CRUD (`--template crud`)
 
 La plantilla CRUD se elige explícitamente; no cambia el comportamiento de `rustflow new` para los proyectos existentes.

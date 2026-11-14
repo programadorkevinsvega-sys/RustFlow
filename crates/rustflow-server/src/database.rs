@@ -460,7 +460,7 @@ impl DatabasePool {
         let statement =
             Statement::from_sql_and_values(self.orm.get_database_backend(), sql, values);
         self.orm
-            .execute(statement)
+            .execute_raw(statement)
             .await
             .map(|result| result.rows_affected())
             .map_err(DatabaseError::OrmQuery)
@@ -475,7 +475,7 @@ impl DatabasePool {
         let statement =
             Statement::from_sql_and_values(self.orm.get_database_backend(), sql, values);
         self.orm
-            .query_all(statement)
+            .query_all_raw(statement)
             .await
             .map_err(DatabaseError::OrmQuery)
     }
@@ -578,7 +578,7 @@ impl DatabaseTransaction {
         let statement =
             Statement::from_sql_and_values(self.inner.get_database_backend(), sql, values);
         self.inner
-            .execute(statement)
+            .execute_raw(statement)
             .await
             .map(|result| result.rows_affected())
             .map_err(DatabaseError::OrmTransaction)
@@ -593,7 +593,7 @@ impl DatabaseTransaction {
         let statement =
             Statement::from_sql_and_values(self.inner.get_database_backend(), sql, values);
         self.inner
-            .query_all(statement)
+            .query_all_raw(statement)
             .await
             .map_err(DatabaseError::OrmTransaction)
     }
@@ -979,8 +979,8 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            sqlite_version, "3.46.0",
-            "support matrix expects bundled SQLite 3.46.0, received {sqlite_version}"
+            sqlite_version, "3.54.1",
+            "support matrix expects bundled SQLite 3.54.1, received {sqlite_version}"
         );
         println!("verified bundled SQLite version: {sqlite_version}");
 

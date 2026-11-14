@@ -46,6 +46,8 @@ The exact public syntax and runtime ownership mechanism must be recorded in an A
 
 All tasks begin unchecked. Discussion, scaffolding, or an unverified implementation does not count as completion.
 
+**Current dependency security update (verification pending):** ADR 0024 records the proposed workspace MSRV increase to Rust 1.94 and the SQLx 0.9.0 / SeaORM 2.0.4 migration needed to resolve the bundled SQLite advisory. Do not mark the update verified or use the historical Phase 6.7.6 Rust 1.85 evidence as proof for this dependency line until the exact final commit passes the configured GitHub CI gates.
+
 ## Phase 0 — Project foundation
 
 ### 0.1 Governance
