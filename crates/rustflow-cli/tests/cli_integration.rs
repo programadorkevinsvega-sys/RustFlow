@@ -737,7 +737,33 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
     );
 }
 
+fn generated_crud_migration(database_url: &str) -> &'static str {
+    if database_url.starts_with("sqlite:") {
+        "CREATE TABLE notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL UNIQUE);\n"
+    } else if database_url.starts_with("postgres:") || database_url.starts_with("postgresql:") {
+        "CREATE TABLE notes (id BIGSERIAL PRIMARY KEY, title TEXT NOT NULL UNIQUE);\n"
+    } else if database_url.starts_with("mysql:") {
+        "CREATE TABLE notes (id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, title VARCHAR(255) NOT NULL UNIQUE) ENGINE=InnoDB;\n"
+    } else {
+        ""
+    }
+}
+
+#[test]
+fn generated_crud_migration_uses_the_database_dialect() {
+    assert!(generated_crud_migration("sqlite://rustflow.db?mode=rwc").contains("AUTOINCREMENT"));
+    assert!(generated_crud_migration("postgres://localhost/rustflow").contains("BIGSERIAL"));
+    assert!(generated_crud_migration("mysql://localhost/rustflow").contains("AUTO_INCREMENT"));
+    assert!(generated_crud_migration("unknown://localhost/rustflow").is_empty());
+}
+
 fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: &str, label: &str) {
+    let migration = generated_crud_migration(database_url);
+    if migration.is_empty() {
+        panic!("unsupported generated CRUD database URL for {label}");
+    }
+    fs::write(project.join("migrations/0001_create_users.sql"), migration).unwrap();
+
     let port = TcpListener::bind(("127.0.0.1", 0))
         .unwrap()
         .local_addr()
