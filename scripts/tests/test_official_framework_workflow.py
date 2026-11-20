@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 CI_WORKFLOW = ROOT / ".github/workflows/ci.yml"
 OFFICIAL_WORKFLOW = ROOT / ".github/workflows/official-framework-benchmarks.yml"
+COMMENT_WORKFLOW = ROOT / ".github/workflows/benchmark-pr-comment.yml"
 PATCHER = ROOT / "scripts/patch-js-framework-benchmark.py"
 AGGREGATOR = ROOT / "scripts/summarize-js-framework-benchmark.py"
 
@@ -21,7 +22,7 @@ class OfficialFrameworkWorkflowTests(unittest.TestCase):
         self.assertIn("Run browser end-to-end tests", ci)
         self.assertIn("npm run check:bundle", ci)
         self.assertIn("Controlled same-runner keyed reconciliation A/B/A", ci)
-        self.assertIn("Run browser DOM and initialization benchmarks", ci)
+        self.assertNotIn("Run browser DOM and initialization benchmarks", ci)
         self.assertIn("python3 -m unittest discover -s scripts/tests -v", ci)
 
     def test_official_workflow_is_manual_and_scheduled_only(self) -> None:
@@ -34,6 +35,17 @@ class OfficialFrameworkWorkflowTests(unittest.TestCase):
         self.assertIn("RUSTFLOW_EXPECTED_COMMIT", workflow)
         self.assertIn("git rev-parse HEAD", workflow)
         self.assertNotIn("download-artifact", workflow)
+
+    def test_authorized_pr_comment_dispatches_same_repository_benchmarks(self) -> None:
+        workflow = COMMENT_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("issue_comment:", workflow)
+        self.assertIn("/bench", workflow)
+        self.assertIn("OWNER", workflow)
+        self.assertIn("MEMBER", workflow)
+        self.assertIn("COLLABORATOR", workflow)
+        self.assertIn("official-framework-benchmarks.yml", workflow)
+        self.assertIn("head_repo", workflow)
+        self.assertIn("GITHUB_REPOSITORY", workflow)
 
     def test_workload_and_sample_counts_are_preserved(self) -> None:
         workflow = OFFICIAL_WORKFLOW.read_text(encoding="utf-8")
