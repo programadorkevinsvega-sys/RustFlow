@@ -942,6 +942,19 @@ async fn mongodb_invalid_uri_and_unreachable_server_fail_with_bounded_timeout() 
     assert!(!format!("{error}").contains("mongodb://"));
 }
 
+#[tokio::test]
+async fn mongodb_standard_multi_host_uri_parses_without_srv_resolver() {
+    let uri = "mongodb://127.0.0.1:27017,127.0.0.2:27017/rustflow_test?tls=true&replicaSet=rs0&authSource=admin";
+    let config = MongoConfig::new(uri, "rustflow_test").expect("standard MongoDB URI");
+    let options = rustflow_server::mongodb_driver::options::ClientOptions::parse(uri)
+        .await
+        .expect("standard multi-host URI parses without connecting");
+
+    assert_eq!(options.hosts.len(), 2);
+    assert!(MongoConfig::new("mongodb+srv://cluster.example.test", "rustflow_test").is_err());
+    assert_eq!(config.database_name(), "rustflow_test");
+}
+
 #[test]
 fn integration_bson_helpers_accept_native_documents() {
     let source = doc! { "name": "Ada", "metadata": { "active": true } };
