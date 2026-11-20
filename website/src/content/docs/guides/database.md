@@ -3,7 +3,7 @@ title: Base de datos, SeaORM, SQLx y migraciones
 description: Configura SeaORM sobre pools SQLx tipados compartidos, consultas parametrizadas, transacciones y migraciones; MongoDB conserva su adaptador documental separado.
 ---
 
-La capa de base de datos de RustFlow continúa siendo experimental y pre-1.0. La línea aceptada históricamente en Phase 6.7 usó Data Mapper con SeaORM 1.1.20 sobre un pool SQLx tipado por backend; sus resultados de PR #59, #62 y #66 se refieren exclusivamente a esos commits. Esta rama propone SQLx 0.9.0 mediante una revisión upstream fijada por SHA y SeaORM 2.0.4, con SQLite 3.54.1 y MSRV Rust 1.94. La migración y el contrato de los cuatro motores están pendientes de validación en GitHub Actions; no uses la evidencia histórica de Rust 1.85 para inferir que esta línea pasó.
+La capa de base de datos de RustFlow continúa siendo experimental y pre-1.0. El stack integrado usa Data Mapper con SeaORM 2.0.4 sobre SQLx 0.9.0 y un pool tipado por backend, SQLite bundled 3.54.1 y MSRV Rust 1.94. PR #84 pasó los checks requeridos de la migración SQL, incluidos los contratos de los cuatro motores y `cargo audit`; PR #85 actualizó el driver MongoDB a 3.10.1 y pasó sus checks requeridos. Los resultados de PR #59, #62 y #66 corresponden a SeaORM 1.1.20/SQLx 0.8.6 y sus HEADs históricos, no a las versiones actuales.
 
 SeaORM se construye a partir de un clone del mismo pool SQLx; no se crea una segunda pool para la misma URL. La integración relacional cubre SQLite, PostgreSQL, MySQL y MariaDB. MongoDB conserva su adaptador documental independiente, con BSON, colecciones e índices. El ODM tipado de Phase 6.7.3 se implementó como una capa Data Mapper separada sobre el mismo cliente. PR #60 pasó los gates requeridos en su HEAD final `659f1750d611e57315263216167d43375da23574` y se fusionó en `main` el 2026-10-31 mediante squash (`7ffb89b5ca36017a428cf3f828b68f590f8d404b`); consulta la [guía ODM MongoDB](/guides/mongodb-odm/).
 
@@ -62,15 +62,15 @@ La línea propuesta usa SQLx 0.9.0 desde una revisión upstream fijada por SHA y
 
 ## Matriz de versiones
 
-Estas son las versiones objetivo configuradas para esta rama; la actualización SQLx/SeaORM y la matriz completa están pendientes de pasar CI sobre el commit final. No implican compatibilidad idéntica con todas las versiones de cada familia. CI está configurado para Rust 1.94 y stable; los resultados históricos de Rust 1.85 no verifican esta combinación.
+Estas versiones corresponden al stack actual y sus contratos se verificaron en los HEAD finales de PR #84 (SQL) y PR #85 (MongoDB). La evidencia aplica a los targets exactos de la tabla, no a todas las versiones de cada familia. Los resultados históricos de Rust 1.85/SeaORM 1.1.20 no sustituyen esa verificación.
 
 | Motor/servidor | Driver bloqueado | URI de conexión | Contrato comprobado en CI |
 |---|---|---|---|
-| SQLite 3.54.1 (objetivo incluido en el build) | SQLx 0.9.0 desde revisión upstream fijada; `libsqlite3-sys` 0.39.1 | `sqlite:` | Se mantienen configurados migraciones, CRUD, transacciones y scaffold; verificación pendiente |
-| PostgreSQL 16.15 | SQLx 0.9.0 desde la revisión upstream fijada | `postgres://`, `postgresql://` | Pool, codec, transacción y contrato ORM; verificación pendiente |
-| MySQL 8.4.13 LTS | SQLx 0.9.0 desde la revisión upstream fijada, driver `mysql` | `mysql://` | CRUD, binding, transacciones, unicidad y migraciones; verificación pendiente |
-| MariaDB 11.4.13 LTS | SQLx 0.9.0 desde la revisión upstream fijada, mismo driver `mysql` | `mysql://` | Identidad del servidor y contrato SQL; verificación pendiente |
-| MongoDB 7.0.45 | Driver oficial `mongodb` 3.9.1 | `mongodb://` | Se conserva el contrato ODM separado; la actualización SQL no lo reemplaza |
+| SQLite 3.54.1 bundled | SQLx 0.9.0 desde revisión upstream fijada; `libsqlite3-sys` 0.39.1 | `sqlite:` | Versión runtime, CRUD, migraciones y transacciones verificadas en PR #84 |
+| PostgreSQL 16.15 | SQLx 0.9.0 desde la revisión upstream fijada | `postgres://`, `postgresql://` | Pool, codecs, transacciones, migraciones y ORM verificados en PR #84 |
+| MySQL 8.4.13 LTS | SQLx 0.9.0 desde la revisión upstream fijada, driver `mysql` | `mysql://` | CRUD, binding, transacciones, unicidad, migraciones y ORM verificados en PR #84 |
+| MariaDB 11.4.13 LTS | SQLx 0.9.0 desde la revisión upstream fijada, mismo driver `mysql` | `mysql://` | Identidad del servidor y contrato SQL verificados en PR #84 |
+| MongoDB 7.0.45 | Driver oficial `mongodb` 3.10.1 | `mongodb://` | Contrato ODM verificado con la actualización de driver en PR #85 |
 
 El scaffold del CLI continúa siendo SQLite-first. Cambiar `RUSTFLOW_DATABASE_URL` a otro motor SQL no traduce sus placeholders, tipos ni migraciones. MongoDB usa las variables `RUSTFLOW_MONGODB_URI` / `RUSTFLOW_MONGODB_DATABASE` y una API separada; no se inicializa automáticamente por la plantilla. `mongodb+srv://` no está habilitado en esta configuración porque el feature del resolver DNS está desactivado tras la revisión de seguridad de dependencias.
 
@@ -578,6 +578,6 @@ Limitaciones que deben respetarse:
 
 La Phase 6.6 ya está completa y su matriz verificada está en `docs/DATABASE_SUPPORT_MATRIX.md`. El adaptador MongoDB de la 6.6.2 y el ODM independiente de Phase 6.7.3 están disponibles en `main`; el último se fusionó mediante PR #60 (`7ffb89b5ca36017a428cf3f828b68f590f8d404b`).
 
-La auditoría de dependencias usa cargo audit en CI. Se mantiene una única excepción documentada para RUSTSEC-2023-0071 (rsa 0.9.10 a través de sqlx-mysql 0.8.6); el advisory no tiene una versión corregida y no se considera resuelto. Consulta ADR 0020 para el análisis de alcance y la condición para retirar esa excepción.
+La auditoría de dependencias usa `cargo audit --deny warnings` en CI. El stack actualizado eliminó el ignore histórico de RUSTSEC-2023-0071 junto con la dependencia `rsa 0.9.10`; el advisory ya no forma parte del grafo bloqueado. La única excepción configurada actualmente es Chrono (`RUSTSEC-2026-0543`), que no tiene una versión corregida. Consulta [ADR 0024](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0024-sqlite-security-and-sql-stack-upgrade.md).
 
 Para el alcance completo, consulta docs/DATABASES.md, docs/ORM_MODEL_CONTRACT.md, la referencia de disponibilidad de API (/reference/api-status/) y ROADMAP.md.

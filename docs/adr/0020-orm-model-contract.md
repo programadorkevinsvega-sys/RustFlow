@@ -4,7 +4,7 @@
 - Phase: 6.7.1 — Model contract and architecture.
 - Related: ADR 0016 (SQLx pools and migrations), ADR 0017 (MySQL/MariaDB driver), ADR 0018 (MongoDB document adapter), ADR 0019 (database support matrix), [ORM model contract](../ORM_MODEL_CONTRACT.md).
 
-> Historical dependency baseline: the accepted ORM implementation selected SeaORM 1.1.20 with SQLx 0.8.6. ADR 0024 proposes SeaORM 2.0.4 with SQLx 0.9.0 and records the required migration checks; the new line is pending CI verification.
+> Historical dependency baseline: the accepted ORM implementation selected SeaORM 1.1.20 with SQLx 0.8.6. ADR 0024 upgraded to SeaORM 2.0.4 with SQLx 0.9.0; the required migration checks passed on PR #84's final head.
 
 ## Context
 

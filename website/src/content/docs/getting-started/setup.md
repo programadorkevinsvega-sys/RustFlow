@@ -7,7 +7,7 @@ Esta guía te ayuda a comprobar el código real de RustFlow: ejecutar tests del 
 
 ## 1. Requisitos
 
-Para esta revisión del workspace necesitas Git, Rust 1.94 o Rust stable y Cargo. La migración de dependencias que eleva el MSRV todavía requiere validación en CI; los resultados históricos de Rust 1.85 no verifican esta revisión:
+Para esta revisión del workspace necesitas Git, Rust 1.94 o Rust stable y Cargo. El stack actual SQLx 0.9.0/SeaORM 2.0.4 fue verificado en los checks requeridos de PR #84; el driver MongoDB 3.10.1, en PR #85. Estas verificaciones aplican a sus HEADs finales y no implican estabilidad de API:
 
 ~~~sh
 rustc --version

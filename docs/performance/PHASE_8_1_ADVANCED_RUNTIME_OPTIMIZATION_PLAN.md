@@ -1,7 +1,7 @@
 # Phase 8.1 — plan de optimización avanzada del runtime
 
-**Estado:** optimizaciones incrementales aplicadas en la rama; la nueva reactividad granular está pendiente de CI y de evidencia comparativa. No declara completada Phase 8.1.  
-**Rama:** `feat/phase-8-1-advanced-runtime-optimizations`  
+**Estado:** la implementación de PR #81 está integrada en `main` y sus checks requeridos pasaron. La comparación oficial se aceptó en el run #44677034080; Phase 8.1 sigue abierta por el A/B/A de listas grandes contra la base y los demás criterios pendientes.
+**Integración:** PR #81, merge `4622d1ab03ee3422668a6eda6e87a25cb7952b50`.
 **Base:** `main`, después de integrar los PR #78 y #80.  
 **Referencia upstream:** `krausest/js-framework-benchmark` en `fa510a76ffe066af1d30f3e75fa51d3fcbc14009`.
 
@@ -22,14 +22,16 @@ Estos resultados comparan RustFlow con su propia implementación base. **No demu
 
 ## 2. Brechas que siguen abiertas
 
-1. Ejecutar y revisar la comparación oficial completa de los nueve IDs upstream para React, Vue, Svelte y RustFlow, recogidos secuencialmente en el mismo runner, job y navegador.
-2. Ejecutar y revisar por separado las tres extensiones Phase 8.1: actualización parcial sobre 10.000 filas, append de 1.000 filas sobre 10.000 y limpieza de 10.000 filas.
-3. Completar evidencia comparable para listas grandes. El montaje de 10.000 y sus mutaciones actuales son observaciones de estrés; no deben describirse como A/B/A.
+1. **Completado en el run oficial #44677034080:** nueve IDs upstream para React, Vue, Svelte y RustFlow, secuenciales en el mismo runner, job y navegador; muestras completas y reporte aceptado.
+2. **Completado en el run oficial #44677034080:** tres extensiones Phase 8.1 (actualización parcial sobre 10.000 filas, append de 1.000 filas sobre 10.000 y limpieza de 10.000 filas), reportadas por separado y en el índice combinado.
+3. Completar A/B/A contra la implementación base para el montaje inicial y las mutaciones de listas grandes. La comparación oficial entre frameworks no sustituye este control.
 4. Perfilar el runtime para localizar trabajo redundante antes de modificar algoritmos.
 5. Aplicar optimizaciones incrementales y comprobar cada grupo mediante benchmarks reproducibles y pruebas de regresión.
 6. Mantener diferenciadas las métricas de latencia, memoria del navegador, memoria lineal WASM, asignaciones del allocator, RSS, inicialización y bundle.
 
-## Registro de implementación en esta rama
+El run oficial fue válido, pero sus índices de latencia CPU fueron mayores que 1 para RustFlow frente a React, Vue y Svelte; no respalda una ventaja competitiva en esos conjuntos. Véase el [registro completo](runs/2026-11-20-official-framework-benchmark-44677034080.md).
+
+## Registro de implementación integrado en PR #81
 
 **Primera optimización aplicada (commit `4fcd7c4f1a2ff335b72c07219196819e99079974`):**
 
@@ -69,20 +71,20 @@ El job midió, en el mismo runner y Chromium, mover un único ancla keyed desde 
 
 Esta aceptación solo demuestra la mejora en este workload de secuencias mixtas y en este entorno. **No es** la comparación competitiva oficial contra React, Vue y Svelte ni evidencia para las extensiones de 10.000 filas. El SHA medido antecede al ajuste de `cfg` de `sequence` en `46e76b3`; ese ajuste solo cambia dónde se compila el módulo (WASM y tests native), no el algoritmo WASM medido.
 
-**Tercera optimización aplicada en esta rama (pendiente de CI):**
+**Tercera optimización aplicada e integrada en PR #81:**
 
 - `commit_sequence` ya no crea objetos JavaScript `Map` cuando el montaje no contiene componentes ni regiones dinámicas.
 - Los índices por identidad DOM se construyen solo si el vector correspondiente de regiones no está vacío; las búsquedas siguen siendo obligatorias para los nodos de componente/dinámicos presentes.
-- Esto evita dos asignaciones de objetos JS y sus inserciones por cada secuencia simple reconciliada (por ejemplo, cada elemento de una lista DOM ordinaria). La ganancia debe comprobarse con el benchmark de listas y el perfil WASM/JS; todavía no se publica como mejora cuantificada.
+- Esto evita dos asignaciones de objetos JS y sus inserciones por cada secuencia simple reconciliada (por ejemplo, cada elemento de una lista DOM ordinaria). El HEAD final de PR #81 pasó los checks requeridos; no se atribuye a este cambio una mejora de latencia aislada.
 
-**Segunda optimización aplicada en esta rama (pendiente de CI):**
+**Segunda optimización aplicada e integrada en PR #81:**
 
 - Se elimina la validación recursiva redundante por cada nodo del plan de reconciliación.
 - El árbol de entrada sigue validándose en `Renderer::update`; los subárboles producidos por componentes y dinámicos se validan en su punto de entrada.
 - El commit ya no vuelve a recorrer el mismo árbol completo para repetir validaciones que se ejecutaron antes de preparar el plan.
 - La validación de propiedades, atributos, refs y la construcción segura de nodos no se desactiva; solo se evita repetir el recorrido para cada descendiente.
 
-Los dos cambios requieren la ejecución de los checks Rust/WASM/Browser E2E del HEAD actual y la revisión de artefactos antes de aceptarse como mejoras cuantificadas. Todavía no se atribuye una ganancia de latencia medida a ninguno de ellos.
+Los dos cambios pasaron los checks requeridos de Rust/WASM/Browser E2E en el HEAD final de PR #81. No se atribuye una ganancia de latencia aislada a ninguno de ellos sin una medición que aísle su efecto.
 
 ## 3. Orden de implementación
 
@@ -118,7 +120,7 @@ Se habilitó `lto = "fat"` y `codegen-units = 1` en el perfil release del worksp
 
 La aceptación requiere medir el WASM raw/gzip/Brotli y volver a comparar P50/P95. Un bundle menor no prueba por sí mismo una mejora de latencia; tampoco se ampliará el presupuesto ni se aceptará una regresión de rendimiento para satisfacer el tamaño.
 
-### Optimización aplicada — estado granular por fila (pendiente de evidencia)
+### Optimización aplicada — estado granular por fila
 
 En el fixture keyed del benchmark oficial se separó el estado estructural del estado de cada fila:
 
@@ -129,21 +131,21 @@ En el fixture keyed del benchmark oficial se separó el estado estructural del e
 - El cache de vista vive junto al estado/scope de la fila; los callbacks mantienen referencias débiles al mapa de filas para evitar un ciclo de retención. Al retirar una fila se dispone su owner y se elimina su identidad/entrada de la lista.
 - La implementación conserva claves estables, contenido/orden del DOM y el modelo de eliminación explícita de owners. El patrón no cambia la semántica general de `Signal<Vec<T>>::update`; es una arquitectura granular usada por el benchmark y disponible para aplicaciones que modelen items independientes.
 
-**Cadena de implementación:** `0c8639a` (estado granular y batch por señal), `2e0b0e4` / `bff34fd` (correcciones de tipos/estado), `a3533da` (reutilización del índice de estados), `d546da6` (cache de vista junto al estado) y `723facd` (Weak para evitar ciclos). La rama actual continúa este trabajo.
+**Cadena de implementación:** `0c8639a` (estado granular y batch por señal), `2e0b0e4` / `bff34fd` (correcciones de tipos/estado), `a3533da` (reutilización del índice de estados), `d546da6` (cache de vista junto al estado) y `723facd` (Weak para evitar ciclos). El trabajo quedó integrado en PR #81.
 
-**Incidencias de validación observadas antes del último ajuste:** CI #41946501068 sobre `ee119999` compiló el bundle, pero el WASM raw fue 624.953 bytes (límite activo 614.400) y el total gzip 226.089 bytes (límite 225.280). WebKit pasó 20/21 E2E; falló la navegación hash `#hydration-details`, sin causalidad demostrada con el cambio de filas. Después se eliminaron el conjunto de IDs redundante y el segundo mapa de vistas, y se cambió la captura del mapa a `Weak`. Esos ajustes aún requieren un CI completo sobre el HEAD final.
+**Incidencias históricas antes del último ajuste:** CI #41946501068 sobre `ee119999` compiló el bundle, pero el WASM raw fue 624.953 bytes (límite activo 614.400) y el total gzip 226.089 bytes (límite 225.280). WebKit pasó 20/21 E2E; falló la navegación hash `#hydration-details`, sin causalidad demostrada con el cambio de filas. Después se eliminaron el conjunto de IDs redundante y el segundo mapa de vistas, y se cambió la captura del mapa a `Weak`. El HEAD final de PR #81 pasó sus checks requeridos; el run oficial aceptado y sus resultados actuales están descritos arriba.
 
-**No existe todavía una mejora comparativa aceptada para estas operaciones.** Hasta disponer de artefactos oficiales válidos, las mediciones anteriores siguen siendo la línea de base; no se declara superioridad frente a React, Vue o Svelte.
+**La comparación oficial está aceptada, pero no muestra una ventaja agregada de latencia CPU de RustFlow** en los conjuntos upstream ni en las extensiones. Esa comparación no mide el efecto causal de cada optimización frente al reconciliador base; para esto sigue pendiente el A/B/A de operaciones grandes. No se declara superioridad frente a React, Vue o Svelte.
 
 ### Etapa A — reproducibilidad y evidencia competitiva
 
-- Revisar el workflow `Official framework benchmarks` ya integrado y su configuración efectiva.
-- Ejecutar el workflow desde el HEAD de esta rama una vez que la implementación de la rama sea apta para medir.
-- Verificar la versión real de Chromium en runtime; no etiquetar Playwright Chromium como Google Chrome.
-- Comprobar que cada uno de los nueve IDs tiene muestras válidas de los cuatro frameworks y que los metadatos corresponden al mismo job/runner.
-- Conservar artefactos originales, muestras crudas, orden, rondas, versiones, p50/p90/p95 y agregados.
-- Reportar por separado el agregado upstream de nueve operaciones, las tres extensiones y el agregado combinado.
-- No mezclar memoria, bundle ni startup con el índice geométrico de latencia CPU.
+- [x] Revisar el workflow `Official framework benchmarks` integrado y su configuración efectiva.
+- [x] Ejecutar y aceptar la comparación oficial para el commit `5360963ae7bab3be2bc497eee5a2f62e3c6bc136` (run #44677034080).
+- [x] Verificar la versión real de Chromium en runtime; no etiquetar Playwright Chromium como Google Chrome.
+- [x] Comprobar muestras válidas para los nueve IDs y cuatro frameworks, con metadatos del mismo job/runner.
+- [x] Conservar los artefactos originales, muestras crudas, orden, rondas, versiones, percentiles y agregados.
+- [x] Reportar por separado el agregado upstream de nueve operaciones, las tres extensiones y el agregado combinado.
+- [x] Mantener memoria, bundle y startup fuera del índice geométrico de latencia CPU.
 
 ### Etapa B — perfilado del runtime
 
@@ -210,9 +212,9 @@ No afirmar una victoria agregada si hay escenarios ausentes, muestras inválidas
 
 ## 5. Gates de aceptación de esta línea de trabajo
 
-- [ ] Comparación oficial completa de nueve operaciones para los cuatro frameworks con artefactos válidos.
-- [ ] Tres operaciones extendidas de 10.000 filas completadas y reportadas separadamente.
-- [ ] Condiciones, versiones, navegador y runner verificados desde los artefactos.
+- [x] Comparación oficial completa de nueve operaciones para los cuatro frameworks con artefactos válidos (run #44677034080).
+- [x] Tres operaciones extendidas de 10.000 filas completadas y reportadas separadamente (run #44677034080).
+- [x] Condiciones, versiones, navegador y runner verificados desde los artefactos del run #44677034080.
 - [ ] A/B/A de escenarios grandes únicamente cuando el protocolo sea realmente ejecutable y comparable; toda limitación queda explícita.
 - [ ] Perfiles de los cuellos de botella principales guardados con identificación de commit y entorno.
 - [ ] Cada optimización aceptada tiene pruebas de corrección y evidencia antes/después.
@@ -224,4 +226,4 @@ No afirmar una victoria agregada si hay escenarios ausentes, muestras inválidas
 
 ## 6. Estado del documento
 
-Este archivo registra tanto las optimizaciones de la rama como la evidencia todavía pendiente. La implementación granular por fila no está aceptada hasta que el HEAD final pase CI y produzca muestras comparativas reproducibles. No declarar superioridad ni cerrar Phase 8.1 antes de revisar los artefactos oficiales y las regresiones.
+Este archivo conserva el historial de las optimizaciones integradas y separa la comparación oficial ya aceptada del trabajo todavía pendiente. El run #44677034080 reporta índices CPU agregados mayores que 1 para RustFlow frente a los tres frameworks; no se presenta como una mejora competitiva. Phase 8.1 sigue abierta hasta completar y revisar el A/B/A de listas grandes contra la base y los demás gates. No cerrar la fase sin revisión del autor y CI verde para el HEAD que complete esos criterios.
