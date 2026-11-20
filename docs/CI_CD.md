@@ -1,6 +1,6 @@
 # CI/CD and path-based validation
 
-RustFlow uses path-based job conditions so a pull request validates the areas it changes instead of running every expensive suite for every edit. Pull requests in Draft also defer the expensive Rust, WASM, browser, and cross-browser jobs until the author marks the pull request ready for review.
+RustFlow uses path-based job conditions so a pull request validates the areas it changes instead of running every expensive suite for every edit. Pull requests in Draft also defer the expensive Rust, WASM, browser, and cross-browser jobs until the author marks the pull request ready for review. The general CI workflow does not rerun the complete suite after every squash merge to `main`; the Ready PR and its exact commit are the merge gate.
 
 The workflows still start for pull requests and classify the changed files. While a pull request is Draft, lightweight governance, dependency, documentation, and performance-tool checks continue when applicable; the expensive Rust matrix, WASM build, browser E2E/bundle/benchmarks, and cross-browser stress profile are skipped. The required Rust scope gates explicitly report that validation is deferred in Draft; a Draft pull request cannot be merged.
 

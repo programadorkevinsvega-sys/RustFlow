@@ -16,6 +16,8 @@ class OfficialFrameworkWorkflowTests(unittest.TestCase):
         self.assertNotIn("Run pinned upstream keyed framework comparison", ci)
         self.assertNotIn("official_framework_comparison", ci)
         self.assertNotIn("fa510a76ffe066af1d30f3e75fa51d3fcbc14009", ci)
+        self.assertNotIn("push:", ci)
+        self.assertNotIn("branches: [main]", ci)
         self.assertIn("Run Clippy", ci)
         self.assertIn("Run tests", ci)
         self.assertIn("Compile the DOM adapter for WebAssembly", ci)

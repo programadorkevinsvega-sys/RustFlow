@@ -8,10 +8,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-rustflow = { path = "../rustflow" }
 rustflow-view = { path = "../rustflow-view" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+rustflow = { path = "../rustflow" }
 js-sys = "0.3"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
