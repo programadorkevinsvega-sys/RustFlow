@@ -23,7 +23,7 @@ Este programa es un ejemplo ejecutable independiente. El workspace contiene sus 
 
 ## 2. Qué contiene la aplicación
 
-El ejemplo está dividido en cuatro responsabilidades para que cada parte pueda cambiar de forma independiente:
+El ejemplo está dividido en seis responsabilidades para que cada parte pueda cambiar de forma independiente:
 
 | Parte | Para qué sirve |
 |---|---|
