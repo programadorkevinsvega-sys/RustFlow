@@ -1,8 +1,10 @@
 # CI/CD and path-based validation
 
-RustFlow uses path-based job conditions so a pull request validates the areas it changes instead of running every expensive suite for every edit.
+RustFlow uses path-based job conditions so a pull request validates the areas it changes instead of running every expensive suite for every edit. Pull requests in Draft also defer the expensive Rust, WASM, browser, and cross-browser jobs until the author marks the pull request ready for review.
 
-The workflows still start for every pull request. They classify the changed files and conditionally skip individual jobs. This distinction is intentional: a workflow skipped by a workflow-level path filter can leave a required status check pending, while a job skipped by an `if` condition reports a successful skipped result. See the [GitHub required-status-check guidance](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks#handling-skipped-but-required-checks).
+The workflows still start for pull requests and classify the changed files. While a pull request is Draft, lightweight governance, dependency, documentation, and performance-tool checks continue when applicable; the expensive Rust matrix, WASM build, browser E2E/bundle/benchmarks, and cross-browser stress profile are skipped. The required Rust scope gates explicitly report that validation is deferred in Draft; a Draft pull request cannot be merged.
+
+The `ready_for_review` event runs the expensive jobs for the final candidate. Further pushes to a non-Draft pull request run the applicable jobs again, so any fixes made after marking it ready are revalidated before merge. Keep active work in Draft until it is ready for that final CI pass. A workflow-level path filter can leave a required status check pending, while a job skipped by an `if` condition reports a successful skipped result. See the [GitHub required-status-check guidance](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks#handling-skipped-but-required-checks).
 
 ## Change scopes
 
@@ -27,9 +29,9 @@ Performance tooling is validated separately from the browser runtime: edits to t
 
 Do not add workflow-level `paths` or `paths-ignore` filters to workflows that publish required checks. The Rust test matrix is conditional; two lightweight, always-emitted required-check gates retain the branch-protection contexts `Rust checks (1.94)` and `Rust checks (stable)`.
 
-Each expensive job uses `always()` with its change-detection dependency. If path detection fails, the affected workflow runs the conservative fallback (Rust + WASM + browser + performance tooling, website build, or dependency review) rather than silently skipping validation, and the Rust scope gates fail closed. For documentation-only, frontend-only, or other non-Rust changes, the Rust gates pass without requiring backend tests. When Rust or `full_ci` is in scope, both gates require the complete Rust matrix to succeed. The change-detection job needs `contents: read` and `pull-requests: read`; the latter is needed to read the changed-file list for pull requests.
+Each expensive job uses `always()` with its change-detection dependency. If path detection fails, the affected workflow runs the conservative fallback (Rust + WASM + browser + performance tooling, website build, or dependency review) rather than silently skipping validation, and the Rust scope gates fail closed. For documentation-only, frontend-only, or other non-Rust changes, the Rust gates pass without requiring backend tests. In Draft, the Rust gates explicitly defer the matrix; on `ready_for_review` and later non-Draft pushes, Rust or `full_ci` scope requires the complete Rust matrix to succeed. The change-detection job needs `contents: read` and `pull-requests: read`; the latter is needed to read the changed-file list for pull requests.
 
-A change to the filters or any workflow definition deliberately runs the broad CI path so changes to the pipeline itself receive full validation. When adding a new crate or browser dependency, review `.github/filters.yml` and update these scope descriptions in the same pull request.
+A change to the filters or any workflow definition deliberately selects the broad CI path. Draft pull requests still defer its expensive jobs; marking the pull request ready runs that broad path so changes to the pipeline itself receive full validation. When adding a new crate or browser dependency, review `.github/filters.yml` and update these scope descriptions in the same pull request.
 
 ## Cloudflare Pages
 
@@ -46,7 +48,7 @@ This dashboard setting cannot be committed in this repository. Until it is appli
 
 ## Expected behavior examples
 
-| Pull request changes | Rust tests / required gates | WASM / Browser E2E | Astro site build | Dependency review | Performance tooling tests |
+| Pull request changes (Ready for review) | Rust tests / required gates | WASM / Browser E2E | Astro site build | Dependency review | Performance tooling tests |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `README.md`, `ROADMAP.md`, or `docs/**` only | Matrix skips; both gates pass | Skip | Skip | Skip | Skip |
 | `website/**` only | Matrix skips; both gates pass | Skip | Run | Skip | Skip |
@@ -56,4 +58,20 @@ This dashboard setting cannot be committed in this repository. Until it is appli
 | `scripts/compare-browser-performance.py` or `scripts/tests/**` | Matrix skips; both gates pass | Skip | Skip | Skip | Run |
 | Cargo/npm manifest, lockfile, or Actions workflow changes | Per matching scopes; workflow changes force broad CI | Per matching scopes; workflow changes force broad CI | If website or docs workflow changed | Run | Run only when performance tools also change or broad CI is forced |
 
+For all rows above, a Draft pull request defers the Rust matrix, WASM, Browser E2E/bundle/benchmarks, and cross-browser profile. Lightweight applicable checks still run. The broad `full_ci` scope is enforced when the pull request is marked ready.
+
 The `main` ruleset continues to require `Rust checks (1.94)` and `Rust checks (stable)`, but these are now stable scope gates rather than conditionally skipped matrix jobs. A skipped Rust matrix is accepted only when the change detector succeeded and Rust is not in scope; a failed detector activates the conservative fallback and fails the gates.
+
+## Fast local feedback
+
+During active development, run the focused checks for the area being changed:
+
+~~~sh
+cargo fmt --all -- --check
+cargo check -p rustflow-server
+cargo test -p rustflow-server
+cargo clippy -p rustflow-server --all-targets --all-features -- -D warnings
+python3 -m py_compile scripts/compare-browser-performance.py
+~~~
+
+Use the affected crate in place of `rustflow-server`; add a test-name filter to `cargo test` to narrow the run further. Run `py_compile` on the changed Python script only. Before marking a subphase ready, run the applicable full test suite once; then use the Ready-for-review CI run as the final multi-toolchain, browser, bundle, and performance gate. These local commands do not replace the required GitHub checks.

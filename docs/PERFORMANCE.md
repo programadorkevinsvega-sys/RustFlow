@@ -98,7 +98,7 @@ La memoria live del allocator WASM aún no se mide por componente: el tamaño de
 
 ## CI obligatoria por pull request
 
-La CI obligatoria del PR mantiene los checks Rust 1.85 y stable, formato, Clippy, tests e integraciones, WebAssembly, Browser E2E, los límites deterministas del bundle, benchmarks propios de RustFlow, el A/B/A keyed del mismo runner, los validadores Python, gobernanza y Dependency Review. El check **Browser E2E and bundle size** termina sin ejecutar ni esperar la matriz comparativa de frameworks externos. El A/B/A propio y los presupuestos de bundle no se eliminan ni se relajan.
+La CI obligatoria de una PR lista para revisión mantiene los checks Rust 1.94 y stable, formato, Clippy, tests e integraciones, WebAssembly, Browser E2E, los límites deterministas del bundle, benchmarks propios de RustFlow, el A/B/A keyed del mismo runner, los validadores Python, gobernanza y Dependency Review. Mientras la PR está en Draft, los jobs costosos de Rust, WASM, navegador, bundle y benchmarks se difieren; al marcarla como lista y en los pushes posteriores se ejecutan según el alcance detectado. El check **Browser E2E and bundle size** termina sin ejecutar ni esperar la matriz comparativa de frameworks externos. El A/B/A propio y los presupuestos de bundle no se eliminan ni se relajan.
 
 ## Comparación oficial keyed React/Vue/Svelte/RustFlow
 

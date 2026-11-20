@@ -23,7 +23,21 @@ Suggested branch names: `feat/short-description`, `fix/short-description`, `docs
 
 ## Quality checks
 
-Once the Cargo workspace exists, run the checks that apply to your change:
+While actively iterating, use focused local checks rather than repeatedly running the full CI suite:
+
+```bash
+cargo fmt --all -- --check
+cargo check -p rustflow-server
+cargo test -p rustflow-server
+cargo clippy -p rustflow-server --all-targets --all-features -- -D warnings
+python3 -m py_compile scripts/compare-browser-performance.py
+```
+
+Use the affected crate in place of `rustflow-server`; add a test-name filter to `cargo test` to narrow the run further. Run `py_compile` on the changed script only.
+
+When a subphase is complete, run the applicable full local test suite once and keep its pull request in Draft while iterating. Mark it ready for review when it is a final candidate. Draft pushes defer the heavy Rust matrix, WASM, browser E2E/bundle/performance, and cross-browser checks; marking it ready runs the applicable full CI. Any later push to a non-Draft pull request re-runs the relevant checks. These GitHub checks remain the required merge gate.
+
+Once the Cargo workspace exists, the full checks that apply to your change include:
 
 ```bash
 cargo fmt --all -- --check
