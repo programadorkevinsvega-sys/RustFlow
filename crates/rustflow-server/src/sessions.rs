@@ -410,20 +410,17 @@ impl SessionManager {
                     CookieAction::Keep
                 };
 
-                if allow_cookie {
-                    if let Ok(Some(value)) = parsed {
-                        if let Some(candidate) = SessionId::parse_cookie(value) {
-                            if let Some(expiry) = manager
-                                .store
-                                .expires_at(&candidate, now)
-                                .map_err(|_| HttpError::internal_server_error())?
-                            {
-                                id = Some(candidate);
-                                expires = Some(expiry);
-                                action = CookieAction::Keep;
-                            }
-                        }
-                    }
+                if allow_cookie
+                    && let Ok(Some(value)) = parsed
+                    && let Some(candidate) = SessionId::parse_cookie(value)
+                    && let Some(expiry) = manager
+                        .store
+                        .expires_at(&candidate, now)
+                        .map_err(|_| HttpError::internal_server_error())?
+                {
+                    id = Some(candidate);
+                    expires = Some(expiry);
+                    action = CookieAction::Keep;
                 }
 
                 let context = SessionContext {
@@ -1123,7 +1120,7 @@ fn decode_hex<const N: usize>(text: &str) -> Option<[u8; N]> {
         return None;
     }
     let mut output = [0_u8; N];
-    for (index, pair) in text.as_bytes().chunks_exact(2).enumerate() {
+    for (index, pair) in text.as_bytes().as_chunks::<2>().0.iter().enumerate() {
         output[index] = (hex_nibble(pair[0])? << 4) | hex_nibble(pair[1])?;
     }
     Some(output)

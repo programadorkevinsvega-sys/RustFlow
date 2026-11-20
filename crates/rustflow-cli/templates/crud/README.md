@@ -4,6 +4,8 @@ A generated RustFlow CRUD example that demonstrates form validation, the SQL ORM
 
 RustFlow and its APIs are experimental and pre-1.0. This generated example deliberately uses `InMemorySessionStore` and a development cookie policy. It refuses to start in the production environment. It is an educational integration fixture, not a production-ready authentication or deployment template.
 
+This project requires Rust 1.94 or newer. Its manifest temporarily pins SQLx to the upstream revision needed for the patched bundled SQLite; replace that source patch with a published SQLx release that admits `libsqlite3-sys 0.39.x` when available, then revalidate the application.
+
 ## Start locally
 
 Install the CLI from a RustFlow checkout, then create this project:

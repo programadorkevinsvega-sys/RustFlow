@@ -695,10 +695,10 @@ impl<T: Clone + 'static> Signal<T> {
             }
         }
 
-        if let Some(equal) = &self.equality {
-            if equal(&*self.value.borrow(), &value) {
-                return Ok(false);
-            }
+        if let Some(equal) = &self.equality
+            && equal(&*self.value.borrow(), &value)
+        {
+            return Ok(false);
         }
         *self.value.borrow_mut() = value;
 
@@ -1249,10 +1249,10 @@ fn run_effect(runtime: &RuntimeRef, effect_id: EffectId) {
     let owner_guard = OwnerContextGuard::enter(runtime, owner);
     let mut cleanup_panic = None;
     for cleanup in cleanups.into_iter().rev() {
-        if let Err(payload) = catch_unwind(AssertUnwindSafe(cleanup)) {
-            if cleanup_panic.is_none() {
-                cleanup_panic = Some(payload);
-            }
+        if let Err(payload) = catch_unwind(AssertUnwindSafe(cleanup))
+            && cleanup_panic.is_none()
+        {
+            cleanup_panic = Some(payload);
         }
     }
     if let Some(payload) = cleanup_panic {
@@ -1416,10 +1416,10 @@ fn dispose_effect(runtime: &RuntimeRef, effect_id: EffectId) -> Result<(), Runti
             let mut inner = runtime.borrow_mut();
             inner.active_effect = previous_effect;
         }
-        if let Err(payload) = result {
-            if first_panic.is_none() {
-                first_panic = Some(payload);
-            }
+        if let Err(payload) = result
+            && first_panic.is_none()
+        {
+            first_panic = Some(payload);
         }
     }
     if let Some(payload) = first_panic {
@@ -1456,18 +1456,18 @@ fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeE
     let mut first_panic = None;
     for child in children.into_iter().rev() {
         let result = catch_unwind(AssertUnwindSafe(|| dispose_scope(runtime, child)));
-        if let Err(payload) = result {
-            if first_panic.is_none() {
-                first_panic = Some(payload);
-            }
+        if let Err(payload) = result
+            && first_panic.is_none()
+        {
+            first_panic = Some(payload);
         }
     }
     for effect in effects.into_iter().rev() {
         let result = catch_unwind(AssertUnwindSafe(|| dispose_effect(runtime, effect)));
-        if let Err(payload) = result {
-            if first_panic.is_none() {
-                first_panic = Some(payload);
-            }
+        if let Err(payload) = result
+            && first_panic.is_none()
+        {
+            first_panic = Some(payload);
         }
     }
 
@@ -1484,10 +1484,10 @@ fn dispose_scope(runtime: &RuntimeRef, scope_id: ScopeId) -> Result<(), RuntimeE
             let mut inner = runtime.borrow_mut();
             inner.active_effect = previous_effect;
         }
-        if let Err(payload) = result {
-            if first_panic.is_none() {
-                first_panic = Some(payload);
-            }
+        if let Err(payload) = result
+            && first_panic.is_none()
+        {
+            first_panic = Some(payload);
         }
     }
 

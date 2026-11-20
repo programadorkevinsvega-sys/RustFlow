@@ -5,6 +5,8 @@
 - Related: ADR 0020 (SQL ORM/Data Mapper architecture), ADR 0016 (SQLx pools and migrations), ADR 0019 (database support matrix), ORM_MODEL_CONTRACT.md and DATABASES.md.
 - Boundary: SQLite, PostgreSQL, MySQL and MariaDB only. MongoDB remains governed by ADR 0021.
 
+> Historical dependency baseline: these relation-loading contracts were accepted on SeaORM 1.1.20. ADR 0024 upgrades the ORM/SQLx line; the contracts must be revalidated against SeaORM 2.0.4 before the migration is considered complete.
+
 ## Context
 
 Phase 6.7.2 established the SQL relationship baseline on SeaORM 1.1.20: belongs-to, one-to-one, one-to-many and many-to-many metadata; explicit batch loaders; bounded query-count tests; and junction lifecycle/rollback coverage. Phase 6.7.4 must add richer per-relation options, projections, deeper configurable graphs and first-class one-to-one/one-to-many mutation helpers without replacing SeaORM, introducing another SQL renderer, or hiding I/O.
