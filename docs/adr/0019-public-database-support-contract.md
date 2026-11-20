@@ -4,7 +4,7 @@
 - Phase: 6.6.3 — Public support contract.
 - Related: ADR 0016 (SQLx pools and migrations), ADR 0017 (MySQL/MariaDB driver), ADR 0018 (MongoDB document adapter), `docs/DATABASE_SUPPORT_MATRIX.md`.
 
-> This ADR records the accepted Phase 6.6 matrix and its Rust 1.85/SQLx 0.8.6 evidence. ADR 0024 proposes SQLite 3.54.1, SQLx 0.9.0, SeaORM 2.0.4, and Rust 1.94; that updated matrix is not verified until its final GitHub CI run passes.
+> This ADR records the accepted Phase 6.6 matrix and its Rust 1.85/SQLx 0.8.6 evidence. ADR 0024 later updated the stack to SQLite 3.54.1, SQLx 0.9.0, SeaORM 2.0.4, and Rust 1.94; the required checks for that matrix passed on PR #84's final head.
 
 ## Context
 

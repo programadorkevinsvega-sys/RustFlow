@@ -1,6 +1,6 @@
 # Competitive framework benchmark reference
 
-**Status:** upstream audit/source pin complete; official run #22 executed on PR #81 but was rejected as incomplete; corrected re-run required.  
+**Status:** upstream audit/source pin complete; the initial run #22 was rejected as incomplete, and run #44677034080 is the first accepted official comparison. Phase 8.1 remains open for its other criteria.
 **Audit date:** 2026-11-06  
 **Repository:** [krausest/js-framework-benchmark](https://github.com/krausest/js-framework-benchmark)  
 **Pinned source commit:** [`fa510a76ffe066af1d30f3e75fa51d3fcbc14009`](https://github.com/krausest/js-framework-benchmark/commit/fa510a76ffe066af1d30f3e75fa51d3fcbc14009)  
@@ -104,7 +104,9 @@ The source audit and exact pin are complete. PR #78 now contains the following i
 - The Phase 8.1 browser workflow checks out the submodule, builds the selected upstream frameworks, serves the RustFlow WASM build beside them, verifies the actual Chromium version is `156.0.8078.4`, and invokes the upstream Playwright runner. The CPU aggregate is generated from the upstream raw total/script/paint trace results.
 - For the dedicated PR #78, the sequence is standard RustFlow browser measurements, same-runner A/B/A, official four-framework comparison, then the RustFlow-only extended list stress suite. The extended stress workload therefore does not precede and contaminate the A/B/A or cross-framework samples.
 
-**First execution reviewed — incomplete:** official workflow [#22](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/41960093893), PR #81 HEAD 657eaa6c68d7abecd017568eceabec72749e1eeb, completed upstream CPU, memory and size runs but failed startup and the fail-closed sample validator. Upstream 04_select1k intentionally produced 25 samples (--count 15 + additionalNumberOfRuns: 10); the original aggregator incorrectly expected 15. Startup timed out on Vue because its /ls metadata declares customURL: "/dist", so the actual keyed page is /frameworks/keyed/vue/dist/index.html. The partial artifact is preserved and documented at [run #22 diagnostic history](runs/2026-11-05-official-framework-benchmark-22-diagnostic.md). It is not accepted competitive evidence. The correction adds per-operation sample contracts and metadata-driven entry routes with regression tests; a new full four-framework run must still publish status: "valid", valid: true and accepted: true before Phase 8.1 can be accepted.
+**First execution reviewed — incomplete:** official workflow [#22](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/41960093893), PR #81 HEAD 657eaa6c68d7abecd017568eceabec72749e1eeb, completed upstream CPU, memory and size runs but failed startup and the fail-closed sample validator. Upstream 04_select1k intentionally produced 25 samples (--count 15 + additionalNumberOfRuns: 10); the original aggregator incorrectly expected 15. Startup timed out on Vue because its /ls metadata declares customURL: "/dist", so the actual keyed page is /frameworks/keyed/vue/dist/index.html. The partial artifact is preserved and documented at [run #22 diagnostic history](runs/2026-11-05-official-framework-benchmark-22-diagnostic.md). It is not accepted competitive evidence.
+
+**First accepted official execution:** workflow [#44677034080](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/44677034080), RustFlow commit `5360963ae7bab3be2bc497eee5a2f62e3c6bc136`. The aggregator reported `status: "valid"`, `valid: true`, `accepted: true`, zero validation errors, and complete sample counts for all four frameworks. CPU geometric-mean ratios (RustFlow median / competitor median) for the nine upstream operations were 1.6176 vs React, 2.2548 vs Vue and 2.3599 vs Svelte; the combined 12-operation ratios were 1.7329, 2.3960 and 2.5271. These results do not show RustFlow faster on the measured CPU sets; startup, memory and size remain separate measures. The run has no superiority claim. See the [run record](runs/2026-11-20-official-framework-benchmark-44677034080.md) and its linked artifact. This accepted execution does not close Phase 8.1; the large-list A/B/A work and remaining phase criteria are still open.
 
 ### Known coverage gaps in the pinned upstream runner
 
@@ -114,7 +116,7 @@ The source audit and exact pin are complete. PR #78 now contains the following i
 
 The competitive CPU aggregate is valid only when each of the nine official operation IDs has non-empty samples from React, Vue, Svelte and RustFlow collected by the same CI job and browser. Compute each ratio as `median(RustFlow) / median(framework)` and aggregate the nine ratios with a geometric mean. Do not mix memory, bundle or startup measurements into that CPU index.
 
-Keep Phase 8.1 open until the complete current-HEAD evidence is reviewed, all required checks pass and the result shows the actual state against every framework. Do not declare superiority from the internal RustFlow A/B/A comparison.
+Keep Phase 8.1 open until the remaining current-HEAD evidence is reviewed and all phase criteria pass. The official run above is accepted evidence for its exact commit and environment, not for later commits or all workloads. Do not declare superiority from the internal RustFlow A/B/A comparison.
 
 ## Phase 8.1 comparative extension
 

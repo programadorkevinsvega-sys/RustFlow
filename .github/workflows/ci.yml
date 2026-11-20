@@ -101,7 +101,7 @@ jobs:
           fi
 
   rust:
-    name: Rust checks (${{ matrix.toolchain }})
+    name: Rust test matrix (${{ matrix.toolchain }})
     needs: changes
     if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.full_ci == 'true') }}
     runs-on: ubuntu-24.04
@@ -310,6 +310,37 @@ jobs:
         run: cargo doc --workspace --all-features --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
+
+  rust-required-checks:
+    name: Rust checks (${{ matrix.toolchain }})
+    needs: [changes, rust]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: ["1.94", "stable"]
+    steps:
+      - name: Enforce Rust checks for the selected change scope
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          FULL_CI: ${{ needs.changes.outputs.full_ci }}
+          RUST_MATRIX_RESULT: ${{ needs.rust.result }}
+          RUST_SCOPE: ${{ needs.changes.outputs.rust }}
+        run: |
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::Changed-area detection failed; the required Rust matrix cannot be trusted."
+            exit 1
+          fi
+
+          if [ "$RUST_SCOPE" = "true" ] || [ "$FULL_CI" = "true" ]; then
+            if [ "$RUST_MATRIX_RESULT" != "success" ]; then
+              echo "::error::Rust checks were required but the matrix result was '$RUST_MATRIX_RESULT'."
+              exit 1
+            fi
+          else
+            echo "Rust checks are not applicable to this change scope."
+          fi
 
   browser-e2e:
     name: Browser E2E and bundle size
