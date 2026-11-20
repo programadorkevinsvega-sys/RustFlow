@@ -110,7 +110,7 @@ La infraestructura descrita aquí se integró mediante PR #71 en `main` el 2026-
 - [Primera aplicación con el CLI](/tutorials/first-cli-app/)
 - [Guía del CLI y generadores](/guides/cli/)
 - [Configuración por entornos](/guides/configuration/)
-- [Base de datos, SQLx y migraciones](/guides/database/)
+- [Base de datos, SeaORM, SQLx y migraciones](/guides/database/)
 - [Empezar con RustFlow](/getting-started/setup/)
 - [Estado y reactividad](/concepts/reactivity/)
 - [Crear componentes](/guides/components/)

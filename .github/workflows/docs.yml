@@ -47,5 +47,9 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
+      - name: Test the code typography checker
+        run: npm run test:code-typography
+      - name: Check documentation code typography
+        run: npm run check:code-typography
       - name: Build static site
         run: npm run build
