@@ -65,7 +65,7 @@ class OfficialFrameworkWorkflowTests(unittest.TestCase):
         self.assertIn("cp -a", workflow)
         self.assertIn("framework-comparison.json", workflow)
         self.assertIn("environment.txt", workflow)
-        self.assertIn("upload-artifact@v4", workflow)
+        self.assertIn("upload-artifact@v7", workflow)
         self.assertIn("Generate fail-closed report for complete or partial data", workflow)
         self.assertIn("156\\.0\\.8078\\.4", workflow)
 

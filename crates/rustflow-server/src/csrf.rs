@@ -309,7 +309,7 @@ fn decode_hex<const N: usize>(encoded: &str) -> Option<[u8; N]> {
         return None;
     }
     let mut decoded = [0_u8; N];
-    for (index, pair) in encoded.as_bytes().chunks_exact(2).enumerate() {
+    for (index, pair) in encoded.as_bytes().as_chunks::<2>().0.iter().enumerate() {
         let high = hex_nibble(pair[0])?;
         let low = hex_nibble(pair[1])?;
         decoded[index] = (high << 4) | low;

@@ -4,7 +4,7 @@ members = ["crates/rustflow", "crates/rustflow-view", "crates/rustflow-macros", 
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.94"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/programadorkevinsvega-sys/RustFlow"
 
@@ -24,8 +24,19 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 rustls-pki-types = "1"
 ring = "0.17"
 mongodb = { version = "=3.9.1", default-features = false, features = ["compat-3-0-0", "rustls-tls"] }
-sea-orm = { version = "=1.1.20", default-features = false, features = ["macros", "with-json", "with-chrono", "with-rust_decimal", "with-bigdecimal", "with-uuid", "with-time", "sqlx-sqlite", "sqlx-postgres", "sqlx-mysql", "runtime-tokio-rustls"] }
-sqlx = { version = "=0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "postgres", "mysql", "migrate"] }
+sea-orm = { version = "=2.0.4", default-features = false, features = ["macros", "with-json", "with-chrono", "with-rust_decimal", "with-bigdecimal", "with-uuid", "with-time", "sqlx-sqlite", "sqlx-postgres", "sqlx-mysql", "runtime-tokio-rustls"] }
+sqlx = { version = "=0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls", "sqlite", "postgres", "mysql", "migrate"] }
+
+[patch.crates-io]
+# Pin the upstream SQLx revision that permits patched libsqlite3-sys 0.39.x;
+# the published 0.9.0 release still caps that dependency below the fixed version.
+sqlx = { git = "https://github.com/transact-rs/sqlx", rev = "987b8c5a74b6da8b71da6b5549925a7f6e59aac9" }
+sqlx-core = { git = "https://github.com/transact-rs/sqlx", rev = "987b8c5a74b6da8b71da6b5549925a7f6e59aac9" }
+sqlx-macros = { git = "https://github.com/transact-rs/sqlx", rev = "987b8c5a74b6da8b71da6b5549925a7f6e59aac9" }
+sqlx-macros-core = { git = "https://github.com/transact-rs/sqlx", rev = "987b8c5a74b6da8b71da6b5549925a7f6e59aac9" }
+sqlx-mysql = { git = "https://github.com/transact-rs/sqlx", rev = "987b8c5a74b6da8b71da6b5549925a7f6e59aac9" }
+sqlx-postgres = { git = "https://github.com/transact-rs/sqlx", rev = "987b8c5a74b6da8b71da6b5549925a7f6e59aac9" }
+sqlx-sqlite = { git = "https://github.com/transact-rs/sqlx", rev = "987b8c5a74b6da8b71da6b5549925a7f6e59aac9" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
