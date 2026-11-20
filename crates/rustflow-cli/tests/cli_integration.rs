@@ -290,8 +290,12 @@ fn toml_path(path: &Path) -> String {
         .replace('"', "\\\"")
 }
 
-fn cargo_target_dir(temp: &TempDir) -> PathBuf {
-    temp.path().join("cargo-target")
+fn cargo_target_dir(_temp: &TempDir) -> PathBuf {
+    if let Some(path) = env::var_os("RUSTFLOW_CLI_TEST_TARGET_DIR") {
+        return PathBuf::from(path);
+    }
+
+    env::temp_dir().join("rustflow-cli-integration-target")
 }
 
 fn generated_http_request(

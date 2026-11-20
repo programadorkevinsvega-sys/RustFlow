@@ -62,6 +62,12 @@ For all rows above, a Draft pull request defers the Rust matrix, WASM, Browser E
 
 The `main` ruleset continues to require `Rust checks (1.94)` and `Rust checks (stable)`, but these are now stable scope gates rather than conditionally skipped matrix jobs. A skipped Rust matrix is accepted only when the change detector succeeded and Rust is not in scope; a failed detector activates the conservative fallback and fails the gates.
 
+## CLI integration test cost
+
+The workspace matrix runs `cli_integration` only on the `stable` toolchain. The Rust 1.94 matrix runs the workspace suite while skipping that integration binary, because generated CLI projects compile against RustFlow rather than validating a toolchain-specific behavior.
+
+CLI integration tests share `RUSTFLOW_CLI_TEST_TARGET_DIR` so generated server and CRUD projects reuse compiled dependencies within the stable matrix job. GitHub Actions caches that directory with `Swatinem/rust-cache`; local runs use a process-independent directory under the system temporary directory when the environment variable is not set.
+
 ## Fast local feedback
 
 During active development, run the focused checks for the area being changed:
