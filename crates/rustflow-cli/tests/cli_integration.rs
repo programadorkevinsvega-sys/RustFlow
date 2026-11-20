@@ -743,6 +743,9 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         .local_addr()
         .unwrap()
         .port();
+    let stderr_path = project.join(format!("generated-crud-{label}.stderr.log"));
+    let stderr_file = fs::File::create(&stderr_path)
+        .unwrap_or_else(|error| panic!("create generated CRUD stderr log: {error}"));
     let child = Command::new(binary)
         .current_dir(project)
         .env("RUSTFLOW_ENV", "test")
@@ -756,7 +759,7 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
             "test-only-generated-crud-csrf-key-minimum-32-bytes",
         )
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::from(stderr_file))
         .spawn()
         .unwrap_or_else(|error| panic!("start generated CRUD on {label}: {error}"));
     let mut child = ChildGuard::new(child);
@@ -768,7 +771,10 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
             break;
         }
         if let Ok(Some(status)) = child.0.try_wait() {
-            panic!("generated CRUD exited on {label} before listening: {status}");
+            let stderr = fs::read_to_string(&stderr_path).unwrap_or_default();
+            panic!(
+                "generated CRUD exited on {label} before listening: {status}\nstderr:\n{stderr}"
+            );
         }
         thread::sleep(Duration::from_millis(25));
     }
