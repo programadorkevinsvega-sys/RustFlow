@@ -429,10 +429,6 @@ jobs:
         working-directory: examples/browser
         run: npm run test:e2e
 
-      - name: Run browser DOM and initialization benchmarks (informational)
-        working-directory: examples/browser
-        run: RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
-
       - name: Validate competitive benchmark report generator
         run: python3 -m py_compile scripts/summarize-js-framework-benchmark.py
       - name: Validate browser A/B/A comparison script

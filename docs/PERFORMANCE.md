@@ -98,11 +98,17 @@ La memoria live del allocator WASM aún no se mide por componente: el tamaño de
 
 ## CI obligatoria por pull request
 
-La CI obligatoria de una PR lista para revisión mantiene los checks Rust 1.94 y stable, formato, Clippy, tests e integraciones, WebAssembly, Browser E2E, los límites deterministas del bundle, benchmarks propios de RustFlow, el A/B/A keyed del mismo runner, los validadores Python, gobernanza y Dependency Review. Mientras la PR está en Draft, los jobs costosos de Rust, WASM, navegador, bundle y benchmarks se difieren; al marcarla como lista y en los pushes posteriores se ejecutan según el alcance detectado. El check **Browser E2E and bundle size** termina sin ejecutar ni esperar la matriz comparativa de frameworks externos. El A/B/A propio y los presupuestos de bundle no se eliminan ni se relajan.
+La CI obligatoria de una PR lista para revisión mantiene los checks Rust 1.94 y stable, formato, Clippy, tests e integraciones, WebAssembly, Browser E2E y los límites deterministas del bundle, además de los validadores Python, gobernanza y Dependency Review. Mientras la PR está en Draft, los jobs costosos de Rust, WASM y navegador se difieren; al marcarla como lista y en los pushes posteriores se ejecutan según el alcance detectado. Las mediciones comparativas externas se ejecutan por el workflow independiente de benchmarks, no por cada push normal. Los A/B/A específicos que ya forman parte de PRs históricas de Phase 8.1 pueden seguir como pasos expresamente condicionados a esas ramas.
 
 ## Comparación oficial keyed React/Vue/Svelte/RustFlow
 
-La comparación externa completa vive en .github/workflows/official-framework-benchmarks.yml, independiente de la CI obligatoria del PR. Se ejecuta únicamente mediante workflow_dispatch o el schedule semanal de los lunes a las 06:17 UTC. El workflow hace checkout del SHA de RustFlow seleccionado en el evento o del SHA completo indicado en el input opcional rustflow_commit; compila por sí mismo el build WASM, prepara el submódulo upstream y no descarga artefactos de otros jobs. El contrato de escenarios y la justificación de las extensiones se mantiene en docs/performance/FRAMEWORK_BENCHMARK_REFERENCE.md.
+La comparación externa completa vive en `.github/workflows/official-framework-benchmarks.yml`, independiente de la CI obligatoria del PR. Se ejecuta mediante:
+
+- el botón **Run workflow** con `workflow_dispatch`;
+- el comentario `/bench` en un PR abierto cuya rama pertenece a este repositorio;
+- la ejecución semanal del lunes a las 06:17 UTC.
+
+El comentario `/bench` solo está disponible para propietarios, miembros y colaboradores aprobados. Los PR provenientes de forks se rechazan antes de dispatch; el workflow hace checkout del SHA indicado pero no obtiene permisos de escritura ni ejecuta código arbitrario enviado desde el checkout del comentario. El workflow compila por sí mismo el build WASM, prepara el submódulo upstream y no descarga artefactos de otros jobs. El contrato de escenarios y la justificación de las extensiones se mantiene en `docs/performance/FRAMEWORK_BENCHMARK_REFERENCE.md`.
 
 La referencia upstream está fijada exactamente al commit fa510a76ffe066af1d30f3e75fa51d3fcbc14009. React, Vue, Svelte y RustFlow se ejecutan secuencialmente en el mismo job, runner y Chromium 156.0.8078.4. Los doce escenarios CPU usan 15 muestras salvo 04_select1k, que requiere 25: el ejecutor upstream suma additionalNumberOfRuns: 10 a --count 15. No se descarta ninguna de esas diez muestras adicionales. Los cinco escenarios de memoria usan 5 muestras y las tres mediciones de tamaño/first paint, una. Los calentamientos originales se mantienen; los tres escenarios CPU de 10.000 filas añadidos por Phase 8.1 conservan cinco acciones de calentamiento.
 
@@ -130,7 +136,7 @@ npm run bench:browser
 
 Mide inserción/eliminación aisladas con 20 muestras por operación en listas de 100, 1.000, 5.000 y 10.000 filas; actualización individual en filas inicial, media y final; actualización de cada décima fila; swap, movimiento inicial/final e inversión de sección; append de 1.000 filas; reemplazo de 1.000; eliminación de secciones y limpieza completa. Las comprobaciones de identidad keyed y los contadores de owners desmontados se ejecutan fuera de los intervalos de latencia. El apéndice masivo se empareja con una retirada fuera del intervalo cronometrado para restaurar el tamaño inicial.
 
-La suite se activa manualmente mediante `workflow_dispatch` (input `extended_browser_benchmarks`) y semanalmente los lunes a las 06:17 UTC. Los PR ordinarios ejecutan la suite estándar y el A/B/A; no ejecutan automáticamente el conjunto extendido. Sus resultados se publican en el artefacto de browser performance. La suite extendida es específica de RustFlow y **no** es parte del índice comparativo upstream ni de una afirmación competitiva.
+La suite se activa manualmente mediante `workflow_dispatch` (input `extended_browser_benchmarks`) y semanalmente los lunes a las 06:17 UTC. Los PR ordinarios ya no ejecutan la medición browser genérica en cada push; los pasos A/B/A solo quedan condicionados a las ramas históricas específicas de Phase 8.1. El conjunto extendido no se ejecuta automáticamente en PR ordinarios ni en el flujo normal de otras ramas. Sus resultados se publican en el artefacto de browser performance. La suite extendida es específica de RustFlow y **no** es parte del índice comparativo upstream ni de una afirmación competitiva.
 
 El reemplazo total se mide sobre un fixture de 1.000 filas. La creación inicial de 10.000 filas se mide en el escenario de montaje inicial; no se confunde con el tiempo de inicialización ni con el tiempo del botón de reemplazo.
 

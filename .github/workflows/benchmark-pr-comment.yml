@@ -1,0 +1,62 @@
+name: Benchmark PR comment
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: benchmark-pr-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Dispatch official benchmark
+    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body, '/bench') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark the benchmark request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+        run: gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}/reactions" -f content=eyes
+
+      - name: Dispatch the benchmark for an internal PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+
+          pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          state="$(jq -r '.state' <<<"$pr")"
+          head_repo="$(jq -r '.head.repo.full_name // ""' <<<"$pr")"
+          head_sha="$(jq -r '.head.sha // ""' <<<"$pr")"
+
+          if [ "$state" != "open" ]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+              -f body="Benchmark not queued: the pull request is not open."
+            exit 1
+          fi
+
+          if [ "$head_repo" != "$GITHUB_REPOSITORY" ]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+              -f body="Benchmark not queued: `/bench` is restricted to pull requests from branches in this repository."
+            exit 1
+          fi
+
+          if [[ ! "$head_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The pull request head SHA is missing or malformed."
+            exit 1
+          fi
+
+          printf '{"ref":"main","inputs":{"rustflow_commit":"%s"}}' "$head_sha" |
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/official-framework-benchmarks.yml/dispatches" --input -
+
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            -f body="Official benchmark queued for commit ${head_sha}. The result will appear in Actions; this workflow never checks out or executes code from a fork."
