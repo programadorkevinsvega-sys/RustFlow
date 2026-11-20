@@ -10,7 +10,7 @@ The shared source of truth is `.github/filters.yml`. The CI, website, and depend
 
 | Scope | Files that select it | Jobs affected |
 | --- | --- | --- |
-| `rust` | Workspace and crate manifests/lockfiles, Rust toolchain/Cargo configuration, `crates/**`, Rust example sources and manifests | `Rust checks (1.85)`, `Rust checks (stable)` |
+| `rust` | Workspace and crate manifests/lockfiles, Rust toolchain/Cargo configuration, `crates/**`, Rust example sources and manifests | Rust test matrix plus the required-check gates `Rust checks (1.94)` and `Rust checks (stable)` |
 | `browser` | Browser example, DOM/view/runtime/macro crates, and workspace Cargo/toolchain configuration | `WebAssembly target check`, `Browser E2E and bundle size` |
 | `performance_tools` | Performance benchmark comparators, aggregators, patchers, budget checkers, and `scripts/tests/**` | `Performance tooling tests` |
 | `website` | `website/**` and the website workflow definition | `Build documentation` |
@@ -25,9 +25,9 @@ Performance tooling is validated separately from the browser runtime: edits to t
 
 ## Required-check safety
 
-Keep the existing required job names stable. Do not add workflow-level `paths` or `paths-ignore` filters to workflows that publish required checks.
+Do not add workflow-level `paths` or `paths-ignore` filters to workflows that publish required checks. The Rust test matrix is conditional; two lightweight, always-emitted required-check gates retain the branch-protection contexts `Rust checks (1.94)` and `Rust checks (stable)`.
 
-Each expensive job uses `always()` with its change-detection dependency. If path detection fails, the affected workflow runs the conservative fallback (Rust + WASM + browser + performance tooling, website build, or dependency review) rather than silently skipping validation. The change-detection job needs `contents: read` and `pull-requests: read`; the latter is needed to read the changed-file list for pull requests.
+Each expensive job uses `always()` with its change-detection dependency. If path detection fails, the affected workflow runs the conservative fallback (Rust + WASM + browser + performance tooling, website build, or dependency review) rather than silently skipping validation, and the Rust scope gates fail closed. For documentation-only, frontend-only, or other non-Rust changes, the Rust gates pass without requiring backend tests. When Rust or `full_ci` is in scope, both gates require the complete Rust matrix to succeed. The change-detection job needs `contents: read` and `pull-requests: read`; the latter is needed to read the changed-file list for pull requests.
 
 A change to the filters or any workflow definition deliberately runs the broad CI path so changes to the pipeline itself receive full validation. When adding a new crate or browser dependency, review `.github/filters.yml` and update these scope descriptions in the same pull request.
 
@@ -46,14 +46,14 @@ This dashboard setting cannot be committed in this repository. Until it is appli
 
 ## Expected behavior examples
 
-| Pull request changes | Rust matrix | WASM / Browser E2E | Astro site build | Dependency review | Performance tooling tests |
+| Pull request changes | Rust tests / required gates | WASM / Browser E2E | Astro site build | Dependency review | Performance tooling tests |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `README.md`, `ROADMAP.md`, or `docs/**` only | Skip | Skip | Skip | Skip | Skip |
-| `website/**` only | Skip | Skip | Run | Skip | Skip |
-| `crates/rustflow-server/**` only | Run | Skip | Skip | Skip | Skip |
-| `crates/rustflow-dom/**` | Run | Run | Skip | Skip | Skip |
-| `examples/browser/src/**` or `examples/browser/tests/**` | Skip | Run | Skip | Skip | Skip |
-| `scripts/compare-browser-performance.py` or `scripts/tests/**` | Skip | Skip | Skip | Skip | Run |
+| `README.md`, `ROADMAP.md`, or `docs/**` only | Matrix skips; both gates pass | Skip | Skip | Skip | Skip |
+| `website/**` only | Matrix skips; both gates pass | Skip | Run | Skip | Skip |
+| `crates/rustflow-server/**` only | Run; both gates require success | Skip | Skip | Skip | Skip |
+| `crates/rustflow-dom/**` | Run; both gates require success | Run | Skip | Skip | Skip |
+| `examples/browser/src/**` or `examples/browser/tests/**` | Matrix skips; both gates pass | Run | Skip | Skip | Skip |
+| `scripts/compare-browser-performance.py` or `scripts/tests/**` | Matrix skips; both gates pass | Skip | Skip | Skip | Run |
 | Cargo/npm manifest, lockfile, or Actions workflow changes | Per matching scopes; workflow changes force broad CI | Per matching scopes; workflow changes force broad CI | If website or docs workflow changed | Run | Run only when performance tools also change or broad CI is forced |
 
-All checks required by the `main` ruleset retain their existing names. A skipped job is successful for required-check evaluation; a failed change detector activates the conservative fallback instead of relying on a skipped required check.
+The `main` ruleset continues to require `Rust checks (1.94)` and `Rust checks (stable)`, but these are now stable scope gates rather than conditionally skipped matrix jobs. A skipped Rust matrix is accepted only when the change detector succeeded and Rust is not in scope; a failed detector activates the conservative fallback and fails the gates.
