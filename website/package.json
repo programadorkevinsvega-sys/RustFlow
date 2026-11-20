@@ -7,7 +7,9 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "check": "astro check"
+    "check": "astro check",
+    "check:code-typography": "node scripts/check-code-typography.mjs",
+    "test:code-typography": "node --test scripts/check-code-typography.test.mjs"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.5",
