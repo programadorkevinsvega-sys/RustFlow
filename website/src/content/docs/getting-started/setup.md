@@ -3,9 +3,23 @@ title: Empezar con RustFlow
 description: Prepara Rust, prueba el runtime, ejecuta el servidor y compila la demo interactiva.
 ---
 
-Esta guía te ayuda a comprobar el código real de RustFlow: ejecutar tests del workspace, probar el ejemplo HTTP y levantar el ejemplo WASM del navegador. El CLI experimental puede crear una aplicación `server` por defecto o una plantilla CRUD SQL con `--template crud`; la [guía del CLI](/guides/cli/) y la [guía de configuración](/guides/configuration/) explican sus límites y el contrato de perfiles. RustFlow sigue siendo pre-1.0 y no es una plataforma lista para producción.
+RustFlow es pre-1.0 y **no tiene una versión estable publicada en crates.io**. Actualmente solo puedes instalar el CLI desde un checkout del repositorio:
 
-## 1. Requisitos
+## 1. Instalar desde el checkout
+
+Desde una terminal, clona el repositorio y ejecuta el comando desde su raíz:
+
+~~~sh
+git clone https://github.com/programadorkevinsvega-sys/RustFlow.git
+cd RustFlow
+cargo install --path crates/rustflow-cli --locked
+~~~
+
+La ruta corresponde al paquete `rustflow-cli`, que instala el binario `rustflow`. No ejecutes `cargo install rustflow`: no hay un paquete oficial de RustFlow publicado en crates.io.
+
+Esta guía también te ayuda a comprobar el código real de RustFlow: ejecutar tests del workspace, probar el ejemplo HTTP y levantar el ejemplo WASM del navegador. El CLI experimental puede crear una aplicación `server` por defecto o una plantilla CRUD SQL con `--template crud`; la [guía del CLI](/guides/cli/) y la [guía de configuración](/guides/configuration/) explican sus límites y el contrato de perfiles. El proyecto no es una plataforma lista para producción.
+
+## 2. Requisitos
 
 Para esta revisión del workspace necesitas Git, Rust 1.94 o Rust stable y Cargo. El stack actual SQLx 0.9.0/SeaORM 2.0.4 fue verificado en los checks requeridos de PR #84; el driver MongoDB 3.10.1, en PR #85. Estas verificaciones aplican a sus HEADs finales y no implican estabilidad de API:
 
@@ -17,12 +31,9 @@ git --version
 
 Para el ejemplo del navegador necesitas además Node.js 22/npm, `wasm-pack`, el target `wasm32-unknown-unknown` y Chromium si vas a ejecutar E2E. Los pasos están en [README del ejemplo de navegador](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/examples/browser/README.md).
 
-## 2. Clonar y validar el workspace
+## 3. Validar el workspace
 
 ~~~sh
-git clone https://github.com/programadorkevinsvega-sys/RustFlow.git
-cd RustFlow
-
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
@@ -31,12 +42,11 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 
 Estas comprobaciones verifican la revisión del repositorio que tienes clonada. No prueban por sí solas el despliegue, la estabilidad de APIs ni la preparación para producción.
 
-## 3. Crear una aplicación con el CLI
+## 4. Crear una aplicación con el CLI
 
-Desde la raíz del checkout instala el binario y crea una aplicación de servidor:
+Desde la raíz del checkout crea una aplicación de servidor:
 
 ~~~sh
-cargo install --path crates/rustflow-cli --locked
 rustflow new hello-rustflow
 cd hello-rustflow
 rustflow dev
@@ -44,7 +54,7 @@ rustflow dev
 
 El scaffold predeterminado es un servidor nativo. Para generar una integración CRUD SQL de demostración, ejecuta `rustflow new products --template crud`, copia `.env.example` a `.env` y sustituye las credenciales demo y la clave CSRF antes de iniciar `rustflow dev`. La plantilla usa sesión volátil, cookie de desarrollo y rechaza `RUSTFLOW_ENV=production`; consulta la [guía del CLI](/guides/cli/) antes de desplegar cualquier aplicación. Si quieres recorrer las APIs del repositorio sin crear una carpeta nueva, continúa con los ejemplos de esta guía. El [tutorial de primera aplicación](/tutorials/first-cli-app/) explica el flujo completo, los generadores y las colisiones.
 
-## 4. Ejecutar el servidor HTTP
+## 5. Ejecutar el servidor HTTP
 
 Desde la raíz del repositorio:
 
@@ -62,7 +72,7 @@ cargo test -p rustflow-server --test http_integration
 
 Para probar la API JSON con peticiones reales, sigue [Tutorial: una API JSON](/tutorials/json-api/). Para ejecutar el tutorial de producto, detén el primer servidor y ejecuta `cargo run -p rustflow-server --example product_page`; abre `/products/keyboard` o `/products/mouse`. Después continúa con [Servidor HTTP](/guides/server/), [SSR](/guides/ssr/) y [Layouts](/guides/layouts/).
 
-## 5. Ejecutar la interfaz interactiva WASM
+## 6. Ejecutar la interfaz interactiva WASM
 
 ~~~sh
 cd examples/browser
@@ -80,7 +90,7 @@ npm run test:e2e
 
 Esta demo muestra Counter, estado reactivo, eventos, una lista de tareas con claves, montaje/desmontaje condicional y navegación optativa. Las fixtures E2E también prueban hidratación en HTML preparado para ese contrato; no quiere decir que el servidor de demo sea una aplicación SSR integrada. El recorrido guiado está en [Tutorial: interfaz reactiva de tareas](/tutorials/reactive-todo/).
 
-## 6. Conceptos que conviene aprender
+## 7. Conceptos que conviene aprender
 
 1. [Reactividad](/concepts/reactivity/): qué es una señal, cómo se registran dependencias y cuándo se ejecuta un efecto.
 2. [Crear componentes](/guides/components/): props, `view!`, eventos y actualización de UI.
@@ -91,6 +101,6 @@ Esta demo muestra Counter, estado reactivo, eventos, una lista de tareas con cla
 7. [Página de producto](/tutorials/product-page/): tutorial integrado que conecta rutas, componentes SSR y layouts.
 8. [Catálogo de ejemplos](/reference/examples/): mapa de los ejecutables y de los contratos de integración verificados del repositorio.
 
-## Instalación y límites del CLI
+## Límites del CLI
 
-Todavía no hay una versión estable publicada en crates.io. El método disponible es instalar desde el checkout con `cargo install --path crates/rustflow-cli --locked`. El scaffold genera un servidor nativo con configuración, pool SQLx y runner de migraciones; la plantilla `model` sigue creando un struct de dominio plano y no genera una entidad ORM ni integra un repositorio persistente. Consulta [CLI y generadores](/guides/cli/) y [Estado del proyecto](/project-status/).
+El scaffold genera un servidor nativo con configuración, pool SQLx y runner de migraciones; la plantilla `model` sigue creando un struct de dominio plano y no genera una entidad ORM ni integra un repositorio persistente. Consulta [CLI y generadores](/guides/cli/) y [Estado del proyecto](/project-status/).
