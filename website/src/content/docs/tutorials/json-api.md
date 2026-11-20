@@ -43,7 +43,7 @@ curl -i -X POST http://127.0.0.1:3000/api/echo \
 
 El cuerpo se decodifica con `request.json::<EchoPayload>()` y la respuesta usa `Response::json`. La estructura `EchoPayload` del ejemplo solo contiene `message: String`; es un eco educativo, no validación de un modelo de negocio.
 
-Prueba un JSON malformado para observar la respuesta de error del adapter:
+Un JSON vacío o malformado produce `400 Bad Request` con el mensaje público `Invalid JSON request body`:
 
 ~~~sh
 curl -i -X POST http://127.0.0.1:3000/api/echo \
@@ -53,7 +53,31 @@ curl -i -X POST http://127.0.0.1:3000/api/echo \
 
 La decodificación detecta el cuerpo inválido, pero no valida automáticamente reglas como longitudes máximas, permiso para una operación o consistencia con almacenamiento. Añade esa validación en tu handler/capa de aplicación.
 
-## 5. Qué responsabilidades muestra el ejemplo
+## 5. Validar los datos JSON
+
+Para validar reglas de entrada después de decodificar JSON, el ejemplo incluye `POST /api/signup`. Usa `Request::validated_json`, que requiere un tipo que implemente `ValidateInput`; el endpoint acepta una dirección que contenga `@` y una edad mínima de 18. Estas reglas solo ilustran validación local y no constituyen una validación completa de correo ni una regla universal de negocio.
+
+Una petición válida devuelve `200` y `{"accepted":true}`:
+
+~~~sh
+curl -i -X POST http://127.0.0.1:3000/api/signup \
+  -H 'content-type: application/json' \
+  -d '{"email":"ada@example.test","age":37}'
+~~~
+
+Un documento JSON sintácticamente válido, pero que no cumple las reglas, devuelve `422 Unprocessable Entity` con errores por campo y de formulario:
+
+~~~sh
+curl -i -X POST http://127.0.0.1:3000/api/signup \
+  -H 'content-type: application/json' \
+  -d '{"email":"bad","age":16}'
+~~~
+
+La respuesta contiene `"error":"validation_failed"`, `errors.fieldErrors.email`, `errors.fieldErrors.age` y `errors.formErrors`. No repite los valores enviados. En cambio, un cuerpo vacío o JSON inválido no llega a la validación del tipo y devuelve `400 Bad Request`. La prueba de integración verifica éxito, la forma completa del 422 y ambos errores de parsing.
+
+La decodificación/eco y la validación de negocio son pasos distintos: conserva `/api/echo` para aprender parsing y serialización, y usa `validated_json` cuando una operación tenga reglas explícitas. La autorización, la validación contextual contra datos persistidos y las demás políticas siguen siendo responsabilidad de la aplicación.
+
+## 6. Qué responsabilidades muestra el ejemplo
 
 | API | Responsabilidad |
 |---|---|
@@ -62,12 +86,13 @@ La decodificación detecta el cuerpo inválido, pero no valida automáticamente 
 | `Request::path_param` | Recupera un parámetro declarado en el patrón de la ruta. |
 | `Request::query::<T>()` | Decodifica la query string a un tipo Serde. |
 | `Request::json::<T>()` | Decodifica el cuerpo JSON a un tipo Serde. |
+| `Request::validated_json::<T>()` y `ValidateInput` | Separa parsing de JSON de la validación de los campos de entrada. |
 | `Response::json` | Serializa el resultado y establece el tipo de contenido JSON. |
 | `Middleware::new` | Intercepta la petición/respuesta o pasa al siguiente handler. |
 
 El ejemplo completo es la fuente de verdad para los imports, tipos y firmas exactos de la revisión actual; consulta el archivo antes de copiar funciones a un proyecto nuevo.
 
-## 6. Adaptar el patrón a una API real
+## 7. Adaptar el patrón a una API real
 
 1. Define tipos de entrada pequeños con los campos aceptados por cada endpoint.
 2. Decodifica path, query o cuerpo JSON y responde con un error HTTP si la entrada no se puede interpretar.
