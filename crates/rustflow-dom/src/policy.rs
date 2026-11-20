@@ -186,10 +186,11 @@ pub fn validate_attribute(name: &str, value: &str) -> Result<(), DomPolicyError>
             .collect::<String>()
             .trim()
             .to_ascii_lowercase();
-        if let Some(scheme) = url_scheme(&normalized) {
-            if !matches!(scheme, "http" | "https" | "mailto" | "tel") {
-                return Err(DomPolicyError::UnsafeUrl(value.to_owned()));
-            }
+        if matches!(
+            url_scheme(&normalized),
+            Some(scheme) if !matches!(scheme, "http" | "https" | "mailto" | "tel")
+        ) {
+            return Err(DomPolicyError::UnsafeUrl(value.to_owned()));
         }
     }
     Ok(())

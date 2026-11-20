@@ -154,7 +154,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        toolchain: ["1.85", "stable"]
+        toolchain: ["1.94", "stable"]
 
     steps:
       - name: Check out repository

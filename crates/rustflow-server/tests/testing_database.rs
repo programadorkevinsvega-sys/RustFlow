@@ -59,23 +59,23 @@ async fn exercise_external_sql_fixture(url: &str) {
             .expect("insert fixture-owned row");
 
         let observed = match fixture.pool().backend() {
-            DatabaseBackend::Postgres => {
-                sqlx::query_scalar::<_, String>(&format!("SELECT value FROM {table}"))
-                    .fetch_one(
-                        fixture
-                            .pool()
-                            .sqlx_postgres_pool()
-                            .expect("PostgreSQL pool"),
-                    )
-                    .await
-                    .expect("read fixture-owned row")
-            }
-            DatabaseBackend::MySql => {
-                sqlx::query_scalar::<_, String>(&format!("SELECT value FROM {table}"))
-                    .fetch_one(fixture.pool().sqlx_mysql_pool().expect("MySQL pool"))
-                    .await
-                    .expect("read fixture-owned row")
-            }
+            DatabaseBackend::Postgres => sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(
+                format!("SELECT value FROM {table}"),
+            ))
+            .fetch_one(
+                fixture
+                    .pool()
+                    .sqlx_postgres_pool()
+                    .expect("PostgreSQL pool"),
+            )
+            .await
+            .expect("read fixture-owned row"),
+            DatabaseBackend::MySql => sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(
+                format!("SELECT value FROM {table}"),
+            ))
+            .fetch_one(fixture.pool().sqlx_mysql_pool().expect("MySQL pool"))
+            .await
+            .expect("read fixture-owned row"),
             DatabaseBackend::Sqlite => unreachable!("external SQL fixtures reject SQLite URLs"),
         };
         assert_eq!(observed, value);

@@ -4,6 +4,8 @@
 - Phase: 6.6.1 — Relational engines: MySQL and MariaDB.
 - Related: ADR 0013 (configuration), ADR 0016 (SQLx pools and migrations).
 
+> Historical dependency baseline: this ADR's driver decision was implemented on SQLx 0.8.6 and Rust 1.85. ADR 0024 supersedes those dependency/MSRV versions with SQLx 0.9.0 and Rust 1.94; the MySQL protocol-family behavior remains the intended contract pending CI.
+
 ## Context
 
 Phase 6.5 introduced SQLx 0.8.6, `AnyPool`, configuration validation, parameterized queries, transactions, error mapping, and versioned migrations for SQLite/PostgreSQL. RustFlow must extend that contract while retaining Rust 1.85 and avoiding a parallel connection abstraction.

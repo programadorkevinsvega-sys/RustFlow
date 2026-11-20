@@ -6,6 +6,8 @@ RustFlow es un proyecto de framework pre-1.0. Combina un runtime reactivo propio
 
 **Estado del producto:** prototipo activo con APIs inestables; todavía no está listo para producción ni ofrece el flujo integrado de un framework maduro. Las capacidades descritas como disponibles aquí tienen implementación en el repositorio; los objetivos del roadmap no deben interpretarse como funciones publicadas.
 
+**Actualización de compatibilidad propuesta:** esta rama actualiza el MSRV del workspace a Rust 1.94 y prepara SQLx 0.9.0/SeaORM 2.0.4 con SQLite 3.54.1 para resolver el aviso de SQLite. La integración y todos los contratos de base de datos siguen pendientes de validación en GitHub CI; hasta que pase esa validación y se integre el cambio, conserva como históricos los resultados previos de Rust 1.85 y SeaORM 1.1.20.
+
 ## Qué está implementado hoy
 
 - **Reactividad:** señales tipadas, efectos, scheduler, batching, scopes de propietario y limpieza; `use_memo` para valores derivados, `use_ref` para almacenamiento Rust no reactivo y providers/contextos tipados (Phase 7.2, APIs experimentales).
@@ -13,7 +15,7 @@ RustFlow es un proyecto de framework pre-1.0. Combina un runtime reactivo propio
 - **DOM/WASM:** montaje y reconciliación de texto, elementos, fragmentos, componentes, regiones dinámicas y listas keyed; eventos, formularios controlados, preservación de caret cuando el valor no cambia y referencias DOM seguras mediante `rustflow_dom::ElementRef`.
 - **Servidor HTTP:** rutas y grupos, handlers asíncronos, extracción tipada, validación 422, CSRF optativo, sesiones server-side experimentales, cookies seguras, guards de autenticación, políticas deny-by-default, IDs de petición, tracing estructurado con duración, configuración `RUSTFLOW_LOG_LEVEL`, health/readiness optativos, error-reporting hooks seguros, límites, timeouts, graceful shutdown con deadline configurable y TLS local.
 - **Testing:** herramientas opt-in de `rustflow-server/testing`: `TestAppBuilder`/`TestApp`, helpers HTTP de request/response, fixtures SQLite aisladas, tablas namespaced en bases SQL externas dedicadas, fixtures MongoDB con base única y cleanup explícito, y fixtures Playwright reutilizables para páginas/errores. Incluye un ejemplo autenticado ejecutable; el CRUD SQL completo se demuestra con `rustflow new --template crud` y la prueba de integración del CLI. Todo el soporte público sigue siendo experimental/pre-1.0. Consulta [`docs/TESTING.md`](docs/TESTING.md) y la [guía pública de testing](website/src/content/docs/guides/testing.md).
-- **Base de datos:** integración experimental y pre-1.0. Phase 6.7.2 incorpora SeaORM 1.1.20 en `rustflow-server` sobre un único pool SQLx tipado compartido por backend (SQLite, PostgreSQL y el protocolo MySQL común a MySQL/MariaDB). `DatabasePool::entity` ofrece `EntityRepository` con CRUD/bulk, consultas tipadas y loaders explícitos; las transacciones pueden combinar operaciones ORM con SQL parametrizado sobre la misma conexión. PR #59 se fusionó en `main` como `8d387943d5f6ccb4d3f33ba3708311442e238c5f`. Phase 6.7.3 añade el ODM BSON independiente de MongoDB (`DocumentModel`, `DocumentRepository`, filtros/updates, proyecciones, agregaciones y un subconjunto de operaciones con sesión); PR #60 se fusionó en `main` el 2026-10-31 como `7ffb89b5ca36017a428cf3f828b68f590f8d404b`. Phase 6.7.4 añade carga SQL relacional avanzada: `RelationLoadOptions` para filtros/orden, `load_many_projected` para DTOs has-many, `RelationGraph` con ramas y niveles acotados, y helpers explícitos attach/detach/reemplazo uno-a-uno. PR #62 pasó los checks requeridos en su HEAD final `28218456db8ac323731054e291023a0765474125` y se fusionó por squash en `main` como `f7ae9fa35afd2a4021a7e6fb56e6d728445d20d7`. Los dos subsistemas siguen siendo experimentales; los límites de carga global, proyecciones hoja y transacciones explícitas se describen en la guía y el contrato. Se documentan los límites SQL (por ejemplo, Decimal/BigDecimal en SQLite pasa por `f64`, y `u64` completo solo se admite en MySQL/MariaDB) y los límites ODM (IDs, bulk no atómico, opciones de índice y sesiones explícitas) en [`docs/DATABASES.md`](docs/DATABASES.md), [`docs/ORM_MODEL_CONTRACT.md`](docs/ORM_MODEL_CONTRACT.md), [`docs/DATABASE_SUPPORT_MATRIX.md`](docs/DATABASE_SUPPORT_MATRIX.md) y [`docs/adr/0021-mongodb-odm-architecture.md`](docs/adr/0021-mongodb-odm-architecture.md).
+- **Base de datos:** integración experimental y pre-1.0. La base integrada en `main` se aceptó con SeaORM 1.1.20 sobre un pool SQLx tipado compartido por backend. Esta rama propone SQLx 0.9.0/SeaORM 2.0.4 y mantiene SQLite, PostgreSQL y el protocolo MySQL común a MySQL/MariaDB; su validación está pendiente en CI y los registros de PR #59, #60, #62 y #66 son evidencia histórica de sus commits, no de esta actualización. `DatabasePool::entity` ofrece `EntityRepository` con CRUD/bulk, consultas tipadas y loaders explícitos; las transacciones pueden combinar operaciones ORM con SQL parametrizado sobre la misma conexión. El ODM BSON de MongoDB continúa como adaptador independiente. Los límites de carga global, proyecciones hoja, codecs numéricos y transacciones explícitas se describen en [`docs/DATABASES.md`](docs/DATABASES.md), [`docs/ORM_MODEL_CONTRACT.md`](docs/ORM_MODEL_CONTRACT.md) y [`docs/DATABASE_SUPPORT_MATRIX.md`](docs/DATABASE_SUPPORT_MATRIX.md).
 - **SSR:** serialización de vistas con escape, documentos HTML completos, páginas de error configurables, componentes de servidor y catálogo compartido seguro para uso concurrente.
 - **Composición de páginas:** <code>HtmlPage</code>, propiedades de ruta explícitas y layouts de componentes anidados.
 - **Hidratación optativa:** límites estructurales, adjunción de eventos al DOM compatible y recuperación conservadora ante discrepancias.
@@ -47,7 +49,7 @@ La hidratación y la navegación cliente existen como APIs explícitas y optativ
 
 ## Probar el código
 
-Requisitos generales: Git, Rust 1.85 o Rust stable y Cargo. Para el ejemplo del navegador se necesita además Node.js/npm, <code>wasm-pack</code>, el target WebAssembly y Chromium para E2E.
+Requisitos generales para esta rama: Git, Rust 1.94 o Rust stable y Cargo. Para el ejemplo del navegador se necesita además Node.js/npm, <code>wasm-pack</code>, el target WebAssembly y Chromium para E2E.
 
 Desde la raíz del repositorio:
 
@@ -83,11 +85,10 @@ Consulta [docs/CLI.md](docs/CLI.md), [docs/CONFIGURATION.md](docs/CONFIGURATION.
 
 ## Calidad, límites y contribuciones
 
-La CI comprueba Rust 1.85 y stable, tests, Clippy, rustdoc, la compilación WASM, la build del ejemplo de navegador, E2E Chromium, el presupuesto de bundle, documentación y gobernanza. Un check verde verifica la revisión concreta; no implica por sí mismo estabilidad de API ni preparación para producción.
+CI está configurada para comprobar Rust 1.94 y stable, tests, Clippy, rustdoc, la compilación WASM, la build del ejemplo de navegador, E2E Chromium, el presupuesto de bundle, documentación y gobernanza. La validación de esta actualización sigue pendiente; un check verde verifica solo la revisión concreta y no implica estabilidad de API ni preparación para producción.
 
 Antes de contribuir, consulta [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md), [ROADMAP.md](ROADMAP.md), [docs/PRODUCT_SCOPE.md](docs/PRODUCT_SCOPE.md) y [SECURITY.md](SECURITY.md).
 
 ## Licencia
 
 RustFlow se distribuye bajo licencia dual MIT o Apache-2.0. Puedes elegir cualquiera de ellas según los términos de cada licencia.
-

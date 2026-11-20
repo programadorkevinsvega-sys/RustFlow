@@ -1078,10 +1078,10 @@ impl ServerConfig {
     }
 
     fn validate_for_bind(&self, bind: BindKind) -> Result<(), ServerError> {
-        if let ClientAddressPolicy::TrustedProxies(proxies) = &self.client_address {
-            if proxies.is_empty() {
-                return Err(ServerError::EmptyTrustedProxyList);
-            }
+        if let ClientAddressPolicy::TrustedProxies(proxies) = &self.client_address
+            && proxies.is_empty()
+        {
+            return Err(ServerError::EmptyTrustedProxyList);
         }
         if self.deployment == DeploymentProfile::Production && self.require_https {
             let has_proxy = matches!(self.client_address, ClientAddressPolicy::TrustedProxies(_));
@@ -1572,19 +1572,19 @@ impl Application {
         Fut: Future<Output = Result<Response, HttpError>> + Send + 'static,
     {
         validate_route_path(&path)?;
-        if let Some(endpoints) = &self.health_endpoints {
-            if path == endpoints.liveness_path() || path == endpoints.readiness_path() {
-                return Err(ServerError::HealthEndpointRouteConflict(path));
-            }
+        if let Some(endpoints) = &self.health_endpoints
+            && (path == endpoints.liveness_path() || path == endpoints.readiness_path())
+        {
+            return Err(ServerError::HealthEndpointRouteConflict(path));
         }
         let shape = route_shape(&path);
-        if let Some(existing) = self.route_shapes.get(&shape) {
-            if existing != &path {
-                return Err(ServerError::ConflictingRoutePattern {
-                    existing: existing.clone(),
-                    requested: path.clone(),
-                });
-            }
+        if let Some(existing) = self.route_shapes.get(&shape)
+            && existing != &path
+        {
+            return Err(ServerError::ConflictingRoutePattern {
+                existing: existing.clone(),
+                requested: path.clone(),
+            });
         }
         if self.registered.contains(&(path.clone(), method)) {
             return Err(ServerError::DuplicateRoute {
@@ -1592,10 +1592,10 @@ impl Application {
                 path: path.clone(),
             });
         }
-        if let Some(name) = name.as_ref() {
-            if self.registered_names.contains(name) {
-                return Err(ServerError::DuplicateRouteName(name.clone()));
-            }
+        if let Some(name) = name.as_ref()
+            && self.registered_names.contains(name)
+        {
+            return Err(ServerError::DuplicateRouteName(name.clone()));
         }
 
         let handler: SharedHandler = Arc::new(move |request| Box::pin(handler(request)));
@@ -2297,10 +2297,9 @@ fn request_id_from_headers(headers: &HeaderMap) -> String {
     if let Some(candidate) = headers
         .get("x-request-id")
         .and_then(|value| value.to_str().ok())
+        && is_valid_request_id(candidate)
     {
-        if is_valid_request_id(candidate) {
-            return candidate.to_owned();
-        }
+        return candidate.to_owned();
     }
 
     let sequence = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);

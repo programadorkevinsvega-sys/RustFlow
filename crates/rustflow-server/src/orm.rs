@@ -14,7 +14,7 @@ use std::{
 
 use sea_orm::{
     ActiveModelBehavior, ActiveModelTrait, ColumnTrait, ConnectionTrait, DeleteMany, DeleteResult,
-    EntityTrait, FromQueryResult, InsertResult, IntoActiveModel, LoaderTrait, ModelTrait,
+    EntityTrait, FromQueryResult, InsertManyResult, IntoActiveModel, LoaderTrait, ModelTrait,
     PrimaryKeyTrait, QueryFilter, Related, Select, UpdateMany, Value, query::EntityOrSelect,
 };
 
@@ -177,7 +177,7 @@ where
     pub async fn insert_many<I>(
         &self,
         models: I,
-    ) -> Result<InsertResult<E::ActiveModel>, DatabaseError>
+    ) -> Result<InsertManyResult<E::ActiveModel>, DatabaseError>
     where
         I: IntoIterator<Item = E::ActiveModel>,
         E::ActiveModel: ActiveModelBehavior + Send,

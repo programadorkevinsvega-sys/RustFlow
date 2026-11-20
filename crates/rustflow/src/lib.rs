@@ -13,9 +13,9 @@
 //!
 //! The experimental `ModelDiagnostics` derive validates the supported
 //! SeaORM entity declaration subset. It does not generate an entity, execute SQL,
-//! or provide persistence methods. SeaORM 1.1.20 is the selected foundation; its
-//! dependency and server facade will be introduced with the typed-pool migration
-//! in Phase 6.7.2.
+//! or provide persistence methods. SeaORM 1.1.20 was selected for the initial
+//! Phase 6.7 implementation; the active SQLx/SeaORM dependency line is updated
+//! under ADR 0024 to remediate the bundled SQLite advisory.
 //!
 //! A valid declaration is accepted without adding persistence behavior:
 //!
