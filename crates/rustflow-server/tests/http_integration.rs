@@ -825,8 +825,8 @@ async fn real_tcp_typed_forms_validate_and_return_structured_errors() {
     })
     .expect("signup route");
     app.post("/signup-json", |request: Request| async move {
-        let signup = request.validated_json::<SignupForm>()?;
-        Ok(Response::text(format!("accepted:{}", signup.email)))
+        let _signup = request.validated_json::<SignupForm>()?;
+        Response::json(&serde_json::json!({ "accepted": true }))
     })
     .expect("signup json route");
     app.get("/signup-query", |request: Request| async move {
@@ -898,7 +898,51 @@ async fn real_tcp_typed_forms_validate_and_return_structured_errors() {
     )
     .await;
     assert_eq!(status_code(&json), 200);
-    assert!(response_body(&json).contains("accepted:json@example.test"));
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&response_body(&json)).expect("valid JSON"),
+        serde_json::json!({ "accepted": true })
+    );
+
+    let invalid_json = send_http(
+        address,
+        "POST",
+        "/signup-json",
+        &[("content-type", "application/json")],
+        r#"{"email":"bad","age":16}"#,
+    )
+    .await;
+    assert_eq!(status_code(&invalid_json), 422);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&response_body(&invalid_json))
+            .expect("structured validation response"),
+        serde_json::json!({
+            "error": "validation_failed",
+            "errors": {
+                "fieldErrors": {
+                    "age": ["You must be at least 18 years old."],
+                    "email": ["Enter a valid email address."]
+                },
+                "formErrors": ["Please correct the highlighted fields."]
+            }
+        })
+    );
+    assert!(
+        !response_body(&invalid_json).contains("bad"),
+        "raw user input must not be echoed"
+    );
+
+    for body in ["", "{"] {
+        let malformed = send_http(
+            address,
+            "POST",
+            "/signup-json",
+            &[("content-type", "application/json")],
+            body,
+        )
+        .await;
+        assert_eq!(status_code(&malformed), 400);
+        assert_eq!(response_body(&malformed), "Invalid JSON request body");
+    }
 
     let query = send_http(
         address,
