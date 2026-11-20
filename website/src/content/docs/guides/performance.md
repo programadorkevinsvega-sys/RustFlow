@@ -11,6 +11,22 @@ El CI #944 del PR #78 (HEAD `83a65d33a8873bad29e5f28f087fedb58f1c9fc3`) aceptó 
 
 Esto compara RustFlow con su reconciliador base, no con React, Vue o Svelte. La primera ejecución oficial revisada del PR #81 (#22) produjo artefactos diagnósticos, pero no fue aceptada: el ID 04_select1k contiene 25 muestras upstream y el medidor de startup no respetó customURL de Vue. El [historial diagnóstico del benchmark #22](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/performance/runs/2026-11-05-official-framework-benchmark-22-diagnostic.md) conserva p50 por operación para los cuatro frameworks, percentiles de RustFlow, memoria, bundle y causas del rechazo. Phase 8.1 sigue abierta.
 
+## Comparación oficial aceptada
+
+El run [Official framework benchmarks #44677034080](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/44677034080), sobre RustFlow `5360963ae7bab3be2bc497eee5a2f62e3c6bc136` y upstream `fa510a76ffe066af1d30f3e75fa51d3fcbc14009`, terminó con `status: "valid"`, `valid: true`, `accepted: true`, cero errores de validación y muestras completas de CPU, memoria, tamaño y startup para React, Vue, Svelte y RustFlow.
+
+El índice CPU es la media geométrica de `mediana(RustFlow) / mediana(framework)` por operación; un valor mayor que 1 significa más tiempo mediano de RustFlow en ese conjunto. Resultados:
+
+| Conjunto | React | Vue | Svelte |
+|---|---:|---:|---:|
+| 9 operaciones upstream | 1,6176 | 2,2548 | 2,3599 |
+| 3 extensiones Phase 8.1 | 2,1303 | 2,8747 | 3,1031 |
+| 12 operaciones combinadas | 1,7329 | 2,3960 | 2,5271 |
+
+El resultado no muestra a RustFlow más rápido en esos conjuntos CPU. Startup, memoria y tamaño se reportan por separado y no forman parte del índice CPU. En startup, la primera interacción que añade 1.000 filas tuvo un p50 de 154,03 ms para RustFlow, frente a 115,41 ms para React, 101,21 ms para Vue y 101,96 ms para Svelte; el detalle y las limitaciones están en el [registro completo del run](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/performance/runs/2026-11-20-official-framework-benchmark-44677034080.md). No se declara superioridad general: el resultado corresponde a este benchmark, versiones, runner y navegador.
+
+Phase 8.1 sigue abierta. Esta ejecución no sustituye el A/B/A contra la implementación base para las mutaciones y montajes iniciales grandes; tampoco cierra la revisión humana de los criterios restantes.
+
 ## Qué mide cada suite
 
 | Suite | Qué ejecuta | Qué no representa |
@@ -99,9 +115,9 @@ La comparación inicial entre jobs no se acepta como evidencia porque el control
 
 ## Comparación con React, Vue y Svelte
 
-La referencia upstream está fijada al commit `fa510a76ffe066af1d30f3e75fa51d3fcbc14009` de `krausest/js-framework-benchmark`. Las implementaciones keyed seleccionadas fijan React 19.2.0, Vue 3.5.39 y Svelte 5.42.1 en sus lockfiles originales. La auditoría detectó diferencias entre el README y las operaciones que ejecuta realmente el runner oficial: por eso RustFlow separará la reproducción compatible con el runner de los escenarios extendidos de 10.000 filas. Consulta el [contrato de referencia y las discrepancias](https://github.com/programadorkevinsvega-sys/RustFlow/blob/feat/phase-8-1-measurement-completion/docs/performance/FRAMEWORK_BENCHMARK_REFERENCE.md).
+La referencia upstream está fijada al commit `fa510a76ffe066af1d30f3e75fa51d3fcbc14009` de `krausest/js-framework-benchmark`. Las implementaciones keyed seleccionadas fijan React 19.2.0, Vue 3.5.39 y Svelte 5.42.1 en sus lockfiles originales. La auditoría detectó diferencias entre el README y las operaciones que ejecuta realmente el runner oficial: por eso RustFlow separa la reproducción compatible con el runner de los escenarios extendidos de 10.000 filas. Consulta el [contrato de referencia y las discrepancias](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/performance/FRAMEWORK_BENCHMARK_REFERENCE.md).
 
-Esta auditoría **no es una comparación de rendimiento**. La suite ejecutable, sus artefactos en el mismo runner y los resultados por operación siguen pendientes. No se afirma superioridad competitiva ni se importan tiempos del leaderboard público como mediciones de RustFlow.
+La auditoría de fuentes upstream **no es por sí misma una comparación de rendimiento**. El run oficial #44677034080 sí contiene una comparación completa y aceptada para su commit y entorno exactos; sus métricas se resumen arriba y en el registro enlazado. No se importan tiempos del leaderboard público como mediciones de RustFlow.
 
 ## Suite extendida de listas
 
@@ -120,7 +136,7 @@ La referencia está fijada a fa510a76ffe066af1d30f3e75fa51d3fcbc14009 y compara 
 
 El artefacto official-framework-comparison-<run_id> contiene JSON originales (raw/), framework-comparison.json, el resumen Markdown, startup-comparison.json, environment.txt, execution-status.txt, trazas y logs disponibles. El registro identifica ambos commits y las versiones de Node, npm, Rust y Chromium, además del sistema operativo y CPU.
 
-Una ejecución solo es válida cuando framework-comparison.json informa status: "valid", valid: true y accepted: true. El agregador valida los cuatro frameworks y los recuentos exactos de cada benchmark; el reporte incluye el estado individual de cada escenario y enumera los datos faltantes o inválidos. Los artefactos parciales se conservan para diagnóstico, pero no se publican como comparación aceptada.
+Una ejecución solo es válida cuando framework-comparison.json informa status: "valid", valid: true y accepted: true. El run #44677034080 cumple ese contrato para su commit y entorno; los artefactos parciales de otras ejecuciones se conservan para diagnóstico, pero no se publican como comparaciones aceptadas.
 
 Para comparar distintos commits, comprueba primero que las ejecuciones usan el mismo SHA upstream, versiones de herramientas y Chromium, runner equivalente y todas las muestras. Los resultados históricos de runners diferentes no demuestran una mejora A/B/A. Esa prueba requiere variantes y control dentro del mismo job y runner.
 

@@ -4,7 +4,7 @@
 - Phase: 6.5 — Database and migrations.
 - Related: ADR 0013 (configuration), ADR 0014 (input validation/CSRF), ADR 0015 (sessions/access control).
 
-> Historical dependency baseline: this ADR records the original SQLx 0.8.6 implementation. ADR 0024 proposes the current SQLx 0.9.0 pinned revision, SQLite remediation, and Rust 1.94 MSRV; its verification is pending.
+> Historical dependency baseline: this ADR records the original SQLx 0.8.6 implementation. ADR 0024's SQLx 0.9.0 pinned revision, SQLite remediation, and Rust 1.94 MSRV were implemented and verified on PR #84; its required checks passed on the final PR head.
 
 ## Context
 

@@ -1,10 +1,10 @@
 # ORM model and SQL type contract (Phase 6.7.1)
 
-**Historical status:** Phases 6.7.1–6.7.6 were merged and accepted; the global Phase 6.7 gate closed on 2026-11-01 with PR #66 (merge commit `6046ae7ca60843d145476177e698162b57939c68`). That evidence applies to SeaORM 1.1.20 and the dependency versions at those commits only. [ADR 0024](adr/0024-sqlite-security-and-sql-stack-upgrade.md) proposes SQLx 0.9.0, SeaORM 2.0.4, bundled SQLite 3.54.1, and Rust 1.94; the ORM migration, runtime codecs, and four-engine contract are pending GitHub CI verification. The original Phase 6.7.2 four-engine contract passed on PR #59 head `2cadce73c19c37c2f088f572ea37a83c65c72380`; PR #59 merged as `8d387943d5f6ccb4d3f33ba3708311442e238c5f`. Phase 6.7.3 added a separate MongoDB BSON/Serde ODM; PR #60 merged as `7ffb89b5ca36017a428cf3f828b68f590f8d404b`. MongoDB's document contract is covered separately in [DATABASES.md](DATABASES.md) and ADR 0021.
+**Historical status:** Phases 6.7.1–6.7.6 were merged and accepted; the global Phase 6.7 gate closed on 2026-11-01 with PR #66 (merge commit `6046ae7ca60843d145476177e698162b57939c68`). That evidence applies to SeaORM 1.1.20 and the dependency versions at those commits only. The later upgrade in [ADR 0024](adr/0024-sqlite-security-and-sql-stack-upgrade.md) moved to SQLx 0.9.0, SeaORM 2.0.4, bundled SQLite 3.54.1, and Rust 1.94; its required Rust, four-engine, audit, WASM/browser, documentation and governance checks passed on PR #84's final head. The original Phase 6.7.2 four-engine contract passed on PR #59 head `2cadce73c19c37c2f088f572ea37a83c65c72380`; PR #59 merged as `8d387943d5f6ccb4d3f33ba3708311442e238c5f`. Phase 6.7.3 added a separate MongoDB BSON/Serde ODM; PR #60 merged as `7ffb89b5ca36017a428cf3f828b68f590f8d404b`. MongoDB's document contract is covered separately in [DATABASES.md](DATABASES.md) and ADR 0021.
 
 ## Selected architecture and model declaration
 
-The initial Data Mapper implementation used SeaORM 1.1.20; the proposed dependency line is SeaORM 2.0.4 and remains under CI validation. A model is a data value; it does not contain a connection. SeaORM generates its Entity, Model, ActiveModel, Column and PrimaryKey types. The application passes a connection or explicit transaction to operations.
+The initial Data Mapper implementation used SeaORM 1.1.20; the current verified dependency line is SeaORM 2.0.4 with SQLx 0.9.0. A model is a data value; it does not contain a connection. SeaORM generates its Entity, Model, ActiveModel, Column and PrimaryKey types. The application passes a connection or explicit transaction to operations.
 
 ~~~rust
 use rustflow::ModelDiagnostics;
@@ -43,7 +43,7 @@ In a real application, each entity belongs in its own Rust module. <code>ModelDi
 
 ## Rust logical-type matrix
 
-The table defines the configured target contract and expected engine-specific treatment. Historical tests passed on the Phase 6.7 dependency line; the SeaORM 2.0.4 / SQLx 0.9.0 migration must pass CI before these codecs are claimed as verified for the current target.
+The table defines the configured target contract and expected engine-specific treatment. The required SQLx 0.9.0 / SeaORM 2.0.4 codec and four-engine checks passed on PR #84's final head; unsupported or engine-specific mappings remain explicitly qualified below.
 
 | Rust logical type | SQLite 3.54.1 (configured target) | PostgreSQL 16.15 | MySQL 8.4.13 LTS | MariaDB 11.4.13 LTS | Required behavior / limitations |
 |---|---|---|---|---|---|
@@ -54,7 +54,7 @@ The table defines the configured target contract and expected engine-specific tr
 | Boolean | INTEGER 0/1 representation | BOOLEAN | BOOLEAN/TINYINT representation | BOOLEAN alias/TINYINT representation | Decode only documented backend representations; arbitrary nonzero is not automatically true. |
 | String / text | TEXT | TEXT / VARCHAR | TEXT / VARCHAR | TEXT / VARCHAR | Character set and collation depend on schema/server configuration. |
 | Bytes Vec<u8> | BLOB | BYTEA | BLOB family | BLOB family | Binary data is not a string; enforce engine/schema size limits. PostgreSQL arrays are a separate opt-in. |
-| Decimal / BigDecimal | SeaQuery binds as text; SeaORM 2.0.4 decodes through f64 | NUMERIC/DECIMAL | DECIMAL exact precision/scale | DECIMAL exact precision/scale | SQLite arbitrary precision and exact decimal arithmetic are not guaranteed. Preserve the conservative 12.5 fixture and use scaled integers/a custom string codec when exact SQLite decimal semantics are needed. Historical PostgreSQL/MySQL/MariaDB contracts exercised high-precision BigDecimal; this upgrade still requires CI verification. |
+| Decimal / BigDecimal | SeaQuery binds as text; SeaORM 2.0.4 decodes through f64 | NUMERIC/DECIMAL | DECIMAL exact precision/scale | DECIMAL exact precision/scale | SQLite arbitrary precision and exact decimal arithmetic are not guaranteed. PR #84's database contract passed with an exactly representable SQLite 12.5 fixture and high-precision BigDecimal fixtures on PostgreSQL/MySQL/MariaDB. Use scaled integers/a custom string codec when exact SQLite decimal semantics are needed. |
 | UUID | Explicit canonical text/binary representation required | Native UUID | Explicit canonical text/binary representation required | Explicit canonical text/binary representation required | Do not silently reinterpret byte order or text format. Runtime mapping must round-trip exact values. |
 | Date | Explicit text/integer representation | DATE | DATE | DATE | Strict calendar validation and documented encoding. |
 | Time | Explicit text/integer representation | TIME | TIME | TIME | Fractional precision is bounded by the server column type; reject or document loss explicitly. |
@@ -118,11 +118,11 @@ Not implemented in this subphase: adding the SeaORM dependency/facade; CRUD exec
 See [ADR 0020](adr/0020-orm-model-contract.md) for the verified foundation comparison, pool migration, design trade-offs and official upstream links. See [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md) for current RustFlow service versions and existing SQLx/MongoDB evidence.
 ## 6.7.2 SQL ORM runtime implementation (merged; experimental API)
 
-The Phase 6.7.2 runtime slice below is historical evidence for SeaORM 1.1.20 on PR #59 head `2cadce73c19c37c2f088f572ea37a83c65c72380`; Rust 1.85/stable, four-engine integration, dependency review, documentation, WASM/browser, governance and Cloudflare Pages checks completed successfully (8/8). PR #59 was merged into `main` on 2026-10-31 at `8d387943d5f6ccb4d3f33ba3708311442e238c5f`. The current proposed SeaORM 2.0.4 / SQLx 0.9.0 migration is not covered by those results and remains pending.
+The Phase 6.7.2 runtime slice below is historical evidence for SeaORM 1.1.20 on PR #59 head `2cadce73c19c37c2f088f572ea37a83c65c72380`; Rust 1.85/stable, four-engine integration, dependency review, documentation, WASM/browser, governance and Cloudflare Pages checks completed successfully (8/8). PR #59 was merged into `main` on 2026-10-31 at `8d387943d5f6ccb4d3f33ba3708311442e238c5f`. The subsequent SeaORM 2.0.4 / SQLx 0.9.0 migration and updated four-engine contract passed their required checks on PR #84's final head.
 
 ### Connection and repository boundary
 
-- rustflow-server owns SeaORM; it is not pulled into the core, view, DOM, browser or WASM crates. The historical implementation used 1.1.20; the configured upgrade to 2.0.4 is pending verification.
+- rustflow-server owns SeaORM; it is not pulled into the core, view, DOM, browser or WASM crates. The historical implementation used 1.1.20; the upgrade to 2.0.4 was verified on PR #84.
 - DatabasePool owns exactly one typed SQLx pool for the selected backend (SqlitePool, PgPool or MySqlPool). SeaORM is constructed from a clone of that handle; there is no second pool.
 - sqlx_sqlite_pool(), sqlx_postgres_pool() and sqlx_mysql_pool() expose only a backend-matching pool. The MySQL accessor also serves MariaDB through the MySQL protocol.
 - DatabasePool::entity::<E>() and DatabaseTransaction::entity::<E>() return repositories borrowing the existing connection/transaction. A repository never creates a pool or performs lazy I/O.
@@ -165,13 +165,13 @@ The historical integration target ran the same ORM contract against bundled SQLi
 
 Known explicit limitations:
 - SQLx/SeaORM do not provide a portable direct u64 codec for SQLite/PostgreSQL. Full-range u64 is exercised only with MySQL/MariaDB BIGINT UNSIGNED and engine-specific models.
-- SeaORM 2.0.4's SQLite Decimal/BigDecimal decoder still passes through f64, although SeaQuery 1.0 binds these values as text. The SQLite fixture uses the exactly representable value 12.5; arbitrary precision and exact decimal arithmetic are not guaranteed there. Use scaled integers or a canonical custom codec when exact decimal semantics are required. The other-engine high-precision tests were exercised on the historical line and must be rerun after the upgrade.
+- SeaORM 2.0.4's SQLite Decimal/BigDecimal decoder still passes through f64, although SeaQuery 1.0 binds these values as text. The SQLite fixture uses the exactly representable value 12.5; arbitrary precision and exact decimal arithmetic are not guaranteed there. Use scaled integers or a canonical custom codec when exact decimal semantics are required. The high-precision PostgreSQL/MySQL/MariaDB fixtures passed in the PR #84 database contract.
 - MySQL and MariaDB share the SQLx MySQL driver/backend enum. The scheme selects the protocol family; server identity is asserted separately in integration CI.
 - Dialect-specific upsert/RETURNING behavior and server capability detection remain explicit engine concerns; the shared facade does not pretend these features have identical semantics.
 
 ### Dependency and security gate
 
-At the historical Phase 6.7 acceptance, Cargo.lock included SeaORM 1.1.20 and CI kept an exception for RUSTSEC-2023-0071 in `rsa 0.9.10` from `sqlx-mysql 0.8.6`. ADR 0024 removes that exception after changing the lock graph; this new graph and `cargo audit --deny warnings` are pending verification. The old audit record is not evidence that the SQLite advisory is resolved.
+At the historical Phase 6.7 acceptance, Cargo.lock included SeaORM 1.1.20 and CI kept an exception for RUSTSEC-2023-0071 in `rsa 0.9.10` from `sqlx-mysql 0.8.6`. PR #84 updated the lock graph, removed that exception, and passed `cargo audit --deny warnings` on its final head. The SQLite advisory is addressed by the bundled SQLite update; the current Chrono exception is recorded in ADR 0024.
 
 ### Remaining scope after the 6.7.2 runtime slice
 

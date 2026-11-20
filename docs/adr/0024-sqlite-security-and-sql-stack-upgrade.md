@@ -1,6 +1,6 @@
 # ADR 0024: Remediate bundled SQLite advisory and update the SQL stack
 
-- Status: Accepted for implementation; final compatibility and CI verification pending.
+- Status: Implemented and verified on PR #84; its required Rust, database, audit, WASM/browser, documentation and governance checks passed on the final PR head.
 - Date: 2026-11-13.
 - Related: ADR 0016 (SQLx pools and migrations), ADR 0017 (MySQL/MariaDB driver), ADR 0019 (database support matrix), ADR 0020 (SQL ORM contract), ADR 0022 (relation loading).
 
@@ -34,7 +34,7 @@ The published SQLx 0.9.0 release still constrains `libsqlite3-sys` below 0.38.0.
 - RustFlow users must use Rust 1.94 or newer. This is a compatibility change for users on Rust 1.85–1.93 and applies to generated projects too. Generated manifests carry the pinned SQLx source patch until a suitable release exists.
 - Until an upstream release is available, the SQLx source is a pinned development commit rather than a crates.io release. Its provenance, license, dependency graph, and exact SHA must remain visible and be reviewed again when replacing it.
 - The SeaORM 1.1 to 2.0 and SQLx 0.8 to 0.9 upgrades can affect codecs, query generation, entity macros, migrations, and transaction behavior. Existing four-engine contracts are required gates; the version bump alone is not proof of compatibility.
-- SQLite is expected to resolve to the patched bundled 3.54.1 source. The runtime version assertion and `cargo audit` must pass on the final PR head before this ADR is considered verified.
+- SQLite resolved to the patched bundled 3.54.1 source on PR #84; its runtime version assertion and `cargo audit --deny warnings` passed on the final PR head.
 
 ## Documentation and verification plan
 
