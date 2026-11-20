@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
   push:
     branches: [main]
   workflow_dispatch:
@@ -71,7 +72,7 @@ jobs:
   wasm:
     name: WebAssembly target check
     needs: changes
-    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.full_ci == 'true') }}
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.full_ci == 'true') }}
     runs-on: ubuntu-24.04
 
     steps:
@@ -103,7 +104,7 @@ jobs:
   rust:
     name: Rust test matrix (${{ matrix.toolchain }})
     needs: changes
-    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.full_ci == 'true') }}
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.full_ci == 'true') }}
     runs-on: ubuntu-24.04
     services:
       postgres:
@@ -324,13 +325,20 @@ jobs:
       - name: Enforce Rust checks for the selected change scope
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
+          EVENT_NAME: ${{ github.event_name }}
           FULL_CI: ${{ needs.changes.outputs.full_ci }}
+          PULL_REQUEST_DRAFT: ${{ github.event.pull_request.draft }}
           RUST_MATRIX_RESULT: ${{ needs.rust.result }}
           RUST_SCOPE: ${{ needs.changes.outputs.rust }}
         run: |
           if [ "$CHANGES_RESULT" != "success" ]; then
             echo "::error::Changed-area detection failed; the required Rust matrix cannot be trusted."
             exit 1
+          fi
+
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "$PULL_REQUEST_DRAFT" = "true" ]; then
+            echo "Rust matrix validation is deferred until the draft pull request is marked ready for review."
+            exit 0
           fi
 
           if [ "$RUST_SCOPE" = "true" ] || [ "$FULL_CI" = "true" ]; then
@@ -345,7 +353,7 @@ jobs:
   browser-e2e:
     name: Browser E2E and bundle size
     needs: changes
-    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.full_ci == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.full_ci == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
 
@@ -562,7 +570,7 @@ jobs:
   cross-browser-profile:
     name: Cross-browser stress profile (${{ matrix.browser }})
     needs: changes
-    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.full_ci == 'true') && (github.event_name != 'pull_request' || github.head_ref == 'feat/phase-8-1-advanced-runtime-optimizations' || github.head_ref == 'feat/phase-8-1-measurement-completion') }}
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.full_ci == 'true') && (github.event_name != 'pull_request' || github.head_ref == 'feat/phase-8-1-advanced-runtime-optimizations' || github.head_ref == 'feat/phase-8-1-measurement-completion') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     strategy:
