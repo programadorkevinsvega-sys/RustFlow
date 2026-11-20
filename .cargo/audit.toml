@@ -1,2 +1,5 @@
 [advisories]
+# Chrono remains enabled for ORM compatibility; this warning has no patched release.
+# Revisit this exception when the codec is replaced or Chrono resumes maintenance.
+ignore = ["RUSTSEC-2026-0543"]
 severity_threshold = "low"

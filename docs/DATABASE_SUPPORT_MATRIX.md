@@ -17,6 +17,7 @@ The Phase 6.6 contracts passed on PR #57 code head `51ac4c212b3d6bf68483ee2ef8e2
 ### Runtime/MSRV interpretation
 
 - RustFlow's configured workspace MSRV is **Rust 1.94** (`Cargo.toml`), required by the selected SeaORM 2.0.4 / SQLx 0.9 stack.
+- SQL date/time codecs use SeaORM's `time` and Chrono integrations. Chrono is marked unmaintained with no patched release; `cargo audit` keeps a narrowly scoped exception for RUSTSEC-2026-0543, documented in ADR 0024.
 - SQLx packages use version **0.9.0** from the exact upstream git revision in the workspace patch table. The published 0.9.0 release does not yet admit the patched SQLite crate; replace the patch only with a release that does.
 - The official MongoDB Rust driver is pinned to **3.9.1**; RustFlow's workspace MSRV remains 1.94 regardless of the driver's own minimum.
 - CI is configured to run the full workspace on `1.94` and `stable`. A configured toolchain lane is not evidence that the final PR passed it.

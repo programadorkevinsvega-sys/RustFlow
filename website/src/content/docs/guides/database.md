@@ -207,7 +207,7 @@ let _saved = accounts
     })
     .await?;
 
-// INSERT bulk devuelve InsertResult de SeaORM. UPDATE/DELETE bulk
+// INSERT bulk devuelve InsertManyResult de SeaORM. UPDATE/DELETE bulk
 // devuelven rows_affected y deben ejecutarse con un filtro deliberado.
 let _inserted = accounts
     .insert_many(vec![
@@ -242,7 +242,7 @@ assert_eq!(removed_bulk.rows_affected, 2);
 
 ~~~
 
-No interpretes `InsertResult` como un contador portable de filas afectadas: los metadatos de inserción dependen del motor. `update_many` y `delete_many` informan `rows_affected`. Los métodos `update`/`delete` rechazan un ActiveModel sin todos los campos de clave primaria, en lugar de ejecutar una modificación ambigua.
+No interpretes `InsertManyResult` como un contador portable de filas afectadas: expone el ID de la última fila insertada cuando el motor lo proporciona. `update_many` y `delete_many` informan `rows_affected`. Los métodos `update`/`delete` rechazan un ActiveModel sin todos los campos de clave primaria, en lugar de ejecutar una modificación ambigua. Los codecs de fecha y hora incluyen `time` y Chrono. Chrono está marcado como sin mantenimiento y no tiene versión corregida; la excepción de auditoría se limita a ese aviso y está documentada en ADR 0024.
 
 La API expone las capacidades por motor para no asumir que RETURNING tiene la misma disponibilidad:
 

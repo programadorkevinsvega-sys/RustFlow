@@ -587,13 +587,13 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
     }
     let manifest_path = project.join("Cargo.toml");
     let manifest = fs::read_to_string(&manifest_path).unwrap();
-    fs::write(
-        &manifest_path,
-        format!(
-            "{manifest}\nserde = {{ version = \"1\", features = [\"derive\"] }}\nhttp = \"1\"\n"
-        ),
-    )
-    .unwrap();
+    assert!(manifest.contains("[dependencies]"));
+    let manifest = manifest.replacen(
+        "[dependencies]",
+        "[dependencies]\nserde = { version = \"1\", features = [\"derive\"] }\nhttp = \"1\"",
+        1,
+    );
+    fs::write(&manifest_path, manifest).unwrap();
     fs::write(project.join("src/main.rs"), GENERATED_CRUD_MAIN).unwrap();
     fs::write(
         project.join("migrations/0001_create_users.sql"),

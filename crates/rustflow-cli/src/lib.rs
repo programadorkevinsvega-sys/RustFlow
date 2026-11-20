@@ -660,7 +660,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 // an application's demo schema does not reuse the generator's incremental IDs.
 fn crud_scaffold_files(name: &str, revision: &str) -> Vec<(PathBuf, String)> {
     let manifest = format!(
-        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.94\"\ndefault-run = \"{name}\"\n\n[package.metadata.rustflow]\ntemplate = \"crud\"\n\n[[bin]]\nname = \"migrate\"\npath = \"src/bin/migrate.rs\"\n\n[dependencies]\nrustflow = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\nrustflow-server = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\", \"net\"] }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\nsea-orm = {{ version = \"=2.0.4\", default-features = false, features = [\"macros\", \"with-json\", \"with-chrono\", \"with-rust_decimal\", \"with-bigdecimal\", \"with-uuid\", \"with-time\", \"sqlx-sqlite\", \"sqlx-postgres\", \"sqlx-mysql\", \"runtime-tokio-rustls\"] }}\nhttp = \"1\"\n{SQLX_PATCH_MANIFEST}"
+        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.94\"\ndefault-run = \"{name}\"\n\n[package.metadata.rustflow]\ntemplate = \"crud\"\n\n[[bin]]\nname = \"migrate\"\npath = \"src/bin/migrate.rs\"\n\n[dependencies]\nrustflow = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\nrustflow-server = {{ git = \"{REPOSITORY_URL}\", rev = \"{revision}\" }}\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\", \"net\"] }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\n                sea-orm = {{ version = \"=2.0.4\", default-features = false, features = [\"macros\", \"with-json\", \"with-chrono\", \"with-rust_decimal\", \"with-bigdecimal\", \"with-uuid\", \"with-time\", \"sqlx-sqlite\", \"sqlx-postgres\", \"sqlx-mysql\", \"runtime-tokio-rustls\"] }}\nhttp = \"1\"\n{SQLX_PATCH_MANIFEST}"
     );
     vec![
         (PathBuf::from("Cargo.toml"), manifest),
@@ -882,11 +882,11 @@ fn generate_file(root: &Path, kind: &str, raw_name: &str) -> Result<PathBuf, Cli
     }
     write_one_file(&target, &content)?;
 
-    if let Some(update) = module_update {
-        if let Err(error) = apply_module_index_update(&update) {
-            let _ = fs::remove_file(&target);
-            return Err(error);
-        }
+    if let Some(update) = module_update
+        && let Err(error) = apply_module_index_update(&update)
+    {
+        let _ = fs::remove_file(&target);
+        return Err(error);
     }
 
     Ok(target)

@@ -1088,7 +1088,7 @@ async fn exercise_orm(database: &DatabasePool) {
         .insert_many([first_note, second_note, third_note])
         .await
         .expect("bulk insert notes");
-    assert!(inserted_notes.last_insert_id > 0);
+    assert!(inserted_notes.last_insert_id.is_some_and(|id| id > 0));
 
     let fetched = accounts
         .find_by_id(first.id)
@@ -1625,7 +1625,7 @@ async fn exercise_orm(database: &DatabasePool) {
         .update_many()
         .col_expr(
             entities::note::Column::Title,
-            Expr::val("renamed note".to_owned()).into(),
+            Expr::val("renamed note".to_owned()),
         )
         .filter(entities::note::Column::AccountId.eq(first.id))
         .exec(database.orm())

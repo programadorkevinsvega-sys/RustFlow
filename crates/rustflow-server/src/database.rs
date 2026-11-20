@@ -838,21 +838,17 @@ fn commit_sqlstate_is_unknown(code: Option<&str>) -> bool {
 }
 
 fn commit_error_outcome_is_unknown(error: &sea_orm::DbErr) -> bool {
-    match error {
-        sea_orm::DbErr::Conn(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(
-            database_error,
-        )))
-        | sea_orm::DbErr::Exec(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(
-            database_error,
-        )))
-        | sea_orm::DbErr::Query(sea_orm::RuntimeErr::SqlxError(sqlx::Error::Database(
-            database_error,
-        ))) => {
-            let code = database_error.code();
-            commit_sqlstate_is_unknown(code.as_deref())
-        }
-        _ => true,
-    }
+    let error = match error {
+        sea_orm::DbErr::Conn(sea_orm::RuntimeErr::SqlxError(error))
+        | sea_orm::DbErr::Exec(sea_orm::RuntimeErr::SqlxError(error))
+        | sea_orm::DbErr::Query(sea_orm::RuntimeErr::SqlxError(error)) => error,
+        _ => return true,
+    };
+    let sqlx::Error::Database(database_error) = error.as_ref() else {
+        return true;
+    };
+    let code = database_error.code();
+    commit_sqlstate_is_unknown(code.as_deref())
 }
 
 impl From<sea_orm::DbErr> for DatabaseError {
