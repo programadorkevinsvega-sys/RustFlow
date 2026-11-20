@@ -899,7 +899,7 @@ async fn real_tcp_typed_forms_validate_and_return_structured_errors() {
     .await;
     assert_eq!(status_code(&json), 200);
     assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&response_body(&json)).expect("valid JSON"),
+        serde_json::from_str::<serde_json::Value>(response_body(&json)).expect("valid JSON"),
         serde_json::json!({ "accepted": true })
     );
 
@@ -913,7 +913,7 @@ async fn real_tcp_typed_forms_validate_and_return_structured_errors() {
     .await;
     assert_eq!(status_code(&invalid_json), 422);
     assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&response_body(&invalid_json))
+        serde_json::from_str::<serde_json::Value>(response_body(&invalid_json))
             .expect("structured validation response"),
         serde_json::json!({
             "error": "validation_failed",
