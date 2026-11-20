@@ -1,10 +1,11 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { chromium } from "@playwright/test";
+import { buildFrameworkOrder, DEFAULT_STARTUP_FRAMEWORKS, fetchFrameworkEntryUrls } from "./framework-startup-helpers.mjs";
 
 const BASE_URL = process.env.BENCHMARK_BASE_URL ?? "http://127.0.0.1:8080";
 const CHROME_BIN = process.env.CHROME_BIN;
-const FRAMEWORKS = ["react-hooks", "vue", "svelte", "rustflow"];
+const FRAMEWORKS = DEFAULT_STARTUP_FRAMEWORKS;
 const WARMUPS = 3;
 const SAMPLES = 15;
 
@@ -29,13 +30,13 @@ function summarize(values) {
   };
 }
 
-async function oneSample(browser, framework) {
+async function oneSample(browser, framework, entryUrl) {
   const page = await browser.newPage({
     viewport: { width: 1280, height: 720 },
     reducedMotion: "reduce",
   });
   try {
-    await page.goto(`${BASE_URL}/frameworks/keyed/${framework}/index.html`, {
+    await page.goto(entryUrl, {
       waitUntil: "networkidle",
     });
     await page.locator("#run").waitFor({ state: "visible" });
@@ -107,11 +108,13 @@ async function oneSample(browser, framework) {
   }
 }
 
+const frameworkEntryUrls = await fetchFrameworkEntryUrls(BASE_URL, FRAMEWORKS);
 const browser = await chromium.launch({
   headless: true,
   executablePath: CHROME_BIN,
 });
 const results = {};
+const order = buildFrameworkOrder(FRAMEWORKS, WARMUPS + SAMPLES);
 try {
   for (const framework of FRAMEWORKS) {
     results[framework] = [];
@@ -119,13 +122,10 @@ try {
 
   // Three discarded warmups per implementation; rotate the order in every
   // measured round so no framework always benefits from the first position.
-  const order = [];
   for (let index = 0; index < WARMUPS + SAMPLES; index += 1) {
-    const rotation = index % FRAMEWORKS.length;
-    const round = FRAMEWORKS.map((_, offset) => FRAMEWORKS[(offset + rotation) % FRAMEWORKS.length]);
-    order.push(round);
+    const round = order[index];
     for (const framework of round) {
-      const measured = await oneSample(browser, framework);
+      const measured = await oneSample(browser, framework, frameworkEntryUrls[framework]);
       if (measured.final_dom_rows !== 1_000) {
         throw new Error(`${framework}: startup benchmark did not render 1,000 rows`);
       }

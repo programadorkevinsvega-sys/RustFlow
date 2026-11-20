@@ -29,6 +29,14 @@ FRAMEWORKS = {
     "rustflow": ("rustflow",),
 }
 EXPECTED_SAMPLES = {"cpu": 15, "memory": 5, "size": 1}
+EXPECTED_CPU_SAMPLES = {
+    operation: (25 if operation == "04_select1k" else EXPECTED_SAMPLES["cpu"])
+    for operation in CPU_OPERATIONS + EXTENDED_CPU_OPERATIONS
+}
+
+
+def expected_sample_count(operation: str, kind: str) -> int:
+    return EXPECTED_CPU_SAMPLES[operation] if kind == "cpu" else EXPECTED_SAMPLES[kind]
 STARTUP_WARMUPS = 3
 STARTUP_SAMPLES = 15
 STARTUP_FRAMEWORK_KEYS = {"react": "react-hooks", "vue": "vue", "svelte": "svelte", "rustflow": "rustflow"}
@@ -120,7 +128,7 @@ def empty_status() -> dict[str, dict[str, dict[str, Any]]]:
             op: {
                 "status": "missing",
                 "kind": kind,
-                "expected_samples": EXPECTED_SAMPLES[kind],
+                "expected_samples": expected_sample_count(op, kind),
                 "actual_samples": {},
                 "source_file": None,
             }
@@ -277,7 +285,7 @@ def main() -> int:
         metric_values: dict[str, list[float]] = {}
         actual: dict[str, int] = {}
         failures: list[str] = []
-        expected = EXPECTED_SAMPLES[kind]
+        expected = expected_sample_count(operation, kind)
         metrics = ("total", "script", "paint") if kind == "cpu" else ("DEFAULT",)
         for metric in metrics:
             raw = payload.get("values", {}).get(metric, {}).get("values")
@@ -335,7 +343,12 @@ def main() -> int:
         "upstream_commit": environment.get("upstream_commit"),
         "expected_upstream_commit": UPSTREAM_COMMIT,
         "environment": environment,
-        "expected_sample_counts": EXPECTED_SAMPLES,
+        "expected_sample_counts": {
+            "cpu_default": EXPECTED_SAMPLES["cpu"],
+            "cpu_by_operation": EXPECTED_CPU_SAMPLES,
+            "memory": EXPECTED_SAMPLES["memory"],
+            "size": EXPECTED_SAMPLES["size"],
+        },
         "startup_sampling": {
             "discarded_warmup_rounds": STARTUP_WARMUPS,
             "measured_samples_per_framework": STARTUP_SAMPLES,
@@ -347,7 +360,7 @@ def main() -> int:
         "competitive_superiority_claimed": False,
         "validation_errors": errors,
         "notes": [
-            "All 12 CPU scenarios require exactly 15 samples for total/script/paint for all four frameworks.",
+            "All CPU scenarios require 15 samples except 04_select1k, which requires 25: the pinned upstream runner adds additionalNumberOfRuns=10 to --count 15.",
             "All five memory scenarios require exactly five samples per framework; each size/first-paint metric requires one result.",
             "The three 10k CPU extensions retain the five warm-up actions in the deterministic upstream patch.",
             "Startup requires three discarded warm-up rounds and 15 measured navigations per framework.",

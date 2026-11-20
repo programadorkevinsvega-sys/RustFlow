@@ -528,34 +528,7 @@ impl Runtime {
     /// User panics are propagated after batch bookkeeping is restored. Scheduler cycle
     /// diagnostics are returned as `Err`.
     pub fn batch<R>(&self, callback: impl FnOnce() -> R) -> Result<R, RuntimeError> {
-        check_runtime_context(&self.inner)?;
-        {
-            let mut inner = self.inner.borrow_mut();
-            if inner.disposed {
-                return Err(RuntimeError::RuntimeDisposed);
-            }
-            inner.batch_depth += 1;
-        }
-
-        let result = catch_unwind(AssertUnwindSafe(callback));
-        let should_flush = {
-            let mut inner = self.inner.borrow_mut();
-            inner.batch_depth -= 1;
-            inner.batch_depth == 0
-        };
-
-        let flush_result = if should_flush {
-            catch_unwind(AssertUnwindSafe(|| flush_runtime(&self.inner)))
-        } else {
-            Ok(Ok(()))
-        };
-
-        match (result, flush_result) {
-            (Err(payload), _) => resume_unwind(payload),
-            (Ok(_), Err(payload)) => resume_unwind(payload),
-            (Ok(_value), Ok(Err(error))) => Err(error),
-            (Ok(value), Ok(Ok(()))) => Ok(value),
-        }
+        batch_runtime(&self.inner, callback)
     }
 
     /// Drain queued effects until quiescent or the cycle guard trips.
@@ -587,6 +560,67 @@ impl Default for Runtime {
 }
 
 impl<T: Clone + 'static> Signal<T> {
+    /// Create a child owner scope under the scope that owns this signal.
+    ///
+    /// This allows event handlers and collection managers to create independently
+    /// disposable row/item scopes without depending on an ambient component context.
+    pub fn child_scope(&self) -> Result<Scope, RuntimeError> {
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
+        check_runtime_context(&runtime)?;
+        let owner_id = {
+            let inner = runtime.borrow();
+            if inner.disposed {
+                return Err(RuntimeError::RuntimeDisposed);
+            }
+            let signal = inner
+                .signals
+                .get(&self.id)
+                .ok_or(RuntimeError::InvalidSignal)?;
+            let owner = inner
+                .scopes
+                .get(&signal.owner)
+                .ok_or(RuntimeError::InvalidSignal)?;
+            if owner.disposed {
+                return Err(RuntimeError::DisposedScope);
+            }
+            signal.owner
+        };
+        create_scope(&runtime, owner_id)
+    }
+
+    /// Execute a closure as one batch on this signal's owning runtime.
+    ///
+    /// Writes to any signal from the same runtime are coalesced until the outermost
+    /// batch completes. This is useful for updating many independently reactive
+    /// items while running each affected effect only once per flush.
+    pub fn batch<R>(&self, callback: impl FnOnce() -> R) -> Result<R, RuntimeError> {
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::RuntimeDisposed)?;
+        {
+            let inner = runtime.borrow();
+            if inner.disposed {
+                return Err(RuntimeError::RuntimeDisposed);
+            }
+            let signal = inner
+                .signals
+                .get(&self.id)
+                .ok_or(RuntimeError::InvalidSignal)?;
+            let owner = inner
+                .scopes
+                .get(&signal.owner)
+                .ok_or(RuntimeError::InvalidSignal)?;
+            if owner.disposed {
+                return Err(RuntimeError::DisposedScope);
+            }
+        }
+        batch_runtime(&runtime, callback)
+    }
+
     /// Read the value and track this signal in the currently executing effect.
     pub fn try_get(&self) -> Result<T, RuntimeError> {
         let runtime = self
@@ -670,16 +704,24 @@ impl<T: Clone + 'static> Signal<T> {
 
         {
             let mut inner = runtime.borrow_mut();
-            let subscribers = inner
-                .signals
+            // The signal's BTreeSet provides deterministic subscriber order.
+            // Borrow disjoint runtime fields to enqueue in place instead of
+            // allocating a temporary Vec for every signal write.
+            let RuntimeInner {
+                signals,
+                effects,
+                pending,
+                queue,
+                ..
+            } = &mut *inner;
+            let subscribers = &signals
                 .get(&self.id)
                 .ok_or(RuntimeError::InvalidSignal)?
-                .subscribers
-                .iter()
-                .copied()
-                .collect::<Vec<_>>();
+                .subscribers;
             for effect_id in subscribers {
-                enqueue(&mut inner, effect_id);
+                if effects.contains_key(effect_id) && pending.insert(*effect_id) {
+                    queue.push_back(*effect_id);
+                }
             }
         }
         flush_runtime(&runtime)?;
@@ -1172,12 +1214,6 @@ fn track_read(runtime: &RuntimeRef, signal_id: SignalId) -> Result<(), RuntimeEr
     Ok(())
 }
 
-fn enqueue(inner: &mut RuntimeInner, effect_id: EffectId) {
-    if inner.effects.contains_key(&effect_id) && inner.pending.insert(effect_id) {
-        inner.queue.push_back(effect_id);
-    }
-}
-
 fn detach_dependencies(inner: &mut RuntimeInner, effect_id: EffectId) {
     let dependencies = inner
         .effects
@@ -1266,6 +1302,37 @@ fn run_effect(runtime: &RuntimeRef, effect_id: EffectId) {
         resume_unwind(payload);
     }
     drop(owner_guard);
+}
+
+fn batch_runtime<R>(runtime: &RuntimeRef, callback: impl FnOnce() -> R) -> Result<R, RuntimeError> {
+    check_runtime_context(runtime)?;
+    {
+        let mut inner = runtime.borrow_mut();
+        if inner.disposed {
+            return Err(RuntimeError::RuntimeDisposed);
+        }
+        inner.batch_depth += 1;
+    }
+
+    let result = catch_unwind(AssertUnwindSafe(callback));
+    let should_flush = {
+        let mut inner = runtime.borrow_mut();
+        inner.batch_depth -= 1;
+        inner.batch_depth == 0
+    };
+
+    let flush_result = if should_flush {
+        catch_unwind(AssertUnwindSafe(|| flush_runtime(runtime)))
+    } else {
+        Ok(Ok(()))
+    };
+
+    match (result, flush_result) {
+        (Err(payload), _) => resume_unwind(payload),
+        (Ok(_), Err(payload)) => resume_unwind(payload),
+        (Ok(_value), Ok(Err(error))) => Err(error),
+        (Ok(value), Ok(Ok(()))) => Ok(value),
+    }
 }
 
 fn flush_runtime(runtime: &RuntimeRef) -> Result<(), RuntimeError> {
@@ -1943,6 +2010,33 @@ mod tests {
         assert_eq!(*order.borrow(), vec!['a', 'b']);
     }
     #[test]
+    fn signal_fanout_enqueues_subscribers_in_creation_order() {
+        let runtime = Runtime::new();
+        let signal = runtime.signal_eq(0_i32).unwrap();
+        let observed_order = Rc::new(RefCell::new(Vec::new()));
+        let mut effects = Vec::with_capacity(64);
+
+        for index in 0..64 {
+            let observed = signal.clone();
+            let order = observed_order.clone();
+            effects.push(
+                runtime
+                    .effect(move || {
+                        let _ = observed.get();
+                        order.borrow_mut().push(index);
+                    })
+                    .unwrap(),
+            );
+        }
+
+        observed_order.borrow_mut().clear();
+        signal.set(1);
+
+        assert_eq!(*observed_order.borrow(), (0..64).collect::<Vec<_>>());
+        drop(effects);
+    }
+
+    #[test]
     fn signal_update_is_one_equality_aware_write() {
         let runtime = Runtime::new();
         let signal = runtime.signal(4_i32).unwrap();
@@ -1962,6 +2056,57 @@ mod tests {
         assert_eq!(runs.get(), 2);
         assert!(!signal.try_update(|value| *value = 7).unwrap());
         assert_eq!(runs.get(), 2);
+    }
+
+    #[test]
+    fn signal_batches_coalesce_writes_across_distinct_handles() {
+        let runtime = Runtime::new();
+        let first = runtime.signal_eq(0_i32).unwrap();
+        let second = runtime.signal_eq(0_i32).unwrap();
+        let runs = Rc::new(Cell::new(0));
+        let first_for_effect = first.clone();
+        let second_for_effect = second.clone();
+        let count = runs.clone();
+        let _effect = runtime
+            .effect(move || {
+                let _ = first_for_effect.get();
+                let _ = second_for_effect.get();
+                count.set(count.get() + 1);
+            })
+            .unwrap();
+
+        first
+            .batch(|| {
+                first.set(1);
+                second
+                    .batch(|| {
+                        second.set(1);
+                        second.set(2);
+                    })
+                    .unwrap();
+                first.set(3);
+            })
+            .unwrap();
+
+        assert_eq!(first.get(), 3);
+        assert_eq!(second.get(), 2);
+        assert_eq!(
+            runs.get(),
+            2,
+            "the dependent effect should run once per batch"
+        );
+    }
+
+    #[test]
+    fn signal_can_create_disposable_child_scopes_without_ambient_owner() {
+        let runtime = Runtime::new();
+        let parent = runtime.signal_eq(0_i32).unwrap();
+        let child_scope = parent.child_scope().unwrap();
+        let child_signal = child_scope.signal(7_i32).unwrap();
+
+        assert_eq!(child_signal.get(), 7);
+        child_scope.dispose().unwrap();
+        assert_eq!(child_signal.try_get(), Err(RuntimeError::InvalidSignal));
     }
 
     #[test]

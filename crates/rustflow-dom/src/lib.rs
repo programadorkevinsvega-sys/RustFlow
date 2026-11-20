@@ -6,6 +6,9 @@
 
 mod policy;
 
+#[cfg(any(target_arch = "wasm32", test))]
+mod sequence;
+
 pub use policy::{DomPolicyError, validate_attribute, validate_element, validate_property};
 
 #[cfg(target_arch = "wasm32")]

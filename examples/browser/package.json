@@ -11,7 +11,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "check:bundle": "node scripts/check-bundle-size.mjs",
     "test:e2e": "playwright test tests/browser.spec.js",
-    "bench:browser": "playwright test tests/performance.spec.js --reporter=line"
+    "bench:browser": "playwright test tests/performance.spec.js --reporter=line",
+    "test:startup-routes": "node --test scripts/tests/*.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
