@@ -374,7 +374,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         DatabaseBackend::Postgres => "migrations/postgres",
         DatabaseBackend::MySql => "migrations/mysql",
     };
-    database.run_migrations(migration_directory).await?;
+    if let Err(error) = database.run_migrations(migration_directory).await {
+        eprintln!("migration directory: {migration_directory}");
+        let mut current: Option<&(dyn std::error::Error + 'static)> = Some(&error);
+        while let Some(cause) = current {
+            eprintln!("migration error: {cause}");
+            current = cause.source();
+        }
+        return Err(error.into());
+    }
 
     let demo_user = config.setting("RUSTFLOW_DEMO_USER")?
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "copy .env.example and set RUSTFLOW_DEMO_USER"))?;

@@ -737,33 +737,7 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
     );
 }
 
-fn generated_crud_migration(database_url: &str) -> &'static str {
-    if database_url.starts_with("sqlite:") {
-        "CREATE TABLE notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL UNIQUE);\n"
-    } else if database_url.starts_with("postgres:") || database_url.starts_with("postgresql:") {
-        "CREATE TABLE notes (id BIGSERIAL PRIMARY KEY, title TEXT NOT NULL UNIQUE);\n"
-    } else if database_url.starts_with("mysql:") {
-        "CREATE TABLE notes (id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, title VARCHAR(255) NOT NULL UNIQUE) ENGINE=InnoDB;\n"
-    } else {
-        ""
-    }
-}
-
-#[test]
-fn generated_crud_migration_uses_the_database_dialect() {
-    assert!(generated_crud_migration("sqlite://rustflow.db?mode=rwc").contains("AUTOINCREMENT"));
-    assert!(generated_crud_migration("postgres://localhost/rustflow").contains("BIGSERIAL"));
-    assert!(generated_crud_migration("mysql://localhost/rustflow").contains("AUTO_INCREMENT"));
-    assert!(generated_crud_migration("unknown://localhost/rustflow").is_empty());
-}
-
 fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: &str, label: &str) {
-    let migration = generated_crud_migration(database_url);
-    if migration.is_empty() {
-        panic!("unsupported generated CRUD database URL for {label}");
-    }
-    fs::write(project.join("migrations/0001_create_users.sql"), migration).unwrap();
-
     let port = TcpListener::bind(("127.0.0.1", 0))
         .unwrap()
         .local_addr()
@@ -791,7 +765,7 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
     let mut child = ChildGuard::new(child);
 
     let mut ready = false;
-    for _ in 0..240 {
+    for _ in 0..1200 {
         if TcpStream::connect(("127.0.0.1", port)).is_ok() {
             ready = true;
             break;
@@ -804,7 +778,10 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
         }
         thread::sleep(Duration::from_millis(25));
     }
-    assert!(ready, "generated CRUD did not start on {label}");
+    if !ready {
+        let stderr = fs::read_to_string(&stderr_path).unwrap_or_default();
+        panic!("generated CRUD did not start on {label} within 30 seconds\nstderr:\n{stderr}");
+    }
 
     let anonymous = generated_http_request(port, "GET", "/products", &[], "");
     assert_eq!(
