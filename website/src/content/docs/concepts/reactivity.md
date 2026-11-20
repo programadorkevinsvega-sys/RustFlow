@@ -115,7 +115,7 @@ let update_row = EventHandler::new(move |_payload: EventPayload| {
 
 Combina este patrón con una región dinámica por fila y una clave estable en el `KeyedList`. La región principal debe depender del orden/estructura; la región de cada fila debe leer solo su propia señal. Así, una actualización de valor puede volver a evaluar únicamente la fila afectada, mientras que insertar, eliminar o mover filas actualiza la estructura.
 
-`Signal::child_scope` y `Signal::batch` son APIs experimentales añadidas en la rama del PR #81; el PR aún no se ha fusionado en `main`. El patrón no ofrece granularidad automáticamente a una señal `Signal<Vec<T>>` existente: la aplicación debe separar el estado estructural del estado por item y disponer cada scope al eliminarlo.
+`Signal::child_scope` y `Signal::batch` son APIs experimentales integradas en `main` mediante PR #81. El patrón no ofrece granularidad automáticamente a una señal `Signal<Vec<T>>` existente: la aplicación debe separar el estado estructural del estado por item y disponer cada scope al eliminarlo.
 
 ## 4. Limpieza y scopes
 
@@ -164,8 +164,8 @@ El lookup de contexto no es reactivo. Para propagar un valor cambiante, usa <cod
 | API | Estado y alcance |
 |---|---|
 | <code>signal(value)</code>, <code>use_state(initial)</code> | Disponibles durante el setup de un componente con owner activo; devuelven <code>Signal&lt;T&gt;</code>. |
-| <code>Signal::child_scope()</code> | Experimental en el PR #81, todavía no fusionado; crea un scope hijo bajo el owner de la señal. |
-| <code>Signal::batch(callback)</code> | Experimental en el PR #81, todavía no fusionado; agrupa writes de señales del mismo runtime. |
+| <code>Signal::child_scope()</code> | Experimental, integrado en `main` mediante PR #81; crea un scope hijo bajo el owner de la señal. |
+| <code>Signal::batch(callback)</code> | Experimental, integrado en `main` mediante PR #81; agrupa writes de señales del mismo runtime. |
 | <code>Signal::get/set/update</code> | Disponible; las operaciones ergonómicas pueden hacer panic ante un handle inválido. |
 | <code>use_effect(callback)</code> | Disponible con seguimiento de dependencias y propiedad del scope. |
 | <code>on_cleanup(callback)</code> | Disponible para limpieza del scope propietario. |
@@ -173,14 +173,14 @@ El lookup de contexto no es reactivo. Para propagar un valor cambiante, usa <cod
 | <code>use_memo</code> | Experimental, integrado en `main` mediante Phase 7.2 / PR #70 (merge `506dd6f`). | Memo eager, dependencias dinámicas y comparación <code>PartialEq</code>. |
 | <code>use_ref</code> | Experimental, integrado en `main` mediante Phase 7.2 / PR #70 (merge `506dd6f`). | Almacenamiento Rust no reactivo owner-scoped; el handle DOM separado <code>rustflow_dom::ElementRef</code> también está implementado para browser/WASM. |
 | <code>Context&lt;T&gt;</code>, <code>provide_context</code>, <code>use_context</code> | Experimental, integrado en `main` mediante Phase 7.2 / PR #70 (merge `506dd6f`). | Identidad por token, provider más cercano y ausencia explícita <code>None</code>. |
-| <code>rustflow_dom::ElementRef</code>, <code>ref={...}</code> | Implementado en PR #70; sujeto al CI/revisión final. | Handle clonado de elemento nativo; lifecycle mount/hydration/replacement/unmount; browser/WASM solamente. |
+| <code>rustflow_dom::ElementRef</code>, <code>ref={...}</code> | Experimental disponible (Phase 7.2 / PR #70). | Handle clonado de elemento nativo; mount, reemplazo, hidratación validada y unmount; solo browser/WASM. |
 | Efectos asíncronos / tracking a través de <code>await</code> | No soportados por el runtime actual. |
 
 ## Casos de uso y cuándo no usarlo
 
 **Úsalo** para estado local de un widget, valores que determinan una región DOM, efectos síncronos asociados al estado, listas que cambian y limpieza de recursos ligados al componente.
 
-**No asumas** que proporciona store global concurrente, persistencia, fetching de datos, cancelación automática de tareas async ni contexto/provider. La UI reactiva funciona dentro del runtime del navegador; el runtime aislado no modifica el DOM por sí solo.
+**No asumas** que proporciona store global concurrente, persistencia, fetching de datos ni cancelación automática de tareas async. Existe contexto tipado por owner con resolución del provider más cercano; no es un provider global y su lookup no es reactivo por sí solo. La UI reactiva funciona dentro del runtime del navegador; el runtime aislado no modifica el DOM por sí solo.
 
 ## Siguiente lectura
 
