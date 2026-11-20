@@ -3,11 +3,13 @@ title: ODM tipado para MongoDB
 description: Modelos BSON tipados, repositorios explícitos, filtros, actualizaciones, proyecciones, agregaciones y sesiones MongoDB en RustFlow.
 ---
 
+**Limitación de conexión:** RustFlow no admite URI `mongodb+srv://`. El feature opcional `dns-resolver` del driver oficial está deshabilitado porque incorporaba `hickory-proto 0.25.2`, afectado por el aviso de seguridad alto [GHSA-3v94-mw7p-v465](https://github.com/advisories/GHSA-3v94-mw7p-v465). El adaptador solo acepta `mongodb://`. Si tu proveedor ofrece una lista estándar de seed hosts, el driver admite el formato multi-host, por ejemplo `mongodb://<host1>:27017,<host2>:27017/<database>?tls=true&replicaSet=<replicaSet>&authSource=admin`; obtén todos los hosts y opciones TLS/autenticación del proveedor, no los deduzcas editando una URI SRV. Consulta el [formato estándar oficial](https://www.mongodb.com/docs/manual/reference/connection-string/) y la [evaluación B6 del roadmap](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/roadmap-brechas.md#211-evaluar-mongodb-srv). SRV no se habilita ni se promete en esta guía.
+
 El ODM de RustFlow para MongoDB es una API documental experimental, independiente del SQL ORM. Utiliza el cliente oficial que ya administra `MongoDatabase`: no crea otro pool, no comparte entidades SeaORM y no traduce operaciones MongoDB a SQL. Su implementación pasó los checks requeridos en el HEAD final de la PR #60 `659f1750d611e57315263216167d43375da23574` y se fusionó en `main` el 2026-10-31 mediante squash (`7ffb89b5ca36017a428cf3f828b68f590f8d404b`). La API sigue siendo experimental y pre-1.0.
 
 ## 1. Configurar MongoDB
 
-Configura `RUSTFLOW_MONGODB_URI` y `RUSTFLOW_MONGODB_DATABASE` en el entorno. La URI admitida en este contrato es `mongodb://`; el resolver DNS SRV está deshabilitado. La configuración aplica timeouts de conexión, selección de servidor y operaciones.
+Configura `RUSTFLOW_MONGODB_URI` y `RUSTFLOW_MONGODB_DATABASE` en el entorno. La configuración aplica timeouts de conexión, selección de servidor y operaciones.
 
 ```rust
 use rustflow_server::{MongoConfig, MongoDatabase};
