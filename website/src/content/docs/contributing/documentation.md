@@ -47,9 +47,13 @@ Para cambios de website:
 ~~~sh
 cd website
 npm install
+npm run test:code-typography
+npm run check:code-typography
 npm run check
 npm run build
 ~~~
+
+El checker limita la revisión de tipografía a bloques y spans de código Markdown/MDX. Rechaza la raya larga (–) y las comillas curvas (“/”) dentro de código, pero permite esos caracteres en prosa normal.
 
 Si se modifica el ejemplo de navegador, ejecuta además las instrucciones Playwright de [examples/browser/README.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/examples/browser/README.md). Los ejemplos de servidor deben compilarse por el CI de Rust (Clippy con todos los targets) y, cuando sea posible, ejecutarse como test smoke.
 

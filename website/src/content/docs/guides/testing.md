@@ -47,7 +47,7 @@ cargo test -p rustflow-server --test http_integration
 ~~~
 
 
-### Test app builder y request helpers
+## 3. Test app builder y request helpers
 
 Para probar handlers y middleware sin abrir un puerto TCP, habilita la feature optativa `testing` en `rustflow-server` como dependencia de desarrollo, usando la misma versión o ruta que la dependencia normal. La utilidad ejecuta la solicitud a través del router real de RustFlow; no llama directamente al handler ni reemplaza el pipeline HTTP.
 
@@ -186,7 +186,7 @@ cargo check -p rustflow-dom --target wasm32-unknown-unknown
 | Falla E2E antes de abrir el navegador | Instala la versión de Chromium que requiere Playwright y revisa el output del runner/trace. |
 | Un ejemplo no es persistente | El ejemplo mantiene sus datos en memoria; no se debe inferir almacenamiento integrado. |
 
-## 5. ¿Qué significa una CI verde?
+## 8. ¿Qué significa una CI verde?
 
 Una CI verde significa que los jobs definidos para esa revisión pasaron. No comprueba automáticamente los dominios, variables, certificados, secretos, políticas de acceso, persistencia o escalado de tu despliegue. Por separado, la publicación del website depende de la acción de documentación y del proveedor de Pages.
 

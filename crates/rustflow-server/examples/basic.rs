@@ -5,7 +5,8 @@ use rustflow::components::{
 };
 use rustflow::view::{Property, PropertyValue, View};
 use rustflow_server::{
-    Application, HtmlPage, HttpError, HttpMethod, Middleware, Request, Response, html_document,
+    Application, HtmlPage, HttpError, HttpMethod, Middleware, Request, Response, ValidateInput,
+    ValidationErrors, html_document,
 };
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +29,35 @@ struct UserResponse {
 #[derive(Debug, Deserialize, Serialize)]
 struct EchoPayload {
     message: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SignupPayload {
+    email: String,
+    age: u8,
+}
+
+impl ValidateInput for SignupPayload {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let mut errors = ValidationErrors::new();
+        if !self.email.contains('@') {
+            errors.add_field_error("email", "Enter a valid email address.");
+        }
+        if self.age < 18 {
+            errors.add_field_error("age", "You must be at least 18 years old.");
+        }
+        if !errors.is_empty() {
+            errors.add_form_error("Please correct the highlighted fields.");
+            return Err(errors);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Serialize)]
+struct SignupResponse {
+    accepted: bool,
 }
 
 #[tokio::main]
@@ -108,6 +138,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         api.post("/echo", |request: Request| async move {
             let payload = request.json::<EchoPayload>()?;
             Response::json(&payload)
+        })?;
+        api.post("/signup", |request: Request| async move {
+            let _signup = request.validated_json::<SignupPayload>()?;
+            Response::json(&SignupResponse { accepted: true })
         })?;
         Ok(())
     })?;
