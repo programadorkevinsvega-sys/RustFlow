@@ -41,8 +41,9 @@ rustflow::view! {
 El renderer DOM actual rechaza el atributo inline <code>style</code>. Esta decisión
 está registrada en [ADR 0027](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0027-static-files-and-inline-style-policy.md).
 Usa clases y hojas CSS en lugar de asumir que existe una API de estilos en línea.
-La futura incorporación de archivos estáticos seguirá siendo opt-in en el adapter
-HTTP y no cambiará esta política hasta que exista un contrato seguro aprobado.
+El adapter HTTP ofrece archivos estáticos como API opt-in; consulta la sección
+«Archivos estáticos servidos por RustFlow». Esto no cambia la política de
+rechazo de estilos inline.
 
 ## 2. Conectar CSS en el ejemplo de navegador
 
@@ -107,3 +108,74 @@ Asegúrate de que la carpeta/asset exista y de que el servidor estático del des
 - No dependas de un artefacto generado que solo exista en tu máquina; el build debe reproducir assets desde fuentes versionadas y dependencias declaradas.
 
 RustFlow no abstrae CDN, almacenamiento remoto, transformación de imágenes, preload de fuentes ni invalidación de caché. Esas decisiones pertenecen al pipeline de build y hosting de la aplicación.
+
+## Archivos estáticos servidos por RustFlow
+
+El adapter HTTP puede montar un directorio bajo un prefijo público mediante una
+API opt-in. La configuración declara la raíz, el tamaño máximo, la caché y el
+archivo índice opcional.
+
+Para servir archivos desde el adapter HTTP, configura una raíz canónica y
+un prefijo público explícito:
+
+~~~rust
+let files = StaticFiles::new("dist")?
+    .with_max_file_bytes(10 * 1024 * 1024)?
+    .with_cache_control("public, max-age=3600")?
+    .with_index_file("index.html")?;
+
+let mut app = Application::new();
+app.static_files("/assets", files)?;
+~~~
+
+El límite predeterminado por archivo es 1 MiB. El ejemplo lo eleva a 10 MiB;
+ajústalo al tamaño esperado de los assets y al presupuesto de memoria del proceso.
+
+`StaticFiles` rechaza rutas absolutas, traversal, dotfiles y symlinks. Los
+archivos se sirven con GET/HEAD, MIME determinístico, límite de tamaño y caché
+configurados. El SPA fallback es el archivo índice opt-in; no sustituye
+autorización ni middleware de rutas protegidas.
+
+Soporta un Range por solicitud, ETag débil basado en tamaño/modificación,
+`Last-Modified`, respuestas condicionales `304` y `416` para rangos insatisfechos.
+Un Range mal formado o múltiple devuelve el archivo completo con `200`.
+`If-Range` solo aplica el rango si el validador fuerte coincide o si la fecha
+incluye la última modificación; de otro modo devuelve el archivo completo.
+
+El SPA fallback solo se aplica a rutas sin extensión que aceptan HTML y no
+empiezan por prefijos reservados como `api`, `health` o `graphql`. No se aplica
+a `/app.js`, `/api/users`, navegación sin `Accept: text/html` o rutas protegidas.
+
+No hay streaming incremental desde disco ni soporte de múltiples rangos. Los
+bytes se leen dentro del límite configurado y se entregan como una respuesta
+acotada. Para archivos grandes o descargas continuas, conserva el límite explícito
+y usa un CDN, reverse proxy o servidor de despliegue que implemente streaming.
+
+Las solicitudes Range ahora usan `seek` y leen exactamente el segmento solicitado
+en vez de recortar una copia completa del archivo. Las respuestas completas y
+los archivos sin Range siguen cargándose dentro del límite configurado.
+Una prueba integra un archivo disperso de 100 MiB y verifica que `bytes=...`
+devuelva solo el segmento solicitado y cabeceras de longitud consistentes.
+
+Si una ruta estática contiene contenido protegido, el middleware de
+autorización debe ejecutar antes del handler y la respuesta debe usar
+`Cache-Control: private, no-store`. Esto incluye respuestas `304`; el mismo
+middleware debe rechazar primero las peticiones no autorizadas, incluidas las
+que envían `If-None-Match`.
+
+El escenario k6 en CI usa un archivo de 1 MiB para ejercitar respuestas Range,
+con umbrales holgados de error y p95. Esto mide el contrato HTTP bajo carga, pero
+no demuestra streaming incremental.
+
+La prueba de carga reproducible vive en
+`scripts/static-files.k6.js`. Con un servidor que expone
+`RUSTFLOW_STATIC_PATH`:
+
+~~~sh
+RUSTFLOW_STATIC_BASE_URL=http://127.0.0.1:3001 \
+RUSTFLOW_STATIC_PATH=/assets/app.css \
+k6 run scripts/static-files.k6.js
+~~~
+
+El script usa 10 usuarios virtuales durante 15 segundos y exige menos de 1%
+de fallos y p95 menor a 100 ms.

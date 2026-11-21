@@ -10,7 +10,7 @@ RustFlow es un prototipo pre-1.0. Esta página resume lo que puedes probar hoy y
 | Limitación | Estado actual | Más información |
 |---|---|---|
 | Estilo inline en vistas | No disponible | [Estilos y assets](/guides/styling-assets/) |
-| Servidor de archivos estáticos | No disponible | [Estilos y assets](/guides/styling-assets/) |
+| Servidor de archivos estáticos | Experimental disponible; sin streaming incremental | [Estilos y assets](/guides/styling-assets/) |
 | Hot reload y bundler WASM integrado | No disponible | [CLI y generadores](/guides/cli/) |
 | Server actions / server functions | No disponibles | [Referencia de API](/reference/api-status/) |
 | Suspense, Resources y ErrorBoundary | No disponibles | [Errores en UI y SSR](/guides/ui-errors/) |
