@@ -44,4 +44,4 @@ jobs:
           # GitHub's dependency API reports these Actions with license=null.
           # Their upstream LICENSE files were manually verified as MIT; keep
           # these exact-version exclusions in sync with action upgrades.
-          allow-dependencies-licenses: "pkg:githubactions/actions/checkout@7.0.1, pkg:githubactions/actions/dependency-review-action@5.0.0, pkg:githubactions/dorny/paths-filter@4.0.3"
+          allow-dependencies-licenses: "pkg:githubactions/actions/checkout@7.0.1, pkg:githubactions/actions/dependency-review-action@5.0.0, pkg:githubactions/dorny/paths-filter@4.0.3, pkg:githubactions/taiki-e/install-action@25f51f6b1bf4e18876107cece836f4f77ac17c8c"

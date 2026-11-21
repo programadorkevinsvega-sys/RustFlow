@@ -1,0 +1,15 @@
+name: Audit Cargo dependencies
+description: Install the pinned cargo-audit release and scan Cargo.lock.
+
+runs:
+  using: composite
+  steps:
+    - name: Install cargo-audit
+      uses: taiki-e/install-action@25f51f6b1bf4e18876107cece836f4f77ac17c8c
+      with:
+        tool: cargo-audit@0.22.2
+        fallback: none
+
+    - name: Audit the resolved dependency graph
+      shell: bash
+      run: cargo audit --deny warnings

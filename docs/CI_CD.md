@@ -12,12 +12,15 @@ The shared source of truth is `.github/filters.yml`. The CI, website, and depend
 
 | Scope | Files that select it | Jobs affected |
 | --- | --- | --- |
-| `rust` | Workspace and crate manifests/lockfiles, Rust toolchain/Cargo configuration, `crates/**`, Rust example sources and manifests | Rust test matrix plus the required-check gates `Rust checks (1.94)` and `Rust checks (stable)` |
+| `rust` | Workspace and crate manifests/lockfiles, Rust toolchain/Cargo configuration, `crates/**`, Rust example sources and manifests | Rust test matrix and native performance baselines; the required Rust gates also enforce scoped CLI and StaticFiles checks |
+| `cargo_lock` | Root `Cargo.lock` | `Audit Cargo dependencies`; the required Rust gates fail closed if this audit fails |
+| `cli_integration` | Workspace Cargo manifest/lockfile, `crates/rustflow-cli/**`, and `crates/rustflow-server/**` | Stable CLI integration and install smoke checks |
+| `static_files` | `crates/rustflow-server/**` and `scripts/static-files.k6.js` | StaticFiles k6 load contract |
 | `browser` | Browser example, DOM/view/runtime/macro crates, and workspace Cargo/toolchain configuration | `WebAssembly target check`, `Browser E2E and bundle size` |
 | `performance_tools` | Performance benchmark comparators, aggregators, patchers, budget checkers, and `scripts/tests/**` | `Performance tooling tests` |
 | `website` | `website/**` and the website workflow definition | `Build documentation` |
 | `dependencies` | Cargo/npm manifests and lockfiles, GitHub Actions workflow/action definitions | `Review dependency changes` |
-| `full_ci` | `.github/workflows/**`, `.github/actions/**`, and `.github/filters.yml` | Forces Rust, WASM, browser, and performance tooling test jobs to run |
+| `full_ci` | `.github/workflows/**`, `.github/actions/**`, and `.github/filters.yml` | Forces Rust, CLI, StaticFiles, WASM, browser, performance tooling, Cargo audit, and native performance jobs to run |
 
 Governance checks are intentionally unconditional and remain fast. Website validation is independent from Rust validation. Changes to the public website do not run the Rust matrix; changes limited to backend crates do not run WASM/browser checks or rebuild the website.
 
@@ -32,6 +35,16 @@ Do not add workflow-level `paths` or `paths-ignore` filters to workflows that pu
 Each expensive job uses `always()` with its change-detection dependency. If path detection fails, the affected workflow runs the conservative fallback (Rust + WASM + browser + performance tooling, website build, or dependency review) rather than silently skipping validation, and the Rust scope gates fail closed. For documentation-only, frontend-only, or other non-Rust changes, the Rust gates pass without requiring backend tests. In Draft, the Rust gates explicitly defer the matrix; on `ready_for_review` and later non-Draft pushes, Rust or `full_ci` scope requires the complete Rust matrix to succeed. The change-detection job needs `contents: read` and `pull-requests: read`; the latter is needed to read the changed-file list for pull requests.
 
 A change to the filters or any workflow definition deliberately selects the broad CI path. Draft pull requests still defer its expensive jobs; marking the pull request ready runs that broad path so changes to the pipeline itself receive full validation. When adding a new crate or browser dependency, review `.github/filters.yml` and update these scope descriptions in the same pull request.
+
+## Parallel native checks and dependency audit
+
+The Rust test matrix remains the required merge gate. Native reactivity, SSR, and memory baselines run in a separate stable-toolchain job in parallel with that matrix. CLI integration and CLI install checks run only for CLI/server changes; the StaticFiles k6 contract runs only for server changes. The required Rust gates wait for the corresponding scoped job when applicable, so unrelated Rust changes avoid these checks without weakening relevant validation.
+
+The persistence benchmark smoke is a measurement-only job, not a merge gate. It runs manually or weekly on Wednesday at 06:17 UTC and uploads the result; functional SQL/MongoDB integration tests remain required in the Rust matrix. The workflow provisions the database services and uses the same MongoDB setup action as the Rust tests.
+
+The Cargo advisory scan uses the pinned `cargo-audit` release installer and runs for root `Cargo.lock` changes or broad workflow changes. `Rust checks (stable)` includes that result in its fail-closed summary when the scan is applicable. A separate scheduled workflow scans `main` daily and can also be started manually, so code-only pull requests do not rebuild `cargo-audit` on every push. The dependency review for manifest and lockfile diffs remains unchanged.
+
+The CI workflow already uses `Swatinem/rust-cache`, cancels obsolete runs for the same ref, and classifies changes by path. Keep those protections; parallelize independent and relevant jobs rather than weakening the Rust merge gate.
 
 ## Cloudflare Pages
 
@@ -52,11 +65,11 @@ This dashboard setting cannot be committed in this repository. Until it is appli
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `README.md`, `ROADMAP.md`, or `docs/**` only | Matrix skips; both gates pass | Skip | Skip | Skip | Skip |
 | `website/**` only | Matrix skips; both gates pass | Skip | Run | Skip | Skip |
-| `crates/rustflow-server/**` only | Run; both gates require success | Skip | Skip | Skip | Skip |
+| `crates/rustflow-server/**` only | Run; both gates require the Rust matrix, scoped CLI/StaticFiles checks, and native baselines | Skip | Skip | Skip | Skip |
 | `crates/rustflow-dom/**` | Run; both gates require success | Run | Skip | Skip | Skip |
 | `examples/browser/src/**` or `examples/browser/tests/**` | Matrix skips; both gates pass | Run | Skip | Skip | Skip |
 | `scripts/compare-browser-performance.py` or `scripts/tests/**` | Matrix skips; both gates pass | Skip | Skip | Skip | Run |
-| Cargo/npm manifest, lockfile, or Actions workflow changes | Per matching scopes; workflow changes force broad CI | Per matching scopes; workflow changes force broad CI | If website or docs workflow changed | Run | Run only when performance tools also change or broad CI is forced |
+| Cargo/npm manifest, lockfile, or Actions workflow changes | Per matching scopes; `Cargo.lock` and workflow changes run audit; workflow changes force broad CI | Per matching scopes; workflow changes force broad CI | If website or docs workflow changed | Run | Run only when performance tools also change or broad CI is forced |
 
 For all rows above, a Draft pull request defers the Rust matrix, WASM, Browser E2E/bundle/benchmarks, and cross-browser profile. Lightweight applicable checks still run. The broad `full_ci` scope is enforced when the pull request is marked ready.
 
@@ -64,9 +77,9 @@ The `main` ruleset continues to require `Rust checks (1.94)` and `Rust checks (s
 
 ## CLI integration test cost
 
-The workspace matrix runs `cli_integration` only on the `stable` toolchain. The Rust 1.94 matrix runs the workspace suite while skipping that integration binary, because generated CLI projects compile against RustFlow rather than validating a toolchain-specific behavior.
+The separate stable CLI job runs `cli_integration` and the installed-binary smoke only when CLI or server files change. It provisions PostgreSQL, MySQL, and MariaDB because the generated CRUD application test exercises those engines. Generated CLI projects compile against RustFlow, so these checks still run in CI for relevant changes while unrelated crates skip them.
 
-CLI integration tests share `RUSTFLOW_CLI_TEST_TARGET_DIR` so generated server and CRUD projects reuse compiled dependencies within the stable matrix job. GitHub Actions caches that directory with `Swatinem/rust-cache`; local runs use a process-independent directory under the system temporary directory when the environment variable is not set.
+CLI integration tests share `RUSTFLOW_CLI_TEST_TARGET_DIR` so generated server and CRUD projects reuse compiled dependencies. GitHub Actions caches that directory with `Swatinem/rust-cache`; local runs use a process-independent directory under the system temporary directory when the environment variable is not set.
 
 ## Benchmark triggers
 
@@ -92,6 +105,7 @@ During active development, run the focused checks for the area being changed:
 cargo fmt --all -- --check
 cargo check -p rustflow-server
 cargo test -p rustflow-server
+cargo test -p rustflow-cli --test cli_integration
 cargo clippy -p rustflow-server --all-targets --all-features -- -D warnings
 python3 -m py_compile scripts/compare-browser-performance.py
 ~~~
