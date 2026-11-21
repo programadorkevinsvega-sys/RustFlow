@@ -32,6 +32,7 @@ jobs:
       browser: ${{ steps.filter.outputs.browser }}
       performance_tools: ${{ steps.filter.outputs.performance_tools }}
       full_ci: ${{ steps.filter.outputs.full_ci }}
+      cargo_lock: ${{ steps.filter.outputs.cargo_lock }}
     steps:
       - name: Check out repository history for push diff detection
         uses: actions/checkout@v7
@@ -66,6 +67,19 @@ jobs:
 
       - name: Test performance tooling contracts
         run: python3 -m unittest discover -s scripts/tests -v
+
+  cargo_audit:
+    name: Audit Cargo dependencies
+    needs: changes
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.result != 'success' || needs.changes.outputs.cargo_lock == 'true' || needs.changes.outputs.full_ci == 'true') }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Audit the resolved Cargo dependency graph
+        uses: ./.github/actions/cargo-audit
 
   wasm:
     name: WebAssembly target check
@@ -216,12 +230,6 @@ jobs:
           printf '%s\n' 'RUSTFLOW_TEST_MONGODB_URI=mongodb://127.0.0.1:27017/rustflow_test?replicaSet=rs0' >> "$GITHUB_ENV"
           printf '%s\n' 'RUSTFLOW_TEST_MONGODB_STANDALONE_URI=mongodb://127.0.0.1:27018/rustflow_test_standalone' >> "$GITHUB_ENV"
 
-      - name: Audit the resolved Cargo dependency graph
-        if: matrix.toolchain == 'stable'
-        run: |
-          cargo install cargo-audit --locked --version 0.22.2
-          cargo audit --deny warnings
-
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -313,8 +321,49 @@ jobs:
           "$install_root/bin/rustflow" --help
           "$install_root/bin/rustflow" --version
 
-      - name: Run native performance baselines (informational)
+      - name: Run persistence benchmark smoke
         if: matrix.toolchain == 'stable'
+        env:
+          RUSTFLOW_BENCH_ITERATIONS: "100"
+          RUSTFLOW_BENCH_BULK_SIZE: "50"
+        run: |
+          mkdir -p performance-results/native
+          cargo bench -p rustflow-server --bench persistence \
+            > performance-results/native/persistence-smoke.txt 2>&1
+
+      - name: Upload persistence benchmark smoke measurement
+        if: ${{ always() && matrix.toolchain == 'stable' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: persistence-benchmark-smoke
+          path: performance-results/native/persistence-smoke.txt
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Build documentation
+        run: cargo doc --workspace --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  native_performance:
+    name: Native performance baselines
+    needs: changes
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.full_ci == 'true') }}
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run native performance baselines
         env:
           RUSTFLOW_BENCH_COMMIT: "${{ github.sha }}"
           RUSTFLOW_BENCH_ITERATIONS: "10000"
@@ -353,15 +402,10 @@ jobs:
             > performance-results/native/owner-memory.jsonl
 
           python3 scripts/check-memory-performance-budgets.py performance-results/native/owner-memory.jsonl
-
           python3 scripts/check-native-performance-budgets.py performance-results/native
 
-          RUSTFLOW_BENCH_ITERATIONS=100 RUSTFLOW_BENCH_BULK_SIZE=50 \
-            cargo bench -p rustflow-server --bench persistence \
-            > performance-results/native/persistence-smoke.txt 2>&1
-
       - name: Upload native performance measurements
-        if: ${{ always() && matrix.toolchain == 'stable' }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: phase-8-1-native-performance
@@ -369,14 +413,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Build documentation
-        run: cargo doc --workspace --all-features --no-deps
-        env:
-          RUSTDOCFLAGS: -D warnings
-
   rust-required-checks:
     name: Rust checks (${{ matrix.toolchain }})
-    needs: [changes, rust]
+    needs: [changes, rust, cargo_audit, native_performance]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     strategy:
@@ -390,6 +429,9 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           FULL_CI: ${{ needs.changes.outputs.full_ci }}
           PULL_REQUEST_DRAFT: ${{ github.event.pull_request.draft }}
+          CARGO_LOCK_SCOPE: ${{ needs.changes.outputs.cargo_lock }}
+          CARGO_AUDIT_RESULT: ${{ needs.cargo_audit.result }}
+          NATIVE_PERFORMANCE_RESULT: ${{ needs.native_performance.result }}
           RUST_MATRIX_RESULT: ${{ needs.rust.result }}
           RUST_SCOPE: ${{ needs.changes.outputs.rust }}
         run: |
@@ -403,9 +445,20 @@ jobs:
             exit 0
           fi
 
+          if [ "$CARGO_LOCK_SCOPE" = "true" ] || [ "$FULL_CI" = "true" ]; then
+            if [ "$CARGO_AUDIT_RESULT" != "success" ]; then
+              echo "::error::Cargo audit was required but its result was '$CARGO_AUDIT_RESULT'."
+              exit 1
+            fi
+          fi
+
           if [ "$RUST_SCOPE" = "true" ] || [ "$FULL_CI" = "true" ]; then
             if [ "$RUST_MATRIX_RESULT" != "success" ]; then
               echo "::error::Rust checks were required but the matrix result was '$RUST_MATRIX_RESULT'."
+              exit 1
+            fi
+            if [ "$NATIVE_PERFORMANCE_RESULT" != "success" ]; then
+              echo "::error::Native performance baselines were required but their result was '$NATIVE_PERFORMANCE_RESULT'."
               exit 1
             fi
           else

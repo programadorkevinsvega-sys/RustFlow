@@ -12,12 +12,13 @@ The shared source of truth is `.github/filters.yml`. The CI, website, and depend
 
 | Scope | Files that select it | Jobs affected |
 | --- | --- | --- |
-| `rust` | Workspace and crate manifests/lockfiles, Rust toolchain/Cargo configuration, `crates/**`, Rust example sources and manifests | Rust test matrix plus the required-check gates `Rust checks (1.94)` and `Rust checks (stable)` |
+| `rust` | Workspace and crate manifests/lockfiles, Rust toolchain/Cargo configuration, `crates/**`, Rust example sources and manifests | Rust test matrix plus parallel native performance baselines; the required-check gates `Rust checks (1.94)` and `Rust checks (stable)` require both |
+| `cargo_lock` | Root `Cargo.lock` | `Audit Cargo dependencies`; the required Rust gates fail closed if this audit fails |
 | `browser` | Browser example, DOM/view/runtime/macro crates, and workspace Cargo/toolchain configuration | `WebAssembly target check`, `Browser E2E and bundle size` |
 | `performance_tools` | Performance benchmark comparators, aggregators, patchers, budget checkers, and `scripts/tests/**` | `Performance tooling tests` |
 | `website` | `website/**` and the website workflow definition | `Build documentation` |
 | `dependencies` | Cargo/npm manifests and lockfiles, GitHub Actions workflow/action definitions | `Review dependency changes` |
-| `full_ci` | `.github/workflows/**`, `.github/actions/**`, and `.github/filters.yml` | Forces Rust, WASM, browser, and performance tooling test jobs to run |
+| `full_ci` | `.github/workflows/**`, `.github/actions/**`, and `.github/filters.yml` | Forces Rust, WASM, browser, performance tooling, Cargo audit, and native performance jobs to run |
 
 Governance checks are intentionally unconditional and remain fast. Website validation is independent from Rust validation. Changes to the public website do not run the Rust matrix; changes limited to backend crates do not run WASM/browser checks or rebuild the website.
 
@@ -32,6 +33,14 @@ Do not add workflow-level `paths` or `paths-ignore` filters to workflows that pu
 Each expensive job uses `always()` with its change-detection dependency. If path detection fails, the affected workflow runs the conservative fallback (Rust + WASM + browser + performance tooling, website build, or dependency review) rather than silently skipping validation, and the Rust scope gates fail closed. For documentation-only, frontend-only, or other non-Rust changes, the Rust gates pass without requiring backend tests. In Draft, the Rust gates explicitly defer the matrix; on `ready_for_review` and later non-Draft pushes, Rust or `full_ci` scope requires the complete Rust matrix to succeed. The change-detection job needs `contents: read` and `pull-requests: read`; the latter is needed to read the changed-file list for pull requests.
 
 A change to the filters or any workflow definition deliberately selects the broad CI path. Draft pull requests still defer its expensive jobs; marking the pull request ready runs that broad path so changes to the pipeline itself receive full validation. When adding a new crate or browser dependency, review `.github/filters.yml` and update these scope descriptions in the same pull request.
+
+## Parallel native checks and dependency audit
+
+The Rust test matrix remains the required merge gate. Native reactivity, SSR, and memory baselines run in a separate stable-toolchain job in parallel with that matrix; the `Rust checks (stable)` scope gate requires both jobs when Rust or `full_ci` paths change. The database persistence benchmark smoke remains in the stable matrix because it uses the job's SQL and MongoDB services.
+
+The Cargo advisory scan uses the pinned `cargo-audit` release installer and runs for root `Cargo.lock` changes or broad workflow changes. `Rust checks (stable)` includes that result in its fail-closed summary when the scan is applicable. A separate scheduled workflow scans `main` daily and can also be started manually, so code-only pull requests do not rebuild `cargo-audit` on every push. The dependency review for manifest and lockfile diffs remains unchanged.
+
+The CI workflow already uses `Swatinem/rust-cache`, cancels obsolete runs for the same ref, and classifies changes by path. Keep those protections; performance work should parallelize independent jobs rather than weaken required checks.
 
 ## Cloudflare Pages
 
@@ -52,11 +61,11 @@ This dashboard setting cannot be committed in this repository. Until it is appli
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `README.md`, `ROADMAP.md`, or `docs/**` only | Matrix skips; both gates pass | Skip | Skip | Skip | Skip |
 | `website/**` only | Matrix skips; both gates pass | Skip | Run | Skip | Skip |
-| `crates/rustflow-server/**` only | Run; both gates require success | Skip | Skip | Skip | Skip |
+| `crates/rustflow-server/**` only | Run; both gates require the Rust matrix and parallel native baselines | Skip | Skip | Skip | Skip |
 | `crates/rustflow-dom/**` | Run; both gates require success | Run | Skip | Skip | Skip |
 | `examples/browser/src/**` or `examples/browser/tests/**` | Matrix skips; both gates pass | Run | Skip | Skip | Skip |
 | `scripts/compare-browser-performance.py` or `scripts/tests/**` | Matrix skips; both gates pass | Skip | Skip | Skip | Run |
-| Cargo/npm manifest, lockfile, or Actions workflow changes | Per matching scopes; workflow changes force broad CI | Per matching scopes; workflow changes force broad CI | If website or docs workflow changed | Run | Run only when performance tools also change or broad CI is forced |
+| Cargo/npm manifest, lockfile, or Actions workflow changes | Per matching scopes; `Cargo.lock` and workflow changes run audit; workflow changes force broad CI | Per matching scopes; workflow changes force broad CI | If website or docs workflow changed | Run | Run only when performance tools also change or broad CI is forced |
 
 For all rows above, a Draft pull request defers the Rust matrix, WASM, Browser E2E/bundle/benchmarks, and cross-browser profile. Lightweight applicable checks still run. The broad `full_ci` scope is enforced when the pull request is marked ready.
 

@@ -16,6 +16,9 @@ rust:
   - 'examples/**/build.rs'
   - 'build.rs'
 
+cargo_lock:
+  - 'Cargo.lock'
+
 browser:
   - 'Cargo.toml'
   - 'Cargo.lock'
