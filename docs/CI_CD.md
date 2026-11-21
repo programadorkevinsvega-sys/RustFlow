@@ -77,7 +77,7 @@ The `main` ruleset continues to require `Rust checks (1.94)` and `Rust checks (s
 
 ## CLI integration test cost
 
-The separate stable CLI job runs `cli_integration` and the installed-binary smoke only when CLI or server files change. Generated CLI projects compile against RustFlow, so these checks still run in CI for relevant changes while unrelated crates skip them.
+The separate stable CLI job runs `cli_integration` and the installed-binary smoke only when CLI or server files change. It provisions PostgreSQL, MySQL, and MariaDB because the generated CRUD application test exercises those engines. Generated CLI projects compile against RustFlow, so these checks still run in CI for relevant changes while unrelated crates skip them.
 
 CLI integration tests share `RUSTFLOW_CLI_TEST_TARGET_DIR` so generated server and CRUD projects reuse compiled dependencies. GitHub Actions caches that directory with `Swatinem/rust-cache`; local runs use a process-independent directory under the system temporary directory when the environment variable is not set.
 
