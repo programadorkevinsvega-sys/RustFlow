@@ -68,6 +68,7 @@ export default defineConfig({
           items: [
             { label: 'Escribir documentación', slug: 'contributing/documentation' },
             { label: 'Verificación del runtime', slug: 'verification/reactivity' },
+            { label: 'Historial del proyecto', slug: 'changelog' },
           ],
         },
       ],
