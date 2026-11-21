@@ -3,6 +3,7 @@
 //! Axum, Tokio, and Tower are isolated to this adapter crate. Core reactivity and
 //! the structural view model do not depend on HTTP infrastructure.
 
+mod actions;
 mod config;
 mod csrf;
 mod database;
@@ -46,6 +47,10 @@ use axum::{
     routing::{MethodFilter, MethodRouter, get},
 };
 
+pub use actions::{
+    ActionAccess, ActionConfig, ActionConfigError, ActionCsrf, DEFAULT_ACTION_REQUEST_BYTES,
+    DEFAULT_ACTION_RESPONSE_BYTES, MAX_ACTION_REQUEST_BYTES, MAX_ACTION_RESPONSE_BYTES,
+};
 use bytes::Bytes;
 pub use config::{AppConfig, AppEnvironment, ConfigError};
 pub use csrf::{CsrfError, CsrfProtection, CsrfToken};
@@ -1124,10 +1129,19 @@ impl Default for ServerConfig {
 pub enum ServerError {
     InvalidRoute(String),
     InvalidRouteName(String),
-    DuplicateRoute { method: HttpMethod, path: String },
+    DuplicateRoute {
+        method: HttpMethod,
+        path: String,
+    },
     DuplicateRouteName(String),
-    ConflictingRoutePattern { existing: String, requested: String },
-    UnknownRoute { method: HttpMethod, path: String },
+    ConflictingRoutePattern {
+        existing: String,
+        requested: String,
+    },
+    UnknownRoute {
+        method: HttpMethod,
+        path: String,
+    },
     EmptyTrustedProxyList,
     InvalidIpNetwork(String),
     ProductionHttpsRequiresTlsOrTrustedProxy,
@@ -1137,6 +1151,10 @@ pub enum ServerError {
     HealthEndpointsNotConfigured,
     DuplicateReadinessCheck(String),
     TooManyReadinessChecks,
+    ActionRequestLimitExceedsGlobal {
+        action_limit: usize,
+        global_limit: usize,
+    },
     ShutdownTimedOut(Duration),
     InvalidStaticPrefix,
     StaticRootNotFound,
@@ -1199,6 +1217,13 @@ impl fmt::Display for ServerError {
                     "at most {MAX_READINESS_CHECKS} readiness checks may be registered"
                 )
             }
+            Self::ActionRequestLimitExceedsGlobal {
+                action_limit,
+                global_limit,
+            } => write!(
+                f,
+                "server action request limit ({action_limit} bytes) exceeds the global body limit ({global_limit} bytes)"
+            ),
             Self::ShutdownTimedOut(timeout) => {
                 write!(
                     f,
@@ -1618,6 +1643,61 @@ impl Application {
         Fut: Future<Output = Result<Response, HttpError>> + Send + 'static,
     {
         self.register_route(method, path.into(), None, Vec::new(), handler)
+    }
+
+    /// Register a typed JSON POST action with explicit access and payload limits.
+    ///
+    /// The input must implement `ValidateInput`; deserialization and validation
+    /// run on the server before the callback. The returned value is serialized
+    /// as bounded JSON. Request timeout, body limits, request IDs, and shutdown
+    /// cancellation use the normal HTTP pipeline.
+    pub fn action<I, O, F, Fut>(
+        &mut self,
+        path: impl Into<String>,
+        config: ActionConfig,
+        handler: F,
+    ) -> Result<&mut Self, ServerError>
+    where
+        I: DeserializeOwned + ValidateInput + Send + 'static,
+        O: Serialize + Send + 'static,
+        F: Fn(Request, I) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<O, HttpError>> + Send + 'static,
+    {
+        self.register_action(path.into(), Vec::new(), config, handler)
+    }
+
+    pub(crate) fn register_action<I, O, F, Fut>(
+        &mut self,
+        path: String,
+        mut middleware: Vec<Middleware>,
+        config: ActionConfig,
+        handler: F,
+    ) -> Result<&mut Self, ServerError>
+    where
+        I: DeserializeOwned + ValidateInput + Send + 'static,
+        O: Serialize + Send + 'static,
+        F: Fn(Request, I) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<O, HttpError>> + Send + 'static,
+    {
+        if config.max_request_bytes() > self.config.max_body_bytes() {
+            return Err(ServerError::ActionRequestLimitExceedsGlobal {
+                action_limit: config.max_request_bytes(),
+                global_limit: self.config.max_body_bytes(),
+            });
+        }
+        middleware.extend(config.middleware());
+        let config = Arc::new(config);
+        let handler = Arc::new(handler);
+        self.register_route(HttpMethod::Post, path, None, middleware, move |request| {
+            let config = Arc::clone(&config);
+            let handler = Arc::clone(&handler);
+            async move {
+                actions::invoke(request, &config, move |request, input| {
+                    handler(request, input)
+                })
+                .await
+            }
+        })
     }
 
     /// Register a route whose authentication guard runs before its handler.

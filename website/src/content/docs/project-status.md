@@ -12,7 +12,7 @@ RustFlow es un prototipo pre-1.0. Esta página resume lo que puedes probar hoy y
 | Estilo inline en vistas | No disponible | [Estilos y assets](/guides/styling-assets/) |
 | Servidor de archivos estáticos | Experimental disponible; sin streaming incremental | [Estilos y assets](/guides/styling-assets/) |
 | Hot reload y bundler WASM integrado | No disponible | [CLI y generadores](/guides/cli/) |
-| Server actions / server functions | No disponibles | [Referencia de API](/reference/api-status/) |
+| Server actions / server functions | Experimental disponible: JSON `POST` tipado; sin formularios progresivos ni proxy cliente | [Server actions JSON](/guides/server-actions/) |
 | Suspense, Resources y ErrorBoundary | No disponibles | [Errores en UI y SSR](/guides/ui-errors/) |
 | Sesiones SQL durables | No disponibles | [Sesiones y control de acceso](/guides/sessions-and-access/) |
 | Proveedor de usuarios | No disponible | [Sesiones y control de acceso](/guides/sessions-and-access/) |
@@ -35,6 +35,7 @@ El detalle histórico de PR y commits vive en [Historial del proyecto](/changelo
 | Servidor HTTP, rutas y middleware | Experimental disponible | [Servidor HTTP](/guides/server/) |
 | Validación y respuestas 422 | Experimental disponible | [Formularios y validación](/guides/forms-validation/) |
 | CSRF, sesiones y guards | Experimental; sin persistencia durable ni proveedor de usuarios | [Sesiones y control de acceso](/guides/sessions-and-access/) |
+| Server actions JSON | Experimental disponible; acceso y CSRF se declaran por acción; solo respuestas JSON | [Server actions JSON](/guides/server-actions/) |
 | SQLite, PostgreSQL, MySQL y MariaDB | Experimental disponible | [Base de datos](/guides/database/) |
 | ORM SeaORM | Experimental disponible | [Base de datos y ORM](/guides/database/) |
 | ODM MongoDB | Experimental disponible, sin SRV | [ODM MongoDB](/guides/mongodb-odm/) |

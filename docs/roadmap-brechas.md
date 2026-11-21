@@ -259,7 +259,7 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 2.3 Añadir flujo de desarrollo con watcher y build WASM
 
-**Estado actual:** implementación iniciada en la rama `feat/2-3-dev-watcher`; pendiente de revisión y CI. `rustflow dev` debe quedar como supervisor de build/proceso con modo `--once` y reconstrucción WASM opt-in.
+**Estado actual:** PR #105 está fusionada en `main`. Sus checks de CI de Rust 1.94/stable, WebAssembly, Browser E2E/bundle, documentación, gobernanza, dependencias y Pages pasaron; los jobs de stress cross-browser y performance tooling quedaron omitidos. El watcher implementa rebuild/restart, `--once`, cancelación y reconstrucción WASM opt-in. La aceptación de recuperación tras build fallido y supervisión completa de procesos descendientes aún requiere evidencia focalizada; el merge no sustituye esas pruebas.
 
 **Cubre:** B2.
 **Un PR:** diseñar e implementar `rustflow dev` con observación, cancelación y reconstrucción.
@@ -274,8 +274,14 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 2.4 Implementar server actions/functions
 
+**Estado actual:** contrato JSON inicial aprobado en ADR 0029 e implementación experimental local completa en `feat/2-4-server-actions`. El primer alcance es `POST` JSON tipado, sin formularios progresivos ni proxy cliente. Pasaron las pruebas focalizadas, doctests/compile-fail, integración HTTP, formato, Clippy y rustdoc del workspace. La suite completa del workspace también pasó en serie, con los targets de proyectos generados del CLI en almacenamiento de disco; el primer intento paralelo agotó el tmpfs de `/tmp` y no se toma como resultado de tests de producto. El build público Astro pasó (33 páginas; mantiene las advertencias existentes de la colección `i18n` vacía y la referencia `docs → 404`).
+
+**Carga local:** `k6 run scripts/server-actions.k6.js` pasó con 10 VUs durante 15 s: 2.920 solicitudes, cero fallos, checks al 100 % y p95 de 1,04 ms. Es una prueba smoke del ejemplo local, no una garantía de capacidad de producción.
+
+**Pendiente:** abrir y validar el PR con CI requerido y fusionarlo. La subfase no se cierra antes de que los checks aplicables estén verdes y la implementación esté integrada.
+
 **Cubre:** B3.
-**Un PR:** ADR y primer contrato, si se aprueba, sobre las protecciones existentes.
+**Un PR:** ADR y primera implementación/contrato sobre las protecciones existentes.
 
 **Aceptación**
 

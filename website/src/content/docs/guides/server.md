@@ -53,13 +53,17 @@ Una ruta asocia método y patrón de path con un handler asíncrono. El handler 
 
 El ejemplo del repositorio contiene una ruta de usuario con query tipada y un endpoint que recibe un cuerpo JSON. Úsalo para verificar los nombres y tipos exactos de la API de la revisión que estás usando.
 
-## 4. Respuestas disponibles
+## 4. Server actions JSON
+
+Para registrar un `POST` JSON con input tipado y validación obligatoria, usa `Application::action` o `RouteGroup::action`. Cada acción exige declaraciones explícitas de acceso y CSRF; las acciones de sesión requieren CSRF y los límites por acción nunca elevan el límite global. Consulta la [guía de server actions JSON](/guides/server-actions/) y ejecuta el [ejemplo independiente](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow-server/examples/server_actions.rs). Este endpoint no convierte formularios HTML ni navegación cliente en mutaciones progresivas.
+
+## 5. Respuestas disponibles
 
 El adapter ofrece helpers para texto, HTML, JSON, redirecciones, descargas de bytes y códigos de estado, además de documentos HTML completos generados con <code>html_document</code>. <code>Response::html(String)</code> emite la cadena tal como se recibió: no la uses con entrada de usuario ni con HTML no escapado. Para contenido estructural prefiere vistas y SSR.
 
 Para páginas 4xx/5xx puedes configurar páginas de error cuyos títulos y mensajes se insertan como texto escapado. El estado HTTP original y el ID de petición se conservan.
 
-## 5. Grupos y middleware
+## 6. Grupos y middleware
 
 Agrupa endpoints relacionados para compartir prefijos y middleware:
 
@@ -75,7 +79,7 @@ app.group("/api", |api| {
 
 El adapter permite middleware global, por grupo y por ruta. El orden documentado es global, grupo y ruta; un middleware puede continuar la cadena o responder antes de invocar al siguiente handler. Las rutas nombradas se pueden inspeccionar mediante <code>app.routes()</code>.
 
-## 6. Límites y manejo de recursos
+## 7. Límites y manejo de recursos
 
 La configuración del servidor establece límites de body (1 MiB por defecto), timeout de lectura/handler (30 segundos), concurrencia máxima (256) y drenaje máximo de graceful shutdown (30 segundos). Los valores de timeout de HTTP no reemplazan los límites independientes de SQLx, MongoDB o las comprobaciones de readiness. El servidor genera o valida un ID de petición, lo expone al handler y lo devuelve en <code>x-request-id</code>.
 
@@ -85,7 +89,7 @@ El API de apagado graceful recibe una future desde el punto de composición de l
 
 Estos controles son una base de ingeniería, no reemplazan rate limiting, revisión de amenazas, autenticación, autorización, hardening del reverse proxy ni una receta de producción. En mutaciones autenticadas mediante cookies, conecta además el middleware CSRF optativo a las rutas correspondientes; no sustituye autenticación o autorización.
 
-## 7. Health, readiness y error reporting
+## 8. Health, readiness y error reporting
 
 Las rutas operativas del framework son opt-in para no apropiarse de URLs que la aplicación ya pueda utilizar:
 
@@ -142,7 +146,7 @@ El reporter recibe solo request ID, método, plantilla de ruta, status y una cat
 
 Las integraciones de caché, queue, email y storage siguen diferidas: no hay contratos suficientes de invalidación/consistencia, entrega/durabilidad, aceptación frente a entrega, permisos, aislamiento y eliminación. No se exponen traits vacíos.
 
-## 8. SSR, páginas y layouts
+## 9. SSR, páginas y layouts
 
 El servidor también integra:
 
@@ -155,16 +159,17 @@ El servidor también integra:
 
 La hidratación y la navegación existen como capacidades explícitas y optativas; no se activan automáticamente en cada handler. Consulta [SSR y documentos HTML](/guides/ssr/) y [Composición de layouts](/guides/layouts/) para ver ejemplos de uso y los límites de cada mecanismo.
 
-## 9. Verificar los endpoints
+## 10. Verificar los endpoints
 
 ~~~sh
 cargo test -p rustflow-server --test http_integration
+cargo test -p rustflow-server --features testing --test server_actions
 ~~~
 
-La suite cubre rutas por TCP local, query/path/JSON/formularios tipados, errores de validación 422, campos inesperados, CSRF, redirección de retorno, grupos, middleware, IDs de petición, error pages, liveness/readiness, error reporting, límites, timeouts, shutdown con deadline, TLS local, proxies de confianza, abortos de cliente, entradas malformadas y concurrencia acotada. Ejecuta también la suite completa del workspace antes de depender de un cambio.
+Las suites cubren rutas por TCP local, query/path/JSON/formularios tipados, errores de validación 422, campos inesperados, CSRF, redirección de retorno, grupos, middleware, IDs de petición, error pages, liveness/readiness, error reporting, límites, timeouts, shutdown con deadline, TLS local, proxies de confianza, abortos de cliente, entradas malformadas, concurrencia acotada y server actions con guards y límites. Ejecuta también la suite completa del workspace antes de depender de un cambio.
 
 Para practicar peticiones reales, ejecuta el [tutorial de API JSON](/tutorials/json-api/). Antes de exponer un servicio, revisa [errores, límites de recursos y seguridad HTTP](/guides/errors-and-security/) y [cómo probar los endpoints](/guides/testing/).
 
-## Qué no incluye todavía
+## 11. Qué no incluye todavía
 
-El CLI ofrece dos plantillas: `server` crea un servidor base con un pool SQLx, `/health/database` y un binario independiente de migraciones; `crud` (`rustflow new products --template crud`) crea una demo CRUD SQL con entidad SeaORM y migraciones por dialecto. La demo integra sesiones volátiles, guards de autorización y CSRF optativo aplicado a las mutaciones. Consulta [Base de datos](/guides/database/) para el contrato SQL. Ninguna de las plantillas genera modelos `DocumentModel` ni inicializa MongoDB, cuyo ODM permanece separado. La demo CRUD es educativa, no una plantilla de producción: usa `InMemorySessionStore`, credenciales de demostración y cookies de desarrollo, y no incluye proveedor de usuarios, sesiones durables ni server actions. La plantilla `server` no conecta automáticamente sesiones, guards ni CSRF; esas APIs experimentales se configuran por separado. La aplicación debe verificar credenciales, asignar identidad/roles desde datos confiables y conectar CSRF deliberadamente a las rutas mutables que usan cookies. Los forms mejorados del navegador están limitados a ciertos GET URL-encoded; no son un sistema de mutaciones server-side. El router HTTP y el callback de navegación cliente son responsabilidades separadas, no un router full-stack integrado.
+El CLI ofrece dos plantillas: `server` crea un servidor base con un pool SQLx, `/health/database` y un binario independiente de migraciones; `crud` (`rustflow new products --template crud`) crea una demo CRUD SQL con entidad SeaORM y migraciones por dialecto. La demo integra sesiones volátiles, guards de autorización y CSRF optativo aplicado a las mutaciones. Consulta [Base de datos](/guides/database/) para el contrato SQL. Ninguna de las plantillas genera modelos `DocumentModel` ni inicializa MongoDB, cuyo ODM permanece separado. La demo CRUD es educativa, no una plantilla de producción: usa `InMemorySessionStore`, credenciales de demostración y cookies de desarrollo, y no incluye proveedor de usuarios, sesiones durables ni un flujo de server actions. La plantilla `server` no conecta automáticamente sesiones, guards ni CSRF; esas APIs experimentales se configuran por separado. La aplicación debe verificar credenciales, asignar identidad/roles desde datos confiables y conectar CSRF deliberadamente a las rutas mutables que usan cookies. Las acciones actuales solo son `POST` JSON del lado servidor; no hay forms de mutación progresivos ni proxy cliente. El router HTTP y el callback de navegación cliente son responsabilidades separadas, no un router full-stack integrado.

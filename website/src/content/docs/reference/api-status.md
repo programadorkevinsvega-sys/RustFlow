@@ -79,7 +79,7 @@ La infraestructura descrita aquí se integró mediante PR #71 en `main` el 2026-
 | `CsrfProtection` | Experimental, opt-in | Token HMAC con expiración; debe conectarse a mutaciones autenticadas por cookies. No implementa sesiones, identidad ni autorización. |
 | `Request::redirect_back` | Experimental disponible en la Fase 6.3 | Solo acepta fallback local y Referer del mismo origen; un Referer externo usa el fallback. |
 | Sesiones server-side, identidad y guards de autenticación/autorización | Experimental disponible (Fase 6.4, integrada en `main`) | `SessionManager`, `SessionContext`, `AuthIdentity`, `route_protected`, `route_authorized`; sin proveedor de usuarios ni almacenamiento durable. [Guía de sesiones](/guides/sessions-and-access/). |
-| Server actions | No disponible | No forma parte del servidor actual. |
+| `Application::action` / `RouteGroup::action` | Experimental disponible | `POST` JSON tipado con `ValidateInput`; requiere declaraciones explícitas de acceso y CSRF, límites por acción y salida JSON acotada. Sin formularios progresivos ni proxy cliente. [Guía](/guides/server-actions/). |
 | Pools SQLx tipados para SQLite/PostgreSQL/MySQL/MariaDB | Experimental; SQLx 0.9.0 y SeaORM 2.0.4 verificados en PR #84 | `DatabaseConfig`, `DatabasePool`, accessors `sqlx_*_pool()` y reexport `rustflow_server::sqlx`; el handle tipado se comparte con SeaORM sin duplicar pool. La evidencia de PR #59 corresponde a la versión histórica. [Guía](/guides/database/) · [Matriz](/guides/database/#matriz-de-versiones). |
 | Transacciones y migraciones SQLx | Experimental en las fases 6.5/6.6.1 | `begin_transaction`, `run_migrations`, `rollback_migrations_to`; rollback explícito con `.down.sql`, guardia de dialecto para MySQL/MariaDB y sin promesa de atomicidad total para DDL MySQL-family. [Guía](/guides/database/). |
 | MySQL y MariaDB | Integrados; contrato actualizado verificado con SQLx 0.9.0 en PR #84 | Driver MySQL-protocol SQLx, URL `mysql://`, pool, binding, transacciones y guardia de dialecto. MySQL 8.4.13 LTS y MariaDB 11.4.13 LTS pasaron los contratos del stack actualizado; `DatabaseBackend::MySql` no identifica el producto servidor. [Matriz de compatibilidad](/guides/database/#matriz-de-versiones). |
@@ -103,7 +103,7 @@ La infraestructura descrita aquí se integró mediante PR #71 en `main` el 2026-
 | Hidratación de DOM | Disponible, opt-in | Requiere HTML compatible; ante mismatch se conserva el root como estático. |
 | <code>ClientNavigation</code> e History API | Disponible, opt-in | Callback de rutas de la aplicación; no es un router general. |
 | Mejora progresiva de forms | Limitada | GET URL-encoded, controles escalares y opt-in explícito. |
-| Uploads, mutaciones y server actions | No disponible en enhancement | Formularios incompatibles mantienen envío nativo. |
+| Formularios progresivos de mutación y uploads | No disponibles | Las server actions JSON son endpoints del servidor; no hay mejora automática de formularios ni proxy de navegador. |
 | Aplicación full-stack lista para producción | No disponible | Requiere integración, seguridad y validación adicional. |
 
 ## Dónde aprender
