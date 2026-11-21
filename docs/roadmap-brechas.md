@@ -324,6 +324,8 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 2.7 Definir router unificado
 
+**Estado actual:** ADR 0032 en revisión; no hay implementación de router ni integración pública aprobada todavía.
+
 **Cubre:** B4, router.
 **Un PR:** ADR de alcance y compatibilidad entre navegación cliente y rutas HTTP; implementación solo con aprobación posterior.
 
