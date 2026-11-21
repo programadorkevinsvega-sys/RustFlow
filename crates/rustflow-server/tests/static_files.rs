@@ -513,6 +513,131 @@ async fn static_files_http_range_edge_cases_and_head() {
 }
 
 #[tokio::test]
+async fn static_files_http_head_range_headers_match_get() {
+    let root = temp_directory("range-head");
+    write_file(&root, "app.css", b"abcdef");
+    let mut app = Application::new();
+    app.static_files("/assets", StaticFiles::new(&root).unwrap())
+        .expect("mount assets");
+    let app = TestApp::builder()
+        .application(app)
+        .build()
+        .expect("test app");
+
+    let head = app
+        .request(Method::HEAD, "/assets/app.css")
+        .header("range", "bytes=1-3")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    let get = app
+        .get("/assets/app.css")
+        .header("range", "bytes=1-3")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(head.status(), get.status());
+    assert_eq!(
+        head.headers()[http::header::CONTENT_RANGE],
+        get.headers()[http::header::CONTENT_RANGE]
+    );
+    assert_eq!(
+        head.headers()[http::header::CONTENT_LENGTH],
+        get.headers()[http::header::CONTENT_LENGTH]
+    );
+    assert!(head.body().is_empty());
+    assert_eq!(get.body(), b"bcd");
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn static_files_http_range_does_not_buffer_a_large_full_file() {
+    let root = temp_directory("range-large");
+    let file_path = root.join("large.bin");
+    let file = fs::File::create(&file_path).unwrap();
+    file.set_len(100 * 1024 * 1024).unwrap();
+    drop(file);
+
+    let mut app = Application::new();
+    app.static_files(
+        "/assets",
+        StaticFiles::new(&root)
+            .unwrap()
+            .with_max_file_bytes(100 * 1024 * 1024)
+            .unwrap(),
+    )
+    .expect("mount assets");
+    let app = TestApp::builder()
+        .application(app)
+        .build()
+        .expect("test app");
+
+    let response = app
+        .get("/assets/large.bin")
+        .header("range", "bytes=1048576-1048579")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(
+        response.headers()[http::header::CONTENT_RANGE],
+        "bytes 1048576-1048579/104857600"
+    );
+    assert_eq!(response.headers()[http::header::CONTENT_LENGTH], "4");
+    assert_eq!(response.body(), &[0u8; 4]);
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn static_files_http_if_range_requires_strong_validator() {
+    let root = temp_directory("range-if");
+    write_file(&root, "app.css", b"abcdef");
+    let mut app = Application::new();
+    app.static_files("/assets", StaticFiles::new(&root).unwrap())
+        .expect("mount assets");
+    let app = TestApp::builder()
+        .application(app)
+        .build()
+        .expect("test app");
+    let resolved = StaticFiles::new(&root).unwrap().resolve("app.css").unwrap();
+    let weak_etag = resolved.etag().to_str().unwrap().to_owned();
+    let last_modified = resolved.last_modified().to_str().unwrap().to_owned();
+
+    let weak = app
+        .get("/assets/app.css")
+        .header("range", "bytes=0-1")
+        .unwrap()
+        .header("if-range", &weak_etag)
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(weak.status(), StatusCode::OK);
+    assert_eq!(weak.body(), b"abcdef");
+
+    let matching_date = app
+        .get("/assets/app.css")
+        .header("range", "bytes=0-1")
+        .unwrap()
+        .header("if-range", &last_modified)
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(matching_date.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(matching_date.body(), b"ab");
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
 async fn static_files_spa_fallback_accepts_html_only_and_respects_reserved_paths() {
     let root = temp_directory("spa");
     write_file(&root, "app.html", b"<h1>spa</h1>");
@@ -600,7 +725,11 @@ async fn static_files_obey_global_authorization_middleware() {
         if request.header("x-test-auth").is_none() {
             return Err(HttpError::new(StatusCode::UNAUTHORIZED, "Unauthorized"));
         }
-        next.run(request).await
+        let response = next.run(request).await?;
+        Ok(response.with_header(
+            http::header::CACHE_CONTROL,
+            http::HeaderValue::from_static("private, no-store"),
+        ))
     }))
     .expect("register authorization middleware");
     let app = TestApp::builder()
@@ -620,6 +749,42 @@ async fn static_files_obey_global_authorization_middleware() {
         .unwrap();
     assert_eq!(authorized.status(), StatusCode::OK);
     assert_eq!(authorized.body(), b"private");
+    assert_eq!(
+        authorized.headers()[http::header::CACHE_CONTROL],
+        "private, no-store"
+    );
+
+    let etag = authorized
+        .headers()
+        .get(http::header::ETAG)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let conditional = app
+        .get("/assets/private.txt")
+        .header("x-test-auth", "allowed")
+        .unwrap()
+        .header("if-none-match", &etag)
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(conditional.status(), StatusCode::NOT_MODIFIED);
+    assert_eq!(
+        conditional.headers()[http::header::CACHE_CONTROL],
+        "private, no-store"
+    );
+    assert!(conditional.body().is_empty());
+
+    let unauthorized_conditional = app
+        .get("/assets/private.txt")
+        .header("if-none-match", "*")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unauthorized_conditional.status(), StatusCode::UNAUTHORIZED);
 
     fs::remove_dir_all(root).unwrap();
 }

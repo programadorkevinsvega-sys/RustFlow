@@ -1457,8 +1457,9 @@ impl Application {
                                 || media.starts_with("application/xhtml+xml")
                         })
                     });
-                match files.resolve_for_request("", accept_html) {
-                    Some(file) => Ok(static_files::static_response(file, false, &request)),
+                let read_body = request.header("range").is_none();
+                match files.resolve_for_request("", accept_html, read_body) {
+                    Some(file) => static_files::static_response(file, false, &request),
                     None => Err(static_files::static_not_found()),
                 }
             }
@@ -1476,8 +1477,8 @@ impl Application {
                                 || media.starts_with("application/xhtml+xml")
                         })
                     });
-                match files.resolve_for_request("", accept_html) {
-                    Some(file) => Ok(static_files::static_response(file, true, &request)),
+                match files.resolve_for_request("", accept_html, false) {
+                    Some(file) => static_files::static_response(file, true, &request),
                     None => Ok(Response::status(StatusCode::NOT_FOUND)),
                 }
             }
@@ -1497,8 +1498,9 @@ impl Application {
                                 || media.starts_with("application/xhtml+xml")
                         })
                     });
-                match files.resolve_for_request(&relative, accept_html) {
-                    Some(file) => Ok(static_files::static_response(file, false, &request)),
+                let read_body = request.header("range").is_none();
+                match files.resolve_for_request(&relative, accept_html, read_body) {
+                    Some(file) => static_files::static_response(file, false, &request),
                     None => Err(static_files::static_not_found()),
                 }
             }
@@ -1517,8 +1519,8 @@ impl Application {
                                 || media.starts_with("application/xhtml+xml")
                         })
                     });
-                match files.resolve_for_request(&relative, accept_html) {
-                    Some(file) => Ok(static_files::static_response(file, true, &request)),
+                match files.resolve_for_request(&relative, accept_html, false) {
+                    Some(file) => static_files::static_response(file, true, &request),
                     None => Ok(Response::status(StatusCode::NOT_FOUND)),
                 }
             }

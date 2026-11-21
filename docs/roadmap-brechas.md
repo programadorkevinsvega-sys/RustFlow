@@ -244,7 +244,7 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 2.2 Implementar servidor de archivos estáticos
 
-**Estado actual:** implementación incluida en PR #104; pendiente de revisión y CI. Incluye Range, ETag/conditional requests y SPA fallback dentro de 2.2. Streaming incremental queda fuera del alcance inicial.
+**Estado actual:** implementación incluida en PR #104; pendiente de revisión y CI. Incluye Range, ETag/conditional requests y SPA fallback dentro de 2.2. Range usa seek y lee solo el segmento solicitado, pero el streaming incremental completo queda fuera del alcance inicial.
 
 **Cubre:** B1, sujeto a 2.1.
 **Un PR:** implementar adapter con el contrato aprobado.

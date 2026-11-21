@@ -128,6 +128,9 @@ let mut app = Application::new();
 app.static_files("/assets", files)?;
 ~~~
 
+El límite predeterminado por archivo es 1 MiB. El ejemplo lo eleva a 10 MiB;
+ajústalo al tamaño esperado de los assets y al presupuesto de memoria del proceso.
+
 `StaticFiles` rechaza rutas absolutas, traversal, dotfiles y symlinks. Los
 archivos se sirven con GET/HEAD, MIME determinístico, límite de tamaño y caché
 configurados. El SPA fallback es el archivo índice opt-in; no sustituye
@@ -147,6 +150,18 @@ No hay streaming incremental desde disco ni soporte de múltiples rangos. Los
 bytes se leen dentro del límite configurado y se entregan como una respuesta
 acotada. Para archivos grandes o descargas continuas, conserva el límite explícito
 y usa un CDN, reverse proxy o servidor de despliegue que implemente streaming.
+
+Las solicitudes Range ahora usan `seek` y leen exactamente el segmento solicitado
+en vez de recortar una copia completa del archivo. Las respuestas completas y
+los archivos sin Range siguen cargándose dentro del límite configurado.
+Una prueba integra un archivo disperso de 100 MiB y verifica que `bytes=...`
+devuelva solo el segmento solicitado y cabeceras de longitud consistentes.
+
+Si una ruta estática contiene contenido protegido, el middleware de
+autorización debe ejecutar antes del handler y la respuesta debe usar
+`Cache-Control: private, no-store`. Esto incluye respuestas `304`; el mismo
+middleware debe rechazar primero las peticiones no autorizadas, incluidas las
+que envían `If-None-Match`.
 
 El escenario k6 en CI usa un archivo de 1 MiB para ejercitar respuestas Range,
 con umbrales holgados de error y p95. Esto mide el contrato HTTP bajo carga, pero

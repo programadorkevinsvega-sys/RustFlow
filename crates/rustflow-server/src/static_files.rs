@@ -1,5 +1,6 @@
 use std::{
     fs, io,
+    io::{Read, Seek, SeekFrom},
     path::{Component, Path, PathBuf},
     time::UNIX_EPOCH,
 };
@@ -9,11 +10,13 @@ use http::{HeaderValue, StatusCode};
 
 use crate::{HttpError, Response, ServerError};
 
-const DEFAULT_MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
+const DEFAULT_MAX_FILE_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct StaticFile {
     body: Bytes,
+    source_path: PathBuf,
+    max_file_bytes: u64,
     content_type: &'static str,
     cache_control: HeaderValue,
     length: u64,
@@ -24,6 +27,24 @@ pub struct StaticFile {
 impl StaticFile {
     pub fn body(&self) -> &[u8] {
         &self.body
+    }
+
+    fn read_range(&self, start: u64, end: u64) -> Option<Bytes> {
+        let length = end.checked_sub(start)?.checked_add(1)?;
+        let length = usize::try_from(length).ok()?;
+        let mut file = fs::File::open(&self.source_path).ok()?;
+        file.seek(SeekFrom::Start(start)).ok()?;
+        let mut buffer = vec![0u8; length];
+        file.read_exact(&mut buffer).ok()?;
+        Some(Bytes::from(buffer))
+    }
+
+    fn read_full(&self) -> Option<Bytes> {
+        let body = fs::read(&self.source_path).ok()?;
+        if body.len() as u64 != self.length || body.len() as u64 > self.max_file_bytes {
+            return None;
+        }
+        Some(Bytes::from(body))
     }
 
     pub fn content_type(&self) -> &'static str {
@@ -143,6 +164,10 @@ impl StaticFiles {
     }
 
     pub fn resolve(&self, relative_path: &str) -> Option<StaticFile> {
+        self.resolve_with_body(relative_path, true)
+    }
+
+    fn resolve_with_body(&self, relative_path: &str, read_body: bool) -> Option<StaticFile> {
         let relative_path = if relative_path.is_empty() {
             self.index_file.as_deref()
         } else {
@@ -200,10 +225,15 @@ impl StaticFiles {
         if metadata.len() > self.max_file_bytes {
             return None;
         }
-        let body = fs::read(&canonical).ok()?;
-        if body.len() as u64 > self.max_file_bytes {
-            return None;
-        }
+        let body = if read_body {
+            let body = fs::read(&canonical).ok()?;
+            if body.len() as u64 > self.max_file_bytes {
+                return None;
+            }
+            Bytes::from(body)
+        } else {
+            Bytes::new()
+        };
         let length = metadata.len();
         let modified = metadata.modified().unwrap_or(UNIX_EPOCH);
         let modified_seconds = modified
@@ -214,7 +244,9 @@ impl StaticFiles {
         let last_modified = httpdate::fmt_http_date(modified);
 
         Some(StaticFile {
-            body: Bytes::from(body),
+            body,
+            source_path: canonical.clone(),
+            max_file_bytes: self.max_file_bytes,
             content_type: content_type(canonical.extension().and_then(|value| value.to_str())),
             cache_control: self.cache_control.clone(),
             length,
@@ -227,8 +259,9 @@ impl StaticFiles {
         &self,
         relative_path: &str,
         accept_html: bool,
+        read_body: bool,
     ) -> Option<StaticFile> {
-        if let Some(file) = self.resolve(relative_path) {
+        if let Some(file) = self.resolve_with_body(relative_path, read_body) {
             return Some(file);
         }
         if !accept_html {
@@ -253,15 +286,15 @@ impl StaticFiles {
         {
             return None;
         }
-        self.resolve_spa_fallback()
+        self.resolve_spa_fallback(read_body)
     }
 
-    fn resolve_spa_fallback(&self) -> Option<StaticFile> {
+    fn resolve_spa_fallback(&self, read_body: bool) -> Option<StaticFile> {
         let relative = self.spa_fallback.as_deref()?;
-        self.resolve_file(relative)
+        self.resolve_file(relative, read_body)
     }
 
-    fn resolve_file(&self, relative: &Path) -> Option<StaticFile> {
+    fn resolve_file(&self, relative: &Path, read_body: bool) -> Option<StaticFile> {
         if relative.is_absolute() || contains_unsafe_components(relative) {
             return None;
         }
@@ -298,10 +331,15 @@ impl StaticFiles {
         if metadata.len() > self.max_file_bytes {
             return None;
         }
-        let body = fs::read(&canonical).ok()?;
-        if body.len() as u64 > self.max_file_bytes {
-            return None;
-        }
+        let body = if read_body {
+            let body = fs::read(&canonical).ok()?;
+            if body.len() as u64 > self.max_file_bytes {
+                return None;
+            }
+            Bytes::from(body)
+        } else {
+            Bytes::new()
+        };
         let length = metadata.len();
         let modified = metadata.modified().unwrap_or(UNIX_EPOCH);
         let modified_seconds = modified
@@ -311,7 +349,9 @@ impl StaticFiles {
         let etag = format!("W/\"{length}-{modified_seconds}\"");
         let last_modified = httpdate::fmt_http_date(modified);
         Some(StaticFile {
-            body: Bytes::from(body),
+            body,
+            source_path: canonical.clone(),
+            max_file_bytes: self.max_file_bytes,
             content_type: content_type(canonical.extension().and_then(|value| value.to_str())),
             cache_control: self.cache_control.clone(),
             length,
@@ -321,7 +361,11 @@ impl StaticFiles {
     }
 }
 
-pub(crate) fn static_response(file: StaticFile, head: bool, request: &crate::Request) -> Response {
+pub(crate) fn static_response(
+    file: StaticFile,
+    head: bool,
+    request: &crate::Request,
+) -> Result<Response, HttpError> {
     let length = file.length;
     let response_headers = vec![
         (
@@ -342,7 +386,7 @@ pub(crate) fn static_response(file: StaticFile, head: bool, request: &crate::Req
         for (name, value) in response_headers {
             response = response.with_header(name, value);
         }
-        return if head { strip_body(response) } else { response };
+        return Ok(if head { strip_body(response) } else { response });
     }
 
     let range = request
@@ -354,25 +398,27 @@ pub(crate) fn static_response(file: StaticFile, head: bool, request: &crate::Req
             match parse_single_range(range, length) {
                 Ok(Some((start, end))) => {
                     let body = if head {
-                        Bytes::new()
+                        Some(Bytes::new())
                     } else {
-                        file.body.slice(start as usize..(end + 1) as usize)
+                        file.read_range(start, end)
                     };
-                    let mut response = Response::new(StatusCode::PARTIAL_CONTENT, body);
-                    for (name, value) in response_headers {
-                        response = response.with_header(name, value);
+                    if let Some(body) = body {
+                        let mut response = Response::new(StatusCode::PARTIAL_CONTENT, body);
+                        for (name, value) in response_headers {
+                            response = response.with_header(name, value);
+                        }
+                        response = response.with_header(
+                            http::header::CONTENT_RANGE,
+                            HeaderValue::from_str(&format!("bytes {start}-{end}/{length}"))
+                                .unwrap_or_else(|_| HeaderValue::from_static("bytes */0")),
+                        );
+                        response = response.with_header(
+                            http::header::CONTENT_LENGTH,
+                            HeaderValue::from_str(&(end - start + 1).to_string())
+                                .unwrap_or_else(|_| HeaderValue::from_static("0")),
+                        );
+                        return Ok(response);
                     }
-                    response = response.with_header(
-                        http::header::CONTENT_RANGE,
-                        HeaderValue::from_str(&format!("bytes {start}-{end}/{length}"))
-                            .unwrap_or_else(|_| HeaderValue::from_static("bytes */0")),
-                    );
-                    response = response.with_header(
-                        http::header::CONTENT_LENGTH,
-                        HeaderValue::from_str(&(end - start + 1).to_string())
-                            .unwrap_or_else(|_| HeaderValue::from_static("0")),
-                    );
-                    return response;
                 }
                 Ok(None) => {}
                 Err(RangeError::Unsatisfied) => {
@@ -385,14 +431,21 @@ pub(crate) fn static_response(file: StaticFile, head: bool, request: &crate::Req
                     for (name, value) in response_headers {
                         response = response.with_header(name, value);
                     }
-                    return response;
+                    return Ok(response);
                 }
                 Err(RangeError::Malformed) => {}
             }
         }
     }
 
-    let body = if head { Bytes::new() } else { file.body };
+    let body = if head {
+        Bytes::new()
+    } else if file.body.is_empty() {
+        file.read_full()
+            .ok_or_else(HttpError::internal_server_error)?
+    } else {
+        file.body
+    };
     let mut response = Response::new(StatusCode::OK, body);
     for (name, value) in response_headers {
         response = response.with_header(name, value);
@@ -402,7 +455,7 @@ pub(crate) fn static_response(file: StaticFile, head: bool, request: &crate::Req
         HeaderValue::from_str(&length.to_string())
             .unwrap_or_else(|_| HeaderValue::from_static("0")),
     );
-    response
+    Ok(response)
 }
 
 fn strip_body(mut response: Response) -> Response {
@@ -583,6 +636,8 @@ mod tests {
     fn invalid_if_range_header_disables_partial_response() {
         let file = StaticFile {
             body: Bytes::new(),
+            source_path: PathBuf::new(),
+            max_file_bytes: 10 * 1024 * 1024,
             content_type: "application/octet-stream",
             cache_control: HeaderValue::from_static("public, max-age=60"),
             length: 0,
@@ -593,5 +648,69 @@ mod tests {
 
         assert!(if_range_header_matches(None, &file));
         assert!(!if_range_header_matches(Some(&invalid), &file));
+    }
+
+    #[test]
+    fn static_file_range_reads_only_the_requested_span() {
+        let root =
+            std::env::temp_dir().join(format!("rustflow-static-range-unit-{}", std::process::id()));
+        fs::create_dir_all(&root).expect("create range unit root");
+        let source_path = root.join("data.bin");
+        fs::write(&source_path, b"0123456789").expect("write range unit file");
+        let file = StaticFile {
+            body: Bytes::from_static(b"0123456789"),
+            source_path,
+            max_file_bytes: 10,
+            content_type: "application/octet-stream",
+            cache_control: HeaderValue::from_static("public, max-age=60"),
+            length: 10,
+            etag: HeaderValue::from_static("W/\"10-0\""),
+            last_modified: HeaderValue::from_static("Thu, 01 Jan 1970 00:00:00 GMT"),
+        };
+
+        assert_eq!(file.read_range(3, 5).as_deref(), Some(b"345".as_slice()));
+        assert_eq!(file.read_range(9, 9).as_deref(), Some(b"9".as_slice()));
+        assert!(file.read_range(10, 10).is_none());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn resolving_for_range_defers_the_full_file_read() {
+        let root = std::env::temp_dir().join(format!(
+            "rustflow-static-deferred-range-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("create deferred range root");
+        fs::write(root.join("data.bin"), b"0123456789").expect("write range file");
+        let files = StaticFiles::new(&root).expect("static root");
+
+        let file = files
+            .resolve_with_body("data.bin", false)
+            .expect("metadata-only resolution");
+        assert!(file.body().is_empty());
+        assert_eq!(file.length(), 10);
+        assert_eq!(file.read_range(3, 5).as_deref(), Some(b"345".as_slice()));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn full_file_read_rejects_a_file_changed_after_metadata_resolution() {
+        let root = std::env::temp_dir().join(format!(
+            "rustflow-static-changed-file-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("create changed-file root");
+        let source_path = root.join("data.bin");
+        fs::write(&source_path, b"original").expect("write original file");
+        let files = StaticFiles::new(&root).expect("static root");
+        let file = files
+            .resolve_with_body("data.bin", false)
+            .expect("metadata-only resolution");
+        fs::write(&source_path, b"changed").expect("replace file contents");
+
+        assert!(file.read_full().is_none());
+        fs::remove_dir_all(root).unwrap();
     }
 }

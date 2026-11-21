@@ -110,6 +110,12 @@ public outcomes.
   not satisfy `If-Range`; date validators are compared at HTTP-date precision.
 - Files are read into memory up to the configured per-file limit. Streaming
   incremental reads and multiple ranges are not implemented.
+- The default per-file limit is 1 MiB to bound memory use for concurrent
+  buffered full-file responses; applications can opt into a larger limit.
+- Single Range GETs seek to and read only the requested span; full GETs and
+  malformed/multiple-range fallbacks remain bounded, buffered responses.
+- Protected static routes require application middleware to reject unauthorized
+  requests before 304 generation and to set private/no-store cache policy.
 - Applications remain responsible for deployment-time publishing of generated
   assets, cache/CDN policy and secret exclusion.
 - Static serving must not weaken existing XSS escaping, URL validation,
