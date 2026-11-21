@@ -1448,7 +1448,16 @@ impl Application {
         self.get(exact.clone(), move |request| {
             let files = exact_files.clone();
             async move {
-                match files.resolve("") {
+                let accept_html = request
+                    .header("accept")
+                    .and_then(|value| value.to_str().ok())
+                    .is_some_and(|value| {
+                        value.split(',').map(str::trim).any(|media| {
+                            media.starts_with("text/html")
+                                || media.starts_with("application/xhtml+xml")
+                        })
+                    });
+                match files.resolve_for_request("", accept_html) {
                     Some(file) => Ok(static_files::static_response(file, false, &request)),
                     None => Err(static_files::static_not_found()),
                 }
@@ -1458,7 +1467,16 @@ impl Application {
         self.head(exact, move |request| {
             let files = exact_files.clone();
             async move {
-                match files.resolve("") {
+                let accept_html = request
+                    .header("accept")
+                    .and_then(|value| value.to_str().ok())
+                    .is_some_and(|value| {
+                        value.split(',').map(str::trim).any(|media| {
+                            media.starts_with("text/html")
+                                || media.starts_with("application/xhtml+xml")
+                        })
+                    });
+                match files.resolve_for_request("", accept_html) {
                     Some(file) => Ok(static_files::static_response(file, true, &request)),
                     None => Ok(Response::status(StatusCode::NOT_FOUND)),
                 }
@@ -1470,7 +1488,16 @@ impl Application {
             let files = wildcard_files.clone();
             let relative = request.path_param("path").unwrap_or("").to_owned();
             async move {
-                match files.resolve(&relative) {
+                let accept_html = request
+                    .header("accept")
+                    .and_then(|value| value.to_str().ok())
+                    .is_some_and(|value| {
+                        value.split(',').map(str::trim).any(|media| {
+                            media.starts_with("text/html")
+                                || media.starts_with("application/xhtml+xml")
+                        })
+                    });
+                match files.resolve_for_request(&relative, accept_html) {
                     Some(file) => Ok(static_files::static_response(file, false, &request)),
                     None => Err(static_files::static_not_found()),
                 }
@@ -1481,7 +1508,16 @@ impl Application {
             let files = wildcard_files.clone();
             let relative = request.path_param("path").unwrap_or("").to_owned();
             async move {
-                match files.resolve(&relative) {
+                let accept_html = request
+                    .header("accept")
+                    .and_then(|value| value.to_str().ok())
+                    .is_some_and(|value| {
+                        value.split(',').map(str::trim).any(|media| {
+                            media.starts_with("text/html")
+                                || media.starts_with("application/xhtml+xml")
+                        })
+                    });
+                match files.resolve_for_request(&relative, accept_html) {
                     Some(file) => Ok(static_files::static_response(file, true, &request)),
                     None => Ok(Response::status(StatusCode::NOT_FOUND)),
                 }

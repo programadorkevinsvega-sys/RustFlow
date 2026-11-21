@@ -41,8 +41,9 @@ rustflow::view! {
 El renderer DOM actual rechaza el atributo inline <code>style</code>. Esta decisión
 está registrada en [ADR 0027](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0027-static-files-and-inline-style-policy.md).
 Usa clases y hojas CSS en lugar de asumir que existe una API de estilos en línea.
-La futura incorporación de archivos estáticos seguirá siendo opt-in en el adapter
-HTTP y no cambiará esta política hasta que exista un contrato seguro aprobado.
+El adapter HTTP ofrece archivos estáticos como API opt-in; consulta la sección
+«Archivos estáticos servidos por RustFlow». Esto no cambia la política de
+rechazo de estilos inline.
 
 ## 2. Conectar CSS en el ejemplo de navegador
 
@@ -132,17 +133,24 @@ archivos se sirven con GET/HEAD, MIME determinístico, límite de tamaño y cach
 configurados. El SPA fallback es el archivo índice opt-in; no sustituye
 autorización ni middleware de rutas protegidas.
 
-El adapter también admite:
+Soporta un Range por solicitud, ETag débil basado en tamaño/modificación,
+`Last-Modified`, respuestas condicionales `304` y `416` para rangos insatisfechos.
+Un Range mal formado o múltiple devuelve el archivo completo con `200`.
+`If-Range` solo aplica el rango si el validador fuerte coincide o si la fecha
+incluye la última modificación; de otro modo devuelve el archivo completo.
 
-- Range único `bytes=start-end`, `bytes=start-` y `bytes=-suffix`.
-- `Accept-Ranges: bytes`, `Content-Range`, `206` y `416` con rango disponible.
-- `ETag`, `Last-Modified`, `If-None-Match` e `If-Modified-Since`.
-- `If-Range` para evitar un Range cuando el cliente conserva otra versión.
+El SPA fallback solo se aplica a rutas sin extensión que aceptan HTML y no
+empiezan por prefijos reservados como `api`, `health` o `graphql`. No se aplica
+a `/app.js`, `/api/users`, navegación sin `Accept: text/html` o rutas protegidas.
 
 No hay streaming incremental desde disco ni soporte de múltiples rangos. Los
 bytes se leen dentro del límite configurado y se entregan como una respuesta
-acotada. Para archivos grandes, conserva el límite explícito y usa un CDN o
-servidor de despliegue que implemente streaming.
+acotada. Para archivos grandes o descargas continuas, conserva el límite explícito
+y usa un CDN, reverse proxy o servidor de despliegue que implemente streaming.
+
+El escenario k6 en CI usa un archivo de 1 MiB para ejercitar respuestas Range,
+con umbrales holgados de error y p95. Esto mide el contrato HTTP bajo carga, pero
+no demuestra streaming incremental.
 
 La prueba de carga reproducible vive en
 `scripts/static-files.k6.js`. Con un servidor que expone
@@ -155,4 +163,4 @@ k6 run scripts/static-files.k6.js
 ~~~
 
 El script usa 10 usuarios virtuales durante 15 segundos y exige menos de 1%
-de fallos y p95 menor a 50 ms.
+de fallos y p95 menor a 100 ms.

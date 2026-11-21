@@ -1,6 +1,6 @@
 # ADR 0027: Static files and inline style policy
 
-- **Status:** Accepted
+- **Status:** Accepted — implementation in PR #104 pending merge
 - **Date:** 2026-11-20
 - **Phase:** 2.1 - Architecture decision for styles and static assets
 
@@ -20,8 +20,9 @@ Applications can deploy Vite assets outside RustFlow or serve files through
 their own web server, but the public API does not define a RustFlow-owned
 contract for filesystem serving.
 
-This decision separates presentation policy from file serving. It does not
-implement either capability beyond the current rejection of inline styles.
+This decision separates presentation policy from file serving. Inline styles
+remain rejected, while the opt-in static-file adapter is implemented in
+`rustflow-server` under the contract below.
 
 ## Decision
 
@@ -49,17 +50,15 @@ security and maintenance surface without a demonstrated framework requirement.
 Define static files as an opt-in server-adapter capability. It belongs in
 `rustflow-server`, not in the view model or domain/application crates.
 
-A future `StaticFiles` API must accept:
+The `StaticFiles` API accepts:
 
 - an absolute or application-relative source directory;
 - an explicit public URL prefix;
-- a maximum file size;
-- cache policy;
-- a directory-listing policy that defaults to disabled;
-- dot-file policy that defaults to disabled;
-- an explicit file-symlink policy.
+- a configurable maximum file size and cache policy;
+- directory listing and dotfile serving disabled;
+- symlinks rejected.
 
-The initial implementation contract must:
+The adapter contract:
 
 - resolve each request against one canonical root;
 - reject missing roots and ambiguous public prefixes;
@@ -76,8 +75,8 @@ The initial implementation contract must:
 - preserve the existing request timeout and concurrency limit.
 
 Filesystem failures must be classified without leaking absolute paths or
-platform-specific details. Permission errors, missing files and unsupported
-media types must use stable public outcomes.
+platform-specific details. Permission errors and missing files must use stable
+public outcomes.
 
 ## Alternatives considered
 
@@ -94,16 +93,23 @@ media types must use stable public outcomes.
    with application routes.
 5. **Serve files through direct string concatenation:** rejected because it
    permits traversal, symlink escape and platform-dependent path ambiguity.
-6. **Implement a custom static server from scratch:** rejected unless mature
-   Axum/Tower integrations prove insufficient. The implementation phase should
-   prefer a maintained, reviewed adapter and focused containment tests.
+6. **Use a generic static-file middleware:** not selected because the RustFlow
+   contract needs to combine canonical-root containment, fixed hidden-file and
+   symlink policy, bounded responses, conditional requests and an opt-in SPA
+   fallback through the same resolver. The adapter keeps those decisions at
+   the HTTP boundary and documents its fixed limitations.
 
 ## Consequences
 
 - Inline styles remain unavailable, with external CSS as the documented
   alternative.
-- Static serving is not an implemented capability until the 2.2 subphase.
-- A future implementation will be opt-in and explicit.
+- Static serving is available as an opt-in `rustflow-server` adapter.
+- Range support is single-range only; malformed and multiple ranges return the
+  full file, and unsatisfied ranges return `416`.
+- ETags are weak and derived from file size and modification time. Weak ETags do
+  not satisfy `If-Range`; date validators are compared at HTTP-date precision.
+- Files are read into memory up to the configured per-file limit. Streaming
+  incremental reads and multiple ranges are not implemented.
 - Applications remain responsible for deployment-time publishing of generated
   assets, cache/CDN policy and secret exclusion.
 - Static serving must not weaken existing XSS escaping, URL validation,
@@ -121,21 +127,21 @@ media types must use stable public outcomes.
 - SPA fallback masking missing application routes or authorization boundaries.
 - Symlink/canonicalization behavior differing across platforms.
 
-## Verification required for acceptance
-
-This ADR requires no server implementation or k6 run.
+## Verification for the implementation
 
 - Confirm that `style` remains rejected for attributes and properties.
 - Confirm that DOM and SSR policy documentation use the same decision.
-- Confirm that static files are listed as unavailable until implemented.
-- Add implementation tests in subphase 2.2 for:
+- Verify the implementation in PR #104 with:
   - root resolution and invalid configuration;
   - `..`, absolute paths and encoded traversal;
   - symlinks and canonical containment;
   - dotfiles and directory listing;
   - GET/HEAD and unsupported methods;
   - MIME and cache headers;
-  - missing, unreadable and oversized files;
-  - middleware and authorization composition;
-  - HTTP timeout/concurrency behavior;
-  - k6 load and latency thresholds only if 2.2 changes server capacity.
+  - missing and oversized files;
+  - middleware authorization composition;
+  - k6 load and latency thresholds for the serving contract.
+
+Browser E2E and incremental-streaming verification are not provided by the
+current implementation. The response abstraction buffers bounded file contents;
+these remain limitations rather than claims of this ADR.

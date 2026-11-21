@@ -54,6 +54,7 @@ pub struct StaticFiles {
     cache_control: HeaderValue,
     index_file: Option<PathBuf>,
     spa_fallback: Option<PathBuf>,
+    spa_reserved_prefixes: Vec<String>,
 }
 
 impl StaticFiles {
@@ -74,6 +75,11 @@ impl StaticFiles {
             cache_control: HeaderValue::from_static("public, max-age=3600"),
             index_file: None,
             spa_fallback: None,
+            spa_reserved_prefixes: vec![
+                "api".to_owned(),
+                "health".to_owned(),
+                "graphql".to_owned(),
+            ],
         })
     }
 
@@ -109,6 +115,30 @@ impl StaticFiles {
             return Err(ServerError::InvalidStaticIndex);
         }
         self.spa_fallback = Some(relative_path.to_path_buf());
+        Ok(self)
+    }
+
+    pub fn with_spa_reserved_prefix(
+        mut self,
+        relative_prefix: impl AsRef<Path>,
+    ) -> Result<Self, ServerError> {
+        let relative_prefix = relative_prefix.as_ref();
+        if relative_prefix.is_absolute()
+            || contains_unsafe_components(relative_prefix)
+            || relative_prefix.components().count() != 1
+        {
+            return Err(ServerError::InvalidStaticIndex);
+        }
+        let prefix = relative_prefix
+            .to_string_lossy()
+            .trim_matches('/')
+            .to_ascii_lowercase();
+        if prefix.is_empty() || prefix.starts_with('.') {
+            return Err(ServerError::InvalidStaticIndex);
+        }
+        if !self.spa_reserved_prefixes.contains(&prefix) {
+            self.spa_reserved_prefixes.push(prefix);
+        }
         Ok(self)
     }
 
@@ -152,10 +182,10 @@ impl StaticFiles {
         let candidate = self.root.join(relative);
         let canonical = match fs::canonicalize(&candidate) {
             Ok(canonical) => canonical,
-            Err(_) => return self.resolve_spa_fallback(),
+            Err(_) => return None,
         };
         let canonical = if !canonical.is_file() {
-            return self.resolve_spa_fallback();
+            return None;
         } else {
             canonical
         };
@@ -191,6 +221,39 @@ impl StaticFiles {
             etag: HeaderValue::from_str(&etag).ok()?,
             last_modified: HeaderValue::from_str(&last_modified).ok()?,
         })
+    }
+
+    pub(crate) fn resolve_for_request(
+        &self,
+        relative_path: &str,
+        accept_html: bool,
+    ) -> Option<StaticFile> {
+        if let Some(file) = self.resolve(relative_path) {
+            return Some(file);
+        }
+        if !accept_html {
+            return None;
+        }
+
+        let relative = Path::new(relative_path);
+        if relative.is_absolute()
+            || relative
+                .to_string_lossy()
+                .to_ascii_lowercase()
+                .contains(['.', '\\'])
+            || relative
+                .components()
+                .next()
+                .and_then(|component| component.as_os_str().to_str())
+                .is_some_and(|first| {
+                    self.spa_reserved_prefixes
+                        .iter()
+                        .any(|reserved| reserved.eq_ignore_ascii_case(first))
+                })
+        {
+            return None;
+        }
+        self.resolve_spa_fallback()
     }
 
     fn resolve_spa_fallback(&self) -> Option<StaticFile> {
@@ -286,13 +349,7 @@ pub(crate) fn static_response(file: StaticFile, head: bool, request: &crate::Req
         .header("range")
         .and_then(|value| value.to_str().ok());
     if let Some(range) = range {
-        let if_range = request
-            .header("if-range")
-            .and_then(|value| value.to_str().ok());
-        let range_allowed = if_range.is_none_or(|value| {
-            value == file.etag.to_str().unwrap_or("")
-                || value == file.last_modified.to_str().unwrap_or("")
-        });
+        let range_allowed = if_range_header_matches(request.header("if-range"), &file);
         if range_allowed {
             match parse_single_range(range, length) {
                 Ok(Some((start, end))) => {
@@ -318,7 +375,7 @@ pub(crate) fn static_response(file: StaticFile, head: bool, request: &crate::Req
                     return response;
                 }
                 Ok(None) => {}
-                Err(_) => {
+                Err(RangeError::Unsatisfied) => {
                     let mut response = Response::status(StatusCode::RANGE_NOT_SATISFIABLE);
                     response = response.with_header(
                         http::header::CONTENT_RANGE,
@@ -330,6 +387,7 @@ pub(crate) fn static_response(file: StaticFile, head: bool, request: &crate::Req
                     }
                     return response;
                 }
+                Err(RangeError::Malformed) => {}
             }
         }
     }
@@ -368,9 +426,7 @@ fn conditional_not_modified(request: &crate::Request, file: &StaticFile) -> bool
                         .trim_start_matches("W/")
                         .trim_matches('"')
         });
-        if matches {
-            return true;
-        }
+        return matches;
     }
 
     if let Some(value) = request
@@ -386,35 +442,80 @@ fn conditional_not_modified(request: &crate::Request, file: &StaticFile) -> bool
     false
 }
 
-fn parse_single_range(value: &str, length: u64) -> Result<Option<(u64, u64)>, ()> {
+fn if_range_matches(value: &str, file: &StaticFile) -> bool {
     let value = value.trim();
-    let spec = value.strip_prefix("bytes=").ok_or(())?.trim();
+    let etag = file.etag.to_str().unwrap_or("");
+    if value.starts_with('"') {
+        return !etag.starts_with("W/") && value == etag;
+    }
+    if value.starts_with("W/") {
+        return false;
+    }
+    let Ok(request_date) = httpdate::parse_http_date(value) else {
+        return false;
+    };
+    let Ok(last_modified) = httpdate::parse_http_date(file.last_modified.to_str().unwrap_or(""))
+    else {
+        return false;
+    };
+    last_modified <= request_date
+}
+
+fn if_range_header_matches(value: Option<&HeaderValue>, file: &StaticFile) -> bool {
+    value.is_none_or(|value| {
+        value
+            .to_str()
+            .is_ok_and(|value| if_range_matches(value, file))
+    })
+}
+
+enum RangeError {
+    Malformed,
+    Unsatisfied,
+}
+
+fn parse_single_range(value: &str, length: u64) -> Result<Option<(u64, u64)>, RangeError> {
+    let value = value.trim();
+    let spec = value
+        .strip_prefix("bytes=")
+        .ok_or(RangeError::Malformed)?
+        .trim();
     if spec.is_empty() || spec.contains(',') {
-        return Err(());
+        return Ok(None);
     }
     if length == 0 {
-        return Err(());
+        return Err(RangeError::Unsatisfied);
     }
-    let (start, end) = spec.split_once('-').ok_or(())?;
+    let (start, end) = spec.split_once('-').ok_or(RangeError::Malformed)?;
     if start.is_empty() {
-        let suffix = end.parse::<u64>().map_err(|_| ())?;
+        let suffix = match end.parse::<u64>() {
+            Ok(value) => value,
+            Err(_) => return Ok(None),
+        };
         if suffix == 0 {
-            return Err(());
+            return Ok(None);
         }
         let start = length.saturating_sub(suffix);
         return Ok(Some((start, length - 1)));
     }
-    let start = start.parse::<u64>().map_err(|_| ())?;
+    let start = match start.parse::<u64>() {
+        Ok(value) => value,
+        Err(_) => return Ok(None),
+    };
     if start >= length {
-        return Err(());
+        return Err(RangeError::Unsatisfied);
     }
     let end = if end.is_empty() {
         length - 1
     } else {
-        end.parse::<u64>().map_err(|_| ())?.min(length - 1)
+        let parsed = match end.parse::<u64>() {
+            Ok(value) => value,
+            Err(_) => return Ok(None),
+        };
+        parsed.min(length - 1)
     };
     if start > end {
-        return Err(());
+        return Ok(None);
     }
     Ok(Some((start, end)))
 }
@@ -471,5 +572,26 @@ fn content_type(extension: Option<&str>) -> &'static str {
         Some("ttf") => "font/ttf",
         Some("otf") => "font/otf",
         _ => "application/octet-stream",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_if_range_header_disables_partial_response() {
+        let file = StaticFile {
+            body: Bytes::new(),
+            content_type: "application/octet-stream",
+            cache_control: HeaderValue::from_static("public, max-age=60"),
+            length: 0,
+            etag: HeaderValue::from_static("W/\"0-0\""),
+            last_modified: HeaderValue::from_static("Thu, 01 Jan 1970 00:00:00 GMT"),
+        };
+        let invalid = HeaderValue::from_bytes(b"\xff").expect("obs-text header value");
+
+        assert!(if_range_header_matches(None, &file));
+        assert!(!if_range_header_matches(Some(&invalid), &file));
     }
 }

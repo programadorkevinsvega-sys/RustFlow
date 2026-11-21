@@ -242,8 +242,9 @@ jobs:
         run: |
           set -euo pipefail
           static_root="$RUNNER_TEMP/rustflow-static-k6"
-          mkdir -p "$static_root/assets"
-          printf 'body{color:green}\n' > "$static_root/assets/app.css"
+          mkdir -p "$static_root"
+          printf 'body{color:green}\n' > "$static_root/app.css"
+          dd if=/dev/zero of="$static_root/app.bin" bs=1024 count=1024 status=none
           RUSTFLOW_STATIC_ROOT="$static_root" \
           RUSTFLOW_STATIC_PREFIX=/assets \
           RUSTFLOW_STATIC_PORT=3001 \
@@ -272,13 +273,25 @@ jobs:
           k6_url="https://github.com/grafana/k6/releases/download/v2.3.0/k6-v2.3.0-linux-amd64.tar.gz"
           curl --fail --location --silent --show-error "$k6_url" \
             --output "$RUNNER_TEMP/k6.tar.gz"
+          echo "39c3117b6af817592dcd0ce4242105c0a7af10948c2a425306f0be8f7a8a8ab1  $RUNNER_TEMP/k6.tar.gz" \
+            | sha256sum --check --status
           tar -xzf "$RUNNER_TEMP/k6.tar.gz" -C "$RUNNER_TEMP"
           k6_bin="$RUNNER_TEMP/k6-v2.3.0-linux-amd64/k6"
           test -x "$k6_bin"
 
           RUSTFLOW_STATIC_BASE_URL=http://127.0.0.1:3001 \
           RUSTFLOW_STATIC_PATH=/assets/app.css \
-            "$k6_bin" run scripts/static-files.k6.js
+          RUSTFLOW_RANGE_PATH=/assets/app.bin \
+            "$k6_bin" run --summary-export "$RUNNER_TEMP/static-files-k6-summary.json" scripts/static-files.k6.js
+
+      - name: Upload StaticFiles k6 measurements
+        if: ${{ always() && matrix.toolchain == 'stable' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: static-files-k6-summary
+          path: ${{ runner.temp }}/static-files-k6-summary.json
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Verify the authenticated example through in-process requests
         run: cargo test -p rustflow-server --features testing --example authenticated

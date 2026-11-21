@@ -5,7 +5,7 @@ use std::{
 };
 
 use http::{Method, StatusCode};
-use rustflow_server::{Application, StaticFiles, testing::TestApp};
+use rustflow_server::{Application, HttpError, Middleware, StaticFiles, testing::TestApp};
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -59,12 +59,18 @@ fn static_files_reject_traversal_absolute_dotfiles_and_symlinks() {
     let root = temp_directory("containment");
     write_file(&root, "safe.txt", b"safe");
     write_file(&root, ".secret", b"secret");
+    write_file(&root, ".env", b"secret");
+    write_file(&root, ".git/config", b"secret");
+    write_file(&root, "directory/index.html", b"not a listing");
     fs::write(root.join("outside.txt"), b"outside").unwrap();
 
     let files = StaticFiles::new(&root).unwrap();
     assert!(files.resolve("../outside.txt").is_none());
     assert!(files.resolve("/absolute.txt").is_none());
     assert!(files.resolve(".secret").is_none());
+    assert!(files.resolve(".env").is_none());
+    assert!(files.resolve(".git/config").is_none());
+    assert!(files.resolve("directory").is_none());
     assert!(files.resolve("%2e%2e/outside.txt").is_none());
     assert!(files.resolve("missing.txt").is_none());
     assert_eq!(files.resolve("safe.txt").unwrap().body(), b"safe");
@@ -130,6 +136,9 @@ async fn static_files_http_get_head_and_missing() {
     let root = temp_directory("http");
     write_file(&root, "app.css", b"body{}");
     write_file(&root, "index.html", b"<h1>index</h1>");
+    write_file(&root, ".env", b"secret");
+    write_file(&root, ".git/config", b"secret");
+    write_file(&root, "directory/index.html", b"not a listing");
     let files = StaticFiles::new(&root)
         .unwrap()
         .with_index_file("index.html")
@@ -180,7 +189,20 @@ async fn static_files_http_get_head_and_missing() {
     assert_eq!(missing.status(), StatusCode::NOT_FOUND);
     assert_eq!(missing.body(), b"Static file not found");
 
-    let traversal = app.get("/assets/../index.html").send().await.unwrap();
+    for path in ["/assets/.env", "/assets/.git/config", "/assets/directory"] {
+        let response = app.get(path).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+    }
+
+    let traversal = app
+        .get("/assets/../index.html")
+        .header("range", "bytes=0-1")
+        .unwrap()
+        .header("if-none-match", "*")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
     assert_eq!(traversal.status(), StatusCode::NOT_FOUND);
 
     let method = app.post("/assets/app.css").send().await.unwrap();
@@ -255,9 +277,349 @@ async fn static_files_http_range_conditional_and_spa_fallback() {
         "bytes */6"
     );
 
-    let fallback = app.get("/assets/unknown/route").send().await.unwrap();
+    let fallback = app
+        .get("/assets/unknown/route")
+        .header("accept", "text/html")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
     assert_eq!(fallback.status(), StatusCode::OK);
     assert_eq!(fallback.text().unwrap(), "<h1>spa</h1>");
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn static_files_http_range_edge_cases_and_head() {
+    let root = temp_directory("range-edge");
+    write_file(&root, "app.css", b"abcdef");
+    write_file(&root, "empty.txt", b"");
+    let files = StaticFiles::new(&root).unwrap();
+
+    let mut app = Application::new();
+    app.static_files("/assets", files).expect("mount assets");
+    let app = TestApp::builder()
+        .application(app)
+        .build()
+        .expect("test app");
+
+    for (range, start, end, body) in [
+        ("bytes=0-0", 0usize, 1usize, b"a".as_slice()),
+        ("bytes=-3", 3, 6, b"def".as_slice()),
+        ("bytes=2-", 2, 6, b"cdef".as_slice()),
+        ("bytes=4-999", 4, 6, b"ef".as_slice()),
+    ] {
+        let response = app
+            .get("/assets/app.css")
+            .header("range", range)
+            .unwrap()
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(
+            response.headers()[http::header::CONTENT_RANGE],
+            format!("bytes {}-{}/6", start, end - 1)
+        );
+        assert_eq!(response.body(), body);
+    }
+
+    for range in [
+        "bytes=99-100",
+        "bytes=18446744073709551615-18446744073709551615",
+    ] {
+        let response = app
+            .get("/assets/app.css")
+            .header("range", range)
+            .unwrap()
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+        assert_eq!(response.headers()[http::header::CONTENT_RANGE], "bytes */6");
+    }
+
+    for range in ["bytes=abc", "bytes=5-2", "bytes=0-1,4-5"] {
+        let response = app
+            .get("/assets/app.css")
+            .header("range", range)
+            .unwrap()
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.body(), b"abcdef");
+    }
+
+    for range in [
+        "bytes=0-18446744073709551615",
+        "bytes=-18446744073709551615",
+    ] {
+        let response = app
+            .get("/assets/app.css")
+            .header("range", range)
+            .unwrap()
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(response.body(), b"abcdef");
+    }
+
+    let empty = app
+        .get("/assets/empty.txt")
+        .header("range", "bytes=0-0")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(empty.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+    assert_eq!(empty.headers()[http::header::CONTENT_RANGE], "bytes */0");
+
+    let resolved = StaticFiles::new(&root).unwrap();
+    let resolved = resolved.resolve("app.css").unwrap();
+    let etag = resolved.etag().to_str().unwrap().to_owned();
+    let last_modified = resolved.last_modified().to_str().unwrap().to_owned();
+
+    let head = app
+        .request(Method::HEAD, "/assets/app.css")
+        .header("range", "bytes=1-3")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    let get_range = app
+        .get("/assets/app.css")
+        .header("range", "bytes=1-3")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(head.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(head.status(), get_range.status());
+    for header in [
+        http::header::CONTENT_TYPE,
+        http::header::CONTENT_RANGE,
+        http::header::CONTENT_LENGTH,
+        http::header::CACHE_CONTROL,
+        http::header::ETAG,
+        http::header::LAST_MODIFIED,
+        http::header::ACCEPT_RANGES,
+    ] {
+        assert_eq!(
+            head.headers().get(&header),
+            get_range.headers().get(&header)
+        );
+    }
+    assert_eq!(head.headers()[http::header::CONTENT_RANGE], "bytes 1-3/6");
+    assert_eq!(head.headers()[http::header::CONTENT_LENGTH], "3");
+    assert!(head.body().is_empty());
+
+    let mismatched = app
+        .get("/assets/app.css")
+        .header("range", "bytes=0-1")
+        .unwrap()
+        .header("if-range", "\"another-etag\"")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(mismatched.status(), StatusCode::OK);
+    assert_eq!(mismatched.body(), b"abcdef");
+
+    let weak_if_range = app
+        .get("/assets/app.css")
+        .header("range", "bytes=0-1")
+        .unwrap()
+        .header("if-range", &etag)
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(weak_if_range.status(), StatusCode::OK);
+    assert_eq!(weak_if_range.body(), b"abcdef");
+
+    let matching_if_range_date = app
+        .get("/assets/app.css")
+        .header("range", "bytes=0-1")
+        .unwrap()
+        .header("if-range", &last_modified)
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(matching_if_range_date.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(matching_if_range_date.body(), b"ab");
+
+    let stale_if_range_date = app
+        .get("/assets/app.css")
+        .header("range", "bytes=0-1")
+        .unwrap()
+        .header("if-range", "Wed, 21 Oct 2015 07:28:00 GMT")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(stale_if_range_date.status(), StatusCode::OK);
+    assert_eq!(stale_if_range_date.body(), b"abcdef");
+
+    let weak_etag = app
+        .get("/assets/app.css")
+        .header("if-none-match", &etag)
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(weak_etag.status(), StatusCode::NOT_MODIFIED);
+    assert!(weak_etag.body().is_empty());
+    assert!(weak_etag.headers().contains_key(http::header::ETAG));
+    assert!(
+        weak_etag
+            .headers()
+            .contains_key(http::header::CACHE_CONTROL)
+    );
+
+    let etag_list = app
+        .get("/assets/app.css")
+        .header("if-none-match", &format!("\"other\", {etag}"))
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(etag_list.status(), StatusCode::NOT_MODIFIED);
+
+    let star = app
+        .get("/assets/app.css")
+        .header("if-none-match", "*")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(star.status(), StatusCode::NOT_MODIFIED);
+
+    let precedence = app
+        .get("/assets/app.css")
+        .header("if-none-match", "\"not-the-current-etag\"")
+        .unwrap()
+        .header("if-modified-since", "Thu, 01 Jan 2037 00:00:00 GMT")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(precedence.status(), StatusCode::OK);
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn static_files_spa_fallback_accepts_html_only_and_respects_reserved_paths() {
+    let root = temp_directory("spa");
+    write_file(&root, "app.html", b"<h1>spa</h1>");
+    let files = StaticFiles::new(&root)
+        .unwrap()
+        .with_spa_fallback("app.html")
+        .unwrap();
+
+    let mut app = Application::new();
+    app.static_files("/assets", files).expect("mount assets");
+    let app = TestApp::builder()
+        .application(app)
+        .build()
+        .expect("test app");
+
+    let html = app
+        .get("/assets/client/route")
+        .header("accept", "text/html")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(html.status(), StatusCode::OK);
+    assert_eq!(html.text().unwrap(), "<h1>spa</h1>");
+
+    for path in ["/assets/../app.html", "/assets/%2e%2e/app.html"] {
+        let traversal = app
+            .get(path)
+            .header("accept", "text/html")
+            .unwrap()
+            .header("range", "bytes=0-1")
+            .unwrap()
+            .header("if-none-match", "*")
+            .unwrap()
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(traversal.status(), StatusCode::NOT_FOUND, "{path}");
+    }
+
+    let js = app
+        .get("/assets/app.js")
+        .header("accept", "text/html")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(js.status(), StatusCode::NOT_FOUND);
+
+    for path in [
+        "/assets/api/users",
+        "/assets/health/live",
+        "/assets/graphql",
+    ] {
+        let reserved = app
+            .get(path)
+            .header("accept", "text/html")
+            .unwrap()
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(reserved.status(), StatusCode::NOT_FOUND, "{path}");
+    }
+
+    let non_html = app
+        .get("/assets/unknown/route")
+        .header("accept", "*/*")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(non_html.status(), StatusCode::NOT_FOUND);
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn static_files_obey_global_authorization_middleware() {
+    let root = temp_directory("middleware");
+    write_file(&root, "private.txt", b"private");
+    let mut app = Application::new();
+    app.static_files("/assets", StaticFiles::new(&root).unwrap())
+        .expect("mount static files");
+    app.middleware(Middleware::new(|request, next| async move {
+        if request.header("x-test-auth").is_none() {
+            return Err(HttpError::new(StatusCode::UNAUTHORIZED, "Unauthorized"));
+        }
+        next.run(request).await
+    }))
+    .expect("register authorization middleware");
+    let app = TestApp::builder()
+        .application(app)
+        .build()
+        .expect("test app");
+
+    let unauthorized = app.get("/assets/private.txt").send().await.unwrap();
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+    let authorized = app
+        .get("/assets/private.txt")
+        .header("x-test-auth", "allowed")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authorized.status(), StatusCode::OK);
+    assert_eq!(authorized.body(), b"private");
 
     fs::remove_dir_all(root).unwrap();
 }
