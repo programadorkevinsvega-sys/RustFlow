@@ -1,6 +1,8 @@
 use std::{cell::RefCell, rc::Rc, string::ToString};
 
-use rustflow::components::ComponentRegistry;
+use rustflow::components::{
+    ComponentDefinition, ComponentError, ComponentRegistry, ComponentRender,
+};
 use rustflow::prelude::*;
 use rustflow::view::Element as ViewElement;
 use rustflow_dom::{ClientNavigation, DomError, DomRenderer, ElementRef, ReactiveMountedDom};
@@ -675,8 +677,39 @@ pub fn start() -> Result<(), JsValue> {
     });
 
     let todo_input_ref = ElementRef::new();
-
     let mut registry = ComponentRegistry::new();
+    registry
+        .register(
+            ComponentDefinition::new("ErrorBoundary", |_context, _properties| {
+                let render: ComponentRender = Rc::new(|_properties, children| {
+                    if children.len() == 2 {
+                        Ok(children[0].clone())
+                    } else {
+                        Err(ComponentError::User(
+                            "ErrorBoundary requires exactly one protected child and one fallback"
+                                .to_owned(),
+                        ))
+                    }
+                });
+                Ok(render)
+            })
+            .map_err(display_error)?,
+        )
+        .map_err(display_error)?;
+    registry
+        .register(
+            ComponentDefinition::new("BoundaryBroken", |_context, _properties| {
+                let render: ComponentRender = Rc::new(|_properties, _children| {
+                    Ok(View::element(
+                        "script",
+                        [View::text("unsafe protected view")],
+                    )?)
+                });
+                Ok(render)
+            })
+            .map_err(display_error)?,
+        )
+        .map_err(display_error)?;
     register_counter(&mut registry).map_err(display_error)?;
     register_todorow(&mut registry).map_err(display_error)?;
     register_nestedbenchmarknode(&mut registry).map_err(display_error)?;
@@ -860,6 +893,11 @@ pub fn start() -> Result<(), JsValue> {
     let route_for_render = current_route.clone();
     let benchmark_depth_for_toggle = benchmark_depth_signal.clone();
     let benchmark_depth_for_region = benchmark_depth_signal.clone();
+    let boundary_failed = root_scope
+        .signal(true)
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    let boundary_failed_for_button = boundary_failed.clone();
+    let boundary_failed_for_view = boundary_failed.clone();
     let mounted = renderer
         .mount_reactive(&target, &root_scope, move || {
             let route = route_for_render.get();
@@ -1176,6 +1214,9 @@ pub fn start() -> Result<(), JsValue> {
                 View::fragment([])
             };
 
+            let boundary_failed_for_button = boundary_failed_for_button.clone();
+            let boundary_failed_for_view = boundary_failed_for_view.clone();
+
             let show_for_region = show_for_region.clone();
             let todo_input_ref_for_add = todo_input_ref.clone();
             let dom_ref_for_probe = dom_ref_handle.clone();
@@ -1208,6 +1249,29 @@ pub fn start() -> Result<(), JsValue> {
                         <input id="navigation-query" type="search" name="q" aria-label="Search query" />
                         <button type="submit">"Search"</button>
                     </form>
+                    <button
+                        data-testid="toggle-error-boundary"
+                        on:click={move |_payload| {
+                            let failed = boundary_failed_for_button.get();
+                            boundary_failed_for_button.set(!failed);
+                        }}
+                    >
+                        "Toggle error boundary"
+                    </button>
+                    @dynamic {
+                        if boundary_failed_for_view.get() {
+                            View::error_boundary(
+                                View::component("BoundaryBroken", [], [], None)?,
+                                ViewElement::new("section")?
+                                    .with_attribute("role", "status")?
+                                    .with_attribute("aria-label", "Component fallback")?
+                                    .with_children([View::text("Accessible component fallback")])
+                                    .build(),
+                            )?
+                        } else {
+                            View::element("section", [View::text("Recovered protected view")])?
+                        }
+                    }
                     <Counter initial={0} label={counter_label_for_component.get()} />
                     <button data-testid="change-counter-label" on:click={move |_payload| {
                         counter_label_for_button.set(String::from("Updated label"));

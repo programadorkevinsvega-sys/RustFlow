@@ -67,7 +67,7 @@ Controlled values use DOM properties such as <code>value</code> and <code>checke
 
 ### Error behavior
 
-There is no component-level error-boundary/fallback API. Initial component/mount and SSR errors propagate as render errors. Reactive DOM update failures are retained by <code>ReactiveMountedDom::take_error</code>; the last successful range is preserved on failed updates. Runtime effect panics restore internal graph invariants, detach failed-run dependencies, and propagate; they are not converted into a fallback view. Browser event-handler panic isolation is not promised. The HTTP <code>ErrorReporter</code> added in Phase 7.1 reports selected HTTP failures and is not a UI error boundary.
+<code>View::error_boundary(child, fallback)</code> provides an explicit experimental component-level boundary. It captures local component/setup/render failures and protected-subtree panics, renders a safe escaped fallback, disposes protected scopes, and allows a later successful update to recover. It does not capture HTTP, authentication, authorization, CSRF, server-action, or resource-state failures. Initial component/mount and SSR errors outside a boundary still propagate. Reactive DOM update failures outside a boundary are retained by <code>ReactiveMountedDom::take_error</code>; the last successful range is preserved. Runtime effect panics restore internal graph invariants, detach failed-run dependencies, and propagate. Browser event-handler panic isolation is not promised. The HTTP <code>ErrorReporter</code> added in Phase 7.1 reports selected HTTP failures and is not a UI error boundary.
 
 ### Asynchronous rendering
 

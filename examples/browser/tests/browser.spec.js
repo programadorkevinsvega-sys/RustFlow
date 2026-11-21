@@ -53,6 +53,22 @@ test("counter increments by patching its existing DOM node", async ({ page }) =>
   ).toBe(true);
 });
 
+test("error boundary shows an accessible fallback and recovers without leaked server UI", async ({ page }) => {
+  await expect(page.getByRole("status", { name: "Component fallback" })).toHaveText(
+    "Accessible component fallback",
+  );
+  await expect(page.getByText("unsafe protected view")).toHaveCount(0);
+
+  await page.getByTestId("toggle-error-boundary").click();
+  await expect(page.getByText("Recovered protected view")).toBeVisible();
+  await expect(page.getByText("Accessible component fallback")).toHaveCount(0);
+
+  await page.getByTestId("toggle-error-boundary").click();
+  await expect(page.getByRole("status", { name: "Component fallback" })).toHaveText(
+    "Accessible component fallback",
+  );
+});
+
 test("component prop updates preserve local state and compatible DOM identity", async ({ page }) => {
   const label = page.getByTestId("counter-label");
   const value = page.getByTestId("counter-value");

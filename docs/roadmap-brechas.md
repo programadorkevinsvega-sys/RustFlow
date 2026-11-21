@@ -318,6 +318,8 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 **Pruebas/evidencia:** unitarias y browser E2E para fallo, recuperación, anidamiento y cleanup.
 
+**Estado actual:** implementación y ADR 0031 en progreso en una rama independiente; sin PR fusionada todavía.
+
 ### 2.7 Definir router unificado
 
 **Cubre:** B4, router.

@@ -13,7 +13,8 @@ RustFlow es un prototipo pre-1.0. Esta página resume lo que puedes probar hoy y
 | Servidor de archivos estáticos | Experimental disponible; sin streaming incremental | [Estilos y assets](/guides/styling-assets/) |
 | Hot reload y bundler WASM integrado | No disponible | [CLI y generadores](/guides/cli/) |
 | Server actions / server functions | Experimental disponible: JSON `POST` tipado; sin formularios progresivos ni proxy cliente | [Server actions JSON](/guides/server-actions/) |
-| Suspense, Resources y ErrorBoundary | No disponibles | [Errores en UI y SSR](/guides/ui-errors/) |
+| Suspense y Resources | No disponibles | [Errores en UI y SSR](/guides/ui-errors/) |
+| ErrorBoundary | Experimental disponible | <code>View::error_boundary(child, fallback)</code>; cobertura limitada a fallos locales de componentes/UI. |
 | Sesiones SQL durables | No disponibles | [Sesiones y control de acceso](/guides/sessions-and-access/) |
 | Proveedor de usuarios | No disponible | [Sesiones y control de acceso](/guides/sessions-and-access/) |
 | Rate limiting | No disponible | [Errores y seguridad](/guides/errors-and-security/) |
