@@ -1445,21 +1445,21 @@ impl Application {
 
         let exact = prefix.clone();
         let exact_files = files.clone();
-        self.get(exact.clone(), move |_request| {
+        self.get(exact.clone(), move |request| {
             let files = exact_files.clone();
             async move {
                 match files.resolve("") {
-                    Some(file) => Ok(static_files::static_response(file, false)),
+                    Some(file) => Ok(static_files::static_response(file, false, &request)),
                     None => Err(static_files::static_not_found()),
                 }
             }
         })?;
         let exact_files = files.clone();
-        self.head(exact, move |_request| {
+        self.head(exact, move |request| {
             let files = exact_files.clone();
             async move {
                 match files.resolve("") {
-                    Some(file) => Ok(static_files::static_response(file, true)),
+                    Some(file) => Ok(static_files::static_response(file, true, &request)),
                     None => Ok(Response::status(StatusCode::NOT_FOUND)),
                 }
             }
@@ -1471,7 +1471,7 @@ impl Application {
             let relative = request.path_param("path").unwrap_or("").to_owned();
             async move {
                 match files.resolve(&relative) {
-                    Some(file) => Ok(static_files::static_response(file, false)),
+                    Some(file) => Ok(static_files::static_response(file, false, &request)),
                     None => Err(static_files::static_not_found()),
                 }
             }
@@ -1482,7 +1482,7 @@ impl Application {
             let relative = request.path_param("path").unwrap_or("").to_owned();
             async move {
                 match files.resolve(&relative) {
-                    Some(file) => Ok(static_files::static_response(file, true)),
+                    Some(file) => Ok(static_files::static_response(file, true, &request)),
                     None => Ok(Response::status(StatusCode::NOT_FOUND)),
                 }
             }

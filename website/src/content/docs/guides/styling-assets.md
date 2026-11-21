@@ -132,6 +132,18 @@ archivos se sirven con GET/HEAD, MIME determinístico, límite de tamaño y cach
 configurados. El SPA fallback es el archivo índice opt-in; no sustituye
 autorización ni middleware de rutas protegidas.
 
+El adapter también admite:
+
+- Range único `bytes=start-end`, `bytes=start-` y `bytes=-suffix`.
+- `Accept-Ranges: bytes`, `Content-Range`, `206` y `416` con rango disponible.
+- `ETag`, `Last-Modified`, `If-None-Match` e `If-Modified-Since`.
+- `If-Range` para evitar un Range cuando el cliente conserva otra versión.
+
+No hay streaming incremental desde disco ni soporte de múltiples rangos. Los
+bytes se leen dentro del límite configurado y se entregan como una respuesta
+acotada. Para archivos grandes, conserva el límite explícito y usa un CDN o
+servidor de despliegue que implemente streaming.
+
 La prueba de carga reproducible vive en
 `scripts/static-files.k6.js`. Con un servidor que expone
 `RUSTFLOW_STATIC_PATH`:

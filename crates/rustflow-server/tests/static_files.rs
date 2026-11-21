@@ -188,3 +188,76 @@ async fn static_files_http_get_head_and_missing() {
 
     fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn static_files_http_range_conditional_and_spa_fallback() {
+    let root = temp_directory("range");
+    write_file(&root, "app.css", b"body{}");
+    write_file(&root, "app.html", b"<h1>spa</h1>");
+    let files = StaticFiles::new(&root)
+        .unwrap()
+        .with_spa_fallback("app.html")
+        .unwrap();
+
+    let mut app = Application::new();
+    app.static_files("/assets", files).expect("mount assets");
+    let app = TestApp::builder()
+        .application(app)
+        .build()
+        .expect("test app");
+
+    let range = app
+        .get("/assets/app.css")
+        .header("range", "bytes=0-3")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(range.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(range.headers()[http::header::CONTENT_RANGE], "bytes 0-3/6");
+    assert_eq!(range.headers()[http::header::ACCEPT_RANGES], "bytes");
+    assert_eq!(range.body(), b"body");
+
+    let resolved = StaticFiles::new(&root).unwrap();
+    let resolved = resolved.resolve("app.css").unwrap();
+    let etag = resolved.etag().to_str().unwrap().to_owned();
+    let last_modified = resolved.last_modified().to_str().unwrap().to_owned();
+
+    let conditional = app
+        .get("/assets/app.css")
+        .header("if-none-match", &etag)
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(conditional.status(), StatusCode::NOT_MODIFIED);
+    assert!(conditional.body().is_empty());
+
+    let modified = app
+        .get("/assets/app.css")
+        .header("if-modified-since", &last_modified)
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(modified.status(), StatusCode::NOT_MODIFIED);
+
+    let unsatisfied = app
+        .get("/assets/app.css")
+        .header("range", "bytes=99-100")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unsatisfied.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+    assert_eq!(
+        unsatisfied.headers()[http::header::CONTENT_RANGE],
+        "bytes */6"
+    );
+
+    let fallback = app.get("/assets/unknown/route").send().await.unwrap();
+    assert_eq!(fallback.status(), StatusCode::OK);
+    assert_eq!(fallback.text().unwrap(), "<h1>spa</h1>");
+
+    fs::remove_dir_all(root).unwrap();
+}

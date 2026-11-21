@@ -237,6 +237,49 @@ jobs:
           RUSTFLOW_CLI_TEST_TARGET_DIR: ${{ runner.temp }}/rustflow-cli-target
         run: cargo test -p rustflow-cli --test cli_integration
 
+      - name: Run StaticFiles k6 load contract
+        if: matrix.toolchain == 'stable'
+        run: |
+          set -euo pipefail
+          static_root="$RUNNER_TEMP/rustflow-static-k6"
+          mkdir -p "$static_root/assets"
+          printf 'body{color:green}\n' > "$static_root/assets/app.css"
+          RUSTFLOW_STATIC_ROOT="$static_root" \
+          RUSTFLOW_STATIC_PREFIX=/assets \
+          RUSTFLOW_STATIC_PORT=3001 \
+            cargo run -p rustflow-server --example static_files \
+            > "$RUNNER_TEMP/rustflow-static-files.log" 2>&1 &
+          static_pid=$!
+          cleanup_static() {
+            kill "$static_pid" 2>/dev/null || true
+            wait "$static_pid" 2>/dev/null || true
+          }
+          trap cleanup_static EXIT
+
+          ready=0
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail http://127.0.0.1:3001/assets/app.css >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "1" ]; then
+            cat "$RUNNER_TEMP/rustflow-static-files.log"
+            exit 1
+          fi
+
+          k6_url="https://github.com/grafana/k6/releases/download/v2.3.0/k6-v2.3.0-linux-amd64.tar.gz"
+          curl --fail --location --silent --show-error "$k6_url" \
+            --output "$RUNNER_TEMP/k6.tar.gz"
+          tar -xzf "$RUNNER_TEMP/k6.tar.gz" -C "$RUNNER_TEMP"
+          k6_bin="$RUNNER_TEMP/k6-v2.3.0-linux-amd64/k6"
+          test -x "$k6_bin"
+
+          RUSTFLOW_STATIC_BASE_URL=http://127.0.0.1:3001 \
+          RUSTFLOW_STATIC_PATH=/assets/app.css \
+            "$k6_bin" run scripts/static-files.k6.js
+
       - name: Verify the authenticated example through in-process requests
         run: cargo test -p rustflow-server --features testing --example authenticated
 
