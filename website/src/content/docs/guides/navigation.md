@@ -71,6 +71,26 @@ Consulta [SSR y documentos HTML](/guides/ssr/) para el ciclo de vida de página 
 
 La demo interactiva y sus tests están explicados paso a paso en el [tutorial de interfaz reactiva de tareas](/tutorials/reactive-todo/). Para verificar historial, formularios compatibles y fallbacks, sigue [Probar y depurar aplicaciones](/guides/testing/).
 
+## Contrato futuro de router unificado
+
+RustFlow no ofrece todavía una tabla de rutas framework-owned compartida entre
+servidor y navegador. El contrato aprobado en [ADR 0032](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0032-unified-router-contract.md)
+mantendrá separados los adaptadores HTTP y browser:
+
+- el servidor sigue siendo autoritativo para métodos, parámetros, middleware,
+  estados HTTP, SSR, autorización y fallback;
+- el browser solo mejora navegación opt-in y conserva links/formularios nativos
+  cuando no puede operar de forma segura;
+- una aplicación puede compartir una declaración de ruta, pero no hay registro
+  global oculto ni ejecución implícita de handlers browser-side;
+- no hay fallback por prefijo, wildcard ambigua, loader o data cache aprobado;
+- query parameters, sesión, identidad y secretos no forman parte del matching
+  de route.
+
+No uses esta sección como prueba de que ya existe un router declarativo. Hasta
+que una aprobación posterior implemente el contrato, conserva la tabla HTTP de
+`Application` y el callback `ClientNavigation` tal como están documentados.
+
 ## Límites
 
 La aplicación tiene que resolver rutas y actualizar la vista. Esta API de navegación cliente no descarga e inserta HTML arbitrario como mecanismo de routing, no genera rutas a partir del filesystem, no aporta autenticación/sesiones ni procesa mutaciones de formularios, y no reemplaza el routing del servidor. Para la extracción y validación tipada del lado servidor, los errores 422 y el middleware CSRF optativo en mutaciones autenticadas mediante cookies, consulta la [guía de formularios y validación](/guides/forms-validation/). La API es pre-1.0 y puede cambiar.
