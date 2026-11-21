@@ -57,7 +57,7 @@ La infraestructura descrita aquí se integró mediante PR #71 en `main` el 2026-
 | <code>use_resource</code>, <code>Resource</code>, <code>ResourceState</code>, <code>ResourceRequest</code> | Experimental disponible en Phase 2.5 | Estado owner-scoped explícito, reloading, errores, cancelación, stale-result rejection y cleanup. El bridge async pertenece al executor de la aplicación; no se sigue dependencias a través de <code>await</code>. |
 | Suspense/loading boundary automático | No soportado | La aplicación presenta fallbacks explícitos según <code>ResourceState</code>; no hay API global implícita. |
 | Referencias seguras a nodos DOM | Experimental disponible (Phase 7.2 / PR #70) | <code>rustflow_dom::ElementRef</code> + <code>ref={...}</code>; mount, reemplazo, hidratación validada y unmount seguros; solo browser/WASM. |
-| Error boundaries de componentes | No soportado | Los errores iniciales/SSR se propagan; el DOM reactivo expone <code>take_error</code> al mantener el último rango bueno. |
+| Error boundaries de componentes | Experimental disponible en Phase 2.6 | <code>View::error_boundary(child, fallback)</code> aisla fallos locales de componentes y panics de su subtree; cleanup owner-scoped, SSR fallback y recuperación explícita. No captura fallos HTTP/authorization/server actions. |
 
 ## HTTP y servidor
 

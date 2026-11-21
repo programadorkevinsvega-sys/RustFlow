@@ -3,7 +3,7 @@ title: Errores en UI, SSR y operaciones reactivas
 description: Comprende qué errores propaga RustFlow, qué puede recuperar el renderer y qué límites aún no ofrece.
 ---
 
-RustFlow distingue errores de construcción/render del árbol, errores del runtime reactivo, errores de actualización del DOM y errores HTTP. No existe todavía un componente público ErrorBoundary ni una API de fallback por subárbol.
+RustFlow distingue errores de construcción/render del árbol, errores del runtime reactivo, errores de actualización del DOM y errores HTTP. La API experimental <code>View::error_boundary(child, fallback)</code> permite aislar fallos locales de componentes/UI; no reemplaza a los errores HTTP ni captura infraestructura del servidor.
 
 ## 1. Errores de construcción y render inicial
 
@@ -15,7 +15,7 @@ Valida datos y tipos de props antes de construir la vista. No captures un error 
 
 <code>DomRenderer::mount_reactive</code> mantiene una región con su scope. Si una actualización de vista falla, el renderer conserva el último rango DOM correcto y almacena el último <code>DomError</code> en <code>ReactiveMountedDom</code>. El consumidor puede consultar ese diagnóstico mediante <code>take_error()</code>.
 
-Esto es una recuperación del rango montado, no un error boundary por componente. El renderer no selecciona un fallback declarativo ni garantiza la actualización de los hermanos como si hubiese un límite aislado.
+Esto conserva el último rango montado incluso fuera de una boundary. Dentro de un <code>ErrorBoundary</code>, un fallo del protected subtree usa el fallback declarado y la próxima actualización exitosa puede volver a montar el contenido protegido.
 
 ## 3. Panics de efectos y limpieza
 
@@ -33,6 +33,17 @@ En SSR, un error de setup, render o serialización se propaga a la ruta/llamador
 
 El <code>ErrorReporter</code> de Phase 7.1 pertenece al servidor HTTP y recibe metadatos allowlisted para resultados 5xx. No intercepta panics de un componente de navegador, no crea un fallback de UI y no enlaza errores de SSR a una boundary visual. Mantén esos contratos separados.
 
-## 6. Estado pendiente
+## 6. ErrorBoundary de componentes
 
-La recuperación por subárbol, propagación selectiva a hermanos, fallback que también puede fallar y errores asíncronos todavía no forman parte de una API UI estable. El trabajo futuro debe especificar el estado del árbol tras el fallo, orden de cleanup, error en el propio fallback, SSR y compatibilidad WASM antes de introducir una boundary.
+~~~rust
+let view = View::error_boundary(
+    View::component("RiskyPanel", [], [], None)?,
+    View::element("section", [View::text("We couldn't render this panel.")])?,
+)?;
+~~~
+
+La API requiere exactamente dos hijos: el contenido protegido y el fallback. El fallback es texto/vistas escapadas; no acepta HTML crudo ni datos sensibles. En SSR se representa el fallback si el subtree protegido falla; en browser se ejecuta la misma separación y se limpia el scope protegido al entrar en fallback.
+
+Una boundary captura fallos de setup/render locales y panics del subtree, pero no captura respuestas HTTP, autenticación, autorización, CSRF, server actions ni Resource::Error. Esos errores deben seguir su contrato server/resource y aparecer mediante estados seguros.
+
+Las boundaries pueden anidar: la boundary más cercana captura el fallo. Si la actualización posterior ya puede construir el contenido protegido, la boundary reemplaza el fallback y vuelve a crear los scopes/efectos necesarios. Si el fallback mismo falla, el error se propaga; no existe un fallback invisible ni una política global de recuperación.

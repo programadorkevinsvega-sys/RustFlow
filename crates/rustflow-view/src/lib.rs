@@ -648,6 +648,15 @@ impl View {
     pub fn dynamic(evaluator: impl Fn() -> Result<View, ViewError> + 'static) -> Self {
         Self::Dynamic(DynamicChild::new(evaluator))
     }
+    /// Create an explicit UI error boundary around a protected child view.
+    ///
+    /// The boundary is represented by the reserved `ErrorBoundary` component
+    /// descriptor. Its first child is protected and its second child is the
+    /// accessible fallback. HTTP/server action failures are outside this UI
+    /// contract and are not converted into component fallbacks.
+    pub fn error_boundary(child: View, fallback: View) -> Result<Self, ViewError> {
+        Self::component("ErrorBoundary", [], [child, fallback], None)
+    }
     /// Create a keyed list, rejecting duplicate keys.
     pub fn keyed_list(children: impl IntoIterator<Item = KeyedChild>) -> Result<Self, ViewError> {
         Ok(Self::KeyedList(KeyedList::new(children)?))

@@ -6,12 +6,16 @@ use std::{
     collections::{HashMap, HashSet},
     error::Error,
     fmt,
+    panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
 
 use js_sys::{Map, Reflect, Set};
 use rustflow::{
-    components::{ComponentError, ComponentInstance, ComponentRegistry, RenderTarget},
+    components::{
+        ComponentDefinition, ComponentError, ComponentInstance, ComponentRegistry, ComponentRender,
+        RenderTarget,
+    },
     reactivity::{Effect, Runtime, RuntimeError, Scope, untrack},
 };
 use rustflow_view::{
@@ -1436,6 +1440,114 @@ impl DomRenderer {
         }
     }
 
+    fn build_error_boundary(
+        &self,
+        component: &ComponentNode,
+        parent_scope: &Scope,
+        resources: &mut RenderedNodes,
+    ) -> Result<Vec<Node>, DomError> {
+        let children = component.children();
+        if children.len() != 2 {
+            return Err(DomError::Component(
+                "ErrorBoundary requires exactly one protected child and one fallback".to_owned(),
+            ));
+        }
+
+        let boundary_definition = ComponentDefinition::new("ErrorBoundary", |_context, _props| {
+            let render: ComponentRender = Rc::new(|_properties, children| {
+                if children.len() == 2 {
+                    Ok(children[0].clone())
+                } else {
+                    Err(ComponentError::User(
+                        "ErrorBoundary requires exactly one protected child and one fallback"
+                            .to_owned(),
+                    ))
+                }
+            });
+            Ok(render)
+        })
+        .map_err(DomError::from)?;
+
+        let mut instance = ComponentInstance::mount(
+            boundary_definition,
+            self.runtime.clone(),
+            parent_scope,
+            component.properties().iter().cloned(),
+            children.iter().cloned(),
+        )?;
+
+        let mut inner = RenderedNodes::default();
+        let protected = &children[0];
+        let fallback = &children[1];
+        let protected_result = catch_unwind(AssertUnwindSafe(|| {
+            self.build_nodes(protected, instance.scope(), &mut inner)
+        }));
+        let (roots, view) = match protected_result {
+            Ok(Ok(nodes)) => (nodes, protected.clone()),
+            Ok(Err(_)) | Err(_) => {
+                let _ = cleanup_rendered_nodes(&mut inner);
+                inner = RenderedNodes::default();
+                match catch_unwind(AssertUnwindSafe(|| {
+                    self.build_nodes(fallback, instance.scope(), &mut inner)
+                })) {
+                    Ok(Ok(nodes)) => (nodes, fallback.clone()),
+                    Ok(Err(error)) => {
+                        let _ = cleanup_rendered_nodes(&mut inner);
+                        let _ = instance.unmount();
+                        return Err(error);
+                    }
+                    Err(_) => {
+                        let _ = cleanup_rendered_nodes(&mut inner);
+                        let _ = instance.unmount();
+                        return Err(DomError::Component(
+                            "ErrorBoundary protected and fallback views panicked".to_owned(),
+                        ));
+                    }
+                }
+            }
+        };
+
+        if let Err(error) = self
+            .validate_view(&view)
+            .and_then(|_| self.validate_node_refs_for_view(&view, None))
+        {
+            let _ = cleanup_rendered_nodes(&mut inner);
+            let _ = instance.unmount();
+            return Err(error);
+        }
+
+        let start = self
+            .document
+            .create_comment("rustflow:error-boundary:start");
+        let end = self.document.create_comment("rustflow:error-boundary:end");
+        let mounted = MountedDom {
+            start: start.clone(),
+            end: end.clone(),
+            roots: roots.clone(),
+            listeners: inner.listeners,
+            pending_listeners: inner.pending_listeners,
+            node_refs: inner.node_refs,
+            delegated_listeners: Vec::new(),
+            delegated_bindings: Rc::new(RefCell::new(inner.delegated)),
+            components: inner.components,
+            component_regions: inner.component_regions,
+            dynamics: inner.dynamics,
+            preserve_on_drop: false,
+        };
+        resources.component_regions.push(ComponentRegion {
+            descriptor: component.clone(),
+            instance,
+            mounted,
+            view,
+            reused: false,
+        });
+        let mut nodes = Vec::with_capacity(roots.len() + 2);
+        nodes.push(start.unchecked_into());
+        nodes.extend(roots);
+        nodes.push(end.unchecked_into());
+        Ok(nodes)
+    }
+
     fn build_element(
         &self,
         view: &Element,
@@ -1614,6 +1726,9 @@ impl DomRenderer {
         parent_scope: &Scope,
         resources: &mut RenderedNodes,
     ) -> Result<Vec<Node>, DomError> {
+        if component.name() == "ErrorBoundary" {
+            return self.build_error_boundary(component, parent_scope, resources);
+        }
         let mut instance = self.registry.mount_for_target(
             component,
             self.runtime.clone(),

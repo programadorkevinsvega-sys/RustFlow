@@ -305,7 +305,7 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 **Pruebas/evidencia:** tests deterministas de estados, cancelación, carreras y cleanup; integración SSR/hidratación si se incluye en el alcance.
 
-**Estado actual:** implementación y ADR 0030 en progreso en una rama independiente; sin PR fusionada todavía.
+**Estado actual:** implementado y fusionado mediante la PR #108, commit `9106416c`.
 
 ### 2.6 Añadir límites de error UI
 
@@ -319,6 +319,8 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 - La salida es segura y accesible.
 
 **Pruebas/evidencia:** unitarias y browser E2E para fallo, recuperación, anidamiento y cleanup.
+
+**Estado actual:** implementación y ADR 0031 en revisión en la PR #109.
 
 ### 2.7 Definir router unificado
 

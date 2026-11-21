@@ -6,7 +6,12 @@
 pub mod hydration;
 pub use hydration::{HydrationData, HydrationDataError};
 
-use std::{collections::HashSet, error::Error, fmt};
+use std::{
+    collections::HashSet,
+    error::Error,
+    fmt,
+    panic::{AssertUnwindSafe, catch_unwind},
+};
 
 use rustflow::{
     components::{
@@ -696,6 +701,31 @@ impl RenderContext {
         parent_scope: &Scope,
         depth: usize,
     ) -> Result<(), SsrError> {
+        if component.name() == "ErrorBoundary" {
+            let children = component.children();
+            if children.len() != 2 {
+                return Err(SsrError::Component(
+                    "ErrorBoundary requires exactly one protected child and one fallback"
+                        .to_owned(),
+                ));
+            }
+            let child_result = catch_unwind(AssertUnwindSafe(|| {
+                self.write_view(&children[0], parent_scope, depth + 1)
+            }));
+            match child_result {
+                Ok(Ok(())) => return Ok(()),
+                Ok(Err(_)) => {}
+                Err(_) => {}
+            }
+            return catch_unwind(AssertUnwindSafe(|| {
+                self.write_view(&children[1], parent_scope, depth + 1)
+            }))
+            .unwrap_or_else(|_| {
+                Err(SsrError::Component(
+                    "ErrorBoundary fallback panicked during SSR".to_owned(),
+                ))
+            });
+        }
         let mut instance = if let Some(registry) = self.registry.clone() {
             let definition = registry.definition(component.name()).ok_or_else(|| {
                 SsrError::Component(format!(
@@ -1246,6 +1276,67 @@ mod shared_catalog_tests {
     };
     use rustflow_view::View;
     use std::rc::Rc;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    #[test]
+    fn error_boundary_replaces_a_failing_child_with_safe_fallback() {
+        let cleanup_count = Arc::new(AtomicUsize::new(0));
+        let setup_cleanup_count = Arc::clone(&cleanup_count);
+        let definition =
+            SharedComponentDefinition::new("BrokenComponent", move |context, _properties| {
+                let cleanup_count = Arc::clone(&setup_cleanup_count);
+                context.on_cleanup(move || {
+                    cleanup_count.fetch_add(1, Ordering::SeqCst);
+                })?;
+                let render: ComponentRender = Rc::new(|_properties, _children| {
+                    Ok(View::element("script", [View::text("not allowed")])?)
+                });
+                Ok(render)
+            })
+            .expect("definition");
+        let mut builder = SharedComponentCatalogBuilder::new();
+        builder.register(definition).expect("register");
+        let catalog = builder.build();
+        let fallback = View::element("div", [View::text("safe fallback")]).expect("safe fallback");
+        let child = View::component("BrokenComponent", [], [], None).expect("broken child");
+        let view = View::error_boundary(child, fallback).expect("error boundary");
+
+        assert_eq!(
+            render_with_shared_components(&view, &catalog).expect("boundary fallback"),
+            "<div>safe fallback</div>"
+        );
+        assert_eq!(cleanup_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn nested_error_boundaries_use_the_nearest_fallback() {
+        let definition =
+            SharedComponentDefinition::new("BrokenComponent", move |_context, _properties| {
+                let render: ComponentRender = Rc::new(|_properties, _children| {
+                    Ok(View::element("script", [View::text("not allowed")])?)
+                });
+                Ok(render)
+            })
+            .expect("definition");
+        let mut builder = SharedComponentCatalogBuilder::new();
+        builder.register(definition).expect("register");
+        let catalog = builder.build();
+        let inner_fallback =
+            View::element("aside", [View::text("inner fallback")]).expect("inner fallback");
+        let broken = View::component("BrokenComponent", [], [], None).expect("broken child");
+        let inner = View::error_boundary(broken, inner_fallback).expect("inner boundary");
+        let outer_fallback =
+            View::element("div", [View::text("outer fallback")]).expect("outer fallback");
+        let outer = View::error_boundary(inner, outer_fallback).expect("outer boundary");
+
+        assert_eq!(
+            render_with_shared_components(&outer, &catalog).expect("nested fallback"),
+            "<aside>inner fallback</aside>"
+        );
+    }
 
     #[test]
     fn shared_component_scope_is_disposed_when_serialization_fails() {

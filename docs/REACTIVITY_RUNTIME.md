@@ -112,7 +112,7 @@ Estas APIs están disponibles en la rama del PR #81 y siguen siendo experimental
 - El runtime reactivo utiliza <code>Rc</code> y <code>RefCell</code>: no es <code>Send</code> ni <code>Sync</code>. No compartas las señales locales de un runtime entre threads.
 - Crea un runtime y scopes locales por render de servidor; no guardes estado reactivo ni valores de provider de una petición en un catálogo compartido.
 - Los efectos y la limpieza son síncronos. No se garantiza el seguimiento de dependencias a través de <code>await</code>. <code>Resource</code> administra estados y cancelación de forma explícita, sin pollear <code>Future</code> ni iniciar un executor global; no existe Suspense/loading boundary automático.
-- No hay ErrorBoundary de componentes. Los errores iniciales y SSR se propagan; el renderer reactivo del navegador conserva el último rango bueno y expone el último error mediante <code>take_error</code>. Un panic de handler no tiene aislamiento UI garantizado.
+- <code>View::error_boundary(child, fallback)</code> permite aislar errores locales de componentes/SSR. No captura respuestas HTTP, autorización, CSRF, acciones de servidor ni panics externos al subtree protegido.
 - La interpolación automática se aplica al identificador de señal reconocido; expresiones arbitrarias que lean señales requieren una región dinámica explícita con <code>@dynamic</code>.
 - La actualización de la UI está cubierta por el runtime de navegador del proyecto. El runtime de bajo nivel, por sí solo, no muta el DOM.
 
