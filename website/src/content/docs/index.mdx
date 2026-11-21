@@ -74,9 +74,16 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 
 El [catálogo de ejemplos](/reference/examples/) conecta cada caso con un archivo y un comando. La [guía de pruebas](/guides/testing/) explica cómo verificar el comportamiento localmente.
 
-## Lo que no debes asumir
+## Límites actuales
 
-El CLI experimental genera aplicaciones de servidor nativo y delega compilación a Cargo; `rustflow new --template crud` añade un proyecto didáctico con ORM SQL, validación, transacciones, auth, CSRF y SSR. No incluye hot reload ni un bundler integrado para browser/WASM. El generador `rustflow generate model` sigue produciendo un struct de dominio plano por compatibilidad: no crea automáticamente entidades SeaORM ni implementaciones `DocumentModel`. La configuración de la Fase 6.2 cubre perfil, host y puerto. `use_memo`, `use_ref` y `use_context` están disponibles de forma experimental en Phase 7.2; las referencias a nodos DOM usan el handle separado `rustflow_dom::ElementRef` y solo están disponibles en browser/WASM. No hay Resources/Suspense ni ErrorBoundary de componentes. Las APIs de sesión y guards de la Fase 6.4 son experimentales; `InMemorySessionStore` es volátil y local al proceso, no hay proveedor de usuarios y todavía no existe un `SessionStore` SQL durable.
+- Sin hot reload ni bundler WASM integrado.
+- Sin servidor de archivos estáticos ni atributo `style` inline del renderer.
+- Sin server actions, Suspense/Resources ni ErrorBoundary.
+- Sin sesiones SQL durables, proveedor de usuarios ni rate limiting.
+- MongoDB admite `mongodb://` con hosts explícitos; `mongodb+srv://` está deshabilitado.
+- La instalación estable solo funciona desde un checkout del repositorio.
+
+La tabla única y los enlaces a cada contrato están en [Estado del proyecto y límites](/project-status/#límites-actuales).
 
 La Fase 6.6 publicó sus contratos verificados de SQLite, PostgreSQL, MySQL, MariaDB y MongoDB; desde entonces se actualizaron las dependencias y runtimes. El stack actual usa SQLx 0.9.0/SeaORM 2.0.4 con SQLite bundled 3.54.1, y el driver MongoDB 3.10.1. PR #84 verificó el stack SQL y PR #85 el driver MongoDB en sus HEADs finales. La Fase 6.7 quedó completada en `main` mediante PR #66: incorporó `EntityRepository` para CRUD/bulk y consultas tipadas, loaders y grafos relacionales explícitos, transacciones, ODM MongoDB separado y una aplicación CRUD educativa con relación Category/Product, filtros y paginación. Sus pruebas originales con SeaORM 1.1.20/Rust 1.85 son evidencia histórica; la verificación posterior de dependencias está registrada en la [matriz actual](/guides/database/#matriz-de-versiones). El ORM y el ODM continúan siendo APIs experimentales/pre-1.0; el CRUD generado no es un starter de producción. Consulta la [guía de base de datos](/guides/database/), la [guía ODM](/guides/mongodb-odm/) y [Estado del proyecto](/project-status/).
 

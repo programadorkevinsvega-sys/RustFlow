@@ -17,7 +17,7 @@
 | 1.5 Tutorial JSON validado | Integrada | PR #93, merge `e50e3d5d2a7b13e24e38c36b840ece73cd4cfd5e` |
 | 1.6 Instalación desde checkout | Integrada | PR #94, merge `36aca362f3b2702dc0a6d354b339f2e840f40c6d` |
 | 1.7 Limitación MongoDB SRV | Integrada | PR #95, merge `8f6d4bf1df13cd3a3f33438ba5f2fea11b8d4047` |
-| 1.8 Matriz de capacidades, límites e historial | Pendiente | No existe una PR fusionada para consolidar esta tabla y mover el historial |
+| 1.8 Matriz de capacidades, límites e historial | Integrada | PR pendiente de fusionar; consolida la tabla pública y separa el historial en `changelog` |
 | 1.9 About y excepción de gobernanza | Pendiente | Requiere operación manual en GitHub y evidencia del mantenedor |
 | Fase 2 | Pendiente de aprobación | No existe una subfase de Fase 2 implementada |
 

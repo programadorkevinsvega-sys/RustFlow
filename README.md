@@ -25,6 +25,8 @@ Consulta el [estado público de las capacidades](website/src/content/docs/projec
 
 ## Qué sigue pendiente o tiene alcance limitado
 
+Consulta la [tabla única de límites públicos](website/src/content/docs/project-status.md#límites-actuales) antes de asumir que una capacidad está integrada. Resumen: sin servidor de archivos estáticos, hot reload/bundler WASM integrado, server actions, Suspense/Resources/ErrorBoundary, sesiones SQL durables, proveedor de usuarios, rate limiting ni SRV de MongoDB; instalación actual solo desde checkout.
+
 - Resources/Suspense, loading boundaries y ErrorBoundary de componentes siguen sin soporte; el rendering asíncrono y sus contratos de cancelación/SSR/hidratación son trabajo futuro. `use_memo`, `use_ref`, `use_context` y `rustflow_dom::ElementRef` ya tienen implementación experimental en Phase 7.2.
 - `AppConfig` mantiene su alcance de perfil/host/puerto y fuentes de entorno; `TracingConfig` añade `RUSTFLOW_LOG_LEVEL` para configurar el subscriber que inicializa la aplicación. No es un sistema de configuración general ni un gestor de secretos. Cache, queue, email y storage siguen diferidos hasta definir contratos de entrega, consistencia y seguridad.
 - La Fase 6.4 de sesiones y control de acceso ya está integrada en `main` y sus checks post-merge pasaron. Las APIs siguen siendo experimentales: `InMemorySessionStore` es volátil y local al proceso, y la Fase 6.5 no añade un adaptador SQL durable para sesiones. No se incluyen proveedor de usuarios, OAuth/OIDC, MFA, recuperación de cuentas ni rate limiting.
