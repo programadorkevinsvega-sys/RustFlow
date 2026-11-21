@@ -18,7 +18,7 @@
 | 1.6 Instalación desde checkout | Integrada | PR #94, merge `36aca362f3b2702dc0a6d354b339f2e840f40c6d` |
 | 1.7 Limitación MongoDB SRV | Integrada | PR #95, merge `8f6d4bf1df13cd3a3f33438ba5f2fea11b8d4047` |
 | 1.8 Matriz de capacidades, límites e historial | Integrada | PR #99, merge `84c73ab` |
-| 1.9 About y excepción de gobernanza | Integrada mediante metadatos de GitHub y documentación pendiente de PR | Conserva los archivos de gobernanza en raíz y verifica Description, Website y topics |
+| 1.9 About y excepción de gobernanza | Integrada | PR #100, merge `1c80b21d818e469d72e420ce3d4c6400aede589f`; conserva los archivos de gobernanza en raíz y verifica Description, Website y topics |
 | Fase 2 | Pendiente de aprobación | No existe una subfase de Fase 2 implementada |
 
 ### Entregas adicionales posteriores al roadmap
@@ -201,7 +201,7 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 1.9 Actualizar About y documentar la excepción de gobernanza
 
-**Estado actual:** integrada mediante actualización verificable de metadatos y excepción documentada de gobernanza.
+**Estado actual:** integrada mediante PR #100 y actualización verificable de metadatos.
 
 **Cubre:** A12 y A13.
 **Un PR de documentación** para registrar la decisión; el cambio de About/topics es una operación del mantenedor fuera del build del sitio.

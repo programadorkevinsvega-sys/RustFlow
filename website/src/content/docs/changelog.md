@@ -18,6 +18,7 @@ Este registro conserva la cronología técnica sin repetirla en la portada ni en
 | 2026-11-20 | [#95](https://github.com/programadorkevinsvega-sys/RustFlow/pull/95) | Documentó la limitación de MongoDB SRV. |
 | 2026-11-20 | [#96](https://github.com/programadorkevinsvega-sys/RustFlow/pull/96) | Diferenció CI para PR Draft y Ready. |
 | 2026-11-20 | [#97](https://github.com/programadorkevinsvega-sys/RustFlow/pull/97) | Optimizó pruebas CLI y separó benchmarks manuales/programados. |
+| 2026-11-20 | [#100](https://github.com/programadorkevinsvega-sys/RustFlow/pull/100) | Verificó About, Website y topics; documentó la excepción de archivos de gobernanza en raíz. |
 
 ## Entregas técnicas anteriores
 
