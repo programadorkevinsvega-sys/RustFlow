@@ -38,7 +38,11 @@ rustflow::view! {
 }
 ~~~
 
-El renderer DOM actual rechaza el atributo inline <code>style</code>. Usa clases y hojas CSS en lugar de asumir que existe una API de estilos en línea.
+El renderer DOM actual rechaza el atributo inline <code>style</code>. Esta decisión
+está registrada en [ADR 0027](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/adr/0027-static-files-and-inline-style-policy.md).
+Usa clases y hojas CSS en lugar de asumir que existe una API de estilos en línea.
+La futura incorporación de archivos estáticos seguirá siendo opt-in en el adapter
+HTTP y no cambiará esta política hasta que exista un contrato seguro aprobado.
 
 ## 2. Conectar CSS en el ejemplo de navegador
 
