@@ -228,7 +228,7 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 2.1 Decidir contrato de estilos y archivos estáticos
 
-**Estado actual:** PR #102 registra la decisión en ADR 0027; implementación de `StaticFiles` pendiente en 2.2 y cierre definitivo después de fusión.
+**Estado actual:** integrada mediante PR #102, merge `bfc795af3214d34e108f7df59e0d891ddf60395b`; ADR 0027 conserva el rechazo de `style` y deja la implementación de `StaticFiles` para 2.2.
 
 **Cubre:** B1, decisión previa.
 **Un PR:** ADR que compare mantener el rechazo de `style` con permitir estilos validados y defina el contrato de archivos estáticos.
