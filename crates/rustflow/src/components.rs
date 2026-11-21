@@ -138,6 +138,13 @@ impl ComponentContext {
     ) -> Result<Option<Rc<T>>, ComponentError> {
         Ok(self.scope.use_context(context)?)
     }
+
+    /// Create an owner-scoped async resource for component setup.
+    pub fn resource<T: Clone + PartialEq + 'static, E: Clone + PartialEq + 'static>(
+        &self,
+    ) -> Result<crate::reactivity::Resource<T, E>, ComponentError> {
+        Ok(self.scope.resource()?)
+    }
 }
 
 /// Pure render callback called after one-time component setup.

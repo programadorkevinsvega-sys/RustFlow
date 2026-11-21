@@ -115,9 +115,10 @@ pub mod prelude {
         SharedComponentCatalog, SharedComponentCatalogBuilder, SharedComponentDefinition,
     };
     pub use crate::reactivity::{
-        Context, Effect, Memo, Runtime, RuntimeError, Scope, ScopedRef, Signal, on_cleanup,
-        provide_context, signal, try_provide_context, try_signal, try_use_context, try_use_memo,
-        try_use_ref, use_context, use_effect, use_memo, use_ref, use_state, with_owner_scope,
+        Context, Effect, Memo, Resource, ResourceRequest, ResourceState, Runtime, RuntimeError,
+        Scope, ScopedRef, Signal, on_cleanup, provide_context, signal, try_provide_context,
+        try_signal, try_use_context, try_use_memo, try_use_ref, try_use_resource, use_context,
+        use_effect, use_memo, use_ref, use_resource, use_state, with_owner_scope,
     };
     pub use crate::view::{
         EventHandler, EventPayload, IntoView, Key, KeyedChild, Property, PropertyValue, View,
