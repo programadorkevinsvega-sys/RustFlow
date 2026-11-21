@@ -17,8 +17,8 @@
 | 1.5 Tutorial JSON validado | Integrada | PR #93, merge `e50e3d5d2a7b13e24e38c36b840ece73cd4cfd5e` |
 | 1.6 Instalación desde checkout | Integrada | PR #94, merge `36aca362f3b2702dc0a6d354b339f2e840f40c6d` |
 | 1.7 Limitación MongoDB SRV | Integrada | PR #95, merge `8f6d4bf1df13cd3a3f33438ba5f2fea11b8d4047` |
-| 1.8 Matriz de capacidades, límites e historial | Integrada mediante PR #99, pendiente de fusión | Consolida la tabla pública y separa el historial en `changelog` |
-| 1.9 About y excepción de gobernanza | Pendiente | Requiere operación manual en GitHub y evidencia del mantenedor |
+| 1.8 Matriz de capacidades, límites e historial | Integrada | PR #99, merge `84c73ab` |
+| 1.9 About y excepción de gobernanza | Integrada mediante metadatos de GitHub y documentación pendiente de PR | Conserva los archivos de gobernanza en raíz y verifica Description, Website y topics |
 | Fase 2 | Pendiente de aprobación | No existe una subfase de Fase 2 implementada |
 
 ### Entregas adicionales posteriores al roadmap
@@ -201,7 +201,7 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 1.9 Actualizar About y documentar la excepción de gobernanza
 
-**Estado actual:** pendiente; requiere una operación manual del mantenedor en GitHub y evidencia posterior.
+**Estado actual:** integrada mediante actualización verificable de metadatos y excepción documentada de gobernanza.
 
 **Cubre:** A12 y A13.
 **Un PR de documentación** para registrar la decisión; el cambio de About/topics es una operación del mantenedor fuera del build del sitio.
@@ -211,7 +211,14 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 - No se mueven `AGENTS.md` ni `ARCHITECTURE_RULES.md` mientras el workflow de gobernanza los requiera en raíz.
 - Si se decide cambiar esa política, primero se aprueba y prueba un PR independiente de gobernanza.
 - El About usa una descripción que declara pre-1.0; Website y topics se actualizan con los valores aprobados por el autor.
-- Se registra el cambio manual de GitHub con evidencia, sin fingir que lo hizo una CI de código.
+- El cambio manual de GitHub se verifica mediante la API y se registra sin fingir que lo hizo una CI de código.
+
+**Evidencia actual:**
+
+- About: `Framework web full-stack en Rust: reactividad, SSR, servidor y CLI inspirados en Laravel (pre-1.0).`
+- Website: `https://rustflow.pages.dev`
+- Topics: `rust`, `web-framework`, `wasm`, `ssr`, `axum`, `orm`
+- Gobernanza: `AGENTS.md` y `ARCHITECTURE_RULES.md` permanecen en raíz porque el workflow los exige; no se moverán sin un PR independiente que pruebe y aprueba la política.
 
 **Pruebas/evidencia:** comprobar el workflow de gobernanza; verificar About, Website y topics en GitHub después de la operación.
 
