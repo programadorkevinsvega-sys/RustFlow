@@ -1,0 +1,97 @@
+name: Persistence benchmark smoke
+
+on:
+  schedule:
+    - cron: "17 6 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: persistence-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  persistence-benchmark:
+    name: Persistence benchmark smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rustflow_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d rustflow_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      mysql:
+        image: mysql:8.4.13
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: rustflow_test
+          MYSQL_USER: rustflow
+          MYSQL_PASSWORD: rustflow
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      mariadb:
+        image: mariadb:11.4.13
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: rustflow_test
+          MARIADB_USER: rustflow
+          MARIADB_PASSWORD: rustflow
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      RUSTFLOW_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/rustflow_test
+      RUSTFLOW_TEST_MYSQL_URL: mysql://rustflow:rustflow@127.0.0.1:3306/rustflow_test
+      RUSTFLOW_TEST_MARIADB_URL: mysql://rustflow:rustflow@127.0.0.1:3307/rustflow_test
+      RUSTFLOW_BENCH_ITERATIONS: "100"
+      RUSTFLOW_BENCH_BULK_SIZE: "50"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Start MongoDB test services
+        uses: ./.github/actions/start-test-mongodb
+
+      - name: Run persistence benchmark smoke
+        run: |
+          mkdir -p performance-results/native
+          cargo bench -p rustflow-server --bench persistence \
+            > performance-results/native/persistence-smoke.txt 2>&1
+
+      - name: Upload persistence benchmark smoke measurement
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: persistence-benchmark-smoke
+          path: performance-results/native/persistence-smoke.txt
+          if-no-files-found: warn
+          retention-days: 30

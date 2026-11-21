@@ -19,6 +19,16 @@ rust:
 cargo_lock:
   - 'Cargo.lock'
 
+cli_integration:
+  - 'Cargo.toml'
+  - 'Cargo.lock'
+  - 'crates/rustflow-cli/**'
+  - 'crates/rustflow-server/**'
+
+static_files:
+  - 'crates/rustflow-server/**'
+  - 'scripts/static-files.k6.js'
+
 browser:
   - 'Cargo.toml'
   - 'Cargo.lock'

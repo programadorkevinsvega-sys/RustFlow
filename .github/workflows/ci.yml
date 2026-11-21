@@ -33,6 +33,8 @@ jobs:
       performance_tools: ${{ steps.filter.outputs.performance_tools }}
       full_ci: ${{ steps.filter.outputs.full_ci }}
       cargo_lock: ${{ steps.filter.outputs.cargo_lock }}
+      cli_integration: ${{ steps.filter.outputs.cli_integration }}
+      static_files: ${{ steps.filter.outputs.static_files }}
     steps:
       - name: Check out repository history for push diff detection
         uses: actions/checkout@v7
@@ -214,56 +216,10 @@ jobs:
           RUSTDOCFLAGS: -D warnings
 
   rust-stable-smoke:
-    name: Stable CLI and persistence smoke tests
+    name: Stable CLI and StaticFiles smoke tests
     needs: changes
-    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.full_ci == 'true') }}
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.result != 'success' || needs.changes.outputs.cli_integration == 'true' || needs.changes.outputs.static_files == 'true' || needs.changes.outputs.full_ci == 'true') }}
     runs-on: ubuntu-24.04
-    services:
-      postgres:
-        image: postgres:16.15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: rustflow_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d rustflow_test"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      mysql:
-        image: mysql:8.4.13
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: rustflow_test
-          MYSQL_USER: rustflow
-          MYSQL_PASSWORD: rustflow
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-      mariadb:
-        image: mariadb:11.4.13
-        env:
-          MARIADB_ROOT_PASSWORD: root
-          MARIADB_DATABASE: rustflow_test
-          MARIADB_USER: rustflow
-          MARIADB_PASSWORD: rustflow
-        ports:
-          - 3307:3306
-        options: >-
-          --health-cmd "healthcheck.sh --connect --innodb_initialized"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      RUSTFLOW_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/rustflow_test
-      RUSTFLOW_TEST_MYSQL_URL: mysql://rustflow:rustflow@127.0.0.1:3306/rustflow_test
-      RUSTFLOW_TEST_MARIADB_URL: mysql://rustflow:rustflow@127.0.0.1:3307/rustflow_test
 
     steps:
       - name: Check out repository
@@ -279,15 +235,14 @@ jobs:
         with:
           cache-directories: ${{ runner.temp }}/rustflow-cli-target
 
-      - name: Start MongoDB test services
-        uses: ./.github/actions/start-test-mongodb
-
       - name: Run CLI integration tests
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.cli_integration == 'true' || needs.changes.outputs.full_ci == 'true' }}
         env:
           RUSTFLOW_CLI_TEST_TARGET_DIR: ${{ runner.temp }}/rustflow-cli-target
         run: cargo test -p rustflow-cli --test cli_integration
 
       - name: Run StaticFiles k6 load contract
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.static_files == 'true' || needs.changes.outputs.full_ci == 'true' }}
         run: |
           set -euo pipefail
           static_root="$RUNNER_TEMP/rustflow-static-k6"
@@ -334,7 +289,7 @@ jobs:
             "$k6_bin" run --summary-export "$RUNNER_TEMP/static-files-k6-summary.json" scripts/static-files.k6.js
 
       - name: Upload StaticFiles k6 measurements
-        if: ${{ always() }}
+        if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.static_files == 'true' || needs.changes.outputs.full_ci == 'true') }}
         uses: actions/upload-artifact@v7
         with:
           name: static-files-k6-summary
@@ -343,29 +298,12 @@ jobs:
           retention-days: 30
 
       - name: Install and smoke-test the CLI
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.cli_integration == 'true' || needs.changes.outputs.full_ci == 'true' }}
         run: |
           install_root="$RUNNER_TEMP/rustflow-cli-install"
           cargo install --path crates/rustflow-cli --locked --root "$install_root"
           "$install_root/bin/rustflow" --help
           "$install_root/bin/rustflow" --version
-
-      - name: Run persistence benchmark smoke
-        env:
-          RUSTFLOW_BENCH_ITERATIONS: "100"
-          RUSTFLOW_BENCH_BULK_SIZE: "50"
-        run: |
-          mkdir -p performance-results/native
-          cargo bench -p rustflow-server --bench persistence \
-            > performance-results/native/persistence-smoke.txt 2>&1
-
-      - name: Upload persistence benchmark smoke measurement
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: persistence-benchmark-smoke
-          path: performance-results/native/persistence-smoke.txt
-          if-no-files-found: warn
-          retention-days: 30
 
   native_performance:
     name: Native performance baselines
@@ -456,6 +394,8 @@ jobs:
           NATIVE_PERFORMANCE_RESULT: ${{ needs.native_performance.result }}
           RUST_MATRIX_RESULT: ${{ needs.rust.result }}
           RUST_STABLE_SMOKE_RESULT: ${{ needs.rust-stable-smoke.result }}
+          CLI_INTEGRATION_SCOPE: ${{ needs.changes.outputs.cli_integration }}
+          STATIC_FILES_SCOPE: ${{ needs.changes.outputs.static_files }}
           RUST_SCOPE: ${{ needs.changes.outputs.rust }}
         run: |
           if [ "$CHANGES_RESULT" != "success" ]; then
@@ -475,6 +415,20 @@ jobs:
             fi
           fi
 
+          if [ "$CLI_INTEGRATION_SCOPE" = "true" ] || [ "$FULL_CI" = "true" ]; then
+            if [ "$RUST_STABLE_SMOKE_RESULT" != "success" ]; then
+              echo "::error::CLI integration checks were required but their result was '$RUST_STABLE_SMOKE_RESULT'."
+              exit 1
+            fi
+          fi
+
+          if [ "$STATIC_FILES_SCOPE" = "true" ] || [ "$FULL_CI" = "true" ]; then
+            if [ "$RUST_STABLE_SMOKE_RESULT" != "success" ]; then
+              echo "::error::StaticFiles k6 checks were required but their result was '$RUST_STABLE_SMOKE_RESULT'."
+              exit 1
+            fi
+          fi
+
           if [ "$RUST_SCOPE" = "true" ] || [ "$FULL_CI" = "true" ]; then
             if [ "$RUST_MATRIX_RESULT" != "success" ]; then
               echo "::error::Rust checks were required but the matrix result was '$RUST_MATRIX_RESULT'."
@@ -482,10 +436,6 @@ jobs:
             fi
             if [ "$NATIVE_PERFORMANCE_RESULT" != "success" ]; then
               echo "::error::Native performance baselines were required but their result was '$NATIVE_PERFORMANCE_RESULT'."
-              exit 1
-            fi
-            if [ "$RUST_STABLE_SMOKE_RESULT" != "success" ]; then
-              echo "::error::Stable CLI and persistence smoke tests were required but their result was '$RUST_STABLE_SMOKE_RESULT'."
               exit 1
             fi
           else
