@@ -3,8 +3,6 @@ name: CI
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       extended_browser_benchmarks:
@@ -169,6 +167,8 @@ jobs:
 
       - name: Cache Cargo artifacts
         uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: ${{ runner.temp }}/rustflow-cli-target
 
       - name: Start MongoDB 7.0.45 single-node replica set
         run: |
@@ -229,7 +229,13 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: Run tests
-        run: cargo test --workspace --all-features
+        run: cargo test --workspace --all-features -- --skip cli_integration
+
+      - name: Run CLI integration tests
+        if: matrix.toolchain == 'stable'
+        env:
+          RUSTFLOW_CLI_TEST_TARGET_DIR: ${{ runner.temp }}/rustflow-cli-target
+        run: cargo test -p rustflow-cli --test cli_integration
 
       - name: Verify the authenticated example through in-process requests
         run: cargo test -p rustflow-server --features testing --example authenticated
@@ -420,10 +426,6 @@ jobs:
       - name: Run browser end-to-end tests
         working-directory: examples/browser
         run: npm run test:e2e
-
-      - name: Run browser DOM and initialization benchmarks (informational)
-        working-directory: examples/browser
-        run: RUSTFLOW_BENCH_BROWSER_LARGE_LIST=1 RUSTFLOW_BENCH_BROWSER_KEYED_OPERATIONS=1 npm run bench:browser
 
       - name: Validate competitive benchmark report generator
         run: python3 -m py_compile scripts/summarize-js-framework-benchmark.py

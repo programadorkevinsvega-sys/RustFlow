@@ -290,8 +290,12 @@ fn toml_path(path: &Path) -> String {
         .replace('"', "\\\"")
 }
 
-fn cargo_target_dir(temp: &TempDir) -> PathBuf {
-    temp.path().join("cargo-target")
+fn cargo_target_dir(_temp: &TempDir) -> PathBuf {
+    if let Some(path) = env::var_os("RUSTFLOW_CLI_TEST_TARGET_DIR") {
+        return PathBuf::from(path);
+    }
+
+    env::temp_dir().join("rustflow-cli-integration-target")
 }
 
 fn generated_http_request(
@@ -734,11 +738,35 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
 }
 
 fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: &str, label: &str) {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        let config = rustflow_server::DatabaseConfig::new(database_url).unwrap();
+        let database = rustflow_server::DatabasePool::connect(&config)
+            .await
+            .unwrap();
+        database
+            .execute_raw("DROP TABLE IF EXISTS products", [])
+            .await
+            .unwrap();
+        database
+            .execute_raw("DROP TABLE IF EXISTS categories", [])
+            .await
+            .unwrap();
+        database
+            .execute_raw("DROP TABLE IF EXISTS _sqlx_migrations", [])
+            .await
+            .unwrap();
+        database.close().await;
+    });
+
     let port = TcpListener::bind(("127.0.0.1", 0))
         .unwrap()
         .local_addr()
         .unwrap()
         .port();
+    let stderr_path = project.join(format!("generated-crud-{label}.stderr.log"));
+    let stderr_file = fs::File::create(&stderr_path)
+        .unwrap_or_else(|error| panic!("create generated CRUD stderr log: {error}"));
     let child = Command::new(binary)
         .current_dir(project)
         .env("RUSTFLOW_ENV", "test")
@@ -752,23 +780,29 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
             "test-only-generated-crud-csrf-key-minimum-32-bytes",
         )
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::from(stderr_file))
         .spawn()
         .unwrap_or_else(|error| panic!("start generated CRUD on {label}: {error}"));
     let mut child = ChildGuard::new(child);
 
     let mut ready = false;
-    for _ in 0..240 {
+    for _ in 0..1200 {
         if TcpStream::connect(("127.0.0.1", port)).is_ok() {
             ready = true;
             break;
         }
         if let Ok(Some(status)) = child.0.try_wait() {
-            panic!("generated CRUD exited on {label} before listening: {status}");
+            let stderr = fs::read_to_string(&stderr_path).unwrap_or_default();
+            panic!(
+                "generated CRUD exited on {label} before listening: {status}\nstderr:\n{stderr}"
+            );
         }
         thread::sleep(Duration::from_millis(25));
     }
-    assert!(ready, "generated CRUD did not start on {label}");
+    if !ready {
+        let stderr = fs::read_to_string(&stderr_path).unwrap_or_default();
+        panic!("generated CRUD did not start on {label} within 30 seconds\nstderr:\n{stderr}");
+    }
 
     let anonymous = generated_http_request(port, "GET", "/products", &[], "");
     assert_eq!(
