@@ -22,7 +22,7 @@
 
 use std::{
     any::Any,
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::{BTreeSet, HashMap, HashSet, VecDeque},
     fmt,
     marker::PhantomData,
@@ -411,6 +411,220 @@ pub struct Effect {
 pub struct Scope {
     id: ScopeId,
     runtime: Weak<RefCell<RuntimeInner>>,
+}
+
+/// Explicit state of an owner-scoped asynchronous resource.
+///
+/// Loading and Reloading do not use reactive dependency tracking through
+/// `await`. A caller starts a request and explicitly settles a
+/// [`ResourceRequest`] as ready, failed, or cancelled.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResourceState<T: Clone + PartialEq + 'static, E: Clone + PartialEq + 'static> {
+    Idle,
+    Loading { request_id: u64 },
+    Reloading { request_id: u64, previous: T },
+    Ready(T),
+    Error(E),
+    Cancelled { request_id: u64 },
+}
+
+struct ResourceInner<T: Clone + PartialEq + 'static, E: Clone + PartialEq + 'static> {
+    state: Signal<ResourceState<T, E>>,
+    next_request: Cell<u64>,
+    disposed: Cell<bool>,
+}
+
+/// Owner-scoped handle for an explicitly managed asynchronous resource.
+///
+/// Resources remain single-threaded (`Rc`-based) and do not run a hidden
+/// executor or scheduler. Completions from obsolete requests are ignored.
+#[derive(Clone)]
+pub struct Resource<T: Clone + PartialEq + 'static, E: Clone + PartialEq + 'static> {
+    inner: Rc<ResourceInner<T, E>>,
+}
+
+/// Settlement handle for one resource request.
+pub struct ResourceRequest<T: Clone + PartialEq + 'static, E: Clone + PartialEq + 'static> {
+    resource: Resource<T, E>,
+    request_id: u64,
+    settled: bool,
+}
+
+impl<T: Clone + PartialEq + 'static, E: Clone + PartialEq + 'static> Resource<T, E> {
+    fn new(scope: &Scope) -> Result<Self, RuntimeError> {
+        let state = scope.signal(ResourceState::Idle)?;
+        let inner = Rc::new(ResourceInner {
+            state,
+            next_request: Cell::new(1),
+            disposed: Cell::new(false),
+        });
+        let cleanup_inner = inner.clone();
+        scope.on_cleanup(move || {
+            cleanup_inner.disposed.set(true);
+            cleanup_inner
+                .next_request
+                .set(cleanup_inner.next_request.get().saturating_add(1));
+        })?;
+        Ok(Self { inner })
+    }
+
+    /// Return the current resource state.
+    pub fn state(&self) -> Result<ResourceState<T, E>, RuntimeError> {
+        if self.inner.disposed.get() {
+            return Err(RuntimeError::DisposedScope);
+        }
+        self.inner
+            .state
+            .try_get()
+            .map_err(|_| RuntimeError::DisposedScope)
+    }
+
+    /// Begin a request. A ready or reloading value becomes stale data while
+    /// the new request is in flight.
+    pub fn begin(&self) -> Result<ResourceRequest<T, E>, RuntimeError> {
+        if self.inner.disposed.get() {
+            return Err(RuntimeError::DisposedScope);
+        }
+        let request_id = self.inner.next_request.get();
+        self.inner.next_request.set(request_id.saturating_add(1));
+        let state = match self
+            .inner
+            .state
+            .try_get()
+            .map_err(|_| RuntimeError::DisposedScope)?
+        {
+            ResourceState::Ready(previous) | ResourceState::Reloading { previous, .. } => {
+                ResourceState::Reloading {
+                    request_id,
+                    previous,
+                }
+            }
+            _ => ResourceState::Loading { request_id },
+        };
+        self.inner
+            .state
+            .try_set(state)
+            .map_err(|_| RuntimeError::DisposedScope)?;
+        Ok(ResourceRequest {
+            resource: self.clone(),
+            request_id,
+            settled: false,
+        })
+    }
+
+    /// Cancel the latest request and reject stale completions.
+    pub fn cancel(&self) -> Result<bool, RuntimeError> {
+        if self.inner.disposed.get() {
+            return Err(RuntimeError::DisposedScope);
+        }
+        let request_id = self.inner.next_request.get();
+        self.inner.next_request.set(request_id.saturating_add(1));
+        self.inner
+            .state
+            .try_set(ResourceState::Cancelled { request_id })
+            .map_err(|_| RuntimeError::DisposedScope)?;
+        Ok(true)
+    }
+
+    /// Start a later request after canceling or failing the current one.
+    pub fn retry(&self) -> Result<ResourceRequest<T, E>, RuntimeError> {
+        self.begin()
+    }
+
+    /// Install a server-provided or prehydrated ready value.
+    pub fn hydrate_ready(&self, value: T) -> Result<bool, RuntimeError> {
+        self.hydrate(ResourceState::Ready(value))
+    }
+
+    /// Install a server-provided or prehydrated error.
+    pub fn hydrate_error(&self, error: E) -> Result<bool, RuntimeError> {
+        self.hydrate(ResourceState::Error(error))
+    }
+
+    /// Install an explicit resource snapshot.
+    pub fn hydrate(&self, state: ResourceState<T, E>) -> Result<bool, RuntimeError> {
+        if self.inner.disposed.get() {
+            return Err(RuntimeError::DisposedScope);
+        }
+        self.inner
+            .next_request
+            .set(self.inner.next_request.get().saturating_add(1));
+        self.inner
+            .state
+            .try_set(state)
+            .map_err(|_| RuntimeError::DisposedScope)?;
+        Ok(true)
+    }
+}
+
+impl<T: Clone + PartialEq + 'static, E: Clone + PartialEq + 'static> ResourceRequest<T, E> {
+    fn is_current(&self) -> bool {
+        !self.resource.inner.disposed.get()
+            && self.resource.inner.next_request.get() == self.request_id.saturating_add(1)
+    }
+
+    /// Complete only the current request; stale and canceled completions are ignored.
+    pub fn complete(mut self, value: T) -> Result<bool, RuntimeError> {
+        if self.resource.inner.disposed.get() {
+            self.settled = true;
+            return Err(RuntimeError::DisposedScope);
+        }
+        if self.is_current() {
+            self.resource
+                .inner
+                .state
+                .try_set(ResourceState::Ready(value))
+                .map_err(|_| RuntimeError::DisposedScope)?;
+            self.settled = true;
+            Ok(true)
+        } else {
+            self.settled = true;
+            Ok(false)
+        }
+    }
+
+    /// Fail only the current request; stale and canceled failures are ignored.
+    pub fn fail(mut self, error: E) -> Result<bool, RuntimeError> {
+        if self.resource.inner.disposed.get() {
+            self.settled = true;
+            return Err(RuntimeError::DisposedScope);
+        }
+        if self.is_current() {
+            self.resource
+                .inner
+                .state
+                .try_set(ResourceState::Error(error))
+                .map_err(|_| RuntimeError::DisposedScope)?;
+            self.settled = true;
+            Ok(true)
+        } else {
+            self.settled = true;
+            Ok(false)
+        }
+    }
+
+    /// Explicitly cancel this request.
+    pub fn cancel(mut self) -> Result<bool, RuntimeError> {
+        self.settled = true;
+        self.resource.cancel()
+    }
+}
+
+impl<T: Clone + PartialEq + 'static, E: Clone + PartialEq + 'static> Drop
+    for ResourceRequest<T, E>
+{
+    fn drop(&mut self) {
+        if self.settled || self.resource.inner.disposed.get() {
+            return;
+        }
+        if self.is_current() {
+            let request_id = self.request_id;
+            self.resource
+                .inner
+                .state
+                .set(ResourceState::Cancelled { request_id });
+        }
+    }
 }
 
 impl Runtime {
@@ -924,6 +1138,17 @@ impl Scope {
             cleanup_value.borrow_mut().take();
         })?;
         Ok(ScopedRef { value })
+    }
+
+    /// Create an explicit owner-scoped asynchronous resource.
+    ///
+    /// The resource has no hidden executor: callers obtain
+    /// [`ResourceRequest`] handles and settle them when an external async
+    /// operation completes. Reloading and stale completions are deterministic.
+    pub fn resource<T: Clone + PartialEq + 'static, E: Clone + PartialEq + 'static>(
+        &self,
+    ) -> Result<Resource<T, E>, RuntimeError> {
+        Resource::new(self)
     }
 
     /// Register a value for this context on this owner. A given owner may
@@ -1533,6 +1758,18 @@ pub fn try_use_ref<T: 'static>(initial: T) -> Result<ScopedRef<T>, RuntimeError>
 /// Create stable non-reactive storage during component setup.
 pub fn use_ref<T: 'static>(initial: T) -> ScopedRef<T> {
     try_use_ref(initial).unwrap_or_else(|error| panic!("use_ref requires an active owner: {error}"))
+}
+
+pub fn try_use_resource<T: Clone + PartialEq + 'static, E: Clone + PartialEq + 'static>()
+-> Result<Resource<T, E>, RuntimeError> {
+    active_owner_scope()?.resource()
+}
+
+/// Create an owner-scoped resource without a hidden async executor or hook slots.
+pub fn use_resource<T: Clone + PartialEq + 'static, E: Clone + PartialEq + 'static>()
+-> Resource<T, E> {
+    try_use_resource()
+        .unwrap_or_else(|error| panic!("use_resource requires an active owner: {error}"))
 }
 
 pub fn try_use_context<T: 'static>(context: &Context<T>) -> Result<Option<Rc<T>>, RuntimeError> {
@@ -2461,6 +2698,115 @@ mod tests {
         assert_eq!(memo.get(), 9);
         assert_eq!(reference.get(), 3);
         owner.dispose().unwrap();
+    }
+
+    #[test]
+    fn resource_starts_loading_reloads_and_completes() {
+        let runtime = Runtime::new();
+        let scope = runtime.root_scope();
+        let resource: Resource<i32, &'static str> = scope.resource().unwrap();
+        assert_eq!(resource.state(), Ok(ResourceState::Idle));
+
+        let first = resource.begin().unwrap();
+        assert_eq!(
+            resource.state(),
+            Ok(ResourceState::Loading { request_id: 1 })
+        );
+        assert_eq!(first.complete(42), Ok(true));
+        assert_eq!(resource.state(), Ok(ResourceState::Ready(42)));
+
+        let second = resource.begin().unwrap();
+        assert_eq!(
+            resource.state(),
+            Ok(ResourceState::Reloading {
+                request_id: 2,
+                previous: 42,
+            })
+        );
+        assert_eq!(second.complete(43), Ok(true));
+        assert_eq!(resource.state(), Ok(ResourceState::Ready(43)));
+    }
+
+    #[test]
+    fn resource_ignores_stale_results_and_supports_error_and_cancel() {
+        let runtime = Runtime::new();
+        let scope = runtime.root_scope();
+        let resource: Resource<i32, &'static str> = scope.resource().unwrap();
+
+        let stale = resource.begin().unwrap();
+        let latest = resource.begin().unwrap();
+        assert_eq!(stale.complete(10), Ok(false));
+        assert_eq!(
+            resource.state(),
+            Ok(ResourceState::Loading { request_id: 2 })
+        );
+        assert_eq!(latest.complete(20), Ok(true));
+        assert_eq!(resource.state(), Ok(ResourceState::Ready(20)));
+
+        let failed = resource.begin().unwrap();
+        assert_eq!(failed.fail("network"), Ok(true));
+        assert_eq!(resource.state(), Ok(ResourceState::Error("network")));
+
+        let canceled = resource.begin().unwrap();
+        assert_eq!(canceled.cancel(), Ok(true));
+        assert!(matches!(
+            resource.state(),
+            Ok(ResourceState::Cancelled { .. })
+        ));
+    }
+
+    #[test]
+    fn dropping_resource_request_cancels_current_request() {
+        let runtime = Runtime::new();
+        let scope = runtime.root_scope();
+        let resource: Resource<i32, &'static str> = scope.resource().unwrap();
+        {
+            let _request = resource.begin().unwrap();
+        }
+        assert!(matches!(
+            resource.state(),
+            Ok(ResourceState::Cancelled { request_id: 1 })
+        ));
+    }
+
+    #[test]
+    fn resource_disposal_invalidates_requests_and_owner_bound_handles() {
+        let runtime = Runtime::new();
+        let owner = runtime.root_scope().child().unwrap();
+        let resource: Resource<i32, &'static str> = owner.resource().unwrap();
+        let request = resource.begin().unwrap();
+
+        owner.dispose().unwrap();
+
+        assert!(matches!(resource.begin(), Err(RuntimeError::DisposedScope)));
+        assert_eq!(request.complete(42), Err(RuntimeError::DisposedScope));
+    }
+
+    #[test]
+    fn resource_hydration_snapshots_replace_pending_state_deterministically() {
+        let runtime = Runtime::new();
+        let scope = runtime.root_scope();
+        let resource: Resource<String, &'static str> = scope.resource().unwrap();
+        let pending = resource.begin().unwrap();
+
+        assert_eq!(
+            resource.hydrate_ready(String::from("server snapshot")),
+            Ok(true)
+        );
+        assert_eq!(
+            resource.state(),
+            Ok(ResourceState::Ready(String::from("server snapshot")))
+        );
+        assert_eq!(
+            pending.complete(String::from("late client result")),
+            Ok(false)
+        );
+
+        assert_eq!(resource.hydrate_error("hydrated failure"), Ok(true));
+        assert_eq!(
+            resource.state(),
+            Ok(ResourceState::Error("hydrated failure"))
+        );
     }
 
     #[test]

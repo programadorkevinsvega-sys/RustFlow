@@ -305,6 +305,8 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 **Pruebas/evidencia:** tests deterministas de estados, cancelación, carreras y cleanup; integración SSR/hidratación si se incluye en el alcance.
 
+**Estado actual:** implementación y ADR 0030 en progreso en una rama independiente; sin PR fusionada todavía.
+
 ### 2.6 Añadir límites de error UI
 
 **Cubre:** B4, `ErrorBoundary`.
