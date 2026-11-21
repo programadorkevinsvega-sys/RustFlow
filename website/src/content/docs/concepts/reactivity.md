@@ -159,6 +159,47 @@ Crea un token <code>Context&lt;T&gt;</code> compartido por el módulo que define
 
 El lookup de contexto no es reactivo. Para propagar un valor cambiante, usa <code>Context&lt;Signal&lt;T&gt;&gt;</code> y lee la señal en el consumidor. Los valores se guardan en el árbol de owners, no en estado global.
 
+## Recursos asíncronos explícitos
+
+<code>use_resource</code> crea un recurso owner-scoped sin iniciar tareas ni seguir dependencias a través de <code>await</code>. Un ejecutor externo comienza el trabajo y devuelve un <code>ResourceRequest</code>, que se puede completar, fallar o cancelar:
+
+~~~rust
+#[rustflow::component]
+fn Profile() -> impl IntoView {
+    let resource = use_resource::<String, String>();
+    let request = resource.begin().expect("active resource");
+
+    // El ejecutor de la aplicación decide cuándo settle la solicitud.
+    request.complete(String::from("Ada")).expect("resource");
+
+    rustflow::view! {
+        <section>
+            @dynamic {
+                match resource.state().expect("resource state") {
+                    ResourceState::Idle | ResourceState::Loading { .. } =>
+                        View::text("Loading"),
+                    ResourceState::Reloading { previous, .. } =>
+                        View::text(format!("Refreshing {previous}")),
+                    ResourceState::Ready(value) => View::text(value),
+                    ResourceState::Error(error) => View::text(error),
+                    ResourceState::Cancelled { .. } => View::text("Cancelled"),
+                }
+            }
+        </section>
+    }
+}
+~~~
+
+El ejemplo muestra el contrato y no demuestra un polling automático. El framework no crea un executor global; el executor de la aplicación debe conservar el handle de trabajo y llamar a <code>complete</code>/<code>fail</code>/<code>cancel</code>.
+
+- <code>begin</code> crea una solicitud nueva y invalida las solicitudes anteriores.
+- Completar una solicitud obsoleta devuelve <code>false</code> y no cambia el estado.
+- <code>cancel</code> y disponer el owner invalidan el trabajo pendiente.
+- Soltar una solicitud sin resolver cancela su request actual.
+- <code>hydrate_ready</code> y <code>hydrate_error</code> permiten instalar snapshots explícitos de SSR/hydration.
+- No existe Suspense/loading boundary automático: el componente decide qué fallback usar.
+- <code>Resource</code>, señales y scopes siguen siendo recursos de un hilo y no deben compartirse entre threads.
+
 ## APIs disponibles y pendientes
 
 | API | Estado y alcance |
@@ -174,7 +215,8 @@ El lookup de contexto no es reactivo. Para propagar un valor cambiante, usa <cod
 | <code>use_ref</code> | Experimental, integrado en `main` mediante Phase 7.2 / PR #70 (merge `506dd6f`). | Almacenamiento Rust no reactivo owner-scoped; el handle DOM separado <code>rustflow_dom::ElementRef</code> también está implementado para browser/WASM. |
 | <code>Context&lt;T&gt;</code>, <code>provide_context</code>, <code>use_context</code> | Experimental, integrado en `main` mediante Phase 7.2 / PR #70 (merge `506dd6f`). | Identidad por token, provider más cercano y ausencia explícita <code>None</code>. |
 | <code>rustflow_dom::ElementRef</code>, <code>ref={...}</code> | Experimental disponible (Phase 7.2 / PR #70). | Handle clonado de elemento nativo; mount, reemplazo, hidratación validada y unmount; solo browser/WASM. |
-| Efectos asíncronos / tracking a través de <code>await</code> | No soportados por el runtime actual. |
+| <code>use_resource</code>, <code>ResourceState</code>, <code>ResourceRequest</code> | Experimental disponible en Phase 2.5. | Estados explícitos, reloading, cancelación, stale-result rejection y cleanup owner-scoped. No incluye executor ni tracking a través de <code>await</code>. |
+| Suspense/loading boundary automático | No soportado | Los componentes deben presentar fallbacks explícitos a partir de <code>ResourceState</code>. |
 
 ## Casos de uso y cuándo no usarlo
 

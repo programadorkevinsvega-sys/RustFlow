@@ -101,7 +101,7 @@ pub fn component(_attributes: TokenStream, item: TokenStream) -> TokenStream {
     let (setup_statements, render_body) = split_component_body(body.stream());
     if let Some(span) = find_stateful_call(&render_body) {
         return compile_error(ParseError {
-            message: "owner-scoped APIs signal/use_state/use_effect/use_memo/use_ref/use_context/provide_context/on_cleanup must be direct top-level setup statements in #[component]; keep stateful setup out of the repeatable render body".into(),
+            message: "owner-scoped APIs signal/use_state/use_effect/use_memo/use_ref/use_resource/use_context/provide_context/on_cleanup must be direct top-level setup statements in #[component]; keep stateful setup out of the repeatable render body".into(),
             span,
         });
     }
@@ -237,10 +237,12 @@ fn is_setup_statement(statement: &TokenStream) -> bool {
                 | "use_effect"
                 | "use_memo"
                 | "use_ref"
+                | "use_resource"
                 | "use_context"
                 | "provide_context"
                 | "try_use_memo"
                 | "try_use_ref"
+                | "try_use_resource"
                 | "try_use_context"
                 | "try_provide_context"
                 | "on_cleanup"
@@ -262,10 +264,12 @@ fn find_stateful_call(stream: &TokenStream) -> Option<Span> {
                     | "use_effect"
                     | "use_memo"
                     | "use_ref"
+                    | "use_resource"
                     | "use_context"
                     | "provide_context"
                     | "try_use_memo"
                     | "try_use_ref"
+                    | "try_use_resource"
                     | "try_use_context"
                     | "try_provide_context"
                     | "on_cleanup"
