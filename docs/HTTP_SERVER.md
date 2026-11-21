@@ -40,6 +40,10 @@ app.group("/api", |api| {
 
 Handlers are async closures that return `Result<Response, HttpError>`. Route handlers can capture shared state explicitly; this prototype intentionally has no hidden global service locator. Path parameters are decoded from the route template. Query strings can be decoded with `Request::query::<T>()`, and JSON bodies with `Request::json::<T>()`. Phase 6.3 adds `Request::form::<T>()` for URL-encoded bodies, `validated_form`, `validated_json`, and `validated_query` with the `ValidateInput` trait, and structured HTTP 422 field/form errors. Malformed input returns a generic 400; an unsupported form media type returns 415.
 
+### Typed JSON server actions
+
+`Application::action` and `RouteGroup::action` register experimental JSON-only `POST` actions. Each registration requires `ActionConfig::new(access, csrf)`; neither security declaration has a default. Session-authenticated and permission-guarded actions require CSRF, and permission checks use the existing server-side identity/policy contract. Action inputs must implement `ValidateInput`; outputs are JSON serialized under a finite response limit. The global request limit remains authoritative and an action limit cannot exceed it. See [ADR 0029](adr/0029-server-actions-contract.md) for wire errors, cancellation, limits, and output-overflow behavior, and the [public server actions guide](../website/src/content/docs/guides/server-actions.md) for usage.
+
 ## Responses
 
 Use `Response::text`, `Response::html`, `Response::json`, `Response::redirect`, `Response::file_download`, or `Response::status`. `Response::html` emits the supplied string as-is, so it must only receive trusted/escaped content. Prefer `html_view` for structural fragments without components. For a complete document use `html_document(title, lang, &view)`; for local callbacks the helper is `html_document_with_components`, while concurrent HTTP handlers should use `html_document_with_shared_components` with a startup-built `SharedComponentCatalog`.

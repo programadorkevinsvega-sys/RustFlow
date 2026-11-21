@@ -25,6 +25,7 @@ Desde la raíz de la aplicación, puedes generar `component ProductCard`, `page 
 |---|---|---|
 | Servidor HTTP básico | `cargo run -p rustflow-server --example basic` | Página HTML, componente SSR, catálogo compartido, layout, grupos HTTP, middleware y endpoints JSON. |
 | Página de producto SSR | `cargo run -p rustflow-server --example product_page` | Datos en memoria, ruta con ID de producto, 404, props públicas, catálogo compartido y layout. |
+| Server action JSON | `cargo run -p rustflow-server --example server_actions` | `POST` tipado, validación de servidor, límites por acción y prueba k6 smoke sobre TCP local. |
 | CRUD SQL completo (plantilla CLI) | `rustflow new products --template crud` | Listar/detallar/crear/editar/eliminar, relación Category/Product, filtros/paginación, ORM SQL, validación, transacciones, guards, CSRF y SSR. La prueba CLI ejecuta el flujo HTTP real. |
 | Aplicación autenticada | `cargo run -p rustflow-server --example authenticated` | Login con hash PBKDF2, sesiones, identidad, rol, guard, autorización por permiso, CSRF y logout. Demo de desarrollo, no producción. |
 | Soporte HTTP de testing | `cargo test -p rustflow-server --features testing --test testing` | Ejecuta requests contra el router real en-process; comprueba métodos, headers, cookies, formularios, middleware y redirects sin abrir un puerto TCP. Feature opt-in y experimental. |
@@ -45,6 +46,12 @@ El archivo canónico es [`crates/rustflow-server/examples/basic.rs`](https://git
 - `POST /api/echo`: cuerpo JSON y respuesta JSON.
 
 Tutorial: [Construir una API JSON](/tutorials/json-api/). Guías: [Servidor HTTP](/guides/server/) y [Errores, límites y seguridad](/guides/errors-and-security/).
+
+## Server action JSON
+
+El ejemplo [`server_actions.rs`](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/crates/rustflow-server/examples/server_actions.rs) expone una acción pública de demostración en `POST /api/actions/ping`. Ejecuta `cargo run -p rustflow-server --example server_actions`; en otra terminal, `k6 run scripts/server-actions.k6.js` verifica la respuesta JSON, `no-store` y el umbral p95 documentado. La prueba de contrato HTTP de la API está en `cargo test -p rustflow-server --features testing --test server_actions`.
+
+La demo se declara explícitamente pública y sin CSRF porque no usa autenticación ni estado de cookies. En aplicaciones propias, `ActionConfig::new` exige que se declaren ambos: acceso y política CSRF. Para sesiones/guards, límites y errores, sigue la [guía de server actions JSON](/guides/server-actions/).
 
 ## 2. Página de producto SSR
 
@@ -158,7 +165,7 @@ Estos comandos ejercitan los contratos del ORM y ODM de forma aislada; el ejempl
 
 ## Lo que los ejemplos no proporcionan
 
-Los datos del catálogo de la página de producto SSR y de la lista de tareas browser/WASM no son persistentes. La plantilla CRUD usa el ORM SQL experimental para SQLite/PostgreSQL/MySQL/MariaDB; el ODM MongoDB permanece independiente y no se mezcla en esa aplicación. La plantilla CRUD es una integración educativa de ORM, formularios, sesión volátil, autorización, CSRF y SSR, pero no ofrece proveedor de usuarios, almacenamiento durable, server actions ni una receta de producción. Consulta las guías de base de datos y sesiones para sus contratos y límites; no extrapoles preparación de producción desde la demo.
+Los datos del catálogo de la página de producto SSR y de la lista de tareas browser/WASM no son persistentes. La plantilla CRUD usa el ORM SQL experimental para SQLite/PostgreSQL/MySQL/MariaDB; el ODM MongoDB permanece independiente y no se mezcla en esa aplicación. La plantilla CRUD es una integración educativa de ORM, formularios, sesión volátil, autorización, CSRF y SSR, pero no ofrece proveedor de usuarios, almacenamiento durable ni server actions integradas en su flujo; tampoco es una receta de producción. Consulta las guías de base de datos y sesiones para sus contratos y límites; no extrapoles preparación de producción desde la demo.
 
 
 ## Sesiones y rutas protegidas — Fase 6.4 integrada en main

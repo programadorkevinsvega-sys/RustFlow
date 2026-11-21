@@ -34,6 +34,7 @@ export default defineConfig({
             { label: 'Servidor HTTP', slug: 'guides/server' },
             { label: 'Formularios y validación', slug: 'guides/forms-validation' },
             { label: 'Sesiones y control de acceso', slug: 'guides/sessions-and-access' },
+            { label: 'Server actions JSON', slug: 'guides/server-actions' },
             { label: 'Base de datos, SeaORM, SQLx y migraciones', slug: 'guides/database' },
             { label: 'ODM tipado para MongoDB', slug: 'guides/mongodb-odm' },
             { label: 'SSR e hidratación', slug: 'guides/ssr' },
