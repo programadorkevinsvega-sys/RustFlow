@@ -1,10 +1,32 @@
 # Roadmap de brechas verificadas de RustFlow
 
-**Estado:** propuesta para revisión del autor. Este documento organiza trabajo; no autoriza por sí solo cambios funcionales, publicación ni cierre de fases.
+**Estado:** propuestas y entregas verificadas. Este documento registra qué subfases ya están integradas y cuáles siguen propuestas o pendientes de aprobación.
 
 **Base de contraste:** checkout sincronizado con `origin/main`, revisado el 2026-11-20.
 
 **Regla de entrega:** una subfase por rama y PR. Cada PR debe tener alcance acotado, criterios de aceptación verificables y evidencia de sus pruebas.
+
+## Estado de entrega
+
+| Subfase | Estado | Evidencia integrada |
+|---|---|---|
+| 1.1 Sincronizar dependencias, rendimiento y fases | Integrada | PR #88, merge `abcbf46f3541fba9a8a232b6d990c983c140bc60` |
+| 1.2 CRUD y reactividad en guías | Integrada | PR #89, merge `542daf0df87921b4849a90b670fe6080f50d6857` |
+| 1.3 Numeración, conteos y navegación | Integrada | PR #91, merge `a2d4ae53794bda54575aa1f56cf7716083db8728` |
+| 1.4 Tipografía inteligente en código | Integrada | PR #92, merge `9455cd6ed716864de8214eb617619178157fc095` |
+| 1.5 Tutorial JSON validado | Integrada | PR #93, merge `e50e3d5d2a7b13e24e38c36b840ece73cd4cfd5e` |
+| 1.6 Instalación desde checkout | Integrada | PR #94, merge `36aca362f3b2702dc0a6d354b339f2e840f40c6d` |
+| 1.7 Limitación MongoDB SRV | Integrada | PR #95, merge `8f6d4bf1df13cd3a3f33438ba5f2fea11b8d4047` |
+| 1.8 Matriz de capacidades, límites e historial | Pendiente | No existe una PR fusionada para consolidar esta tabla y mover el historial |
+| 1.9 About y excepción de gobernanza | Pendiente | Requiere operación manual en GitHub y evidencia del mantenedor |
+| Fase 2 | Pendiente de aprobación | No existe una subfase de Fase 2 implementada |
+
+### Entregas adicionales posteriores al roadmap
+
+- PR #96: CI diferencia PR Draft de Ready para revisar y la validación final antes de fusionar. Merge `19f0486caa64a4d2790d5d39aac94bd0d257bbfb`.
+- PR #97: target compartido para el CLI, benchmark manual/programado/por comentario, aislamiento de migraciones de prueba y eliminación de dependencias WASM mal ubicadas. Merge `e5d00e8d9761d5faa00f9905525432e4473eb381`.
+
+Las marcas Integrada requieren que el PR haya sido fusionado y que sus criterios hayan quedado respaldados por código, documentación o evidencia de CI. Las mejoras posteriores de CI son entregas adicionales y no reabren ni cierran por sí solas las subfases 1.8 o 1.9.
 
 ## 1. Alcance y reglas de ejecución
 
@@ -39,19 +61,21 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ## 2. Estado verificado que condiciona el plan
 
-- Las guías aún tienen afirmaciones contradictorias sobre `--template crud`, `Context`/providers y `ElementRef`; también hay numeración y conteos editoriales por corregir.
-- Los ejemplos concretos de tipografía inteligente señalados en el encargo ya no se reproducen en las páginas revisadas. No se encontró una comprobación automática que impida que vuelvan a aparecer dentro de código.
-- `validated_json` y las respuestas 422 ya existen en el servidor, con pruebas de integración. El tutorial JSON actual es un ejemplo de eco y declara que no valida entradas.
-- La documentación de instalación ya contiene el comando `cargo install --path crates/rustflow-cli --locked`, pero no adelanta que la instalación es desde checkout.
-- La guía MongoDB ya documenta que `mongodb://` está soportado y SRV deshabilitado, pero no presenta esa limitación al inicio.
+- Las subfases 1.1–1.7 están integradas en `main`; sus PRs se indican en la matriz anterior.
+- La comprobación automática de tipografía inteligente está integrada junto con sus tests y CI.
+- `validated_json` y las respuestas 422 existen en el servidor y el tutorial JSON las distingue del endpoint de eco.
+- La documentación de instalación adelanta la instalación desde checkout y muestra `cargo install --path crates/rustflow-cli --locked`.
+- La guía MongoDB presenta al inicio la limitación SRV y la alternativa `mongodb://`.
 - La matriz rápida existe dentro de `project-status`; no reemplaza una tabla única de límites ni elimina el historial extenso de esa página.
-- La actualización SQLite/dependencias está integrada en `main` y verificada en los HEADs de PR #84/#85. La subfase 1.1 sincroniza los documentos que aún la presentaban como pendiente o mostraban versiones antiguas; el build web pasó y la revisión final de CI de esta subfase sigue pendiente.
+- La actualización SQLite/dependencias está integrada en `main` y verificada en los HEADs de PR #84/#85.
 - El workflow oficial de comparación de frameworks terminó correctamente el 2026-11-20; su paso de validación confirmó un informe completo y válido y subió un artifact ([run](https://github.com/programadorkevinsvega-sys/RustFlow/actions/runs/44677034080)). Esto corrige la afirmación de que no existe ninguna ejecución oficial aceptada. **No cierra Phase 8.1:** siguen pendientes otros criterios, incluida evidencia A/B/A de escenarios de 10.000 filas y revisión de resultados. No se afirma superioridad competitiva sin revisar datos y limitaciones.
 - La auditoría externa no examinó el código. Las propuestas funcionales de la Fase 2 deben volver a verificarse contra código, pruebas y dependencias antes de implementarse.
 
 ## 3. Fase 1 - Correcciones documentales y de repositorio
 
 ### 1.1 Sincronizar estado de dependencias, rendimiento y fases
+
+**Estado actual:** integrada mediante PR #88.
 
 **Cubre:** A5, B9 y afirmaciones afectadas por PRs ya integrados.
 **Un PR:** actualizar estado público y enlaces obsoletos en README, `project-status`, guía de rendimiento, referencia de API y documentación de base de datos.
@@ -68,6 +92,8 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 1.2 Corregir plantilla CRUD y reactividad en las guías
 
+**Estado actual:** integrada mediante PR #89.
+
 **Cubre:** A1 y A2.
 **Un PR:** corregir las tres afirmaciones obsoletas de CRUD y las contradicciones sobre contexto y `ElementRef`.
 
@@ -82,6 +108,8 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 1.3 Corregir numeración, conteos y labels de navegación
 
+**Estado actual:** integrada mediante PR #91.
+
 **Cubre:** A3 y A10.
 **Un PR:** corregir la numeración en testing/configuración, el conteo del tutorial de producto y el nombre de la guía de base de datos en la navegación.
 
@@ -94,6 +122,8 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 **Pruebas/evidencia:** inspección de títulos y tabla; `cd website && npm run build`.
 
 ### 1.4 Proteger ejemplos de código frente a tipografía inteligente
+
+**Estado actual:** integrada mediante PR #92.
 
 **Cubre:** A4.
 **Un PR:** añadir una comprobación automatizada acotada al contenido de código Markdown/MDX.
@@ -109,6 +139,8 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 1.5 Mejorar el tutorial de API JSON sin ocultar el ejemplo de eco
 
+**Estado actual:** integrada mediante PR #93.
+
 **Cubre:** A6.
 **Un PR:** ampliar el tutorial para mostrar validación con `validated_json`/`ValidateInput` y el error 422, conservando explícitamente la distinción con un endpoint de eco si sigue siendo didáctico.
 
@@ -123,6 +155,8 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 1.6 Adelantar los requisitos de instalación
 
+**Estado actual:** integrada mediante PR #94.
+
 **Cubre:** A8.
 **Un PR:** reordenar el comienzo de `getting-started/setup` para decir que hoy se instala desde checkout y mostrar el comando real.
 
@@ -135,6 +169,8 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 **Pruebas/evidencia:** comprobar la ruta del crate y el comando desde un checkout; `cd website && npm run build`.
 
 ### 1.7 Hacer visible la limitación de MongoDB SRV
+
+**Estado actual:** integrada mediante PR #95.
 
 **Cubre:** A9.
 **Un PR:** poner al inicio de la guía la limitación verificada, su motivo técnico/de seguridad actual y la alternativa admitida.
@@ -149,6 +185,8 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 1.8 Unificar matriz de capacidades, límites e historial
 
+**Estado actual:** pendiente; no existe una PR fusionada que complete esta subfase.
+
 **Cubre:** A7 y A11.
 **Un PR:** subir la matriz rápida, consolidar los límites solicitados y separar el historial de fases de la explicación de capacidades actuales.
 
@@ -162,6 +200,8 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 **Pruebas/evidencia:** revisar que cada fila enlaza a contenido existente; `cd website && npm run build`; comprobar navegación y enlaces.
 
 ### 1.9 Actualizar About y documentar la excepción de gobernanza
+
+**Estado actual:** pendiente; requiere una operación manual del mantenedor en GitHub y evidencia posterior.
 
 **Cubre:** A12 y A13.
 **Un PR de documentación** para registrar la decisión; el cambio de About/topics es una operación del mantenedor fuera del build del sitio.
