@@ -244,6 +244,8 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 2.2 Implementar servidor de archivos estáticos
 
+**Estado actual:** implementación incluida en una PR separada; pendiente de revisión, CI y fusión.
+
 **Cubre:** B1, sujeto a 2.1.
 **Un PR:** implementar adapter con el contrato aprobado.
 

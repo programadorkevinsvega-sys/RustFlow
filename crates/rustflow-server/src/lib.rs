@@ -14,6 +14,7 @@ pub mod orm;
 mod page;
 mod proxy;
 mod sessions;
+mod static_files;
 mod tls;
 mod validation;
 
@@ -84,6 +85,7 @@ pub use sessions::{
     SessionStore, require_authentication, require_permission,
 };
 pub use sqlx;
+pub use static_files::{StaticFile, StaticFiles};
 pub use tls::tls_server_config_from_pem;
 use tokio::net::TcpListener;
 use tower::limit::GlobalConcurrencyLimitLayer;
@@ -1136,6 +1138,14 @@ pub enum ServerError {
     DuplicateReadinessCheck(String),
     TooManyReadinessChecks,
     ShutdownTimedOut(Duration),
+    InvalidStaticPrefix,
+    StaticRootNotFound,
+    StaticRootUnreadable,
+    StaticRootInvalid,
+    StaticRootNotDirectory,
+    InvalidStaticFileLimit,
+    InvalidStaticCacheControl,
+    InvalidStaticIndex,
     Io(std::io::Error),
 }
 
@@ -1195,6 +1205,14 @@ impl fmt::Display for ServerError {
                     "graceful shutdown exceeded the configured limit of {timeout:?}"
                 )
             }
+            Self::InvalidStaticPrefix => write!(f, "static file public prefix is invalid"),
+            Self::StaticRootNotFound => write!(f, "static file root does not exist"),
+            Self::StaticRootUnreadable => write!(f, "static file root is unreadable"),
+            Self::StaticRootInvalid => write!(f, "static file root is invalid"),
+            Self::StaticRootNotDirectory => write!(f, "static file root is not a directory"),
+            Self::InvalidStaticFileLimit => write!(f, "static file size limit must be positive"),
+            Self::InvalidStaticCacheControl => write!(f, "static file cache control is invalid"),
+            Self::InvalidStaticIndex => write!(f, "static file index must be a relative path"),
             Self::Io(error) => write!(f, "server I/O failed: {error}"),
         }
     }
@@ -1406,6 +1424,70 @@ impl Application {
         Fut: Future<Output = Result<Response, HttpError>> + Send + 'static,
     {
         self.route(HttpMethod::Get, path, handler)
+    }
+
+    /// Register a static-file directory under an explicit public URL prefix.
+    ///
+    /// The source directory is canonicalized when `StaticFiles` is constructed.
+    /// Requests are confined to that directory and cannot serve dotfiles or
+    /// symlinks. GET and HEAD are registered with generic 404 responses.
+    pub fn static_files(
+        &mut self,
+        prefix: impl Into<String>,
+        files: StaticFiles,
+    ) -> Result<&mut Self, ServerError> {
+        let prefix = static_files::normalize_public_prefix(&prefix.into())?;
+        let wildcard = if prefix == "/" {
+            "/{*path}".to_owned()
+        } else {
+            format!("{prefix}/{{*path}}")
+        };
+
+        let exact = prefix.clone();
+        let exact_files = files.clone();
+        self.get(exact.clone(), move |_request| {
+            let files = exact_files.clone();
+            async move {
+                match files.resolve("") {
+                    Some(file) => Ok(static_files::static_response(file, false)),
+                    None => Err(static_files::static_not_found()),
+                }
+            }
+        })?;
+        let exact_files = files.clone();
+        self.head(exact, move |_request| {
+            let files = exact_files.clone();
+            async move {
+                match files.resolve("") {
+                    Some(file) => Ok(static_files::static_response(file, true)),
+                    None => Ok(Response::status(StatusCode::NOT_FOUND)),
+                }
+            }
+        })?;
+
+        let wildcard_files = files.clone();
+        self.get(wildcard.clone(), move |request| {
+            let files = wildcard_files.clone();
+            let relative = request.path_param("path").unwrap_or("").to_owned();
+            async move {
+                match files.resolve(&relative) {
+                    Some(file) => Ok(static_files::static_response(file, false)),
+                    None => Err(static_files::static_not_found()),
+                }
+            }
+        })?;
+        let wildcard_files = files;
+        self.head(wildcard, move |request| {
+            let files = wildcard_files.clone();
+            let relative = request.path_param("path").unwrap_or("").to_owned();
+            async move {
+                match files.resolve(&relative) {
+                    Some(file) => Ok(static_files::static_response(file, true)),
+                    None => Ok(Response::status(StatusCode::NOT_FOUND)),
+                }
+            }
+        })?;
+        Ok(self)
     }
 
     /// Register a POST handler.

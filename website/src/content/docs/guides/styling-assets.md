@@ -107,3 +107,40 @@ Asegúrate de que la carpeta/asset exista y de que el servidor estático del des
 - No dependas de un artefacto generado que solo exista en tu máquina; el build debe reproducir assets desde fuentes versionadas y dependencias declaradas.
 
 RustFlow no abstrae CDN, almacenamiento remoto, transformación de imágenes, preload de fuentes ni invalidación de caché. Esas decisiones pertenecen al pipeline de build y hosting de la aplicación.
+
+## Archivos estáticos servidos por RustFlow
+
+El adapter HTTP puede montar un directorio bajo un prefijo público mediante una
+API opt-in. La configuración declara la raíz, el tamaño máximo, la caché y el
+archivo índice opcional.
+
+Para servir archivos desde el adapter HTTP, configura una raíz canónica y
+un prefijo público explícito:
+
+~~~rust
+let files = StaticFiles::new("dist")?
+    .with_max_file_bytes(10 * 1024 * 1024)?
+    .with_cache_control("public, max-age=3600")?
+    .with_index_file("index.html")?;
+
+let mut app = Application::new();
+app.static_files("/assets", files)?;
+~~~
+
+`StaticFiles` rechaza rutas absolutas, traversal, dotfiles y symlinks. Los
+archivos se sirven con GET/HEAD, MIME determinístico, límite de tamaño y caché
+configurados. El SPA fallback es el archivo índice opt-in; no sustituye
+autorización ni middleware de rutas protegidas.
+
+La prueba de carga reproducible vive en
+`scripts/static-files.k6.js`. Con un servidor que expone
+`RUSTFLOW_STATIC_PATH`:
+
+~~~sh
+RUSTFLOW_STATIC_BASE_URL=http://127.0.0.1:3001 \
+RUSTFLOW_STATIC_PATH=/assets/app.css \
+k6 run scripts/static-files.k6.js
+~~~
+
+El script usa 10 usuarios virtuales durante 15 segundos y exige menos de 1%
+de fallos y p95 menor a 50 ms.
