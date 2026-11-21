@@ -55,7 +55,7 @@ Las fases fundamentales se completaron dentro de alcances explícitos:
 - Fase 7.2: memos, refs, contextos tipados y referencias DOM.
 - Fase 7.3: kit de testing y documentación.
 - Phase 8.1: mediciones internas y benchmarks en progreso; no cerrada.
-- Phase 8.2: watcher/hot reload pendiente.
+- Phase 8.2: hot reload con preservación de estado sigue pendiente; `rustflow dev` ya ofrece reconstrucción/reinicio nativo y regeneración WASM opt-in.
 - Phase 8.3: cobertura de accesibilidad y compatibilidad pendiente.
 
 Las fases no convierten las APIs en compatibles con producción. Consulta [ROADMAP.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/ROADMAP.md) y [Historial del proyecto](/changelog/) para criterios y entregas detalladas.

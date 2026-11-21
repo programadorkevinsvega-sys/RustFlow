@@ -89,11 +89,32 @@ La relación, el filtro y la paginación forman parte de la aplicación CRUD ace
 rustflow dev
 rustflow dev --release
 rustflow dev --offline
+rustflow dev --once
+rustflow dev --browser-dir examples/browser
 ~~~
 
-El comando ejecuta `cargo run` en el proyecto RustFlow más cercano y devuelve el código de salida de Cargo. Admite `--release`, `--offline` y `--locked`; puedes pasar argumentos de la aplicación tras `--`.
+Por defecto, el comando observa el proyecto RustFlow más cercano, aplica
+debounce a cambios relevantes, reconstruye y reinicia el ejecutable nativo.
+`--once` conserva una ejecución única; admite `--release`, `--offline` y
+`--locked`, y puedes pasar argumentos de la aplicación tras `--`.
 
-**No hay supervisión de archivos, reinicio automático, hot reload, preservación de estado ni proxy de desarrollo.** Cada invocación arranca Cargo una vez; después de editar código, detén y vuelve a ejecutar el comando.
+Si una compilación falla, el watcher permanece activo y no inicia el binario
+anterior. La siguiente compilación correcta reinicia la aplicación. SIGINT/
+SIGTERM detienen el proceso actual y cierran el supervisor.
+
+**No hay preservación de estado ni hot reload.** El reinicio recrea el proceso.
+No uses el watcher como proxy de desarrollo browser; para un proyecto browser,
+añade `--browser-dir`.
+
+~~~sh
+rustflow dev --browser-dir examples/browser
+~~~
+
+El directorio debe contener `Cargo.toml`. RustFlow reconstruye el paquete WASM
+con `wasm-pack`, target web y el perfil correspondiente. Requiere
+`wasm-pack 0.13.1` y `wasm32-unknown-unknown` instalados. Vite y Playwright
+siguen siendo herramientas separadas; el watcher no sustituye su servidor ni
+la cobertura E2E.
 
 ## Build: `rustflow build`
 

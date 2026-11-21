@@ -13,6 +13,9 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
+ctrlc = { version = "3.5.3", features = ["termination"] }
+notify = "9.0.0"
+serde_json.workspace = true
 
 [dev-dependencies]
 rustflow-server = { path = "../rustflow-server" }

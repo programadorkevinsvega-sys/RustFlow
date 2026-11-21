@@ -1,7 +1,8 @@
 //! Command-line tooling for creating and working with RustFlow applications.
 //!
-//! The CLI deliberately delegates compilation and execution to Cargo. It does
-//! not implement file watching, hot reload, or a browser/WASM bundler.
+//! The CLI delegates compilation to Cargo and supervises native build/restart
+//! cycles. Browser/WASM rebuilds are opt-in; the CLI does not implement hot reload
+//! or replace Vite/Playwright.
 
 use std::{
     collections::BTreeSet,
@@ -11,9 +12,17 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Component, Path, PathBuf},
-    process::Command,
-    sync::atomic::{AtomicU64, Ordering},
+    process::{Child, Command, Stdio},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc,
+    },
+    thread,
+    time::{Duration, Instant},
 };
+
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 const REPOSITORY_URL: &str = "https://github.com/programadorkevinsvega-sys/RustFlow.git";
 const SQLX_PATCH_MANIFEST: &str = r#"
@@ -91,7 +100,7 @@ where
 
 fn print_help() {
     println!(
-        "RustFlow CLI {}\n\nUSAGE:\n  rustflow <COMMAND> [OPTIONS]\n\nCOMMANDS:\n  new <name> [--path <parent>] [--template server|crud]  Create a RustFlow application\n  dev [--release] [--offline]        Run the application through Cargo\n  build [OPTIONS]                    Build the application through Cargo\n  generate <TYPE> <name>              Generate a component, page, controller, model, or migration\n  help                                Show this help\n\nGENERATOR TYPES:\n  component | page | controller | model | migration\n\nNOTES:\n  Generators refuse file collisions. dev does not watch files or provide hot reload.\n  `generate model` stays a plain struct and `generate migration` creates SQL files; the opt-in `new --template crud` scaffold includes an explicit ORM entity and migration runner.\n  RustFlow is pre-1.0. Generated projects pin the source revision used by this CLI.",
+        "RustFlow CLI {}\n\nUSAGE:\n  rustflow <COMMAND> [OPTIONS]\n\nCOMMANDS:\n  new <name> [--path <parent>] [--template server|crud]  Create a RustFlow application\n  dev [OPTIONS]                      Watch and rebuild a RustFlow application\n  build [OPTIONS]                    Build the application through Cargo\n  generate <TYPE> <name>              Generate a component, page, controller, model, or migration\n  help                                Show this help\n\nGENERATOR TYPES:\n  component | page | controller | model | migration\n\nNOTES:\n  `rustflow dev` watches relevant files by default; use `--once` for a single build/run. Watch mode restarts the application after successful builds and preserves no application state.\n  `generate model` stays a plain struct and `generate migration` creates SQL files; the opt-in `new --template crud` scaffold includes an explicit ORM entity and migration runner.\n  RustFlow is pre-1.0. Generated projects pin the source revision used by this CLI.",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -165,37 +174,466 @@ fn dev_command(args: &[OsString]) -> Result<i32, CliError> {
     let mut cargo_args = Vec::new();
     let mut forwarded = Vec::new();
     let mut passthrough = false;
+    let mut once = false;
+    let mut browser_dir = None::<PathBuf>;
+    let mut index = 0;
 
-    for arg in args {
+    while index < args.len() {
+        let arg = &args[index];
         if passthrough {
             forwarded.push(arg.clone());
+            index += 1;
             continue;
         }
         match argument_text(arg, "dev option")? {
             "--" => {
                 passthrough = true;
+                index += 1;
                 continue;
             }
             "--release" | "--offline" | "--locked" => cargo_args.push(arg.clone()),
+            "--watch" => {}
+            "--once" | "--no-watch" => once = true,
+            "--browser-dir" => {
+                let Some(value) = args.get(index + 1) else {
+                    return Err("option --browser-dir requires a directory".into());
+                };
+                browser_dir = Some(PathBuf::from(value));
+                index += 2;
+                continue;
+            }
             "--help" | "-h" => {
                 println!(
-                    "Usage: rustflow dev [--release] [--offline] [--locked] [-- <application-args>]"
+                    "Usage: rustflow dev [--release] [--offline] [--locked] [--once] [--browser-dir <dir>] [-- <application-args>]"
                 );
                 println!(
-                    "Runs `cargo run` in the nearest RustFlow project. No file watcher or hot reload is provided."
+                    "Watches relevant source files by default, rebuilds after changes and restarts the native process. Use --once for one build/run."
+                );
+                println!(
+                    "--browser-dir enables an existing WASM/browser project and rebuilds wasm-pack output on relevant browser or Rust source changes."
                 );
                 return Ok(0);
             }
             option => return Err(format!("unsupported rustflow dev option: {option}").into()),
         }
+        index += 1;
     }
 
-    if passthrough {
-        cargo_args.push(OsString::from("--"));
-        cargo_args.extend(forwarded);
+    let current = env::current_dir()
+        .map_err(|error| format!("could not determine the current directory: {error}"))?;
+    let root = find_rustflow_project(&current)?;
+
+    let browser_dir = browser_dir
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                root.join(path)
+            }
+        })
+        .map(|path| {
+            path.canonicalize().map_err(|error| {
+                format!(
+                    "could not open browser directory {}: {error}",
+                    path.display()
+                )
+            })
+        })
+        .transpose()
+        .map_err(CliError::from)?;
+
+    if let Some(browser_dir) = browser_dir.as_deref()
+        && !browser_dir.join("Cargo.toml").is_file()
+    {
+        return Err(format!(
+            "browser directory {} does not contain Cargo.toml",
+            browser_dir.display()
+        )
+        .into());
     }
 
-    run_cargo("run", &cargo_args, "dev")
+    let cancelled = Arc::new(AtomicBool::new(false));
+    if once {
+        return dev_once(
+            &root,
+            &cargo_args,
+            &forwarded,
+            browser_dir.as_deref(),
+            &cancelled,
+        );
+    }
+
+    dev_watch(
+        &root,
+        &cargo_args,
+        &forwarded,
+        browser_dir.as_deref(),
+        cancelled,
+    )
+}
+
+fn dev_once(
+    root: &Path,
+    cargo_args: &[OsString],
+    forwarded: &[OsString],
+    browser_dir: Option<&Path>,
+    cancelled: &Arc<AtomicBool>,
+) -> Result<i32, CliError> {
+    install_cancel_handler(cancelled)?;
+    let build_code = dev_build(root, cargo_args, browser_dir)?;
+    if build_code != 0 {
+        return Ok(build_code);
+    }
+    let executable = dev_executable(root, cargo_args)?;
+    println!("Starting `{}`", executable.display());
+    let mut command = Command::new(&executable);
+    command
+        .current_dir(root)
+        .args(forwarded)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    let mut child = command.spawn().map_err(|error| {
+        format!(
+            "could not start RustFlow application {}: {error}",
+            executable.display()
+        )
+    })?;
+    while !cancelled.load(Ordering::SeqCst) {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status.code().unwrap_or(1)),
+            Ok(None) => thread::sleep(Duration::from_millis(50)),
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("could not inspect the RustFlow process: {error}").into());
+            }
+        }
+    }
+    stop_child(&mut child);
+    Ok(0)
+}
+
+fn dev_watch(
+    root: &Path,
+    cargo_args: &[OsString],
+    forwarded: &[OsString],
+    browser_dir: Option<&Path>,
+    cancelled: Arc<AtomicBool>,
+) -> Result<i32, CliError> {
+    install_cancel_handler(&cancelled)?;
+
+    let (event_tx, event_rx) = mpsc::channel::<notify::Result<Event>>();
+    let mut watcher = RecommendedWatcher::new(
+        move |event| {
+            let _ = event_tx.send(event);
+        },
+        notify::Config::default(),
+    )
+    .map_err(|error| format!("could not initialize file watcher: {error}"))?;
+
+    watcher
+        .watch(root, RecursiveMode::Recursive)
+        .map_err(|error| format!("could not watch {}: {error}", root.display()))?;
+    if let Some(browser_dir) = browser_dir
+        && browser_dir != root
+    {
+        watcher
+            .watch(browser_dir, RecursiveMode::Recursive)
+            .map_err(|error| format!("could not watch {}: {error}", browser_dir.display()))?;
+    }
+
+    let mut child: Option<Child> = None;
+    if dev_build(root, cargo_args, browser_dir)? == 0 {
+        match dev_start(root, cargo_args, forwarded, &mut child) {
+            Ok(()) => {}
+            Err(error) => eprintln!("error: {error}"),
+        }
+    }
+
+    println!(
+        "Watching {}{}; press Ctrl-C to stop.",
+        root.display(),
+        browser_dir
+            .map(|path| format!(" and {}", path.display()))
+            .unwrap_or_default()
+    );
+
+    let mut pending = false;
+    let mut pending_since = Instant::now();
+    loop {
+        if cancelled.load(Ordering::SeqCst) {
+            if let Some(current) = child.as_mut() {
+                stop_child(current);
+            }
+            println!("Stopping RustFlow development server.");
+            return Ok(0);
+        }
+
+        if let Some(current) = child.as_mut()
+            && let Ok(Some(_status)) = current.try_wait()
+        {
+            let _ = child.take();
+        }
+
+        match event_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(Ok(event)) => {
+                if dev_event_is_relevant(root, browser_dir, &event) {
+                    pending = true;
+                    pending_since = Instant::now();
+                }
+            }
+            Ok(Err(error)) => eprintln!("watch error: {error}"),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err("file watcher stopped unexpectedly".into());
+            }
+        }
+
+        if pending && pending_since.elapsed() >= Duration::from_millis(300) {
+            pending = false;
+            println!("Source change detected; rebuilding...");
+            if let Some(current) = child.as_mut() {
+                stop_child(current);
+            }
+            child = None;
+            if dev_build(root, cargo_args, browser_dir)? == 0 {
+                match dev_start(root, cargo_args, forwarded, &mut child) {
+                    Ok(()) => {}
+                    Err(error) => eprintln!("error: {error}"),
+                }
+            } else {
+                eprintln!("Build failed; keeping the watcher active for the next change.");
+            }
+        }
+    }
+}
+
+fn install_cancel_handler(cancelled: &Arc<AtomicBool>) -> Result<(), CliError> {
+    let cancelled_for_handler = Arc::clone(cancelled);
+    ctrlc::set_handler(move || {
+        cancelled_for_handler.store(true, Ordering::SeqCst);
+    })
+    .map_err(|error| format!("could not install Ctrl-C handler: {error}"))?;
+    Ok(())
+}
+
+fn dev_build(
+    root: &Path,
+    cargo_args: &[OsString],
+    browser_dir: Option<&Path>,
+) -> Result<i32, CliError> {
+    println!("Running `cargo build` in {}", root.display());
+    let cargo = dev_cargo();
+    let status = Command::new(&cargo)
+        .current_dir(root)
+        .arg("build")
+        .args(cargo_args)
+        .status()
+        .map_err(|error| {
+            format!(
+                "could not start Cargo for `rustflow dev` ({}): {error}",
+                cargo.to_string_lossy()
+            )
+        })?;
+    let code = status.code().unwrap_or(1);
+    if code != 0 {
+        return Ok(code);
+    }
+
+    if let Some(browser_dir) = browser_dir {
+        let wasm_pack = env::var_os("RUSTFLOW_WASM_PACK")
+            .or_else(|| env::var_os("WASM_PACK"))
+            .unwrap_or_else(|| OsString::from("wasm-pack"));
+        let profile = if cargo_args.iter().any(|arg| arg == "--release") {
+            "--release"
+        } else {
+            "--dev"
+        };
+        println!("Running `wasm-pack build` in {}", browser_dir.display());
+        let status = Command::new(&wasm_pack)
+            .current_dir(browser_dir)
+            .arg("build")
+            .arg(profile)
+            .arg("--target")
+            .arg("web")
+            .arg("--out-dir")
+            .arg("pkg")
+            .arg("--out-name")
+            .arg("rustflow_browser")
+            .status()
+            .map_err(|error| {
+                format!(
+                    "could not start wasm-pack for `rustflow dev` ({}): {error}",
+                    wasm_pack.to_string_lossy()
+                )
+            })?;
+        let wasm_code = status.code().unwrap_or(1);
+        if wasm_code != 0 {
+            return Ok(wasm_code);
+        }
+    }
+
+    Ok(0)
+}
+
+fn dev_cargo() -> OsString {
+    env::var_os("RUSTFLOW_CARGO")
+        .or_else(|| env::var_os("CARGO"))
+        .unwrap_or_else(|| OsString::from("cargo"))
+}
+
+fn dev_start(
+    root: &Path,
+    cargo_args: &[OsString],
+    forwarded: &[OsString],
+    child: &mut Option<Child>,
+) -> Result<(), CliError> {
+    let executable = dev_executable(root, cargo_args)?;
+    println!("Starting `{}`", executable.display());
+    let command = Command::new(&executable)
+        .current_dir(root)
+        .args(forwarded)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|error| {
+            format!(
+                "could not start RustFlow application {}: {error}",
+                executable.display()
+            )
+        })?;
+    *child = Some(command);
+    Ok(())
+}
+
+fn dev_executable(root: &Path, cargo_args: &[OsString]) -> Result<PathBuf, CliError> {
+    let cargo = dev_cargo();
+    let output = Command::new(&cargo)
+        .current_dir(root)
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .output()
+        .map_err(|error| format!("could not run Cargo metadata: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Cargo metadata failed:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+    let metadata: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("could not parse Cargo metadata: {error}"))?;
+    let target_directory = env::var_os("CARGO_TARGET_DIR")
+        .or(env::var_os("RUSTFLOW_TARGET_DIR"))
+        .map(PathBuf::from)
+        .or_else(|| metadata["target_directory"].as_str().map(PathBuf::from))
+        .ok_or("Cargo metadata did not provide a target directory")?;
+
+    let mut executable_names = Vec::new();
+    if let Some(packages) = metadata["packages"].as_array() {
+        for package in packages {
+            let manifest_dir = package["manifest_path"]
+                .as_str()
+                .and_then(|manifest| Path::new(manifest).parent().map(Path::to_path_buf));
+            if manifest_dir.as_deref() != Some(root) {
+                continue;
+            }
+            let targets = package["targets"].as_array();
+            let default_run = package["default_run"].as_str();
+            let selected = default_run
+                .and_then(|name| {
+                    targets?.iter().find(|target| {
+                        target["name"].as_str() == Some(name)
+                            && target["kind"]
+                                .as_array()
+                                .is_some_and(|kind| kind.iter().any(|value| value == "bin"))
+                    })
+                })
+                .or_else(|| {
+                    targets?.iter().find(|target| {
+                        target["kind"]
+                            .as_array()
+                            .is_some_and(|kind| kind.iter().any(|value| value == "bin"))
+                    })
+                });
+            if let Some(name) = selected.and_then(|target| target["name"].as_str()) {
+                executable_names.push(name.to_owned());
+            }
+        }
+    }
+    executable_names.sort();
+    executable_names.dedup();
+    if executable_names.len() != 1 {
+        return Err(format!(
+            "expected exactly one application binary in {}, found {}",
+            root.display(),
+            executable_names.len()
+        )
+        .into());
+    }
+
+    let profile = if cargo_args.iter().any(|arg| arg == "--release") {
+        "release"
+    } else {
+        "debug"
+    };
+    let mut executable = target_directory;
+    if let Some(index) = cargo_args.iter().position(|arg| arg == "--target")
+        && let Some(triple) = cargo_args.get(index + 1)
+    {
+        executable.push(triple.to_string_lossy().as_ref());
+    }
+    executable.push(profile);
+    executable.push(&executable_names[0]);
+    if cfg!(windows) {
+        executable.set_extension("exe");
+    }
+    if !executable.is_file() {
+        return Err(format!(
+            "Cargo build did not produce expected executable {}",
+            executable.display()
+        )
+        .into());
+    }
+    Ok(executable)
+}
+
+fn stop_child(child: &mut Child) {
+    if child.try_wait().ok().flatten().is_none() {
+        let _ = child.kill();
+    }
+    let _ = child.wait();
+}
+
+fn dev_event_is_relevant(root: &Path, browser_dir: Option<&Path>, event: &Event) -> bool {
+    if !matches!(
+        event.kind,
+        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) | EventKind::Any
+    ) {
+        return false;
+    }
+    event.paths.iter().any(|path| {
+        if is_ignored_dev_path(root, browser_dir, path) {
+            return false;
+        }
+        let file_name = path.file_name().and_then(OsStr::to_str).unwrap_or("");
+        let extension = path.extension().and_then(OsStr::to_str).unwrap_or("");
+        file_name == "Cargo.toml"
+            || file_name == "Cargo.lock"
+            || matches!(
+                extension,
+                "rs" | "toml" | "js" | "mjs" | "jsx" | "ts" | "tsx" | "css" | "html" | "json"
+            )
+    })
+}
+
+fn is_ignored_dev_path(root: &Path, browser_dir: Option<&Path>, path: &Path) -> bool {
+    let ignored_roots = [".git", "target", "node_modules", "pkg", "dist"];
+    path.components().any(|component| {
+        component
+            .as_os_str()
+            .to_str()
+            .is_some_and(|name| ignored_roots.contains(&name))
+    }) && (path.starts_with(root) || browser_dir.is_some_and(|browser| path.starts_with(browser)))
 }
 
 fn build_command(args: &[OsString]) -> Result<i32, CliError> {
@@ -548,7 +986,7 @@ fn scaffold_files(name: &str, revision: &str, template: &str) -> Vec<(PathBuf, S
         (
             PathBuf::from("README.md"),
             format!(
-                "# {name}\n\nAplicación de servidor generada con RustFlow. Las APIs son pre-1.0 y pueden cambiar. Requiere Rust 1.94 o posterior.\n\n## Desarrollo\n\n```sh\nrustflow dev\n```\n\nLa configuración inicial es `127.0.0.1:3000`. Copia `.env.example` a `.env` si deseas cambiar los ajustes locales; consulta `docs/CONFIGURATION.md` para precedencia y perfiles. `rustflow dev` ejecuta Cargo una vez; no incluye supervisión de archivos ni hot reload.\n\n## Build\n\n```sh\nrustflow build --release\n```\n\n## Generadores\n\n```sh\nrustflow generate component ProductCard\nrustflow generate page about\nrustflow generate controller health\nrustflow generate model User\nrustflow generate migration create_users\n```\n\nLos generadores de Rust registran el módulo dentro de la sección gestionada de `src/**/mod.rs`. Si el archivo de índice no conserva sus marcadores, el comando se detiene sin reemplazarlo. Las migraciones son archivos SQL que el ejecutor SQLx puede aplicar de forma explícita; no se ejecutan por el comando generate.\n\nLas dependencias de RustFlow están fijadas a la revisión del repositorio desde la que se compiló este CLI. El manifiesto también fija temporalmente la revisión upstream de SQLx necesaria para SQLite 3.54.1; reemplázala por un release SQLx publicado que admita `libsqlite3-sys` 0.39.x cuando esté disponible y vuelve a validar el proyecto.\n\nLa aplicación usa un pool SQLx configurable y el scaffold empieza con SQLite. SQLx también acepta `postgres://`/`postgresql://` y `mysql://` (driver compartido por MySQL y MariaDB), pero cambiar `RUSTFLOW_DATABASE_URL` no hace portables los placeholders, tipos ni migraciones generados para SQLite: adáptalos al motor y usa directorios de migración específicos. La matriz configurada y sus límites están en [DATABASE_SUPPORT_MATRIX.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/DATABASE_SUPPORT_MATRIX.md). MongoDB usa una API documental independiente (`MongoConfig`, `MongoDatabase`, BSON y colecciones); no es seleccionada por `RUSTFLOW_DATABASE_URL`, no usa migraciones SQL y esta plantilla no la inicializa automáticamente. Esta revisión soporta URI `mongodb://`, no `mongodb+srv://`. En desarrollo/test el scaffold aplica migraciones al iniciar; en producción ejecuta `cargo run --bin migrate` como paso de despliegue antes de arrancar varias instancias. Consulta docs/CONFIGURATION.md para precedencia y límites del pool.\n"
+                "# {name}\n\nAplicación de servidor generada con RustFlow. Las APIs son pre-1.0 y pueden cambiar. Requiere Rust 1.94 o posterior.\n\n## Desarrollo\n\n```sh\nrustflow dev\n```\n\nLa configuración inicial es `127.0.0.1:3000`. Copia `.env.example` a `.env` si deseas cambiar los ajustes locales; consulta `docs/CONFIGURATION.md` para precedencia y perfiles. `rustflow dev` observa cambios, reconstruye y reinicia el ejecutable nativo. `--once` ejecuta una sola vez y no preserva estado ni ofrece hot reload.\n\n## Build\n\n```sh\nrustflow build --release\n```\n\n## Generadores\n\n```sh\nrustflow generate component ProductCard\nrustflow generate page about\nrustflow generate controller health\nrustflow generate model User\nrustflow generate migration create_users\n```\n\nLos generadores de Rust registran el módulo dentro de la sección gestionada de `src/**/mod.rs`. Si el archivo de índice no conserva sus marcadores, el comando se detiene sin reemplazarlo. Las migraciones son archivos SQL que el ejecutor SQLx puede aplicar de forma explícita; no se ejecutan por el comando generate.\n\nLas dependencias de RustFlow están fijadas a la revisión del repositorio desde la que se compiló este CLI. El manifiesto también fija temporalmente la revisión upstream de SQLx necesaria para SQLite 3.54.1; reemplázala por un release SQLx publicado que admita `libsqlite3-sys` 0.39.x cuando esté disponible y vuelve a validar el proyecto.\n\nLa aplicación usa un pool SQLx configurable y el scaffold empieza con SQLite. SQLx también acepta `postgres://`/`postgresql://` y `mysql://` (driver compartido por MySQL y MariaDB), pero cambiar `RUSTFLOW_DATABASE_URL` no hace portables los placeholders, tipos ni migraciones generados para SQLite: adáptalos al motor y usa directorios de migración específicos. La matriz configurada y sus límites están en [DATABASE_SUPPORT_MATRIX.md](https://github.com/programadorkevinsvega-sys/RustFlow/blob/main/docs/DATABASE_SUPPORT_MATRIX.md). MongoDB usa una API documental independiente (`MongoConfig`, `MongoDatabase`, BSON y colecciones); no es seleccionada por `RUSTFLOW_DATABASE_URL`, no usa migraciones SQL y esta plantilla no la inicializa automáticamente. Esta revisión soporta URI `mongodb://`, no `mongodb+srv://`. En desarrollo/test el scaffold aplica migraciones al iniciar; en producción ejecuta `cargo run --bin migrate` como paso de despliegue antes de arrancar varias instancias. Consulta docs/CONFIGURATION.md para precedencia y límites del pool.\n"
             ),
         ),
         (
@@ -1217,6 +1655,49 @@ fn is_revision(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use notify::event::{ModifyKind, RemoveKind};
+
+    #[test]
+    fn dev_watcher_relevant_events_exclude_generated_and_dependency_paths() {
+        let root = temporary_directory("dev-watcher-events");
+        let browser = root.join("browser");
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(browser.join("src")).unwrap();
+
+        let source_event =
+            Event::new(EventKind::Modify(ModifyKind::Any)).add_path(root.join("src/main.rs"));
+        assert!(dev_event_is_relevant(&root, Some(&browser), &source_event));
+
+        let deleted_event =
+            Event::new(EventKind::Remove(RemoveKind::File)).add_path(browser.join("src/app.rs"));
+        assert!(dev_event_is_relevant(&root, Some(&browser), &deleted_event));
+
+        let ignored_event =
+            Event::new(EventKind::Modify(ModifyKind::Any)).add_path(root.join("target/debug/app"));
+        assert!(!dev_event_is_relevant(
+            &root,
+            Some(&browser),
+            &ignored_event
+        ));
+
+        let dependency_event = Event::new(EventKind::Modify(ModifyKind::Any))
+            .add_path(browser.join("node_modules/vite/index.js"));
+        assert!(!dev_event_is_relevant(
+            &root,
+            Some(&browser),
+            &dependency_event
+        ));
+
+        let generated_event = Event::new(EventKind::Modify(ModifyKind::Any))
+            .add_path(browser.join("pkg/rustflow_browser.js"));
+        assert!(!dev_event_is_relevant(
+            &root,
+            Some(&browser),
+            &generated_event
+        ));
+
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn project_names_reject_paths_and_invalid_identifiers() {
