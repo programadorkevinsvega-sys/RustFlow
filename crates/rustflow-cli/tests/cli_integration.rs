@@ -738,6 +738,27 @@ fn build_compiles_a_generated_project_and_its_server_can_serve_http() {
 }
 
 fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: &str, label: &str) {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        let config = rustflow_server::DatabaseConfig::new(database_url).unwrap();
+        let database = rustflow_server::DatabasePool::connect(&config)
+            .await
+            .unwrap();
+        database
+            .execute_raw("DROP TABLE IF EXISTS products", [])
+            .await
+            .unwrap();
+        database
+            .execute_raw("DROP TABLE IF EXISTS categories", [])
+            .await
+            .unwrap();
+        database
+            .execute_raw("DROP TABLE IF EXISTS _sqlx_migrations", [])
+            .await
+            .unwrap();
+        database.close().await;
+    });
+
     let port = TcpListener::bind(("127.0.0.1", 0))
         .unwrap()
         .local_addr()
