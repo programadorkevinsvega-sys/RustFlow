@@ -12,7 +12,7 @@ The shared source of truth is `.github/filters.yml`. The CI, website, and depend
 
 | Scope | Files that select it | Jobs affected |
 | --- | --- | --- |
-| `rust` | Workspace and crate manifests/lockfiles, Rust toolchain/Cargo configuration, `crates/**`, Rust example sources and manifests | Rust test matrix plus parallel native performance baselines; the required-check gates `Rust checks (1.94)` and `Rust checks (stable)` require both |
+| `rust` | Workspace and crate manifests/lockfiles, Rust toolchain/Cargo configuration, `crates/**`, Rust example sources and manifests | Rust test matrix, parallel stable CLI/persistence smoke tests, and native performance baselines; both required Rust gates require all applicable jobs |
 | `cargo_lock` | Root `Cargo.lock` | `Audit Cargo dependencies`; the required Rust gates fail closed if this audit fails |
 | `browser` | Browser example, DOM/view/runtime/macro crates, and workspace Cargo/toolchain configuration | `WebAssembly target check`, `Browser E2E and bundle size` |
 | `performance_tools` | Performance benchmark comparators, aggregators, patchers, budget checkers, and `scripts/tests/**` | `Performance tooling tests` |
@@ -36,7 +36,7 @@ A change to the filters or any workflow definition deliberately selects the broa
 
 ## Parallel native checks and dependency audit
 
-The Rust test matrix remains the required merge gate. Native reactivity, SSR, and memory baselines run in a separate stable-toolchain job in parallel with that matrix; the `Rust checks (stable)` scope gate requires both jobs when Rust or `full_ci` paths change. The database persistence benchmark smoke remains in the stable matrix because it uses the job's SQL and MongoDB services.
+The Rust test matrix remains the required merge gate. Native reactivity, SSR, and memory baselines run in a separate stable-toolchain job in parallel with that matrix. Stable-only CLI integration, StaticFiles k6, CLI install, and database persistence smoke tests run in `Stable CLI and persistence smoke tests` in parallel as well. Both Rust scope gates wait for the applicable Rust matrix, native performance, and stable smoke jobs, so the split does not weaken required validation. The MongoDB test-service setup is a shared local action to keep the matrix and stable smoke environments aligned.
 
 The Cargo advisory scan uses the pinned `cargo-audit` release installer and runs for root `Cargo.lock` changes or broad workflow changes. `Rust checks (stable)` includes that result in its fail-closed summary when the scan is applicable. A separate scheduled workflow scans `main` daily and can also be started manually, so code-only pull requests do not rebuild `cargo-audit` on every push. The dependency review for manifest and lockfile diffs remains unchanged.
 
@@ -61,7 +61,7 @@ This dashboard setting cannot be committed in this repository. Until it is appli
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `README.md`, `ROADMAP.md`, or `docs/**` only | Matrix skips; both gates pass | Skip | Skip | Skip | Skip |
 | `website/**` only | Matrix skips; both gates pass | Skip | Run | Skip | Skip |
-| `crates/rustflow-server/**` only | Run; both gates require the Rust matrix and parallel native baselines | Skip | Skip | Skip | Skip |
+| `crates/rustflow-server/**` only | Run; both gates require the Rust matrix, stable smoke, and native baselines | Skip | Skip | Skip | Skip |
 | `crates/rustflow-dom/**` | Run; both gates require success | Run | Skip | Skip | Skip |
 | `examples/browser/src/**` or `examples/browser/tests/**` | Matrix skips; both gates pass | Run | Skip | Skip | Skip |
 | `scripts/compare-browser-performance.py` or `scripts/tests/**` | Matrix skips; both gates pass | Skip | Skip | Skip | Run |
