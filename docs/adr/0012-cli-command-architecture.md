@@ -5,6 +5,10 @@
 - **Alcance:** binario `rustflow`, scaffolding de servidor, comandos Cargo y generación de archivos
 - **Relacionado:** `ROADMAP.md`, `docs/CLI.md`, `docs/ENGINEERING_BASELINE.md`
 
+**Actualización 2026-11-21:** este ADR fue parcialmente subsumido por
+ADR 0028 para el ciclo de desarrollo. Las decisiones de scaffolding, revisión
+fijada y generación protegida siguen vigentes.
+
 ## Contexto
 
 El workspace contiene crates de vistas, reactividad, SSR y servidor HTTP, pero no publica una plantilla instalable desde crates.io ni incluía un comando para iniciar aplicaciones. La Fase 6.1 debe cerrar esa brecha sin adelantar la configuración por entornos, la validación, las sesiones/autenticación o la persistencia de fases posteriores.

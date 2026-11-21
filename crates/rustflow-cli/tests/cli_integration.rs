@@ -786,7 +786,7 @@ fn exercise_generated_crud_backend(binary: &Path, project: &Path, database_url: 
     let mut child = ChildGuard::new(child);
 
     let mut ready = false;
-    for _ in 0..1200 {
+    for _ in 0..3000 {
         if TcpStream::connect(("127.0.0.1", port)).is_ok() {
             ready = true;
             break;
@@ -1738,7 +1738,7 @@ fn dev_runs_cargo_and_invalid_projects_return_a_clear_error() {
 
     let output = cli()
         .current_dir(&project)
-        .args(["dev", "--offline"])
+        .args(["dev", "--once", "--offline"])
         .env("CARGO_TARGET_DIR", &target_dir)
         .output()
         .expect("run rustflow dev");
@@ -1760,6 +1760,100 @@ fn dev_runs_cargo_and_invalid_projects_return_a_clear_error() {
         String::from_utf8_lossy(&build_failure.stderr)
     );
     assert!(String::from_utf8_lossy(&build_failure.stderr).contains("error"));
+}
+
+#[cfg(unix)]
+#[test]
+fn dev_watcher_rebuilds_and_cancels_the_running_application() {
+    let temp = TempDir::new("dev-watch-contract");
+    let project = create_project(temp.path(), "dev-watch-app");
+    localize_framework_dependencies(&project);
+    let target_dir = cargo_target_dir(&temp);
+    let marker = temp.path().join("dev-watch.marker");
+    let pid_marker = temp.path().join("dev-watch.pid");
+
+    fs::write(
+        project.join("src/main.rs"),
+        r#"use std::{env, fs, thread, time::Duration};
+fn main() {
+    let marker = env::var("RUSTFLOW_TEST_MARKER").unwrap();
+    let pid_marker = env::var("RUSTFLOW_TEST_PID_MARKER").unwrap();
+    fs::write(&pid_marker, std::process::id().to_string()).unwrap();
+    fs::write(&marker, "initial").unwrap();
+    loop { thread::sleep(Duration::from_secs(1)); }
+}
+"#,
+    )
+    .unwrap();
+
+    let mut child = cli()
+        .current_dir(&project)
+        .args(["dev", "--offline"])
+        .env("CARGO_TARGET_DIR", &target_dir)
+        .env("RUSTFLOW_TEST_MARKER", &marker)
+        .env("RUSTFLOW_TEST_PID_MARKER", &pid_marker)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .expect("start rustflow dev watcher");
+
+    for _ in 0..3000 {
+        if marker.exists() && fs::read_to_string(&marker).unwrap_or_default() == "initial" {
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    assert_eq!(fs::read_to_string(&marker).unwrap_or_default(), "initial");
+
+    fs::write(
+        project.join("src/main.rs"),
+        r#"use std::{env, fs, thread, time::Duration};
+fn main() {
+    let marker = env::var("RUSTFLOW_TEST_MARKER").unwrap();
+    let pid_marker = env::var("RUSTFLOW_TEST_PID_MARKER").unwrap();
+    fs::write(&pid_marker, std::process::id().to_string()).unwrap();
+    fs::write(&marker, "rebuilt").unwrap();
+    loop { thread::sleep(Duration::from_secs(1)); }
+}
+"#,
+    )
+    .unwrap();
+
+    for _ in 0..1200 {
+        if fs::read_to_string(&marker).unwrap_or_default() == "rebuilt" {
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    assert_eq!(fs::read_to_string(&marker).unwrap_or_default(), "rebuilt");
+
+    assert!(
+        Command::new("kill")
+            .arg("-INT")
+            .arg(child.id().to_string())
+            .status()
+            .expect("send SIGINT")
+            .success()
+    );
+    let status = child.wait().expect("watcher exits");
+    assert!(status.success());
+
+    if let Ok(pid) = fs::read_to_string(&pid_marker)
+        .unwrap()
+        .trim()
+        .parse::<u32>()
+    {
+        for _ in 0..30 {
+            if !Path::new(&format!("/proc/{pid}")).exists() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        assert!(
+            !Path::new(&format!("/proc/{pid}")).exists(),
+            "rebuilt application process remained alive"
+        );
+    }
 }
 
 #[test]

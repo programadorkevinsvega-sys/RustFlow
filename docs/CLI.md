@@ -15,7 +15,7 @@ El build script obtiene el SHA completo del checkout Git (o de la variable expl�
 ## Comandos
 
 - `rustflow new <nombre> [--path <directorio-padre>] [--template server|crud]`: crea una aplicación. `server` es la plantilla predeterminada y conserva el scaffold HTTP anterior; `crud` genera una aplicación CRUD SQL de demostración. El padre debe existir y el destino no puede existir previamente.
-- `rustflow dev [--release] [--offline] [--locked] [-- <args>]`: ejecuta una vez `cargo run`; los argumentos tras `--` se pasan al ejecutable.
+- `rustflow dev [--release] [--offline] [--locked] [--once] [--browser-dir <dir>] [-- <args>]`: observa el proyecto y reconstruye/reinicia por defecto; `--once` hace una sola ejecución y los argumentos tras `--` se pasan al ejecutable.
 - `rustflow build [--release] [--target <triple>] [--features <lista>] [--all-features] [--no-default-features] [--offline] [--locked]`: delega a `cargo build`.
 - `rustflow generate <component|page|controller|model|migration> <nombre>`: crea un archivo nuevo protegido contra colisiones. `rustflow g` es un alias.
 
@@ -87,4 +87,25 @@ Las pruebas de integración usan directorios temporales. Además de los cinco ge
 
 ## Límites explícitos
 
-La configuración de la Fase 6.2 solo cubre perfil, host y puerto; no es un sistema general ni almacena secretos. La plantilla `server` no conecta automáticamente validación tipada, `CsrfProtection`, `SessionManager` ni guards de autenticación/autorización; estas APIs siguen requiriendo configuración explícita. La plantilla `crud` muestra su composición para un caso educativo, pero utiliza sesión volátil y un login de demostración (consulta [FORM_VALIDATION.md](FORM_VALIDATION.md) y [ADR 0015](adr/0015-sessions-and-access-control.md)). La Fase 6.6 está completa: MySQL/MariaDB y el adaptador MongoDB se integraron, y la matriz de motores quedó publicada en [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md). La Fase 6.7 quedó completada mediante PR #66 (merge `6046ae7ca60843d145476177e698162b57939c68`): integra el ORM SQL experimental de SeaORM sobre pools SQLx tipados, el ODM MongoDB independiente, las relaciones/cargas avanzadas y el CRUD generado; consulta [DATABASES.md](DATABASES.md). Sin embargo, `rustflow generate model` continúa generando un struct de dominio ordinario: no crea entidades SeaORM, implementaciones `DocumentModel`, repositorios ni un esquema persistente automáticamente. El scaffold `server` incluye el pool SQLx y el runner de migraciones descritos en `DATABASES.md`, pero no genera por sí solo una aplicación CRUD. Para ese caso existe la plantilla explícita `rustflow new <nombre> --template crud`, que genera el ejemplo integrado de ORM, validación, transacciones, guards, CSRF y SSR. Es una demostración educativa, no una plantilla lista para producción. Siguen pendientes server actions y almacenamiento SQL durable para `SessionStore`; `InMemorySessionStore` permanece volátil y local al proceso. No hay file watcher, hot reload, preservación de estado, proxy de desarrollo ni bundler integrado server/browser. `use_memo`, `use_ref` y `use_context` están disponibles como APIs experimentales desde Phase 7.2; las referencias DOM se ofrecen por separado mediante `rustflow_dom::ElementRef` en browser/WASM. Consulta `REACTIVITY_RUNTIME.md` y `UI_COMPLETENESS.md`.
+`rustflow dev` usa un supervisor acotado:
+
+- observa archivos relevantes y aplica debounce antes de recompilar;
+- excluye `.git`, `target`, `node_modules`, `pkg` y `dist`;
+- interrumpe el proceso anterior antes de iniciar uno reconstruido;
+- ante un fallo de build conserva el watcher activo y no inicia un binario obsoleto;
+- SIGINT/SIGTERM detienen el proceso actual y salen sin volver a construir;
+- reinicia la aplicación sin preservar estado; no promueve hot reload.
+
+Para reconstruir WASM desde el mismo ciclo, apunta a un proyecto browser
+existente:
+
+~~~sh
+rustflow dev --browser-dir examples/browser
+~~~
+
+El directorio debe tener `Cargo.toml`. RustFlow ejecuta `wasm-pack build` con
+target web y el perfil de desarrollo o release correspondiente, sin reemplazar
+Vite ni crear un segundo bundler. Instala `wasm-pack 0.13.1`, añade
+`wasm32-unknown-unknown` y ejecuta E2E/Playwright con el flujo documentado.
+
+La configuración de la Fase 6.2 solo cubre perfil, host y puerto; no es un sistema general ni almacena secretos. La plantilla `server` no conecta automáticamente validación tipada, `CsrfProtection`, `SessionManager` ni guards de autenticación/autorización; estas APIs siguen requiriendo configuración explícita. La plantilla `crud` muestra su composición para un caso educativo, pero utiliza sesión volátil y un login de demostración (consulta [FORM_VALIDATION.md](FORM_VALIDATION.md) y [ADR 0015](adr/0015-sessions-and-access-control.md)). La Fase 6.6 está completa: MySQL/MariaDB y el adaptador MongoDB se integraron, y la matriz de motores quedó publicada en [DATABASE_SUPPORT_MATRIX.md](DATABASE_SUPPORT_MATRIX.md). La Fase 6.7 quedó completada mediante PR #66 (merge `6046ae7ca60843d145476177e698162b57939c68`): integra el ORM SQL experimental de SeaORM sobre pools SQLx tipados, el ODM MongoDB independiente, las relaciones/cargas avanzadas y el CRUD generado; consulta [DATABASES.md](DATABASES.md). Sin embargo, `rustflow generate model` continúa generando un struct de dominio ordinario: no crea entidades SeaORM, implementaciones `DocumentModel`, repositorios ni un esquema persistente automáticamente. El scaffold `server` incluye el pool SQLx y el runner de migraciones descritos en `DATABASES.md`, pero no genera por sí solo una aplicación CRUD. Para ese caso existe la plantilla explícita `rustflow new <nombre> --template crud`, que genera el ejemplo integrado de ORM, validación, transacciones, guards, CSRF y SSR. Es una demostración educativa, no una plantilla lista para producción. Siguen pendientes server actions y almacenamiento SQL durable para `SessionStore`; `InMemorySessionStore` permanece volátil y local al proceso. `rustflow dev` ya observa archivos y reconstruye/reinicia el proceso nativo; `--browser-dir` permite regenerar WASM con wasm-pack. No conserva estado, no ofrece hot reload ni sustituye el servidor Vite/Playwright. `use_memo`, `use_ref` y `use_context` están disponibles como APIs experimentales desde Phase 7.2; las referencias DOM se ofrecen por separado mediante `rustflow_dom::ElementRef` en browser/WASM. Consulta `REACTIVITY_RUNTIME.md` y `UI_COMPLETENESS.md`.

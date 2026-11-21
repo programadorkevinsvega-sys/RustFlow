@@ -259,6 +259,8 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 2.3 Añadir flujo de desarrollo con watcher y build WASM
 
+**Estado actual:** implementación iniciada en la rama `feat/2-3-dev-watcher`; pendiente de revisión y CI. `rustflow dev` debe quedar como supervisor de build/proceso con modo `--once` y reconstrucción WASM opt-in.
+
 **Cubre:** B2.
 **Un PR:** diseñar e implementar `rustflow dev` con observación, cancelación y reconstrucción.
 
