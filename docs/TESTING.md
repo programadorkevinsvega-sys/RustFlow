@@ -156,6 +156,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 cargo test -p rustflow-server --features testing --test testing
+cargo test -p rustflow-server --features testing --test server_actions
 cargo test -p rustflow-server --features testing --test testing_database -- --test-threads=1
 cargo test -p rustflow-server --features testing --example authenticated
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps

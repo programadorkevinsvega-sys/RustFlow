@@ -1,9 +1,10 @@
 use std::future::Future;
 
 use crate::{
-    Application, HttpError, HttpMethod, Middleware, Request, Response, ServerError,
-    validate_route_name, validate_route_path,
+    ActionConfig, Application, HttpError, HttpMethod, Middleware, Request, Response, ServerError,
+    ValidateInput, validate_route_name, validate_route_path,
 };
+use serde::{Serialize, de::DeserializeOwned};
 
 /// A nested route collection that shares a path prefix, optional name prefix,
 /// and middleware stack.
@@ -91,6 +92,28 @@ impl<'a> RouteGroup<'a> {
         Fut: Future<Output = Result<Response, HttpError>> + Send + 'static,
     {
         self.route(HttpMethod::Post, path, handler)
+    }
+
+    /// Register a typed JSON POST action under the group prefix.
+    ///
+    /// Group middleware is applied before the action's explicit access and CSRF
+    /// checks, matching the ordering used by ordinary route middleware.
+    pub fn action<I, O, F, Fut>(
+        &mut self,
+        path: impl Into<String>,
+        config: ActionConfig,
+        handler: F,
+    ) -> Result<&mut Self, ServerError>
+    where
+        I: DeserializeOwned + ValidateInput + Send + 'static,
+        O: Serialize + Send + 'static,
+        F: Fn(Request, I) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<O, HttpError>> + Send + 'static,
+    {
+        let path = join_route_paths(&self.prefix, &path.into())?;
+        self.app
+            .register_action(path, self.middleware.clone(), config, handler)?;
+        Ok(self)
     }
 
     /// Register a PUT handler under the group prefix.
