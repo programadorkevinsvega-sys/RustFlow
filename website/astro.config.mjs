@@ -7,6 +7,7 @@ export default defineConfig({
     starlight({
       title: 'RustFlow',
       description: 'Aprende las APIs implementadas de RustFlow con guías, ejemplos, casos de uso y límites explícitos.',
+      disable404Route: true,
       defaultLocale: 'root',
       locales: { root: { label: 'Español', lang: 'es' } },
       sidebar: [

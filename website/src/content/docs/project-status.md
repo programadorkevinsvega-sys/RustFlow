@@ -15,9 +15,9 @@ RustFlow es un prototipo pre-1.0. Esta página resume lo que puedes probar hoy y
 | Server actions / server functions | Experimental disponible: JSON `POST` tipado; sin formularios progresivos ni proxy cliente | [Server actions JSON](/guides/server-actions/) |
 | Suspense y Resources | No disponibles | [Errores en UI y SSR](/guides/ui-errors/) |
 | ErrorBoundary | Experimental disponible | <code>View::error_boundary(child, fallback)</code>; cobertura limitada a fallos locales de componentes/UI. |
-| Sesiones SQL durables | No disponibles | [Sesiones y control de acceso](/guides/sessions-and-access/) |
-| Proveedor de usuarios | No disponible | [Sesiones y control de acceso](/guides/sessions-and-access/) |
-| Rate limiting | No disponible | [Errores y seguridad](/guides/errors-and-security/) |
+| Sesiones SQL durables | Experimental disponible mediante `SqlSessionStore`; expiración absoluta y pool compartido | [Sesiones y control de acceso](/guides/sessions-and-access/) |
+| Proveedor de usuarios | Port experimental `UserProvider`; `StaticUserProvider` solo para tests/demo, sin base de usuarios durable | [Sesiones y control de acceso](/guides/sessions-and-access/) |
+| Rate limiting | Experimental disponible por ruta; adapter acotado solo en memoria/proceso, no distribuido | [Sesiones y control de acceso](/guides/sessions-and-access/) |
 | MongoDB `mongodb+srv://` | Deshabilitado | [ODM MongoDB](/guides/mongodb-odm/) |
 | Instalación fuera del checkout | No disponible | [Configuración inicial](/getting-started/setup/) |
 
@@ -35,7 +35,9 @@ El detalle histórico de PR y commits vive en [Historial del proyecto](/changelo
 | Navegación cliente e historial | Experimental, opt-in | [Navegación](/guides/navigation/) |
 | Servidor HTTP, rutas y middleware | Experimental disponible | [Servidor HTTP](/guides/server/) |
 | Validación y respuestas 422 | Experimental disponible | [Formularios y validación](/guides/forms-validation/) |
-| CSRF, sesiones y guards | Experimental; sin persistencia durable ni proveedor de usuarios | [Sesiones y control de acceso](/guides/sessions-and-access/) |
+| CSRF, sesiones y guards | Experimental; adapter SQL disponible y autenticación conectable mediante `UserProvider`; CSRF sigue siendo opt-in por ruta/método | [Sesiones y control de acceso](/guides/sessions-and-access/) |
+| Hash de contraseñas | Experimental; Argon2id para hashes nuevos, PBKDF2 legacy sigue verificable; sin migración automática | [Sesiones y control de acceso](/guides/sessions-and-access/) |
+| Rate limiting | Experimental, explícito por ruta e IP confiable; adapter en memoria de un proceso, reinicio/replicas reinician o aíslan contadores | [Sesiones y control de acceso](/guides/sessions-and-access/) |
 | Server actions JSON | Experimental disponible; acceso y CSRF se declaran por acción; solo respuestas JSON | [Server actions JSON](/guides/server-actions/) |
 | SQLite, PostgreSQL, MySQL y MariaDB | Experimental disponible | [Base de datos](/guides/database/) |
 | ORM SeaORM | Experimental disponible | [Base de datos y ORM](/guides/database/) |
@@ -66,7 +68,7 @@ Las fases no convierten las APIs en compatibles con producción. Consulta [ROADM
 
 - Rust estable y Rust 1.94 comprobados por CI cuando el cambio corresponde al alcance.
 - SQLx 0.9.0, SeaORM 2.0.4 y SQLite 3.54.1.
-- MongoDB 3.10.1 con conexiones `mongodb://`; SRV deshabilitado.
+- MongoDB 3.10.1 con conexiones `mongodb://`; SRV sigue deshabilitado mientras su feature opcional no tenga implementación y lockfile auditados.
 - Axum/Tokio/Tower para HTTP.
 - WASM/browser con Chromium E2E y presupuesto de bundle.
 - Instalación experimental desde checkout; no hay publicación estable en crates.io.

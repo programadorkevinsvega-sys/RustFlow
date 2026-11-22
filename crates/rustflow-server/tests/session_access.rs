@@ -150,6 +150,7 @@ async fn tcp_sessions_rotate_guards_authorize_and_preserve_csrf() {
             .session()
             .ok_or_else(HttpError::internal_server_error)?
             .create()
+            .await
             .map_err(|_| HttpError::internal_server_error())?;
         Ok(Response::text("anonymous session created"))
     })
@@ -187,6 +188,7 @@ async fn tcp_sessions_rotate_guards_authorize_and_preserve_csrf() {
             .map_err(|_| HttpError::internal_server_error())?;
         session
             .authenticate(identity)
+            .await
             .map_err(|_| HttpError::internal_server_error())?;
         Ok(Response::text("signed in").with_header(
             http::header::SET_COOKIE,
@@ -203,6 +205,7 @@ async fn tcp_sessions_rotate_guards_authorize_and_preserve_csrf() {
             called.store(true, Ordering::SeqCst);
             let identity = request
                 .identity()
+                .await
                 .map_err(|_| HttpError::internal_server_error())?
                 .ok_or_else(|| {
                     HttpError::new(StatusCode::UNAUTHORIZED, "Authentication required")
@@ -232,6 +235,7 @@ async fn tcp_sessions_rotate_guards_authorize_and_preserve_csrf() {
             .session()
             .ok_or_else(HttpError::internal_server_error)?
             .invalidate()
+            .await
             .map_err(|_| HttpError::internal_server_error())?;
         Ok(Response::text("signed out"))
     })

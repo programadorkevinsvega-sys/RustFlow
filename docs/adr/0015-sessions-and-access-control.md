@@ -17,7 +17,7 @@ RustFlow already owns HTTP requests, responses, ordered middleware, route-scoped
 - Rotate and clear pre-authentication values when authenticate is called. The caller must first verify credentials. Explicit rotate preserves app values; logout/invalidate revokes the old ID.
 - Identity, roles and permissions are stored only in the server-side session. Client-supplied identity claims are not read. route_protected and route_authorized attach the guard during route registration so it runs before the handler.
 - Missing policies/rules and policy errors deny by default. Authentication failure is 401, authorization denial 403, and storage/policy errors produce a generic 500.
-- Use ring's maintained PBKDF2-HMAC-SHA-256 implementation with 600,000 iterations, a random 16-byte salt and a 32-byte derived key. The encoded representation rejects unsupported work factors. Applications still own password policy, user lookup, rate limiting and credential lifecycle.
+- Retain ring's PBKDF2-HMAC-SHA-256 format (600,000 iterations, random 16-byte salt, 32-byte derived key) for existing credentials. Phase 2.12 adds a maintained Argon2id option for new hashes and an explicit legacy rehash signal; it does not migrate stored credentials. See ADR 0037 for the fixed Argon2id profile and concurrency limits.
 - CSRF remains a separate stateless signed-token mechanism. Session middleware does not disable CsrfProtection. Attach it to cookie-authenticated unsafe routes, including login/logout; issue fresh CSRF state when an authentication transition needs to renew browser form state.
 - No database adapter is added in Phase 6.4. A durable adapter must preserve the documented atomicity, expiry and revocation contract.
 
@@ -25,22 +25,22 @@ RustFlow already owns HTTP requests, responses, ordered middleware, route-scoped
 
 Request headers, cookies, JSON/forms, query parameters and path parameters are untrusted. The session ID is only a lookup key, not an identity assertion. Application code that verifies credentials and calls SessionContext::authenticate is trusted. Role assignment must derive from trusted server-side user or policy data.
 
-SessionStore implementations are trusted infrastructure. They must check expiry during access, never recreate revoked sessions through set, implement rotation and invalidation atomically, and fail closed on storage errors. Secure cookies assume Request::is_https is trustworthy because TLS is terminated in RustFlow or forwarded scheme data comes only from configured trusted proxies.
+SessionStore implementations are trusted infrastructure. They must check expiry during access, never recreate revoked sessions through set, implement rotation and invalidation atomically, and fail closed on storage errors. Secure cookies assume Request::is_https is trustworthy because TLS is terminated in RustFlow or forwarded scheme data comes only from configured trusted proxies. The rate-limit contract in ADR 0035 similarly trusts only the resolved Request::client_ip, not raw forwarded headers.
 
-CSRF tokens are not cryptographically bound to a session ID. OAuth/OIDC, MFA, account recovery, rate limiting, distributed revocation, credential lookup, database persistence and production deployment hardening are not implemented in this phase.
+CSRF tokens are not cryptographically bound to a session ID. OAuth/OIDC, MFA, account recovery, distributed revocation, and production deployment hardening are not implemented in this phase. UserProvider, durable SQL sessions, route-scoped process-local rate limiting, and Argon2id are defined in later Phase 2 subphases.
 
 ## Alternatives considered
 
 - Client-side identity claims in cookies: rejected because clients can modify them.
 - A second HTTP/session layer: rejected because the request/response/middleware APIs already exist.
 - Default allow when a policy is missing: rejected; lack of policy must not grant access.
-- Database sessions now: rejected because SQLx, migrations and transaction strategy are Phase 6.5.
-- Custom cryptographic code: rejected. ring provides maintained random generation, HMAC for CSRF and PBKDF2. Argon2id may be reconsidered in a separate reviewed dependency change.
+- Database sessions now: initially rejected for Phase 6.4 because SQLx, migrations and transaction strategy were later scoped separately. Phase 2.8 now adds `SqlSessionStore` over `DatabasePool` with explicit async transaction behavior.
+- Custom cryptographic code: rejected. ring provides maintained random generation, HMAC for CSRF and legacy PBKDF2; the maintained RustCrypto Argon2 crate provides the Argon2id option.
 - CSRF bypass for login/logout: rejected because browser-cookie transitions remain CSRF-relevant mutations.
 
 ## Consequences and limitations
 
-The API is experimental and pre-1.0. In-memory sessions are lost at restart and cannot be shared between instances. SessionStore is synchronous; adapters that perform blocking I/O must not block async workers, and a future durable adapter may need an async contract. PBKDF2 is CPU-intensive; rate limiting remains application-owned. Guards are applied by route_protected/route_authorized or by explicitly attaching middleware to routes. No broad security audit is implied.
+The API is experimental and pre-1.0. In-memory sessions are lost at restart and cannot be shared between instances. The SessionStore port is async; SqlSessionStore supplies the durable SQL adapter. PBKDF2 and Argon2id are CPU-intensive; route-scoped rate limiting is available separately but its in-memory adapter is not distributed. Guards are applied by route_protected/route_authorized or by explicitly attaching middleware to routes. No broad security audit is implied.
 
 ## Verification gate
 

@@ -10,10 +10,12 @@ mod database;
 mod document_database;
 mod document_odm;
 mod group;
+mod identity;
 mod operational;
 pub mod orm;
 mod page;
 mod proxy;
+mod rate_limit;
 mod sessions;
 mod static_files;
 mod tls;
@@ -69,6 +71,10 @@ pub use document_odm::{
 pub use group::RouteGroup;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use http_body_util::LengthLimitError;
+pub use identity::{
+    Credentials, DenyAllUserProvider, LoginError, StaticUserProvider, UserProvider,
+    UserProviderError, UserProviderFuture, login, logout,
+};
 pub use mongodb as mongodb_driver;
 pub use operational::{
     ErrorReport, ErrorReportKind, ErrorReporter, ErrorReporterError, ErrorReporterFuture,
@@ -82,12 +88,16 @@ pub use orm::{
 };
 pub use page::HtmlPage;
 pub use proxy::{ClientAddressPolicy, IpNetwork};
+pub use rate_limit::{
+    InMemoryRateLimitStore, MAX_IN_MEMORY_RATE_LIMIT_KEYS, RateLimit, RateLimitConfigError,
+    RateLimitDecision, RateLimitKey, RateLimitStore, RateLimitStoreError, RateLimitStoreFuture,
+};
 pub use sea_orm;
 use serde::{Serialize, de::DeserializeOwned};
 pub use sessions::{
     AccessPolicy, AccessPolicyError, AuthIdentity, InMemorySessionStore, PasswordHash, RolePolicy,
     SameSite, SessionContext, SessionCookieConfig, SessionError, SessionId, SessionManager,
-    SessionStore, require_authentication, require_permission,
+    SessionStore, SessionStoreFuture, SqlSessionStore, require_authentication, require_permission,
 };
 pub use sqlx;
 pub use static_files::{StaticFile, StaticFiles};

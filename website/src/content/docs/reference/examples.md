@@ -121,7 +121,7 @@ cargo run -p rustflow-server --example authenticated
 Escucha en http://127.0.0.1:3001 por defecto (puerto configurable mediante RUSTFLOW_AUTH_PORT). El flujo expone:
 
 - GET /csrf: emite un token CSRF y la cookie HttpOnly correspondiente.
-- POST /login: verifica credenciales JSON con PasswordHash, luego rota la sesión y asigna identidad/rol desde el servidor.
+- POST /login: verifica credenciales JSON mediante `StaticUserProvider` y el flujo `login`, luego rota la sesión y asigna identidad/rol desde el servidor.
 - GET /me: requiere identidad autenticada.
 - GET /admin: requiere el permiso admin.read, concedido al rol admin por RolePolicy.
 - POST /logout: exige CSRF e invalida la sesión.
@@ -132,7 +132,7 @@ La prueba ejecutable del ejemplo verifica credenciales incorrectas/correctas, ac
 cargo test -p rustflow-server --features testing --example authenticated
 ~~~
 
-**Límite deliberado:** usa InMemorySessionStore y SessionCookieConfig::development, no un proveedor de usuarios ni almacenamiento durable. El binario se niega a arrancar con RUSTFLOW_ENV=production; no representa una configuración lista para producción.
+**Límite deliberado:** usa `InMemorySessionStore`, `SessionCookieConfig::development` y `StaticUserProvider` con credenciales en memoria. No es un store durable ni un provider de producción. El binario se niega a arrancar con RUSTFLOW_ENV=production; no representa una configuración lista para producción.
 
 ## Verificación compartida
 
@@ -149,6 +149,7 @@ Desde la raíz del repositorio:
 ~~~sh
 cargo test -p rustflow-server --test orm_contract -- --test-threads=1
 cargo test -p rustflow-server --test database_engines -- --test-threads=1
+cargo test -p rustflow-server --test session_store_contract -- --test-threads=1
 ~~~
 
 La suite `orm_contract` cubre el contrato del ORM y sus loaders explícitos, incluidos los grafos y las proyecciones relacionales de la Fase 6.7.4. Para los casos que usan servicios externos, configura `RUSTFLOW_TEST_DATABASE_URL` (PostgreSQL), `RUSTFLOW_TEST_MYSQL_URL` y `RUSTFLOW_TEST_MARIADB_URL`; la suite también incluye casos SQLite locales. `database_engines` comprueba los servidores MySQL y MariaDB contra los targets fijados por CI.
@@ -165,9 +166,9 @@ Estos comandos ejercitan los contratos del ORM y ODM de forma aislada; el ejempl
 
 ## Lo que los ejemplos no proporcionan
 
-Los datos del catálogo de la página de producto SSR y de la lista de tareas browser/WASM no son persistentes. La plantilla CRUD usa el ORM SQL experimental para SQLite/PostgreSQL/MySQL/MariaDB; el ODM MongoDB permanece independiente y no se mezcla en esa aplicación. La plantilla CRUD es una integración educativa de ORM, formularios, sesión volátil, autorización, CSRF y SSR, pero no ofrece proveedor de usuarios, almacenamiento durable ni server actions integradas en su flujo; tampoco es una receta de producción. Consulta las guías de base de datos y sesiones para sus contratos y límites; no extrapoles preparación de producción desde la demo.
+Los datos del catálogo de la página de producto SSR y de la lista de tareas browser/WASM no son persistentes. La plantilla CRUD usa el ORM SQL experimental para SQLite/PostgreSQL/MySQL/MariaDB; el ODM MongoDB permanece independiente y no se mezcla en esa aplicación. Esa plantilla es una integración educativa de ORM, formularios, sesión volátil, autorización, CSRF y SSR; no integra el provider ni el adapter de sesiones SQL ni server actions en su propio flujo, y no es una receta de producción. Las APIs experimentales para esas capacidades se documentan por separado en las guías de servidor y sesiones; no extrapoles preparación de producción desde la demo.
 
 
 ## Sesiones y rutas protegidas — Fase 6.4 integrada en main
 
-La guía [Sesiones, autenticación y autorización](/guides/sessions-and-access/) muestra la API experimental, rotación, guards antes del handler, políticas deny-by-default e integración CSRF de login/logout. No hay proveedor de usuarios ni adaptador persistente para SessionStore. Para la nueva integración SQLx de datos de aplicación, consulta [Base de datos y migraciones](/guides/database/). Comando reproducible: `cargo test -p rustflow-server --test session_access`. Los contratos SQL y MongoDB se describen en la sección de pruebas de persistencia más abajo.
+La guía [Sesiones, autenticación y autorización](/guides/sessions-and-access/) muestra `SqlSessionStore`, el port `UserProvider`, rotación, guards deny-by-default e integración CSRF para login/logout. El ejemplo usa únicamente memoria; para verificar el adapter SQL ejecuta `cargo test -p rustflow-server --test session_store_contract -- --test-threads=1` con los servicios PostgreSQL, MySQL y MariaDB configurados. El contrato de HTTP/guards está en `cargo test -p rustflow-server --test session_access` y la prueba del flujo de provider en `cargo test -p rustflow-server --features testing --example authenticated`. Los contratos ORM y MongoDB se describen en la sección de pruebas de persistencia más abajo.
