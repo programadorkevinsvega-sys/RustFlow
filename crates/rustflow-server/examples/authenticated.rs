@@ -2,12 +2,14 @@ use std::{error::Error, net::SocketAddr, sync::Arc, time::Duration};
 
 use http::StatusCode;
 use rustflow_server::{
-    AccessPolicy, Application, AuthIdentity, CsrfProtection, HttpError, HttpMethod, PasswordHash,
-    Request, Response, RolePolicy, SessionCookieConfig, SessionManager,
+    AccessPolicy, Application, AuthIdentity, Credentials, CsrfProtection, HttpError, HttpMethod,
+    LoginError, Request, Response, RolePolicy, SessionCookieConfig, SessionManager,
+    StaticUserProvider, UserProvider, login, logout,
 };
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct LoginForm {
     username: String,
     password: String,
@@ -30,8 +32,7 @@ struct WhoAmIPayload {
 }
 
 fn build_application(
-    username: String,
-    password_hash: PasswordHash,
+    provider: Arc<dyn UserProvider>,
     csrf: CsrfProtection,
 ) -> Result<Application, Box<dyn Error>> {
     let sessions = SessionManager::in_memory(Duration::from_secs(30 * 60))?
@@ -63,34 +64,34 @@ fn build_application(
     })?;
 
     application.post("/login", move |request: Request| {
-        let username = username.clone();
-        let password_hash = password_hash.clone();
+        let provider = provider.clone();
         async move {
             let form: LoginForm = request.json()?;
-            let password_matches = password_hash
-                .verify(&form.password)
-                .map_err(|_| HttpError::internal_server_error())?;
-
-            if form.username != username || !password_matches {
+            let credentials = Credentials::new(form.username, form.password)
+                .map_err(|_| HttpError::new(StatusCode::UNAUTHORIZED, "Invalid credentials"))?;
+            let session = request
+                .session()
+                .ok_or_else(HttpError::internal_server_error)?;
+            let authenticated = login(&session, provider.as_ref(), &credentials)
+                .await
+                .map_err(|error| match error {
+                    LoginError::InvalidCredentials => {
+                        HttpError::new(StatusCode::UNAUTHORIZED, "Invalid credentials")
+                    }
+                    LoginError::ProviderUnavailable | LoginError::StorageUnavailable => {
+                        HttpError::internal_server_error()
+                    }
+                })?;
+            if !authenticated {
                 return Err(HttpError::new(
                     StatusCode::UNAUTHORIZED,
-                    "Invalid username or password",
+                    "Invalid credentials",
                 ));
             }
 
-            // Only trusted server-side credential verification may assign identity and roles.
-            let identity = AuthIdentity::new(username)
-                .and_then(|identity| identity.with_role("admin"))
-                .map_err(|_| HttpError::internal_server_error())?;
-            request
-                .session()
-                .ok_or_else(HttpError::internal_server_error)?
-                .authenticate(identity)
-                .map_err(|_| HttpError::internal_server_error())?;
-
             Response::json(&LoginPayload {
                 authenticated: true,
-                subject: form.username,
+                subject: credentials.subject().to_owned(),
             })
         }
     })?;
@@ -99,6 +100,7 @@ fn build_application(
     application.route_protected(HttpMethod::Get, "/me", |request: Request| async move {
         let identity = request
             .identity()
+            .await
             .map_err(|_| HttpError::internal_server_error())?
             .ok_or_else(|| HttpError::new(StatusCode::UNAUTHORIZED, "Authentication required"))?;
         Response::json(&WhoAmIPayload {
@@ -117,10 +119,11 @@ fn build_application(
     )?;
 
     application.route_protected(HttpMethod::Post, "/logout", |request: Request| async move {
-        request
+        let session = request
             .session()
-            .ok_or_else(HttpError::internal_server_error)?
-            .invalidate()
+            .ok_or_else(HttpError::internal_server_error)?;
+        logout(&session)
+            .await
             .map_err(|_| HttpError::internal_server_error())?;
         Ok(Response::status(StatusCode::NO_CONTENT))
     })?;
@@ -150,9 +153,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         return Err("RUSTFLOW_DEMO_USER and RUSTFLOW_DEMO_PASSWORD must be non-empty".into());
     }
 
-    let password_hash = PasswordHash::hash(&password)?;
+    let identity = AuthIdentity::new(username.clone())?.with_role("admin")?;
+    let provider = Arc::new(StaticUserProvider::new(username, &password, identity)?);
     let csrf = CsrfProtection::new(csrf_secret)?;
-    let application = build_application(username, password_hash, csrf)?;
+    let application = build_application(provider, csrf)?;
 
     let port = std::env::var("RUSTFLOW_AUTH_PORT")
         .unwrap_or_else(|_| "3001".to_owned())
@@ -185,12 +189,18 @@ mod tests {
     }
 
     fn test_app() -> TestApp {
-        let password_hash =
-            PasswordHash::hash("test-only-correct-password").expect("hash test password");
+        let identity = AuthIdentity::new("alice")
+            .expect("identity")
+            .with_role("admin")
+            .expect("role");
+        let provider = Arc::new(
+            StaticUserProvider::new("alice", "test-only-correct-password", identity)
+                .expect("provider"),
+        );
         let csrf = CsrfProtection::new("test-only-csrf-secret-with-at-least-32-bytes")
             .expect("valid test CSRF secret");
-        let application = build_application("alice".to_owned(), password_hash, csrf)
-            .expect("build authenticated application");
+        let application =
+            build_application(provider, csrf).expect("build authenticated application");
         TestApp::builder()
             .application(application)
             .build()
@@ -214,6 +224,22 @@ mod tests {
         let (csrf_cookie, csrf_token) = csrf_pair(&app).await;
         let csrf_cookie_value = csrf_cookie.split_once('=').expect("CSRF cookie pair").1;
         let origin = "http://localhost";
+
+        let missing_csrf = app
+            .post("/login")
+            .header("host", "localhost")
+            .expect("host header")
+            .header("origin", origin)
+            .expect("origin header")
+            .json(&LoginForm {
+                username: "alice".to_owned(),
+                password: "test-only-correct-password".to_owned(),
+            })
+            .expect("serialize credentials")
+            .send()
+            .await
+            .expect("submit login without CSRF");
+        assert_eq!(missing_csrf.status(), StatusCode::FORBIDDEN);
 
         let wrong_login = app
             .post("/login")

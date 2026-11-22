@@ -4,7 +4,7 @@
 
 **Base de contraste:** checkout sincronizado con `origin/main`, revisado el 2026-11-20.
 
-**Regla de entrega:** una subfase por rama y PR. Cada PR debe tener alcance acotado, criterios de aceptación verificables y evidencia de sus pruebas.
+**Regla de entrega:** una subfase por rama y PR, salvo la excepción aprobada para agrupar 2.8–2.12 en `feat/2-8-durable-sql-sessions`. Las cinco subfases están implementadas y verificadas localmente; se publicaron en una sola PR (#111) con un commit y aún no están fusionadas. Cada entrega debe tener criterios de aceptación verificables y evidencia de sus pruebas.
 
 ## Estado de entrega
 
@@ -19,7 +19,7 @@
 | 1.7 Limitación MongoDB SRV | Integrada | PR #95, merge `8f6d4bf1df13cd3a3f33438ba5f2fea11b8d4047` |
 | 1.8 Matriz de capacidades, límites e historial | Integrada | PR #99, merge `84c73ab` |
 | 1.9 About y excepción de gobernanza | Integrada | PR #100, merge `1c80b21d818e469d72e420ce3d4c6400aede589f`; conserva los archivos de gobernanza en raíz y verifica Description, Website y topics |
-| Fase 2 | Pendiente de aprobación | No existe una subfase de Fase 2 implementada |
+| Fase 2 | En curso | 2.7 integrada por PR #110; 2.8–2.12 implementadas y verificadas localmente como excepción de agrupación aprobada; PR #111 abierta con un commit, aún sin fusionar |
 
 ### Entregas adicionales posteriores al roadmap
 
@@ -224,7 +224,7 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ## 4. Fase 2 - Brechas funcionales propuestas
 
-**Gate:** esta fase no comienza hasta aprobación del autor. Cada subfase necesita su propio PR, análisis de arquitectura/seguridad y pruebas del contrato nuevo. Las subfases de servidor incluyen carga k6 cuando el comportamiento de carga sea un criterio relevante.
+**Gate:** cada subfase requiere aprobación explícita, análisis de arquitectura/seguridad y pruebas del contrato nuevo. El autor aprobó agrupar 2.8–2.12 en `feat/2-8-durable-sql-sessions`; están completadas y verificadas localmente y publicadas en la PR #111, aún sin fusionar. Las subfases de servidor incluyen carga k6 cuando el comportamiento de carga sea un criterio relevante.
 
 ### 2.1 Decidir contrato de estilos y archivos estáticos
 
@@ -324,7 +324,7 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 2.7 Definir router unificado
 
-**Estado actual:** ADR 0032 en revisión; no hay implementación de router ni integración pública aprobada todavía.
+**Estado actual:** ADR 0032 integrada mediante PR #110; define la separación entre navegación cliente y rutas HTTP. No implementa un router unificado.
 
 **Cubre:** B4, router.
 **Un PR:** ADR de alcance y compatibilidad entre navegación cliente y rutas HTTP; implementación solo con aprobación posterior.
@@ -337,6 +337,10 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 **Pruebas/evidencia:** test de matching y límites; E2E de navegación/historial y pruebas de rutas servidoras para cualquier implementación.
 
 ### 2.8 Añadir sesiones durables
+
+**Estado actual:** implementación y verificación local completas en `feat/2-8-durable-sql-sessions`; no se ha creado ni fusionado una PR. ADR 0033 define el port async y el adapter SQL; `InMemorySessionStore` permanece disponible. Pasaron los tests SQLite de expiración/rotación/invalidation, colisión, fallo de persistencia y rotaciones concurrentes; `session_store_contract` pasó contra servicios aislados PostgreSQL 16.15, MySQL 8.4.13 y MariaDB 11.4.13 (3/3). También pasaron la suite del servidor con los tres servicios y el test aislado de migraciones PostgreSQL repetibles y reversibles.
+
+**Impacto en documentación pública:** cumplido en la guía de sesiones, referencia API, estado del proyecto y README; el build estático de documentación pasó con 33 páginas.
 
 **Cubre:** B5, almacenamiento de sesiones.
 **Un PR:** port de almacenamiento y primer adapter SQL, sin mezclarlo con un proveedor de usuarios.
@@ -351,6 +355,10 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 2.9 Definir proveedor de usuarios
 
+**Estado actual:** implementación y verificación local completas en `feat/2-8-durable-sql-sessions`; no se ha creado ni fusionado una PR. Los ports `UserProvider`, `Credentials`, `login` y `logout` están definidos sin OAuth/OIDC/MFA. El ejemplo autenticado y las pruebas cubren credenciales correctas/incorrectas, CSRF, guard/autorización y logout. Pasaron la suite del servidor y las pruebas de integración CLI; la revisión de seguridad independiente no encontró vulnerabilidades en el alcance revisado.
+
+**Impacto en documentación pública:** cumplido en la guía de sesiones/autenticación, referencia API, estado del proyecto y README; `StaticUserProvider` se identifica como demostración y el build estático pasó.
+
 **Cubre:** B5, identidad.
 **Un PR:** definir puertos y un flujo inicial, sin incluir OAuth/OIDC/MFA salvo aprobación separada.
 
@@ -363,6 +371,10 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 **Pruebas/evidencia:** unitarias, integración de login/logout y autorización, entradas inválidas y límites; revisión de seguridad.
 
 ### 2.10 Añadir rate limiting
+
+**Estado actual:** implementación y verificación local completas en `feat/2-8-durable-sql-sessions`. El port y middleware aplican ventanas fijas por IP confiable y scope estático; el adapter aprobado para esta primera entrega es memoria acotada, atómica por proceso y volátil. El escenario k6 de 10 VUs/15 s pasó: checks 100%, errores HTTP 0%, p95 1.01 ms y 12,760 respuestas 429 esperadas. La suite del servidor pasó y la revisión de seguridad independiente no encontró vulnerabilidades en el alcance revisado. No implica límites compartidos entre instancias ni preparación para producción.
+
+**Impacto en documentación pública:** cumplido en la guía de seguridad, referencia API, README y estado del proyecto, incluidos confianza de proxies, respuestas 429/503, límites del store en memoria y comando reproducible k6.
 
 **Cubre:** B5, rate limiting.
 **Un PR:** port/política acotada para límites por IP/ruta y un adapter aprobado.
@@ -377,6 +389,10 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 
 ### 2.11 Evaluar MongoDB SRV
 
+**Estado actual:** evaluación documentada en ADR 0036. El feature sigue deshabilitado y los paquetes Hickory no están en `Cargo.lock`; la prueba de URI estándar MongoDB pasa sin resolver SRV. El driver 3.10.1 declara resolver Hickory opcional 0.26; `RUSTSEC-2026-0120` afecta `hickory-net` hasta 0.26.0 y está corregido desde 0.26.1. `cargo audit` pasó sobre las 377 dependencias bloqueadas. Se difiere la habilitación a una PR separada que audite la resolución futura y pruebe DNS, sin Atlas ni secretos.
+
+**Impacto en documentación pública:** cumplido en las guías MongoDB/base de datos y el estado del proyecto; se conserva `mongodb://` como única URI anunciada y se documenta el follow-up requerido.
+
 **Cubre:** B6.
 **Un PR de evaluación:** revisar feature flags/dependencias, mantenimiento, advisory, MSRV, DNS y licencia; no habilitar SRV durante la evaluación.
 
@@ -389,6 +405,10 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 **Pruebas/evidencia:** auditoría de dependencias y tests locales/falsables; cualquier habilitación requiere un PR de implementación posterior aprobado.
 
 ### 2.12 Añadir Argon2id como opción de hashing
+
+**Estado actual:** implementación y verificación local completas. `PasswordHash` añade Argon2id PHC v=19 con perfil fijo, mantiene PBKDF2 para verificación legacy y expone `needs_rehash()` sin migración automática; `StaticUserProvider` usa Argon2id fuera de workers async con máximo cuatro verificaciones concurrentes. Pasaron las pruebas de hashes Argon2id/legacy, la suite del servidor, la integración CLI que compila y ejecuta la plantilla CRUD y `cargo audit` sobre el lockfile. La revisión de seguridad independiente no encontró vulnerabilidades en el alcance revisado.
+
+**Impacto en documentación pública:** cumplido en la guía de sesiones/autenticación, referencia API, guía/plantilla CRUD y estado del proyecto; se documentan algoritmo, work factors, límites de concurrencia, actualización explícita y soporte legacy. El build estático pasó.
 
 **Cubre:** B7.
 **Un PR:** evaluar dependencia y formato versionado de hashes; mantener verificación de hashes existentes.
@@ -461,6 +481,7 @@ El PR debe incluir un checklist de aceptación marcado criterio por criterio, co
 - Cubrir UI reactiva, SSR/hidratación, server functions/actions, hot reload/bundler, backend, ORM/ODM, operación, testing, plataformas y madurez.
 - Incluir la nota de posicionamiento aprobada: RustFlow no busca reemplazar Leptos/Dioxus en UI, sino dar a Rust una experiencia de backend completo estilo Laravel con una capa reactiva.
 - Evitar claims de rendimiento sin resultados revisados.
+- Colocar esas comparaciones en el website en una sesion diferente
 
 **Pruebas/evidencia:** revisar enlaces y cada fila contra fuentes; `cd website && npm run build`.
 

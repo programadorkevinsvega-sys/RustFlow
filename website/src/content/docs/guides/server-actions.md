@@ -89,4 +89,4 @@ Puedes configurar `RUSTFLOW_ACTIONS_BASE_URL` y `RUSTFLOW_ACTIONS_PATH`. Esta ca
 
 ## Alcance no incluido
 
-La primera versión solo admite JSON POST y respuestas JSON 200. No ofrece formularios progresivos/redirects, proxy automático en el navegador, macros `use server`, uploads, streaming de respuesta, headers/status personalizados, reintentos, idempotencia, rate limiting, proveedor de usuarios ni persistencia durable de sesiones. RustFlow continúa siendo pre-1.0; esta API experimental no implica preparación para producción.
+La primera versión solo admite JSON POST y respuestas JSON 200. No ofrece formularios progresivos/redirects, proxy automático en el navegador, macros `use server`, uploads, streaming de respuesta, headers/status personalizados, reintentos, idempotencia ni rate limiting. El flujo de actions no incluye un proveedor de usuarios ni integra la persistencia SQL de sesiones. RustFlow continúa siendo pre-1.0; esta API experimental no implica preparación para producción.

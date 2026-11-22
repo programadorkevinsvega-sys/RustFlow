@@ -69,6 +69,7 @@ RustFlow es un framework web en Rust en etapa de prototipo. Su repositorio inclu
 - Endpoints que extraen y validan formularios, JSON y query tipados, devuelven errores 422 estructurados y pueden proteger mutaciones mediante CSRF optativo.
 - Páginas compuestas con un catálogo de componentes compartido, datos de ruta explícitos y layouts anidados.
 - Aplicaciones con persistencia relacional experimental mediante SeaORM sobre pools SQLx tipados y loaders explícitos.
+- Aplicaciones HTTP con sesiones server-side SQL y autenticación conectable mediante el port `UserProvider`; ambas APIs son experimentales y no incluyen un almacén durable de usuarios.
 - Aplicaciones documentales con el ODM MongoDB independiente, filtros/updates BSON, proyecciones, agregaciones y operaciones explícitas con sesiones de MongoDB.
 - Navegación de cliente optativa y mejora progresiva de formularios GET compatibles, conservando el comportamiento nativo cuando la interacción no es compatible.
 
@@ -79,7 +80,7 @@ El [catálogo de ejemplos](/reference/examples/) conecta cada caso con un archiv
 - Sin hot reload ni bundler WASM integrado.
 - Sin atributo `style` inline del renderer; archivos estáticos requieren el adapter experimental opt-in.
 - Sin server actions, Suspense/Resources ni ErrorBoundary.
-- Sin sesiones SQL durables, proveedor de usuarios ni rate limiting.
+- Sin rate limiting ni un almacén durable de usuarios; el provider estático solo sirve para tests/demo.
 - MongoDB admite `mongodb://` con hosts explícitos; `mongodb+srv://` está deshabilitado.
 - La instalación estable solo funciona desde un checkout del repositorio.
 
@@ -87,7 +88,7 @@ La tabla única y los enlaces a cada contrato están en [Estado del proyecto y l
 
 La Fase 6.6 publicó sus contratos verificados de SQLite, PostgreSQL, MySQL, MariaDB y MongoDB; desde entonces se actualizaron las dependencias y runtimes. El stack actual usa SQLx 0.9.0/SeaORM 2.0.4 con SQLite bundled 3.54.1, y el driver MongoDB 3.10.1. PR #84 verificó el stack SQL y PR #85 el driver MongoDB en sus HEADs finales. La Fase 6.7 quedó completada en `main` mediante PR #66: incorporó `EntityRepository` para CRUD/bulk y consultas tipadas, loaders y grafos relacionales explícitos, transacciones, ODM MongoDB separado y una aplicación CRUD educativa con relación Category/Product, filtros y paginación. Sus pruebas originales con SeaORM 1.1.20/Rust 1.85 son evidencia histórica; la verificación posterior de dependencias está registrada en la [matriz actual](/guides/database/#matriz-de-versiones). El ORM y el ODM continúan siendo APIs experimentales/pre-1.0; el CRUD generado no es un starter de producción. Consulta la [guía de base de datos](/guides/database/), la [guía ODM](/guides/mongodb-odm/) y [Estado del proyecto](/project-status/).
 
-La Fase 6.7 está completada: 6.7.1–6.7.6 están implementadas, verificadas e integradas en `main`. La aplicación `--template crud` quedó aceptada como demostración de integración, no como plantilla de producción. Siguen fuera de esta fase y pendientes server actions, proveedor de usuarios, sesiones durables y una receta de despliegue de producción validada. El callback de navegación cliente no es un router general y la mejora progresiva de formularios se limita a GET URL-encoded compatibles; no procesa uploads ni mutaciones. Consulta la [guía de formularios](/guides/forms-validation/), la [guía de sesiones](/guides/sessions-and-access/), [Estado del proyecto](/project-status/) y [referencia de disponibilidad de API](/reference/api-status/).
+La Fase 6.7 está completada: 6.7.1–6.7.6 están implementadas, verificadas e integradas en `main`. La aplicación `--template crud` quedó aceptada como demostración de integración, no como plantilla de producción. Server actions JSON, sesiones SQL y el port `UserProvider` son capacidades experimentales con alcances separados; el proveedor estático es solo de demostración y no hay un almacén durable de usuarios ni una receta de despliegue de producción validada. El callback de navegación cliente no es un router general y la mejora progresiva de formularios se limita a GET URL-encoded compatibles; no procesa uploads ni mutaciones. Consulta la [guía de formularios](/guides/forms-validation/), la [guía de sesiones](/guides/sessions-and-access/), [Estado del proyecto](/project-status/) y [referencia de disponibilidad de API](/reference/api-status/).
 
 ## Si ya conoces React
 

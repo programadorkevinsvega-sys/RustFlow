@@ -1,0 +1,45 @@
+---
+export const prerender = true;
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="robots" content="noindex" />
+    <title>404 | RustFlow</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+        line-height: 1.6;
+      }
+
+      body {
+        display: grid;
+        min-height: 100vh;
+        margin: 0;
+        place-items: center;
+        padding: 1.5rem;
+      }
+
+      main {
+        max-width: 40rem;
+      }
+
+      a {
+        color: inherit;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p>404</p>
+      <h1>Página no encontrada</h1>
+      <p>Esta dirección no existe o pudo haber cambiado.</p>
+      <a href="/">Volver a la documentación principal</a>
+    </main>
+  </body>
+</html>

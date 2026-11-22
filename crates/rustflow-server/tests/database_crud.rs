@@ -235,6 +235,7 @@ async fn validated_crud_uses_sqlite_sessions_auth_csrf_and_server_rendering() {
                 .session()
                 .ok_or_else(HttpError::internal_server_error)?
                 .authenticate(identity)
+                .await
                 .map_err(|_| HttpError::internal_server_error())?;
             Ok(Response::text("signed in"))
         }

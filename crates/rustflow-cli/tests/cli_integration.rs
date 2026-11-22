@@ -124,6 +124,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .map_err(|_| HttpError::internal_server_error())?;
             request.session().ok_or_else(HttpError::internal_server_error)?
                 .authenticate(identity)
+                .await
                 .map_err(|_| HttpError::internal_server_error())?;
             Ok(Response::text("signed in"))
         }

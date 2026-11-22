@@ -17,7 +17,7 @@ El ejemplo contiene migraciones específicas en `migrations/sqlite`, `migrations
 
 El endpoint `POST /admin/transaction-rollback-probe` inserta dos productos con el mismo SKU dentro de una transacción explícita. La segunda escritura viola la restricción única y la aplicación solicita `rollback`; la prueba de integración comprueba que la primera inserción tampoco permanece.
 
-La app protege lecturas con guards de sesión y mutaciones con autorización y CSRF explícitos. Es un ejemplo local: utiliza `InMemorySessionStore`, una cuenta demo y cookies de desarrollo; rechaza `RUSTFLOW_ENV=production`. No es una receta de despliegue ni aporta proveedor de usuarios o almacenamiento de sesión durable.
+La app protege lecturas con guards de sesión y mutaciones con autorización y CSRF explícitos. Es un ejemplo local: utiliza `InMemorySessionStore`, una cuenta demo y cookies de desarrollo; rechaza `RUSTFLOW_ENV=production`. No es una receta de despliegue y no integra el provider ni el adapter `SqlSessionStore`; esas APIs experimentales se describen por separado en la [guía de sesiones](/guides/sessions-and-access/).
 
 ## Foundation seleccionado para SQL ORM
 
@@ -72,7 +72,7 @@ Estas versiones corresponden al stack actual y sus contratos se verificaron en l
 | MariaDB 11.4.13 LTS | SQLx 0.9.0 desde la revisión upstream fijada, mismo driver `mysql` | `mysql://` | Identidad del servidor y contrato SQL verificados en PR #84 |
 | MongoDB 7.0.45 | Driver oficial `mongodb` 3.10.1 | `mongodb://` | Contrato ODM verificado con la actualización de driver en PR #85 |
 
-El scaffold del CLI continúa siendo SQLite-first. Cambiar `RUSTFLOW_DATABASE_URL` a otro motor SQL no traduce sus placeholders, tipos ni migraciones. MongoDB usa las variables `RUSTFLOW_MONGODB_URI` / `RUSTFLOW_MONGODB_DATABASE` y una API separada; no se inicializa automáticamente por la plantilla. `mongodb+srv://` no está habilitado en esta configuración porque el feature del resolver DNS está desactivado tras la revisión de seguridad de dependencias.
+El scaffold del CLI continúa siendo SQLite-first. Cambiar `RUSTFLOW_DATABASE_URL` a otro motor SQL no traduce sus placeholders, tipos ni migraciones. MongoDB usa las variables `RUSTFLOW_MONGODB_URI` / `RUSTFLOW_MONGODB_DATABASE` y una API separada; no se inicializa automáticamente por la plantilla. `mongodb+srv://` sigue deshabilitado durante la evaluación 2.11. El driver declara Hickory 0.26 como dependencia opcional; `RUSTSEC-2026-0120` para `hickory-net` 0.26.0 está corregido desde 0.26.1, pero SRV requiere un cambio separado que fije/audite la resolución y pruebe DNS sin Atlas ni secretos. La URI estándar `mongodb://` con hosts explícitos sigue siendo la alternativa admitida.
 
 
 
@@ -484,7 +484,7 @@ Para ejecutar la suite de integración local, configura dos bases desechables co
 
 MongoDB no usa DatabasePool, los pools SQLx tipados, SQL ni migraciones *.sql. RustFlow expone un límite documental separado con MongoConfig, MongoDatabase, BSON y los tipos nativos del driver oficial.
 
-Configura RUSTFLOW_MONGODB_URI (URI estándar mongodb://; URI SRV mongodb+srv:// no habilitada en esta versión por la revisión de seguridad de la dependencia DNS) y RUSTFLOW_MONGODB_DATABASE. Los timeouts opcionales en segundos son RUSTFLOW_MONGODB_CONNECT_TIMEOUT_SECS, RUSTFLOW_MONGODB_SERVER_SELECTION_TIMEOUT_SECS y RUSTFLOW_MONGODB_OPERATION_TIMEOUT_SECS. Los defaults son 10 s, 10 s y 15 s. MongoConfig::from_app_config respeta la política de configuración de RustFlow: en producción los valores vienen del entorno del proceso, no de archivos dotenv. La URI se redacta en Debug.
+Configura RUSTFLOW_MONGODB_URI (URI estándar mongodb://; URI SRV mongodb+srv:// sigue deshabilitada tras la evaluación de la subfase 2.11) y RUSTFLOW_MONGODB_DATABASE. Los timeouts opcionales en segundos son RUSTFLOW_MONGODB_CONNECT_TIMEOUT_SECS, RUSTFLOW_MONGODB_SERVER_SELECTION_TIMEOUT_SECS y RUSTFLOW_MONGODB_OPERATION_TIMEOUT_SECS. Los defaults son 10 s, 10 s y 15 s. MongoConfig::from_app_config respeta la política de configuración de RustFlow: en producción los valores vienen del entorno del proceso, no de archivos dotenv. La URI se redacta en Debug. El aviso actual de Hickory está corregido en `hickory-net >= 0.26.1`, pero habilitar el resolver requiere una implementación y verificación de lockfile aparte; no se prueba contra Atlas.
 
 ~~~rust
 use rustflow_server::{AppConfig, MongoConfig, MongoDatabase};

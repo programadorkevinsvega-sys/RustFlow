@@ -9,7 +9,7 @@
 
 RustFlow already owns one MongoDB adapter in rustflow-server, introduced in Phase 6.6.2. It owns the official driver's Client, selected Database, configuration, URI redaction, timeout defaults, BSON helpers, native collection handles, collection/index bootstrap and safe HTTP error mapping. The dependency is pinned to mongodb = 3.6.0 and BSON comes from that driver's re-export.
 
-The workspace MSRV is Rust 1.85 and CI verifies Rust 1.85 and stable against MongoDB Server 7.0.45. The MongoDB driver's compatibility information lists 3.6 with Rust 1.85, while the 3.7 line raises the minimum Rust version to 1.88. Keep the existing exact 3.6.0 pin until a separate MSRV/dependency decision authorizes an upgrade. See the [driver compatibility table](https://www.mongodb.com/docs/drivers/rust/current/compatibility/) and [driver releases](https://github.com/mongodb/mongo-rust-driver/releases).
+The workspace MSRV is Rust 1.85 and CI verifies Rust 1.85 and stable against MongoDB Server 7.0.45. The workspace now declares Rust 1.94 and pins the official driver to 3.10.1 (Apache-2.0; crate MSRV 1.88). The earlier 3.6.0/Rust 1.85 compatibility statement describes the original ODM integration, not the current dependency. See the [driver compatibility table](https://www.mongodb.com/docs/drivers/rust/current/compatibility/) and [driver releases](https://github.com/mongodb/mongo-rust-driver/releases).
 
 MongoDB is a document database. Its _id, BSON values, collections, update operators, aggregation pipeline, indexes, sessions and transaction deployment constraints must remain native MongoDB concepts. The SQL ORM selected by ADR 0020 is not a shared abstraction for this subsystem.
 
@@ -25,7 +25,7 @@ This trait is independent from ModelDiagnostics, SeaORM entity derives and Entit
 
 ### 2. Dependency and driver strategy
 
-Keep using the existing exact MongoDB Rust driver dependency and its BSON re-export. Do not add a second client, pool, driver version, BSON version, async runtime or serialization layer. The ODM remains in rustflow-server; the browser/WASM crates must not gain MongoDB dependencies.
+Keep using the existing exact MongoDB Rust driver dependency and its BSON re-export. Do not add a second client, pool, driver version, BSON version, async runtime or serialization layer. The ODM remains in rustflow-server; the browser/WASM crates must not gain MongoDB dependencies. The optional DNS SRV resolver remains disabled; see ADR 0018 and the 2.11 evaluation for the current advisory, feature graph, and follow-up gate.
 
 A review of the maintained mongodm crate found that its current manifest enables the MongoDB driver's dns-resolver feature and does not declare a Rust 1.85 MSRV. That would union the DNS SRV feature back into RustFlow's existing driver feature graph, contrary to the explicit security/dependency boundary in ADR 0018, and would not independently establish the required MSRV. It is therefore not adopted. See the [mongodm manifest](https://docs.rs/crate/mongodm/latest/source/Cargo.toml.orig).
 

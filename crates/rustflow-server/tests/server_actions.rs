@@ -371,12 +371,14 @@ async fn cookie_protected_actions_enforce_csrf_authentication_and_permissions() 
                 .ok_or_else(HttpError::internal_server_error)?;
             session
                 .create()
+                .await
                 .map_err(|_| HttpError::internal_server_error())?;
             let identity = AuthIdentity::new("alice")
                 .and_then(|identity| identity.with_role("member"))
                 .map_err(|_| HttpError::internal_server_error())?;
             session
                 .authenticate(identity)
+                .await
                 .map_err(|_| HttpError::internal_server_error())?;
             Ok(Response::status(StatusCode::NO_CONTENT))
         })

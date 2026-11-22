@@ -394,7 +394,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let sessions = SessionManager::in_memory(Duration::from_secs(60 * 60))?
         .with_cookie_config(SessionCookieConfig::development())?;
     let csrf = CsrfProtection::new(csrf_secret.as_bytes())?;
-    let password_hash = Arc::new(PasswordHash::hash(&demo_password)?);
+    let password_hash = Arc::new(PasswordHash::hash_argon2id(&demo_password)?);
     let policy: Arc<dyn AccessPolicy> = Arc::new(
         RolePolicy::new().allow_role("products.write", "admin")?,
     );
@@ -470,6 +470,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .session()
                 .ok_or_else(HttpError::internal_server_error)?
                 .authenticate(identity)
+                .await
                 .map_err(|_| HttpError::internal_server_error())?;
             Response::redirect("/products")
         }

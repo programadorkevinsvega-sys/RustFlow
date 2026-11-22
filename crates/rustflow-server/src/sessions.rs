@@ -7,18 +7,27 @@ use std::{
     collections::{BTreeSet, HashMap},
     error::Error,
     fmt,
+    future::Future,
     num::NonZeroU32,
+    pin::Pin,
     sync::{Arc, Mutex, RwLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use argon2::{
+    Algorithm, Argon2, Params as Argon2Params, Version,
+    password_hash::{PasswordHasher, PasswordVerifier, phc::PasswordHash as PhcPasswordHash},
+};
 use http::{HeaderValue, StatusCode, header::SET_COOKIE};
 use ring::{
     pbkdf2,
     rand::{SecureRandom, SystemRandom},
 };
+use sea_orm::Value as SeaOrmValue;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
+
+use crate::DatabasePool;
 
 use crate::{HttpError, Middleware, Next, Request};
 
@@ -29,6 +38,12 @@ const PASSWORD_HASH_PREFIX: &str = "rf-pbkdf2-sha256";
 const PASSWORD_ITERATIONS: u32 = 600_000;
 const PASSWORD_SALT_BYTES: usize = 16;
 const PASSWORD_OUTPUT_BYTES: usize = 32;
+const ARGON2ID_MEMORY_KIB: u32 = 19_456;
+const ARGON2ID_ITERATIONS: u32 = 2;
+const ARGON2ID_PARALLELISM: u32 = 1;
+const ARGON2ID_HASH_PREFIX: &str = "$argon2id$v=19$m=19456,t=2,p=1$";
+const MAX_PASSWORD_BYTES: usize = 1_024;
+const MAX_PASSWORD_HASH_BYTES: usize = 512;
 
 /// Opaque, cryptographically random session identifier. Debug output is redacted.
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -67,7 +82,11 @@ impl fmt::Debug for SessionId {
     }
 }
 
-/// Required synchronous storage contract. Per-session operations must be atomic.
+/// Boxed async future returned by an object-safe session storage port.
+pub type SessionStoreFuture<'a, T> =
+    Pin<Box<dyn Future<Output = Result<T, SessionError>> + Send + 'a>>;
+
+/// Required asynchronous storage contract. Per-session operations must be atomic.
 /// Rotation must install a fresh ID and invalidate the old ID as one transaction. Writes must
 /// never recreate expired/revoked records, and invalidation must be linearizable.
 pub trait SessionStore: Send + Sync + 'static {
@@ -77,11 +96,16 @@ pub trait SessionStore: Send + Sync + 'static {
         id: SessionId,
         expires_at_unix: u64,
         now_unix: u64,
-    ) -> Result<(), SessionError>;
+    ) -> SessionStoreFuture<'_, ()>;
     /// Return expiry for an active session, removing an expired entry when necessary.
-    fn expires_at(&self, id: &SessionId, now_unix: u64) -> Result<Option<u64>, SessionError>;
+    fn expires_at(&self, id: &SessionId, now_unix: u64) -> SessionStoreFuture<'_, Option<u64>>;
     /// Read one value only from an active session.
-    fn get(&self, id: &SessionId, key: &str, now_unix: u64) -> Result<Option<Value>, SessionError>;
+    fn get(
+        &self,
+        id: &SessionId,
+        key: &str,
+        now_unix: u64,
+    ) -> SessionStoreFuture<'_, Option<Value>>;
     /// Atomically update a value without extending the session expiry.
     fn set(
         &self,
@@ -89,7 +113,7 @@ pub trait SessionStore: Send + Sync + 'static {
         key: String,
         value: Value,
         now_unix: u64,
-    ) -> Result<(), SessionError>;
+    ) -> SessionStoreFuture<'_, ()>;
     /// Atomically rotate an ID. When preserve_data is false, the new session is empty.
     /// A provided old ID must be active; missing/expired IDs fail closed.
     fn rotate(
@@ -99,9 +123,9 @@ pub trait SessionStore: Send + Sync + 'static {
         expires_at_unix: u64,
         now_unix: u64,
         preserve_data: bool,
-    ) -> Result<(), SessionError>;
+    ) -> SessionStoreFuture<'_, ()>;
     /// Revoke an ID. Revoking a missing ID is idempotent.
-    fn invalidate(&self, id: &SessionId) -> Result<(), SessionError>;
+    fn invalidate(&self, id: &SessionId) -> SessionStoreFuture<'_, ()>;
 }
 
 struct MemoryEntry {
@@ -143,53 +167,67 @@ impl SessionStore for InMemorySessionStore {
         id: SessionId,
         expires_at_unix: u64,
         now_unix: u64,
-    ) -> Result<(), SessionError> {
-        if expires_at_unix <= now_unix {
-            return Err(SessionError::InvalidLifetime);
-        }
-        let mut entries = self
-            .entries
-            .write()
-            .map_err(|_| SessionError::StoreUnavailable)?;
-        entries.retain(|_, entry| entry.expires_at_unix > now_unix);
-        if entries.contains_key(&id) {
-            return Err(SessionError::IdentifierCollision);
-        }
-        entries.insert(
-            id,
-            MemoryEntry {
-                expires_at_unix,
-                values: HashMap::new(),
-            },
-        );
-        Ok(())
+    ) -> SessionStoreFuture<'_, ()> {
+        Box::pin(async move {
+            if expires_at_unix <= now_unix {
+                return Err(SessionError::InvalidLifetime);
+            }
+            let mut entries = self
+                .entries
+                .write()
+                .map_err(|_| SessionError::StoreUnavailable)?;
+            entries.retain(|_, entry| entry.expires_at_unix > now_unix);
+            if entries.contains_key(&id) {
+                return Err(SessionError::IdentifierCollision);
+            }
+            entries.insert(
+                id,
+                MemoryEntry {
+                    expires_at_unix,
+                    values: HashMap::new(),
+                },
+            );
+            Ok(())
+        })
     }
 
-    fn expires_at(&self, id: &SessionId, now_unix: u64) -> Result<Option<u64>, SessionError> {
-        let mut entries = self
-            .entries
-            .write()
-            .map_err(|_| SessionError::StoreUnavailable)?;
-        if entries
-            .get(id)
-            .is_some_and(|entry| entry.expires_at_unix <= now_unix)
-        {
-            entries.remove(id);
-            return Ok(None);
-        }
-        Ok(entries.get(id).map(|entry| entry.expires_at_unix))
+    fn expires_at(&self, id: &SessionId, now_unix: u64) -> SessionStoreFuture<'_, Option<u64>> {
+        let id = id.clone();
+        Box::pin(async move {
+            let mut entries = self
+                .entries
+                .write()
+                .map_err(|_| SessionError::StoreUnavailable)?;
+            if entries
+                .get(&id)
+                .is_some_and(|entry| entry.expires_at_unix <= now_unix)
+            {
+                entries.remove(&id);
+                return Ok(None);
+            }
+            Ok(entries.get(&id).map(|entry| entry.expires_at_unix))
+        })
     }
 
-    fn get(&self, id: &SessionId, key: &str, now_unix: u64) -> Result<Option<Value>, SessionError> {
-        let mut entries = self
-            .entries
-            .write()
-            .map_err(|_| SessionError::StoreUnavailable)?;
-        match Self::active_entry(&mut entries, id, now_unix) {
-            Ok(entry) => Ok(entry.values.get(key).cloned()),
-            Err(SessionError::InactiveSession) => Ok(None),
-            Err(error) => Err(error),
-        }
+    fn get(
+        &self,
+        id: &SessionId,
+        key: &str,
+        now_unix: u64,
+    ) -> SessionStoreFuture<'_, Option<Value>> {
+        let id = id.clone();
+        let key = key.to_owned();
+        Box::pin(async move {
+            let mut entries = self
+                .entries
+                .write()
+                .map_err(|_| SessionError::StoreUnavailable)?;
+            match Self::active_entry(&mut entries, &id, now_unix) {
+                Ok(entry) => Ok(entry.values.get(key.as_str()).cloned()),
+                Err(SessionError::InactiveSession) => Ok(None),
+                Err(error) => Err(error),
+            }
+        })
     }
 
     fn set(
@@ -198,15 +236,18 @@ impl SessionStore for InMemorySessionStore {
         key: String,
         value: Value,
         now_unix: u64,
-    ) -> Result<(), SessionError> {
-        let mut entries = self
-            .entries
-            .write()
-            .map_err(|_| SessionError::StoreUnavailable)?;
-        Self::active_entry(&mut entries, id, now_unix)?
-            .values
-            .insert(key, value);
-        Ok(())
+    ) -> SessionStoreFuture<'_, ()> {
+        let id = id.clone();
+        Box::pin(async move {
+            let mut entries = self
+                .entries
+                .write()
+                .map_err(|_| SessionError::StoreUnavailable)?;
+            Self::active_entry(&mut entries, &id, now_unix)?
+                .values
+                .insert(key, value);
+            Ok(())
+        })
     }
 
     fn rotate(
@@ -216,48 +257,551 @@ impl SessionStore for InMemorySessionStore {
         expires_at_unix: u64,
         now_unix: u64,
         preserve_data: bool,
-    ) -> Result<(), SessionError> {
-        if expires_at_unix <= now_unix {
-            return Err(SessionError::InvalidLifetime);
-        }
-        let mut entries = self
-            .entries
-            .write()
-            .map_err(|_| SessionError::StoreUnavailable)?;
-        entries.retain(|_, entry| entry.expires_at_unix > now_unix);
-        if entries.contains_key(&new_id) {
-            return Err(SessionError::IdentifierCollision);
-        }
-        let values = match old_id {
-            Some(old_id) => {
-                let old = entries.get(old_id).ok_or(SessionError::InactiveSession)?;
-                if preserve_data {
-                    old.values.clone()
-                } else {
-                    HashMap::new()
-                }
+    ) -> SessionStoreFuture<'_, ()> {
+        let old_id = old_id.cloned();
+        Box::pin(async move {
+            if expires_at_unix <= now_unix {
+                return Err(SessionError::InvalidLifetime);
             }
-            None => HashMap::new(),
-        };
-        if let Some(old_id) = old_id {
-            entries.remove(old_id);
-        }
-        entries.insert(
-            new_id,
-            MemoryEntry {
-                expires_at_unix,
-                values,
-            },
-        );
-        Ok(())
+            let mut entries = self
+                .entries
+                .write()
+                .map_err(|_| SessionError::StoreUnavailable)?;
+            entries.retain(|_, entry| entry.expires_at_unix > now_unix);
+            if entries.contains_key(&new_id) {
+                return Err(SessionError::IdentifierCollision);
+            }
+            let values = match old_id.as_ref() {
+                Some(old_id) => {
+                    let old = entries.get(old_id).ok_or(SessionError::InactiveSession)?;
+                    if preserve_data {
+                        old.values.clone()
+                    } else {
+                        HashMap::new()
+                    }
+                }
+                None => HashMap::new(),
+            };
+            if let Some(old_id) = old_id.as_ref() {
+                entries.remove(old_id);
+            }
+            entries.insert(
+                new_id,
+                MemoryEntry {
+                    expires_at_unix,
+                    values,
+                },
+            );
+            Ok(())
+        })
     }
 
-    fn invalidate(&self, id: &SessionId) -> Result<(), SessionError> {
-        self.entries
-            .write()
-            .map_err(|_| SessionError::StoreUnavailable)?
-            .remove(id);
-        Ok(())
+    fn invalidate(&self, id: &SessionId) -> SessionStoreFuture<'_, ()> {
+        let id = id.clone();
+        Box::pin(async move {
+            self.entries
+                .write()
+                .map_err(|_| SessionError::StoreUnavailable)?
+                .remove(&id);
+            Ok(())
+        })
+    }
+}
+
+/// SQL-backed session storage over RustFlow's typed database pool.
+pub struct SqlSessionStore {
+    database: DatabasePool,
+}
+
+impl SqlSessionStore {
+    /// Create a SQL session adapter over the application's shared database pool.
+    pub fn new(database: DatabasePool) -> Self {
+        Self { database }
+    }
+
+    /// Create the framework-owned session tables if they do not already exist.
+    pub async fn ensure_schema(&self) -> Result<(), SessionError> {
+        let (session_ddl, value_ddl) = match self.database.backend() {
+            crate::DatabaseBackend::Sqlite => (
+                "CREATE TABLE IF NOT EXISTS rustflow_sessions (
+                    id TEXT PRIMARY KEY,
+                    expires_at_unix INTEGER NOT NULL
+                )",
+                "CREATE TABLE IF NOT EXISTS rustflow_session_values (
+                    id TEXT NOT NULL,
+                    key_name TEXT NOT NULL,
+                    value_json TEXT NOT NULL,
+                    PRIMARY KEY (id, key_name),
+                    FOREIGN KEY (id) REFERENCES rustflow_sessions(id) ON DELETE CASCADE
+                )",
+            ),
+            crate::DatabaseBackend::Postgres => (
+                "CREATE TABLE IF NOT EXISTS rustflow_sessions (
+                    id TEXT PRIMARY KEY,
+                    expires_at_unix BIGINT NOT NULL
+                )",
+                "CREATE TABLE IF NOT EXISTS rustflow_session_values (
+                    id TEXT NOT NULL,
+                    key_name TEXT NOT NULL,
+                    value_json TEXT NOT NULL,
+                    PRIMARY KEY (id, key_name),
+                    FOREIGN KEY (id) REFERENCES rustflow_sessions(id) ON DELETE CASCADE
+                )",
+            ),
+            crate::DatabaseBackend::MySql => (
+                "CREATE TABLE IF NOT EXISTS rustflow_sessions (
+                    id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+                    expires_at_unix BIGINT NOT NULL
+                )",
+                "CREATE TABLE IF NOT EXISTS rustflow_session_values (
+                    id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+                    key_name VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+                    value_json TEXT NOT NULL,
+                    PRIMARY KEY (id, key_name),
+                    FOREIGN KEY (id) REFERENCES rustflow_sessions(id) ON DELETE CASCADE
+                )",
+            ),
+        };
+        self.database
+            .execute_raw(session_ddl, Vec::<SeaOrmValue>::new())
+            .await
+            .map_err(|_| SessionError::StoreUnavailable)?;
+        self.database
+            .execute_raw(value_ddl, Vec::<SeaOrmValue>::new())
+            .await
+            .map_err(|_| SessionError::StoreUnavailable)
+            .map(|_| ())
+    }
+
+    async fn query_expiry(&self, id: &SessionId) -> Result<Option<i64>, SessionError> {
+        let sql = match self.database.backend() {
+            crate::DatabaseBackend::Postgres => {
+                "SELECT expires_at_unix FROM rustflow_sessions WHERE id = $1"
+            }
+            crate::DatabaseBackend::Sqlite | crate::DatabaseBackend::MySql => {
+                "SELECT expires_at_unix FROM rustflow_sessions WHERE id = ?"
+            }
+        };
+        let rows = self
+            .database
+            .query_raw(sql, [SeaOrmValue::String(Some(id.as_str().to_owned()))])
+            .await
+            .map_err(|_| SessionError::StoreUnavailable)?;
+        let Some(row) = rows.first() else {
+            return Ok(None);
+        };
+        row.try_get("", "expires_at_unix")
+            .map(Some)
+            .map_err(|_| SessionError::StoreUnavailable)
+    }
+
+    async fn delete_expired(&self, id: &SessionId, now_unix: u64) -> Result<(), SessionError> {
+        let now_unix = i64::try_from(now_unix).map_err(|_| SessionError::InvalidLifetime)?;
+        let transaction = self
+            .database
+            .begin_transaction()
+            .await
+            .map_err(|_| SessionError::StoreUnavailable)?;
+        let session_sql = match self.database.backend() {
+            crate::DatabaseBackend::Postgres => {
+                "DELETE FROM rustflow_sessions WHERE id = $1 AND expires_at_unix <= $2"
+            }
+            crate::DatabaseBackend::Sqlite | crate::DatabaseBackend::MySql => {
+                "DELETE FROM rustflow_sessions WHERE id = ? AND expires_at_unix <= ?"
+            }
+        };
+        let deleted = transaction
+            .execute_raw(
+                session_sql,
+                [
+                    SeaOrmValue::String(Some(id.as_str().to_owned())),
+                    SeaOrmValue::BigInt(Some(now_unix)),
+                ],
+            )
+            .await
+            .map_err(|_| SessionError::StoreUnavailable)?;
+        if deleted > 0 {
+            let value_sql = match self.database.backend() {
+                crate::DatabaseBackend::Postgres => {
+                    "DELETE FROM rustflow_session_values WHERE id = $1"
+                }
+                crate::DatabaseBackend::Sqlite | crate::DatabaseBackend::MySql => {
+                    "DELETE FROM rustflow_session_values WHERE id = ?"
+                }
+            };
+            transaction
+                .execute_raw(
+                    value_sql,
+                    [SeaOrmValue::String(Some(id.as_str().to_owned()))],
+                )
+                .await
+                .map_err(|_| SessionError::StoreUnavailable)?;
+        }
+        transaction
+            .commit()
+            .await
+            .map_err(|_| SessionError::StoreUnavailable)
+    }
+
+    async fn active_expiry(
+        &self,
+        id: &SessionId,
+        now_unix: u64,
+    ) -> Result<Option<u64>, SessionError> {
+        let Some(expires) = self.query_expiry(id).await? else {
+            return Ok(None);
+        };
+        let expires = u64::try_from(expires).unwrap_or(0);
+        if expires <= now_unix {
+            self.delete_expired(id, now_unix).await?;
+            return Ok(None);
+        }
+        Ok(Some(expires))
+    }
+}
+
+impl SessionStore for SqlSessionStore {
+    fn create(
+        &self,
+        id: SessionId,
+        expires_at_unix: u64,
+        now_unix: u64,
+    ) -> SessionStoreFuture<'_, ()> {
+        let expires_i64 = i64::try_from(expires_at_unix).map_err(|_| SessionError::InvalidLifetime);
+        Box::pin(async move {
+            let expires_i64 = expires_i64?;
+            if expires_at_unix <= now_unix {
+                return Err(SessionError::InvalidLifetime);
+            }
+            if self.active_expiry(&id, now_unix).await?.is_some() {
+                return Err(SessionError::IdentifierCollision);
+            }
+            let sql = match self.database.backend() {
+                crate::DatabaseBackend::Postgres => {
+                    "INSERT INTO rustflow_sessions (id, expires_at_unix) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING"
+                }
+                crate::DatabaseBackend::Sqlite => {
+                    "INSERT INTO rustflow_sessions (id, expires_at_unix) VALUES (?, ?) ON CONFLICT (id) DO NOTHING"
+                }
+                crate::DatabaseBackend::MySql => {
+                    "INSERT IGNORE INTO rustflow_sessions (id, expires_at_unix) VALUES (?, ?)"
+                }
+            };
+            let inserted = self
+                .database
+                .execute_raw(
+                    sql,
+                    [
+                        SeaOrmValue::String(Some(id.as_str().to_owned())),
+                        SeaOrmValue::BigInt(Some(expires_i64)),
+                    ],
+                )
+                .await
+                .map_err(|_| SessionError::StoreUnavailable)?;
+            if inserted == 1 {
+                Ok(())
+            } else {
+                Err(SessionError::IdentifierCollision)
+            }
+        })
+    }
+
+    fn expires_at(&self, id: &SessionId, now_unix: u64) -> SessionStoreFuture<'_, Option<u64>> {
+        let id = id.clone();
+        Box::pin(async move { self.active_expiry(&id, now_unix).await })
+    }
+
+    fn get(
+        &self,
+        id: &SessionId,
+        key: &str,
+        now_unix: u64,
+    ) -> SessionStoreFuture<'_, Option<Value>> {
+        let id = id.clone();
+        let key = key.to_owned();
+        Box::pin(async move {
+            if self.active_expiry(&id, now_unix).await?.is_none() {
+                return Ok(None);
+            }
+            let sql = match self.database.backend() {
+                crate::DatabaseBackend::Postgres => {
+                    "SELECT value_json FROM rustflow_session_values WHERE id = $1 AND key_name = $2"
+                }
+                crate::DatabaseBackend::Sqlite | crate::DatabaseBackend::MySql => {
+                    "SELECT value_json FROM rustflow_session_values WHERE id = ? AND key_name = ?"
+                }
+            };
+            let rows = self
+                .database
+                .query_raw(
+                    sql,
+                    [
+                        SeaOrmValue::String(Some(id.as_str().to_owned())),
+                        SeaOrmValue::String(Some(key)),
+                    ],
+                )
+                .await
+                .map_err(|_| SessionError::StoreUnavailable)?;
+            let Some(row) = rows.first() else {
+                return Ok(None);
+            };
+            let encoded: String = row
+                .try_get("", "value_json")
+                .map_err(|_| SessionError::StoreUnavailable)?;
+            serde_json::from_str(&encoded)
+                .map(Some)
+                .map_err(|_| SessionError::Serialization)
+        })
+    }
+
+    fn set(
+        &self,
+        id: &SessionId,
+        key: String,
+        value: Value,
+        now_unix: u64,
+    ) -> SessionStoreFuture<'_, ()> {
+        let id = id.clone();
+        Box::pin(async move {
+            if self.active_expiry(&id, now_unix).await?.is_none() {
+                return Err(SessionError::InactiveSession);
+            }
+            validate_session_key(&key)?;
+            let encoded = serde_json::to_string(&value).map_err(|_| SessionError::Serialization)?;
+            let transaction = self
+                .database
+                .begin_transaction()
+                .await
+                .map_err(|_| SessionError::StoreUnavailable)?;
+            let delete_sql = match self.database.backend() {
+                crate::DatabaseBackend::Postgres => {
+                    "DELETE FROM rustflow_session_values WHERE id = $1 AND key_name = $2"
+                }
+                crate::DatabaseBackend::Sqlite | crate::DatabaseBackend::MySql => {
+                    "DELETE FROM rustflow_session_values WHERE id = ? AND key_name = ?"
+                }
+            };
+            transaction
+                .execute_raw(
+                    delete_sql,
+                    [
+                        SeaOrmValue::String(Some(id.as_str().to_owned())),
+                        SeaOrmValue::String(Some(key.clone())),
+                    ],
+                )
+                .await
+                .map_err(|_| SessionError::StoreUnavailable)?;
+            let insert_sql = match self.database.backend() {
+                crate::DatabaseBackend::Postgres => {
+                    "INSERT INTO rustflow_session_values (id, key_name, value_json) VALUES ($1, $2, $3)"
+                }
+                crate::DatabaseBackend::Sqlite | crate::DatabaseBackend::MySql => {
+                    "INSERT INTO rustflow_session_values (id, key_name, value_json) VALUES (?, ?, ?)"
+                }
+            };
+            transaction
+                .execute_raw(
+                    insert_sql,
+                    [
+                        SeaOrmValue::String(Some(id.as_str().to_owned())),
+                        SeaOrmValue::String(Some(key)),
+                        SeaOrmValue::String(Some(encoded)),
+                    ],
+                )
+                .await
+                .map_err(|_| SessionError::StoreUnavailable)?;
+            transaction
+                .commit()
+                .await
+                .map_err(|_| SessionError::StoreUnavailable)
+        })
+    }
+
+    fn rotate(
+        &self,
+        old_id: Option<&SessionId>,
+        new_id: SessionId,
+        expires_at_unix: u64,
+        now_unix: u64,
+        preserve_data: bool,
+    ) -> SessionStoreFuture<'_, ()> {
+        let old_id = old_id.cloned();
+        Box::pin(async move {
+            let expires_i64 =
+                i64::try_from(expires_at_unix).map_err(|_| SessionError::InvalidLifetime)?;
+            if expires_at_unix <= now_unix {
+                return Err(SessionError::InvalidLifetime);
+            }
+            if let Some(old_id) = old_id.as_ref()
+                && self.active_expiry(old_id, now_unix).await?.is_none()
+            {
+                return Err(SessionError::InactiveSession);
+            }
+            if self.active_expiry(&new_id, now_unix).await?.is_some() {
+                return Err(SessionError::IdentifierCollision);
+            }
+            let transaction = self
+                .database
+                .begin_transaction()
+                .await
+                .map_err(|_| SessionError::StoreUnavailable)?;
+            let insert_sql = match self.database.backend() {
+                crate::DatabaseBackend::Postgres => {
+                    "INSERT INTO rustflow_sessions (id, expires_at_unix) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING"
+                }
+                crate::DatabaseBackend::Sqlite => {
+                    "INSERT INTO rustflow_sessions (id, expires_at_unix) VALUES (?, ?) ON CONFLICT (id) DO NOTHING"
+                }
+                crate::DatabaseBackend::MySql => {
+                    "INSERT IGNORE INTO rustflow_sessions (id, expires_at_unix) VALUES (?, ?)"
+                }
+            };
+            let inserted = transaction
+                .execute_raw(
+                    insert_sql,
+                    [
+                        SeaOrmValue::String(Some(new_id.as_str().to_owned())),
+                        SeaOrmValue::BigInt(Some(expires_i64)),
+                    ],
+                )
+                .await
+                .map_err(|_| SessionError::StoreUnavailable)?;
+            if inserted != 1 {
+                return Err(SessionError::IdentifierCollision);
+            }
+            if preserve_data && let Some(old_id) = old_id.as_ref() {
+                let select_sql = match self.database.backend() {
+                    crate::DatabaseBackend::Postgres => {
+                        "SELECT key_name, value_json FROM rustflow_session_values WHERE id = $1"
+                    }
+                    crate::DatabaseBackend::Sqlite | crate::DatabaseBackend::MySql => {
+                        "SELECT key_name, value_json FROM rustflow_session_values WHERE id = ?"
+                    }
+                };
+                let rows = transaction
+                    .query_raw(
+                        select_sql,
+                        [SeaOrmValue::String(Some(old_id.as_str().to_owned()))],
+                    )
+                    .await
+                    .map_err(|_| SessionError::StoreUnavailable)?;
+                let insert_sql = match self.database.backend() {
+                    crate::DatabaseBackend::Postgres => {
+                        "INSERT INTO rustflow_session_values (id, key_name, value_json) VALUES ($1, $2, $3)"
+                    }
+                    crate::DatabaseBackend::Sqlite | crate::DatabaseBackend::MySql => {
+                        "INSERT INTO rustflow_session_values (id, key_name, value_json) VALUES (?, ?, ?)"
+                    }
+                };
+                for row in rows {
+                    let key: String = row
+                        .try_get("", "key_name")
+                        .map_err(|_| SessionError::StoreUnavailable)?;
+                    let encoded: String = row
+                        .try_get("", "value_json")
+                        .map_err(|_| SessionError::StoreUnavailable)?;
+                    transaction
+                        .execute_raw(
+                            insert_sql,
+                            [
+                                SeaOrmValue::String(Some(new_id.as_str().to_owned())),
+                                SeaOrmValue::String(Some(key)),
+                                SeaOrmValue::String(Some(encoded)),
+                            ],
+                        )
+                        .await
+                        .map_err(|_| SessionError::StoreUnavailable)?;
+                }
+            }
+            if let Some(old_id) = old_id.as_ref() {
+                let value_sql = match self.database.backend() {
+                    crate::DatabaseBackend::Postgres => {
+                        "DELETE FROM rustflow_session_values WHERE id = $1"
+                    }
+                    crate::DatabaseBackend::Sqlite | crate::DatabaseBackend::MySql => {
+                        "DELETE FROM rustflow_session_values WHERE id = ?"
+                    }
+                };
+                transaction
+                    .execute_raw(
+                        value_sql,
+                        [SeaOrmValue::String(Some(old_id.as_str().to_owned()))],
+                    )
+                    .await
+                    .map_err(|_| SessionError::StoreUnavailable)?;
+                let session_sql = match self.database.backend() {
+                    crate::DatabaseBackend::Postgres => {
+                        "DELETE FROM rustflow_sessions WHERE id = $1 AND expires_at_unix > $2"
+                    }
+                    crate::DatabaseBackend::Sqlite | crate::DatabaseBackend::MySql => {
+                        "DELETE FROM rustflow_sessions WHERE id = ? AND expires_at_unix > ?"
+                    }
+                };
+                let deleted = transaction
+                    .execute_raw(
+                        session_sql,
+                        [
+                            SeaOrmValue::String(Some(old_id.as_str().to_owned())),
+                            SeaOrmValue::BigInt(Some(
+                                i64::try_from(now_unix)
+                                    .map_err(|_| SessionError::InvalidLifetime)?,
+                            )),
+                        ],
+                    )
+                    .await
+                    .map_err(|_| SessionError::StoreUnavailable)?;
+                if deleted != 1 {
+                    return Err(SessionError::InactiveSession);
+                }
+            }
+            transaction
+                .commit()
+                .await
+                .map_err(|_| SessionError::StoreUnavailable)
+        })
+    }
+
+    fn invalidate(&self, id: &SessionId) -> SessionStoreFuture<'_, ()> {
+        let id = id.clone();
+        Box::pin(async move {
+            let transaction = self
+                .database
+                .begin_transaction()
+                .await
+                .map_err(|_| SessionError::StoreUnavailable)?;
+            let value_sql = match self.database.backend() {
+                crate::DatabaseBackend::Postgres => {
+                    "DELETE FROM rustflow_session_values WHERE id = $1"
+                }
+                crate::DatabaseBackend::Sqlite | crate::DatabaseBackend::MySql => {
+                    "DELETE FROM rustflow_session_values WHERE id = ?"
+                }
+            };
+            transaction
+                .execute_raw(
+                    value_sql,
+                    [SeaOrmValue::String(Some(id.as_str().to_owned()))],
+                )
+                .await
+                .map_err(|_| SessionError::StoreUnavailable)?;
+            let session_sql = match self.database.backend() {
+                crate::DatabaseBackend::Postgres => "DELETE FROM rustflow_sessions WHERE id = $1",
+                crate::DatabaseBackend::Sqlite | crate::DatabaseBackend::MySql => {
+                    "DELETE FROM rustflow_sessions WHERE id = ?"
+                }
+            };
+            transaction
+                .execute_raw(
+                    session_sql,
+                    [SeaOrmValue::String(Some(id.as_str().to_owned()))],
+                )
+                .await
+                .map_err(|_| SessionError::StoreUnavailable)?;
+            transaction
+                .commit()
+                .await
+                .map_err(|_| SessionError::StoreUnavailable)
+        })
     }
 }
 
@@ -416,6 +960,7 @@ impl SessionManager {
                     && let Some(expiry) = manager
                         .store
                         .expires_at(&candidate, now)
+                        .await
                         .map_err(|_| HttpError::internal_server_error())?
                 {
                     id = Some(candidate);
@@ -517,13 +1062,13 @@ impl fmt::Debug for SessionContext {
 
 impl SessionContext {
     /// Create a new anonymous session if the request has no active session.
-    pub fn create(&self) -> Result<(), SessionError> {
+    pub async fn create(&self) -> Result<(), SessionError> {
         if self.inner.cookie.secure && !self.inner.secure_request {
             return Err(SessionError::SecureTransportRequired);
         }
         let now = current_epoch_seconds()?;
         if let Some(existing) = self.current_id()? {
-            if self.inner.store.expires_at(&existing, now)?.is_some() {
+            if self.inner.store.expires_at(&existing, now).await?.is_some() {
                 return Ok(());
             }
             let mut state = self
@@ -536,64 +1081,70 @@ impl SessionContext {
             state.cookie_action = CookieAction::Clear;
             return Err(SessionError::InactiveSession);
         }
-        self.rotate_inner(None, true, now)
+        self.rotate_inner(None, true, now).await
     }
 
     /// Read and deserialize one typed value from the current session.
-    pub fn get<T: DeserializeOwned>(&self, key: &str) -> Result<Option<T>, SessionError> {
+    pub async fn get<T: DeserializeOwned>(&self, key: &str) -> Result<Option<T>, SessionError> {
         validate_session_key(key)?;
-        let Some(id) = self.current_id()? else {
-            return Ok(None);
-        };
-        self.inner
-            .store
-            .get(&id, key, current_epoch_seconds()?)?
-            .map(serde_json::from_value)
-            .transpose()
-            .map_err(|_| SessionError::Serialization)
-    }
-
-    /// Serialize and store one typed value in an active session.
-    pub fn insert<T: Serialize>(&self, key: &str, value: &T) -> Result<(), SessionError> {
-        validate_session_key(key)?;
-        let id = self.current_id()?.ok_or(SessionError::InactiveSession)?;
-        let value = serde_json::to_value(value).map_err(|_| SessionError::Serialization)?;
-        self.inner
-            .store
-            .set(&id, key.to_owned(), value, current_epoch_seconds()?)
-    }
-
-    /// Rotate the identifier, preserve application values, and invalidate the previous ID.
-    pub fn rotate(&self) -> Result<(), SessionError> {
-        let now = current_epoch_seconds()?;
-        let old = self.current_id()?;
-        self.rotate_inner(old.as_ref(), true, now)
-    }
-
-    /// Rotate to a fresh, empty session and save a server-verified identity.
-    /// Call only after verifying credentials. Client-supplied role or identity fields are ignored.
-    pub fn authenticate(&self, identity: AuthIdentity) -> Result<(), SessionError> {
-        identity.validate()?;
-        let now = current_epoch_seconds()?;
-        let old = self.current_id()?;
-        self.rotate_inner(old.as_ref(), false, now)?;
-        let id = self.current_id()?.ok_or(SessionError::InactiveSession)?;
-        let value = serde_json::to_value(StoredIdentity::from(identity))
-            .map_err(|_| SessionError::Serialization)?;
-        self.inner
-            .store
-            .set(&id, IDENTITY_KEY.to_owned(), value, now)
-    }
-
-    /// Extract identity only from server-side storage.
-    pub fn identity(&self) -> Result<Option<AuthIdentity>, SessionError> {
         let Some(id) = self.current_id()? else {
             return Ok(None);
         };
         let value = self
             .inner
             .store
-            .get(&id, IDENTITY_KEY, current_epoch_seconds()?)?;
+            .get(&id, key, current_epoch_seconds()?)
+            .await?;
+        match value {
+            Some(value) => serde_json::from_value(value).map_err(|_| SessionError::Serialization),
+            None => Ok(None),
+        }
+    }
+
+    /// Serialize and store one typed value in an active session.
+    pub async fn insert<T: Serialize>(&self, key: &str, value: &T) -> Result<(), SessionError> {
+        validate_session_key(key)?;
+        let id = self.current_id()?.ok_or(SessionError::InactiveSession)?;
+        let value = serde_json::to_value(value).map_err(|_| SessionError::Serialization)?;
+        self.inner
+            .store
+            .set(&id, key.to_owned(), value, current_epoch_seconds()?)
+            .await
+    }
+
+    /// Rotate the identifier, preserve application values, and invalidate the previous ID.
+    pub async fn rotate(&self) -> Result<(), SessionError> {
+        let now = current_epoch_seconds()?;
+        let old = self.current_id()?;
+        self.rotate_inner(old.as_ref(), true, now).await
+    }
+
+    /// Rotate to a fresh, empty session and save a server-verified identity.
+    /// Call only after verifying credentials. Client-supplied role or identity fields are ignored.
+    pub async fn authenticate(&self, identity: AuthIdentity) -> Result<(), SessionError> {
+        identity.validate()?;
+        let now = current_epoch_seconds()?;
+        let old = self.current_id()?;
+        self.rotate_inner(old.as_ref(), false, now).await?;
+        let id = self.current_id()?.ok_or(SessionError::InactiveSession)?;
+        let value = serde_json::to_value(StoredIdentity::from(identity))
+            .map_err(|_| SessionError::Serialization)?;
+        self.inner
+            .store
+            .set(&id, IDENTITY_KEY.to_owned(), value, now)
+            .await
+    }
+
+    /// Extract identity only from server-side storage.
+    pub async fn identity(&self) -> Result<Option<AuthIdentity>, SessionError> {
+        let Some(id) = self.current_id()? else {
+            return Ok(None);
+        };
+        let value = self
+            .inner
+            .store
+            .get(&id, IDENTITY_KEY, current_epoch_seconds()?)
+            .await?;
         let Some(value) = value else {
             return Ok(None);
         };
@@ -605,7 +1156,7 @@ impl SessionContext {
     }
 
     /// Revoke the current session and expire its cookie on the response.
-    pub fn invalidate(&self) -> Result<(), SessionError> {
+    pub async fn invalidate(&self) -> Result<(), SessionError> {
         let id = {
             let mut state = self
                 .inner
@@ -618,7 +1169,7 @@ impl SessionContext {
             id
         };
         if let Some(id) = id {
-            self.inner.store.invalidate(&id)?;
+            self.inner.store.invalidate(&id).await?;
         }
         Ok(())
     }
@@ -633,7 +1184,7 @@ impl SessionContext {
             .clone())
     }
 
-    fn rotate_inner(
+    async fn rotate_inner(
         &self,
         old_id: Option<&SessionId>,
         preserve_data: bool,
@@ -651,6 +1202,7 @@ impl SessionContext {
                 .inner
                 .store
                 .rotate(old_id, new_id.clone(), expiry, now, preserve_data)
+                .await
             {
                 Ok(()) => {
                     let mut state = self
@@ -769,9 +1321,9 @@ impl Request {
     }
 
     /// Extract identity from server-side session storage, if one is active.
-    pub fn identity(&self) -> Result<Option<AuthIdentity>, SessionError> {
+    pub async fn identity(&self) -> Result<Option<AuthIdentity>, SessionError> {
         match self.session() {
-            Some(session) => session.identity(),
+            Some(session) => session.identity().await,
             None => Ok(None),
         }
     }
@@ -851,7 +1403,7 @@ impl AccessPolicy for RolePolicy {
 /// Guard that returns 401 before reaching the handler when no identity is active.
 pub fn require_authentication() -> Middleware {
     Middleware::new(|request, next: Next| async move {
-        match request.identity() {
+        match request.identity().await {
             Ok(Some(_)) => next.run(request).await,
             Ok(None) => Err(HttpError::new(
                 StatusCode::UNAUTHORIZED,
@@ -872,7 +1424,7 @@ pub fn require_permission(
         let permission = permission.clone();
         let policy = policy.clone();
         async move {
-            let identity = match request.identity() {
+            let identity = match request.identity().await {
                 Ok(Some(identity)) => identity,
                 Ok(None) => {
                     return Err(HttpError::new(
@@ -900,9 +1452,13 @@ pub fn require_permission(
 pub struct PasswordHash(String);
 
 impl PasswordHash {
-    /// Hash a non-empty password.
+    /// Create a legacy PBKDF2-HMAC-SHA-256 hash for compatibility.
+    ///
+    /// New credentials should use [`PasswordHash::hash_argon2id`]. This method
+    /// remains available so existing applications can explicitly preserve their
+    /// current PBKDF2 format.
     pub fn hash(password: &str) -> Result<Self, SessionError> {
-        if password.is_empty() {
+        if password.is_empty() || password.len() > MAX_PASSWORD_BYTES {
             return Err(SessionError::InvalidPassword);
         }
         let iterations =
@@ -930,8 +1486,30 @@ impl PasswordHash {
         Ok(Self(encoded))
     }
 
-    /// Parse the fixed supported encoding and reject unrecognized algorithms/work factors.
+    /// Hash a password using Argon2id v=19 and the RustFlow 19 MiB, t=2, p=1 profile.
+    ///
+    /// Argon2id work is synchronous and memory-intensive. Call from startup or a
+    /// blocking worker, not directly from an async request task.
+    pub fn hash_argon2id(password: &str) -> Result<Self, SessionError> {
+        if password.is_empty() || password.len() > MAX_PASSWORD_BYTES {
+            return Err(SessionError::InvalidPassword);
+        }
+        let encoded = Self::argon2id_hasher()?
+            .hash_password(password.as_bytes())
+            .map_err(|_| SessionError::PasswordHashingFailed)?
+            .to_string();
+        Self::parse(&encoded)
+    }
+
+    /// Parse a fixed supported encoding and reject unrecognized algorithms/work factors.
     pub fn parse(encoded: &str) -> Result<Self, SessionError> {
+        if encoded.len() > MAX_PASSWORD_HASH_BYTES {
+            return Err(SessionError::InvalidPasswordHash);
+        }
+        if encoded.starts_with('$') {
+            Self::validate_argon2id_encoding(encoded)?;
+            return Ok(Self(encoded.to_owned()));
+        }
         let mut parts = encoded.split('$');
         if parts.next() != Some(PASSWORD_HASH_PREFIX)
             || parts.next().and_then(|value| value.parse::<u32>().ok()) != Some(PASSWORD_ITERATIONS)
@@ -946,12 +1524,21 @@ impl PasswordHash {
         Ok(Self(encoded.to_owned()))
     }
 
-    /// Verify a candidate password with ring's constant-time PBKDF2 verifier.
+    /// Verify an Argon2id hash or a legacy PBKDF2 hash.
     pub fn verify(&self, password: &str) -> Result<bool, SessionError> {
-        if password.is_empty() {
+        if password.is_empty() || password.len() > MAX_PASSWORD_BYTES {
             return Ok(false);
         }
         let parsed = Self::parse(&self.0)?;
+        if parsed.0.starts_with('$') {
+            let phc =
+                PhcPasswordHash::new(&parsed.0).map_err(|_| SessionError::InvalidPasswordHash)?;
+            return match Self::argon2id_hasher()?.verify_password(password.as_bytes(), &phc) {
+                Ok(()) => Ok(true),
+                Err(argon2::password_hash::Error::PasswordInvalid) => Ok(false),
+                Err(_) => Err(SessionError::PasswordHashingFailed),
+            };
+        }
         let mut parts = parsed.0.split('$');
         let _label = parts.next();
         let iterations = NonZeroU32::new(
@@ -980,9 +1567,50 @@ impl PasswordHash {
         .is_ok())
     }
 
+    /// Return whether an explicitly verified legacy hash should be upgraded.
+    ///
+    /// This does not update a credential record. Applications should persist a
+    /// new Argon2id value only after successful verification and their own
+    /// transactional update succeeds.
+    pub fn needs_rehash(&self) -> bool {
+        !self.0.starts_with('$')
+    }
+
     /// Return the encoded value for trusted persistence. Never log it.
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    fn argon2id_hasher() -> Result<Argon2<'static>, SessionError> {
+        let params = Argon2Params::new(
+            ARGON2ID_MEMORY_KIB,
+            ARGON2ID_ITERATIONS,
+            ARGON2ID_PARALLELISM,
+            Some(PASSWORD_OUTPUT_BYTES),
+        )
+        .map_err(|_| SessionError::PasswordHashingFailed)?;
+        Ok(Argon2::new(Algorithm::Argon2id, Version::V0x13, params))
+    }
+
+    fn validate_argon2id_encoding(encoded: &str) -> Result<(), SessionError> {
+        if !encoded.starts_with(ARGON2ID_HASH_PREFIX) {
+            return Err(SessionError::InvalidPasswordHash);
+        }
+        let mut parts = encoded.split('$');
+        if parts.next() != Some("")
+            || parts.next() != Some("argon2id")
+            || parts.next() != Some("v=19")
+            || parts.next() != Some("m=19456,t=2,p=1")
+        {
+            return Err(SessionError::InvalidPasswordHash);
+        }
+        let salt = parts.next().ok_or(SessionError::InvalidPasswordHash)?;
+        let hash = parts.next().ok_or(SessionError::InvalidPasswordHash)?;
+        if salt.len() != 22 || hash.len() != 43 || parts.next().is_some() {
+            return Err(SessionError::InvalidPasswordHash);
+        }
+        PhcPasswordHash::new(encoded).map_err(|_| SessionError::InvalidPasswordHash)?;
+        Ok(())
     }
 }
 impl fmt::Debug for PasswordHash {
@@ -1007,6 +1635,7 @@ pub enum SessionError {
     SecureTransportRequired,
     InvalidPasswordHash,
     InvalidPassword,
+    PasswordHashingFailed,
 }
 impl fmt::Display for SessionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1023,7 +1652,8 @@ impl fmt::Display for SessionError {
             Self::InvalidCookieConfiguration => "session cookie configuration is invalid",
             Self::SecureTransportRequired => "HTTPS is required for this session cookie policy",
             Self::InvalidPasswordHash => "password hash encoding is invalid or unsupported",
-            Self::InvalidPassword => "password must not be empty",
+            Self::InvalidPassword => "password is empty or exceeds the supported size",
+            Self::PasswordHashingFailed => "password hashing operation failed",
         })
     }
 }
@@ -1177,19 +1807,23 @@ mod tests {
             _id: SessionId,
             _expires_at_unix: u64,
             _now_unix: u64,
-        ) -> Result<(), SessionError> {
-            Err(SessionError::StoreUnavailable)
+        ) -> SessionStoreFuture<'_, ()> {
+            Box::pin(async { Err(SessionError::StoreUnavailable) })
         }
-        fn expires_at(&self, _id: &SessionId, _now_unix: u64) -> Result<Option<u64>, SessionError> {
-            Err(SessionError::StoreUnavailable)
+        fn expires_at(
+            &self,
+            _id: &SessionId,
+            _now_unix: u64,
+        ) -> SessionStoreFuture<'_, Option<u64>> {
+            Box::pin(async { Err(SessionError::StoreUnavailable) })
         }
         fn get(
             &self,
             _id: &SessionId,
             _key: &str,
             _now_unix: u64,
-        ) -> Result<Option<Value>, SessionError> {
-            Err(SessionError::StoreUnavailable)
+        ) -> SessionStoreFuture<'_, Option<Value>> {
+            Box::pin(async { Err(SessionError::StoreUnavailable) })
         }
         fn set(
             &self,
@@ -1197,8 +1831,8 @@ mod tests {
             _key: String,
             _value: Value,
             _now_unix: u64,
-        ) -> Result<(), SessionError> {
-            Err(SessionError::StoreUnavailable)
+        ) -> SessionStoreFuture<'_, ()> {
+            Box::pin(async { Err(SessionError::StoreUnavailable) })
         }
         fn rotate(
             &self,
@@ -1207,11 +1841,11 @@ mod tests {
             _expires_at_unix: u64,
             _now_unix: u64,
             _preserve_data: bool,
-        ) -> Result<(), SessionError> {
-            Err(SessionError::StoreUnavailable)
+        ) -> SessionStoreFuture<'_, ()> {
+            Box::pin(async { Err(SessionError::StoreUnavailable) })
         }
-        fn invalidate(&self, _id: &SessionId) -> Result<(), SessionError> {
-            Err(SessionError::StoreUnavailable)
+        fn invalidate(&self, _id: &SessionId) -> SessionStoreFuture<'_, ()> {
+            Box::pin(async { Err(SessionError::StoreUnavailable) })
         }
     }
 
@@ -1242,11 +1876,11 @@ mod tests {
         assert!(!called.load(Ordering::SeqCst));
     }
 
-    #[test]
-    fn expiry_and_invalidation_are_enforced_by_storage() {
+    #[tokio::test]
+    async fn expiry_and_invalidation_are_enforced_by_storage() {
         let store = InMemorySessionStore::new();
         let id = SessionId::parse_cookie(&"a".repeat(SESSION_ID_HEX_LEN)).expect("id");
-        store.create(id.clone(), 20, 10).expect("create");
+        store.create(id.clone(), 20, 10).await.expect("create");
         store
             .set(
                 &id,
@@ -1254,31 +1888,37 @@ mod tests {
                 serde_json::json!({"name":"A"}),
                 11,
             )
+            .await
             .expect("set");
         assert_eq!(
-            store.get(&id, "profile", 19).expect("get"),
+            store.get(&id, "profile", 19).await.expect("get"),
             Some(serde_json::json!({"name":"A"}))
         );
-        assert_eq!(store.expires_at(&id, 20).expect("expiry"), None);
-        store.create(id.clone(), 30, 21).expect("recreate");
-        store.invalidate(&id).expect("invalidate");
-        assert_eq!(store.expires_at(&id, 22).expect("revoked"), None);
+        assert_eq!(store.expires_at(&id, 20).await.expect("expiry"), None);
+        store.create(id.clone(), 30, 21).await.expect("recreate");
+        store.invalidate(&id).await.expect("invalidate");
+        assert_eq!(store.expires_at(&id, 22).await.expect("revoked"), None);
     }
 
-    #[test]
-    fn rotation_invalidates_old_id_and_can_drop_prior_values() {
+    #[tokio::test]
+    async fn rotation_invalidates_old_id_and_can_drop_prior_values() {
         let store = InMemorySessionStore::new();
         let old = SessionId::parse_cookie(&"b".repeat(SESSION_ID_HEX_LEN)).expect("old id");
         let new = SessionId::parse_cookie(&"c".repeat(SESSION_ID_HEX_LEN)).expect("new id");
-        store.create(old.clone(), 100, 1).expect("create");
+        store.create(old.clone(), 100, 1).await.expect("create");
         store
             .set(&old, "private".to_owned(), serde_json::json!("old"), 2)
+            .await
             .expect("set");
         store
             .rotate(Some(&old), new.clone(), 200, 3, false)
+            .await
             .expect("rotate");
-        assert_eq!(store.expires_at(&old, 4).expect("old invalid"), None);
-        assert_eq!(store.get(&new, "private", 4).expect("new record"), None);
+        assert_eq!(store.expires_at(&old, 4).await.expect("old invalid"), None);
+        assert_eq!(
+            store.get(&new, "private", 4).await.expect("new record"),
+            None
+        );
     }
 
     #[test]
@@ -1286,8 +1926,41 @@ mod tests {
         let hash = PasswordHash::hash("correct horse battery staple").expect("hash");
         assert!(hash.verify("correct horse battery staple").expect("verify"));
         assert!(!hash.verify("incorrect").expect("wrong password"));
+        assert!(hash.needs_rehash());
         assert_eq!(format!("{hash:?}"), "PasswordHash([REDACTED])");
         assert!(PasswordHash::parse("sha256$1$invalid$invalid").is_err());
+    }
+
+    #[test]
+    fn argon2id_hashes_are_versioned_and_legacy_hashes_remain_verifiable() {
+        let argon2id =
+            PasswordHash::hash_argon2id("correct horse battery staple").expect("Argon2id hash");
+        assert!(argon2id.as_str().starts_with(ARGON2ID_HASH_PREFIX));
+        assert!(
+            argon2id
+                .verify("correct horse battery staple")
+                .expect("verify")
+        );
+        assert!(!argon2id.verify("incorrect").expect("wrong password"));
+        assert!(!argon2id.needs_rehash());
+
+        let upgraded = PasswordHash::parse(
+            PasswordHash::hash("legacy password")
+                .expect("legacy hash")
+                .as_str(),
+        )
+        .expect("parse legacy hash");
+        assert!(upgraded.verify("legacy password").expect("verify legacy"));
+        assert!(upgraded.needs_rehash());
+
+        let malformed = argon2id.as_str().replace("m=19456", "m=194560000");
+        assert!(PasswordHash::parse(&malformed).is_err());
+        assert!(PasswordHash::parse(&format!("{}{}", argon2id.as_str(), "$extra")).is_err());
+        assert!(PasswordHash::parse(&"x".repeat(MAX_PASSWORD_HASH_BYTES + 1)).is_err());
+        assert!(matches!(
+            PasswordHash::hash_argon2id(&"x".repeat(MAX_PASSWORD_BYTES + 1)),
+            Err(SessionError::InvalidPassword)
+        ));
     }
 
     #[tokio::test]
@@ -1326,9 +1999,10 @@ mod tests {
                 }),
             }),
         };
-        context.create().expect("create");
+        context.create().await.expect("create");
         context
             .authenticate(AuthIdentity::new("user-1").expect("identity"))
+            .await
             .expect("authenticate");
         let called = Arc::new(AtomicBool::new(false));
         let result = require_permission("private.read", None)
@@ -1345,6 +2019,174 @@ mod tests {
             StatusCode::FORBIDDEN
         );
         assert!(!called.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn sql_session_store_supports_expiry_values_rotation_and_invalidation() {
+        let database = crate::DatabasePool::connect(
+            &crate::DatabaseConfig::new("sqlite::memory:")
+                .expect("SQLite config")
+                .with_max_connections(1)
+                .expect("single connection"),
+        )
+        .await
+        .expect("connect SQLite");
+        let store = SqlSessionStore::new(database);
+        store.ensure_schema().await.expect("create session schema");
+
+        let id = SessionId::parse_cookie(&"d".repeat(SESSION_ID_HEX_LEN)).expect("id");
+        store.create(id.clone(), 100, 10).await.expect("create");
+        assert_eq!(
+            store.create(id.clone(), 101, 10).await,
+            Err(SessionError::IdentifierCollision)
+        );
+        store
+            .set(
+                &id,
+                "profile".to_owned(),
+                serde_json::json!({"name":"Ada"}),
+                11,
+            )
+            .await
+            .expect("set");
+        assert_eq!(
+            store.get(&id, "profile", 20).await.expect("get"),
+            Some(serde_json::json!({"name":"Ada"}))
+        );
+        assert_eq!(store.expires_at(&id, 100).await.expect("expiry"), None);
+
+        let active = SessionId::parse_cookie(&"e".repeat(SESSION_ID_HEX_LEN)).expect("active");
+        store
+            .create(active.clone(), 200, 20)
+            .await
+            .expect("active create");
+        store
+            .set(
+                &active,
+                "private".to_owned(),
+                serde_json::json!("preserved"),
+                21,
+            )
+            .await
+            .expect("active set");
+        let collision =
+            SessionId::parse_cookie(&"a".repeat(SESSION_ID_HEX_LEN)).expect("collision");
+        store
+            .create(collision.clone(), 250, 22)
+            .await
+            .expect("collision session");
+        assert_eq!(
+            store.rotate(Some(&active), collision, 300, 22, true).await,
+            Err(SessionError::IdentifierCollision)
+        );
+        assert_eq!(
+            store
+                .expires_at(&active, 23)
+                .await
+                .expect("active after collision"),
+            Some(200)
+        );
+
+        let rotated = SessionId::parse_cookie(&"f".repeat(SESSION_ID_HEX_LEN)).expect("rotated");
+        store
+            .rotate(Some(&active), rotated.clone(), 300, 22, true)
+            .await
+            .expect("rotate");
+        assert_eq!(store.expires_at(&active, 23).await.expect("old"), None);
+        assert_eq!(
+            store
+                .get(&rotated, "private", 23)
+                .await
+                .expect("rotated get"),
+            Some(serde_json::json!("preserved"))
+        );
+
+        store.invalidate(&rotated).await.expect("invalidate");
+        assert_eq!(store.expires_at(&rotated, 24).await.expect("revoked"), None);
+    }
+
+    #[tokio::test]
+    async fn sql_store_maps_database_failures_without_exposing_backend_errors() {
+        let database = crate::DatabasePool::connect(
+            &crate::DatabaseConfig::new("sqlite::memory:")
+                .expect("SQLite config")
+                .with_max_connections(1)
+                .expect("single connection"),
+        )
+        .await
+        .expect("connect SQLite");
+        let store = SqlSessionStore::new(database.clone());
+        store.ensure_schema().await.expect("create session schema");
+        database.close().await;
+
+        let id = SessionId::generate().expect("session id");
+        assert_eq!(
+            store.expires_at(&id, 100).await,
+            Err(SessionError::StoreUnavailable)
+        );
+    }
+
+    #[tokio::test]
+    async fn concurrent_sql_rotations_cannot_both_consume_the_same_session() {
+        let old_id = SessionId::generate().expect("old session id");
+        let database_path = std::env::temp_dir().join(format!(
+            "rustflow-sessions-{}-{}.sqlite",
+            std::process::id(),
+            old_id.as_str()
+        ));
+        let database_url = format!("sqlite://{}?mode=rwc", database_path.display());
+        let database = crate::DatabasePool::connect(
+            &crate::DatabaseConfig::new(database_url)
+                .expect("SQLite config")
+                .with_max_connections(4)
+                .expect("multi-connection pool"),
+        )
+        .await
+        .expect("connect SQLite");
+        let store = SqlSessionStore::new(database.clone());
+        store.ensure_schema().await.expect("create session schema");
+        store
+            .create(old_id.clone(), 5_000, 100)
+            .await
+            .expect("create old");
+        store
+            .set(&old_id, "marker".to_owned(), serde_json::json!("kept"), 150)
+            .await
+            .expect("set old value");
+
+        let first = SessionId::generate().expect("first rotated id");
+        let second = SessionId::generate().expect("second rotated id");
+        let (first_result, second_result) = tokio::join!(
+            store.rotate(Some(&old_id), first.clone(), 10_000, 200, true),
+            store.rotate(Some(&old_id), second.clone(), 10_000, 200, true),
+        );
+        assert_ne!(first_result.is_ok(), second_result.is_ok());
+        assert_eq!(
+            store.expires_at(&old_id, 201).await.expect("old expiry"),
+            None
+        );
+        let first_active = store
+            .expires_at(&first, 201)
+            .await
+            .expect("first expiry")
+            .is_some();
+        let second_active = store
+            .expires_at(&second, 201)
+            .await
+            .expect("second expiry")
+            .is_some();
+        assert_ne!(first_active, second_active);
+        let winner = if first_active { &first } else { &second };
+        assert_eq!(
+            store
+                .get(winner, "marker", 201)
+                .await
+                .expect("winner value"),
+            Some(serde_json::json!("kept"))
+        );
+
+        database.close().await;
+        let _ = std::fs::remove_file(database_path);
     }
 
     #[test]
